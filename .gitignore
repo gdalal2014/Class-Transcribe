@@ -3,3 +3,9 @@ obj/
 publish/
 .vs/
 *.user
+
+# Private notes, kept out of git
+*handoff*.md
+*HANDOFF*.md
+CLAUDE.local.md
+.claude/settings.local.json
