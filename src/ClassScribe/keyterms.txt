@@ -1,0 +1,80 @@
+# Glossary sent to ElevenLabs as "keyterms".
+# One term per line, spelled the way you want it to appear in the transcript.
+# Blank lines and lines starting with # are ignored.
+# Limits: up to 1000 terms, each under 50 characters and at most 5 words,
+# without the characters < > { } [ ] \
+#
+# Starter list for an Ashʿarī kalām class, in IJMES transliteration.
+# Edit it to match the terms, names and texts your teacher uses.
+# Very short terms that sound like everyday English words are left out on purpose.
+
+# Disciplines and schools
+kalām
+ʿilm al-kalām
+ʿaqīda
+uṣūl al-dīn
+mutakallimūn
+Ashʿarī
+Ashāʿira
+Māturīdī
+Muʿtazila
+Ahl al-Sunna
+
+# Core concepts
+tawḥīd
+ṣifāt
+wujūd
+wājib al-wujūd
+mumkin al-wujūd
+mustaḥīl
+wājib
+jāʾiz
+ḥudūth
+ḥādith
+qadīm
+qidam
+baqāʾ
+jawhar
+ʿaraḍ
+tanzīh
+tashbīh
+taʾwīl
+tafwīḍ
+taʿalluq
+kasb
+dalīl
+burhān
+ḥukm ʿaqlī
+tasalsul
+
+# Divine attributes
+mukhālafa li-l-ḥawādith
+qiyām bi-l-nafs
+waḥdāniyya
+qudra
+irāda
+ḥayāt
+baṣar
+kalām nafsī
+
+# Prophethood and matters known by revelation
+nubuwwa
+risāla
+muʿjiza
+ʿiṣma
+samʿiyyāt
+
+# Scholars and texts
+al-Ashʿarī
+al-Māturīdī
+al-Bāqillānī
+al-Juwaynī
+al-Ghazālī
+al-Rāzī
+al-Sanūsī
+al-Taftāzānī
+Ibn Juzayy
+Umm al-Barāhīn
+al-Nūr al-Mubīn
+Jawharat al-Tawḥīd
+al-Iqtiṣād fī al-Iʿtiqād

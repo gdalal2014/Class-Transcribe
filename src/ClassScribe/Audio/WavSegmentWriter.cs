@@ -1,0 +1,130 @@
+using System.Buffers.Binary;
+
+namespace ClassScribe.Audio;
+
+/// <summary>
+/// Writes mono 16-bit PCM to a WAV file. <see cref="Flush"/> rewrites the header sizes, so the file
+/// stays a valid WAV while recording and a crash loses only the audio written since the last flush.
+/// </summary>
+public sealed class WavSegmentWriter : IDisposable
+{
+    /// <summary>Size of the header this writer produces. The audio starts right after it.</summary>
+    public const int HeaderSize = 44;
+
+    private const int BytesPerSample = 2;
+
+    private readonly FileStream _stream;
+    private bool _disposed;
+
+    /// <summary>Creates the file. Fails if it already exists, so a recording is never overwritten.</summary>
+    public WavSegmentWriter(string path, int sampleRate)
+    {
+        Path = path;
+        SampleRate = sampleRate;
+        _stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024);
+        try
+        {
+            // On disk the file is a valid, empty WAV from its first moment.
+            WriteHeader();
+            _stream.Flush();
+        }
+        catch
+        {
+            _stream.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Full path of the WAV file.</summary>
+    public string Path { get; }
+
+    /// <summary>Sample rate of the audio in the file.</summary>
+    public int SampleRate { get; }
+
+    /// <summary>Bytes of audio written so far.</summary>
+    public long DataBytes { get; private set; }
+
+    /// <summary>Length of the audio written so far.</summary>
+    public TimeSpan Duration => TimeSpan.FromSeconds(DataBytes / (double)(SampleRate * BytesPerSample));
+
+    /// <summary>
+    /// Recognises a header written by this class and reads its sample rate. The check on the two size
+    /// fields tells our files apart from other tools' WAV files, which may carry extra chunks after the audio.
+    /// </summary>
+    public static bool TryReadHeader(ReadOnlySpan<byte> header, out int sampleRate)
+    {
+        sampleRate = 0;
+        if (header.Length < HeaderSize) return false;
+
+        var ours = header[..4].SequenceEqual("RIFF"u8)
+            && header[8..12].SequenceEqual("WAVE"u8)
+            && header[12..16].SequenceEqual("fmt "u8)
+            && BinaryPrimitives.ReadUInt32LittleEndian(header[16..]) == 16
+            && BinaryPrimitives.ReadUInt16LittleEndian(header[20..]) == 1
+            && BinaryPrimitives.ReadUInt16LittleEndian(header[22..]) == 1
+            && BinaryPrimitives.ReadUInt16LittleEndian(header[34..]) == 16
+            && header[36..40].SequenceEqual("data"u8)
+            && BinaryPrimitives.ReadUInt32LittleEndian(header[4..]) == 36 + BinaryPrimitives.ReadUInt32LittleEndian(header[40..]);
+
+        if (!ours) return false;
+
+        var rate = BinaryPrimitives.ReadUInt32LittleEndian(header[24..]);
+        if (rate is 0 or > 768_000) return false;
+
+        sampleRate = (int)rate;
+        return true;
+    }
+
+    /// <summary>Appends mono 16-bit PCM samples.</summary>
+    public void Write(ReadOnlySpan<byte> mono16)
+    {
+        _stream.Write(mono16);
+        DataBytes += mono16.Length;
+    }
+
+    /// <summary>Rewrites the header with the current sizes and pushes everything to disk.</summary>
+    public void Flush()
+    {
+        var end = _stream.Position;
+        _stream.Position = 0;
+        WriteHeader();
+        _stream.Position = end;
+        _stream.Flush(flushToDisk: true);
+    }
+
+    /// <summary>Finalises the header and closes the file. The file is closed even when the last write fails.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        try
+        {
+            Flush();
+        }
+        finally
+        {
+            _stream.Dispose();
+        }
+    }
+
+    /// <summary>Writes the 44-byte RIFF/WAVE header for mono 16-bit PCM.</summary>
+    private void WriteHeader()
+    {
+        var dataSize = (uint)Math.Min(DataBytes, uint.MaxValue - 36);
+        Span<byte> header = stackalloc byte[HeaderSize];
+        "RIFF"u8.CopyTo(header);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[4..], 36 + dataSize);
+        "WAVE"u8.CopyTo(header[8..]);
+        "fmt "u8.CopyTo(header[12..]);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[16..], 16);                                  // fmt chunk size
+        BinaryPrimitives.WriteUInt16LittleEndian(header[20..], 1);                                   // PCM
+        BinaryPrimitives.WriteUInt16LittleEndian(header[22..], 1);                                   // mono
+        BinaryPrimitives.WriteUInt32LittleEndian(header[24..], (uint)SampleRate);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[28..], (uint)(SampleRate * BytesPerSample)); // bytes per second
+        BinaryPrimitives.WriteUInt16LittleEndian(header[32..], BytesPerSample);                      // block align
+        BinaryPrimitives.WriteUInt16LittleEndian(header[34..], 16);                                  // bits per sample
+        "data"u8.CopyTo(header[36..]);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[40..], dataSize);
+        _stream.Write(header);
+    }
+}
