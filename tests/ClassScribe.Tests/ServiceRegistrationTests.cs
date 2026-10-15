@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Refit;
 
 namespace ClassScribe.Tests;
 
@@ -54,7 +55,20 @@ public class ServiceRegistrationTests
 
         Assert.That(provider.GetRequiredService<TranscribeCommand>(), Is.Not.Null);
         Assert.That(provider.GetRequiredService<ITranscriptionClient>(), Is.InstanceOf<ElevenLabsClient>());
+        Assert.That(provider.GetRequiredService<IElevenLabsApi>(), Is.Not.Null, "the Refit client is registered");
         Assert.That(provider.GetRequiredService<App>(), Is.Not.Null);
+    }
+
+    /// <summary>The registered ElevenLabs client lets network errors through unwrapped, so they are recognised and retried.</summary>
+    [Test]
+    public void The_ElevenLabs_client_reports_send_failures_unwrapped()
+    {
+        using var provider = BuildProvider(new() { ["ElevenLabs:ApiKey"] = "k" });
+        var failure = new HttpRequestException("Connection reset.");
+
+        var settings = provider.GetRequiredService<SettingsFor<IElevenLabsApi>>().Settings!;
+
+        Assert.That(settings.TransportExceptionFactory(new HttpRequestMessage(), failure, CancellationToken.None), Is.SameAs(failure));
     }
 
     [Test]

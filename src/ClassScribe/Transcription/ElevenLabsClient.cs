@@ -1,30 +1,22 @@
 using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Refit;
 
 namespace ClassScribe.Transcription;
 
 /// <summary>
-/// Calls the ElevenLabs speech-to-text endpoint. The request mirrors what ElevenLabs' own SDK sends:
-/// a multipart form with <c>model_id</c>, one <c>keyterms</c> field per glossary term, and the file.
+/// Gets transcripts from ElevenLabs through <see cref="IElevenLabsApi"/>. Around the call itself it
+/// checks the key, retries temporary failures, reports upload progress, tells the app's own time limit
+/// apart from a cancel, and keeps the answer's JSON exactly as it arrived.
 /// </summary>
 public sealed class ElevenLabsClient(
-    HttpClient http,
+    IElevenLabsApi api,
     IOptions<ElevenLabsOptions> options,
     ILogger<ElevenLabsClient> logger) : ITranscriptionClient
 {
-    private const string Endpoint = "v1/speech-to-text";
-    private const string ApiKeyHeader = "xi-api-key";
-
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
-
     /// <inheritdoc />
     public async Task<TranscriptionResult> TranscribeAsync(string audioPath, IReadOnlyList<string> keyterms, CancellationToken cancellationToken)
     {
@@ -60,20 +52,7 @@ public sealed class ElevenLabsClient(
         var megabytes = file.Length / (1024.0 * 1024.0);
         logger.LogInformation("Uploading {File} ({Megabytes:F1} MB) with {Keyterms} keyterms", Path.GetFileName(audioPath), megabytes, keyterms.Count);
 
-        using var content = new MultipartFormDataContent();
-        AddField(content, "model_id", settings.ModelId);
-        AddField(content, "tag_audio_events", settings.TagAudioEvents ? "true" : "false");
-        AddField(content, "timestamps_granularity", "word");
-        if (settings.NoVerbatim) AddField(content, "no_verbatim", "true");
-        if (!string.IsNullOrWhiteSpace(settings.LanguageCode)) AddField(content, "language_code", settings.LanguageCode.Trim());
-        foreach (var term in keyterms) AddField(content, "keyterms", term);
-        content.Add(CreateFilePart(file, audioPath));
-        UnquoteBoundary(content);
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint) { Content = content };
-        request.Headers.Add(ApiKeyHeader, settings.ApiKey.Trim());
-
-        using var response = await SendAsync(request, cancellationToken);
+        using var response = await SendAsync(file, audioPath, keyterms, settings, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
             throw new TranscriptionException(Describe(response.StatusCode, body), response.StatusCode, body);
@@ -87,40 +66,31 @@ public sealed class ElevenLabsClient(
     /// Sends the request. .NET reports its own timeout as a cancellation, so that case is turned into a
     /// <see cref="TranscriptionException"/> here: only the person at the keyboard cancels.
     /// </summary>
-    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendAsync(FileStream file, string audioPath, IReadOnlyList<string> keyterms, ElevenLabsOptions settings, CancellationToken cancellationToken)
     {
         try
         {
-            return await http.SendAsync(request, cancellationToken);
+            return await api.TranscribeAsync(
+                settings.ApiKey.Trim(),
+                settings.ModelId,
+                settings.TagAudioEvents ? "true" : "false",
+                "word",
+                settings.NoVerbatim ? "true" : null,
+                string.IsNullOrWhiteSpace(settings.LanguageCode) ? null : settings.LanguageCode.Trim(),
+                keyterms,
+                CreateFilePart(file, audioPath),
+                cancellationToken);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TranscriptionException(
-                $"ElevenLabs did not answer in time (limit: {http.Timeout.TotalMinutes:0.#} min, set by {ElevenLabsOptions.SectionName}:{nameof(ElevenLabsOptions.TimeoutMinutes)}). The audio is untouched, so the transcript can be requested again.",
+                $"ElevenLabs did not answer in time (limit: {settings.Timeout.TotalMinutes:0.#} min, set by {ElevenLabsOptions.SectionName}:{nameof(ElevenLabsOptions.TimeoutMinutes)}). The audio is untouched, so the transcript can be requested again.",
                 innerException: ex);
         }
     }
 
-    /// <summary>Adds one plain form field with a quoted name, the way browsers and the ElevenLabs SDK write it.</summary>
-    private static void AddField(MultipartFormDataContent content, string name, string value)
-    {
-        var part = new StringContent(value, Encoding.UTF8);
-        part.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = $"\"{name}\"" };
-        content.Add(part);
-    }
-
-    /// <summary>
-    /// .NET writes the multipart boundary in quotes. That is legal, but curl and the ElevenLabs SDK
-    /// send it bare, so this does the same to stay on the path their servers see every day.
-    /// </summary>
-    private static void UnquoteBoundary(MultipartFormDataContent content)
-    {
-        var boundary = content.Headers.ContentType?.Parameters.FirstOrDefault(p => p.Name == "boundary");
-        if (boundary?.Value is { } value) boundary.Value = value.Trim('"');
-    }
-
     /// <summary>Wraps the file as the <c>file</c> form field and logs upload progress every ten percent.</summary>
-    private StreamContent CreateFilePart(FileStream file, string audioPath)
+    private StreamPart CreateFilePart(FileStream file, string audioPath)
     {
         var length = file.Length;
         var nextStep = 10;
@@ -140,19 +110,16 @@ public sealed class ElevenLabsClient(
         var extension = Path.GetExtension(audioPath).ToLowerInvariant();
         var fileName = extension.Length is > 1 and <= 6 && extension.Skip(1).All(char.IsAsciiLetterOrDigit) ? $"audio{extension}" : "audio.bin";
 
-        var part = new StreamContent(stream);
-        part.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        part.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = "\"file\"", FileName = $"\"{fileName}\"" };
-        return part;
+        return new StreamPart(stream, fileName, "application/octet-stream");
     }
 
     /// <summary>Reads the fields this app uses out of the service's JSON answer.</summary>
     private static TranscriptionResult Parse(string json)
     {
-        Response? response;
+        SpeechToTextResponse? response;
         try
         {
-            response = JsonSerializer.Deserialize<Response>(json, JsonOptions);
+            response = JsonSerializer.Deserialize(json, ElevenLabsJson.Default.SpeechToTextResponse);
         }
         catch (JsonException ex)
         {
@@ -196,16 +163,4 @@ public sealed class ElevenLabsClient(
         var detail = body.Length > 500 ? body[..500] + "..." : body;
         return $"{hint} (HTTP {(int)status}) {detail}".TrimEnd();
     }
-
-    /// <summary>The part of the service's answer this app reads.</summary>
-    private sealed record Response(
-        string? Text,
-        string? LanguageCode,
-        double? LanguageProbability,
-        double? AudioDurationSecs,
-        string? TranscriptionId,
-        List<ResponseWord>? Words);
-
-    /// <summary>One word, spacing or sound item in the answer.</summary>
-    private sealed record ResponseWord(string? Text, double? Start, double? End, string? Type, string? SpeakerId);
 }

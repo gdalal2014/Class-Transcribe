@@ -355,8 +355,8 @@ public static class Mocks
     }
 }
 
-/// <summary>What the stub handler saw of one request.</summary>
-public sealed record CapturedRequest(HttpMethod Method, Uri? Uri, string? ApiKey, string? ContentType, string Body);
+/// <summary>What the stub handler saw of one request. <see cref="ContentLength"/> is null when the length was not known before sending.</summary>
+public sealed record CapturedRequest(HttpMethod Method, Uri? Uri, string? ApiKey, string? ContentType, long? ContentLength, string Body);
 
 /// <summary>An HTTP handler that answers from a queue and records each request, body included.</summary>
 public sealed class StubHttpHandler : HttpMessageHandler
@@ -379,9 +379,11 @@ public sealed class StubHttpHandler : HttpMessageHandler
     /// <inheritdoc />
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Taken before the body is read, so it shows whether the length was known up front.
+        var contentLength = request.Content?.Headers.ContentLength;
         var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
         var apiKey = request.Headers.TryGetValues("xi-api-key", out var values) ? values.Single() : null;
-        Requests.Add(new CapturedRequest(request.Method, request.RequestUri, apiKey, request.Content?.Headers.ContentType?.ToString(), body));
+        Requests.Add(new CapturedRequest(request.Method, request.RequestUri, apiKey, request.Content?.Headers.ContentType?.ToString(), contentLength, body));
         return _answers.Dequeue()();
     }
 }

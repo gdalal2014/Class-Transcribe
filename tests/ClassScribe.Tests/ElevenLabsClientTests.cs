@@ -4,10 +4,11 @@ using ClassScribe.Settings;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Refit;
 
 namespace ClassScribe.Tests;
 
-/// <summary>The ElevenLabs request and response handling, against a stub HTTP handler.</summary>
+/// <summary>The ElevenLabs request and response handling, through the Refit interface and a stub HTTP handler.</summary>
 [TestFixture]
 public class ElevenLabsClientTests
 {
@@ -44,21 +45,23 @@ public class ElevenLabsClientTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Creates the client under test on top of the stub transport.</summary>
+    /// <summary>Creates the client under test: the Refit interface on top of the stub transport.</summary>
     private ElevenLabsClient CreateClient(ElevenLabsOptions? options = null)
     {
         var http = new HttpClient(_handler) { BaseAddress = new Uri("https://api.elevenlabs.io/") };
-        return new ElevenLabsClient(http, Options.Create(options ?? new ElevenLabsOptions { ApiKey = "test-key", RetryDelaySeconds = 0 }), NullLogger<ElevenLabsClient>.Instance);
+        var api = RestService.ForGenerated<IElevenLabsApi>(http, ElevenLabsJson.Default, ElevenLabsApiSettings.Create());
+        return new ElevenLabsClient(api, Options.Create(options ?? new ElevenLabsOptions { ApiKey = "test-key", RetryDelaySeconds = 0 }), NullLogger<ElevenLabsClient>.Instance);
     }
 
-    /// <summary>Returns the values of every form field with the given name, in the order they were sent.</summary>
+    /// <summary>Returns the values of every form field with the given name, in the order they were sent. The name may be quoted or bare.</summary>
     private static List<string> FieldValues(string body, string name) =>
-        Regex.Matches(body, $"name=\"{Regex.Escape(name)}\"(?:\r\n[^\r\n]+)*\r\n\r\n(?<value>.*?)\r\n--", RegexOptions.Singleline)
+        Regex.Matches(body, $"name=(?:\"{Regex.Escape(name)}\"|{Regex.Escape(name)})(?=[;\r])[^\r\n]*(?:\r\n[^\r\n]+)*\r\n\r\n(?<value>.*?)\r\n--", RegexOptions.Singleline)
             .Select(m => m.Groups["value"].Value)
             .ToList();
 
+    /// <summary>Every field ElevenLabs needs is sent once, each glossary term as its own field, and the audio streams with a known length.</summary>
     [Test]
-    public async Task The_request_has_the_shape_the_ElevenLabs_SDK_sends()
+    public async Task The_request_carries_every_field_ElevenLabs_needs()
     {
         _handler.Enqueue(HttpStatusCode.OK, Answer);
 
@@ -68,16 +71,18 @@ public class ElevenLabsClientTests
         Assert.That(request.Method, Is.EqualTo(HttpMethod.Post));
         Assert.That(request.Uri!.AbsoluteUri, Is.EqualTo("https://api.elevenlabs.io/v1/speech-to-text"));
         Assert.That(request.ApiKey, Is.EqualTo("test-key"));
-        Assert.That(request.ContentType, Does.Match("^multipart/form-data; boundary=[0-9a-f-]+$"), "bare boundary, as curl and the SDK send it");
+        Assert.That(request.ContentType, Does.StartWith("multipart/form-data; boundary="));
+        Assert.That(request.ContentLength, Is.GreaterThan(2048), "the length is known before sending, so the file is not sent in chunks");
         Assert.That(FieldValues(request.Body, "model_id"), Is.EqualTo(new[] { "scribe_v2" }));
         Assert.That(FieldValues(request.Body, "tag_audio_events"), Is.EqualTo(new[] { "false" }));
         Assert.That(FieldValues(request.Body, "timestamps_granularity"), Is.EqualTo(new[] { "word" }));
         Assert.That(FieldValues(request.Body, "keyterms"), Is.EqualTo(new[] { "kalām", "wājib al-wujūd" }));
         Assert.That(FieldValues(request.Body, "language_code"), Is.Empty);
         Assert.That(FieldValues(request.Body, "no_verbatim"), Is.Empty);
-        Assert.That(request.Body, Does.Contain("name=\"file\"; filename=\"audio.wav\""));
+        Assert.That(request.Body, Does.Match("name=\"?file\"?; filename=\"?audio\\.wav\"?"));
     }
 
+    /// <summary>Settings that are off by default are sent once they are switched on.</summary>
     [Test]
     public async Task Optional_settings_are_sent_when_configured()
     {
@@ -93,6 +98,7 @@ public class ElevenLabsClientTests
         Assert.That(FieldValues(body, "keyterms"), Is.Empty);
     }
 
+    /// <summary>The fields the app uses are read, and the JSON is kept exactly as it arrived.</summary>
     [Test]
     public async Task The_answer_is_parsed_and_kept_verbatim()
     {
@@ -109,6 +115,7 @@ public class ElevenLabsClientTests
         Assert.That(result.RawJson, Is.EqualTo(Answer));
     }
 
+    /// <summary>A server error is temporary, so the upload is tried again.</summary>
     [Test]
     public async Task A_server_error_is_retried()
     {
@@ -121,6 +128,7 @@ public class ElevenLabsClientTests
         Assert.That(_handler.Requests, Has.Count.EqualTo(2));
     }
 
+    /// <summary>A broken connection is temporary, so the upload is tried again.</summary>
     [Test]
     public async Task A_network_failure_is_retried()
     {
@@ -133,6 +141,7 @@ public class ElevenLabsClientTests
         Assert.That(_handler.Requests, Has.Count.EqualTo(2));
     }
 
+    /// <summary>Temporary failures are retried only as often as configured, then reported with their status.</summary>
     [Test]
     public void It_gives_up_after_the_configured_number_of_attempts()
     {
@@ -147,6 +156,7 @@ public class ElevenLabsClientTests
         Assert.That(_handler.Requests, Has.Count.EqualTo(3));
     }
 
+    /// <summary>A rejected key will not work on a second try either, and the message says what to check.</summary>
     [Test]
     public void A_rejected_key_is_not_retried_and_says_what_to_check()
     {
@@ -161,6 +171,7 @@ public class ElevenLabsClientTests
         Assert.That(_handler.Requests, Has.Count.EqualTo(1));
     }
 
+    /// <summary>The app's own time limit is a failure with a clear message, not a cancellation, and is not retried.</summary>
     [Test]
     public void Running_out_of_time_is_reported_as_a_failure_not_as_a_cancellation()
     {
@@ -175,6 +186,7 @@ public class ElevenLabsClientTests
         Assert.That(_handler.Requests, Has.Count.EqualTo(1), "not sent again: the same wait would follow");
     }
 
+    /// <summary>Ctrl+C during the upload surfaces as a cancellation, so the app can report it as one.</summary>
     [Test]
     public async Task A_cancellation_by_the_user_stays_a_cancellation()
     {
@@ -200,6 +212,7 @@ public class ElevenLabsClientTests
         Assert.That(_handler.Requests, Has.Count.EqualTo(1));
     }
 
+    /// <summary>Without a key the request could only fail, so it is not sent.</summary>
     [Test]
     public void Without_a_key_nothing_is_sent()
     {
@@ -209,6 +222,7 @@ public class ElevenLabsClientTests
         Assert.That(_handler.Requests, Is.Empty);
     }
 
+    /// <summary>A successful answer without a transcript is an error that keeps the answer for diagnosis.</summary>
     [Test]
     public void An_answer_without_text_is_an_error()
     {

@@ -33,6 +33,9 @@ public sealed class ElevenLabsOptions
     /// <summary>Longest time one request may take, covering the upload and the wait for the transcript.</summary>
     public int TimeoutMinutes { get; init; } = 60;
 
+    /// <summary><see cref="TimeoutMinutes"/> as a time span, at least one minute.</summary>
+    public TimeSpan Timeout => TimeSpan.FromMinutes(Math.Max(1, TimeoutMinutes));
+
     /// <summary>How many times a request is tried when the failure looks temporary.</summary>
     public int MaxAttempts { get; init; } = 3;
 

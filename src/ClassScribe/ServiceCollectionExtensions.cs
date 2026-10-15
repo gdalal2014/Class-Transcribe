@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Refit;
 
 namespace ClassScribe;
 
@@ -32,13 +33,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAudioPreparer, AudioPreparer>();
 
         services
-            .AddHttpClient<ITranscriptionClient, ElevenLabsClient>((provider, http) =>
+            .AddRefitGeneratedClient<IElevenLabsApi>(ElevenLabsJson.Default, _ => ElevenLabsApiSettings.Create())
+            .ConfigureHttpClient((provider, http) =>
             {
                 var settings = provider.GetRequiredService<IOptions<ElevenLabsOptions>>().Value;
                 http.BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/");
-                http.Timeout = TimeSpan.FromMinutes(Math.Max(1, settings.TimeoutMinutes));
+                http.Timeout = settings.Timeout;
             })
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { ConnectCallback = ConnectWithKeepAliveAsync });
+        services.AddTransient<ITranscriptionClient, ElevenLabsClient>();
         services.AddSingleton<KeytermLoader>();
         services.AddSingleton<TranscriptFormatter>();
         services.AddTransient<TranscriptionWorkflow>();
