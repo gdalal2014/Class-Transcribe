@@ -1,6 +1,5 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -11,12 +10,11 @@ namespace ClassScribe.Commands;
 public sealed class TranscribeCommand(
     TranscriptionWorkflow workflow,
     IUserSignals signals,
+    IDesktop desktop,
+    IOptions<RecordingOptions> recording,
     IOptions<ElevenLabsOptions> elevenLabs,
     ILogger<TranscribeCommand> logger)
 {
-    /// <summary>The recorder's segment files, and nothing else that happens to end in .wav.</summary>
-    private static readonly Regex SegmentName = new(@"^recording-(?<number>[0-9]{1,9})\.wav$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-
     /// <summary>Transcribes the file or folder at <paramref name="path"/>. Returns the process exit code.</summary>
     public async Task<int> RunAsync(string path)
     {
@@ -33,7 +31,7 @@ public sealed class TranscribeCommand(
         TranscriptFiles files;
         if (Directory.Exists(fullPath))
         {
-            var segments = FindSegments(fullPath);
+            var segments = ClassFolders.FindSegments(fullPath);
             if (segments.Count == 0)
             {
                 logger.LogError("There are no recording-001.wav style files in {Folder}", fullPath);
@@ -53,15 +51,7 @@ public sealed class TranscribeCommand(
         }
 
         logger.LogInformation("Transcript saved to {Path}", files.TextPath);
+        desktop.ShowTranscript(recording.Value, files);
         return 0;
     }
-
-    /// <summary>Lists the segment files of a class folder in the order they were recorded.</summary>
-    private static List<string> FindSegments(string folder) =>
-        Directory.EnumerateFiles(folder, "recording-*.wav")
-            .Select(file => (FullPath: file, Name: SegmentName.Match(Path.GetFileName(file))))
-            .Where(file => file.Name.Success)
-            .OrderBy(file => int.Parse(file.Name.Groups["number"].Value, CultureInfo.InvariantCulture))
-            .Select(file => file.FullPath)
-            .ToList();
 }

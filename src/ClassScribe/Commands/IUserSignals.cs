@@ -11,14 +11,12 @@ public interface IUserSignals
 
     /// <summary>Asks for the recording to stop.</summary>
     void RequestStop();
-
-    /// <summary>Starts watching the keyboard for the stop key.</summary>
-    void ListenForStopKey();
 }
 
 /// <summary>
-/// Reads the signals from the console. Q or the first Ctrl+C stops the recording; a later Ctrl+C
-/// cancels whatever is still running, such as the upload.
+/// Turns Ctrl+C into a run's signals: the first Ctrl+C stops the recording, a later one cancels
+/// whatever is still running, such as the upload. Each run has its own instance. The recording keys
+/// (Q, P and M) are read by <see cref="RecordCommand"/>.
 /// </summary>
 public sealed class ConsoleUserSignals : IUserSignals, IDisposable
 {
@@ -36,23 +34,6 @@ public sealed class ConsoleUserSignals : IUserSignals, IDisposable
 
     /// <inheritdoc />
     public void RequestStop() => _stop.TrySetResult();
-
-    /// <inheritdoc />
-    public void ListenForStopKey()
-    {
-        if (Console.IsInputRedirected) return;
-
-        _ = Task.Run(async () =>
-        {
-            while (!_stop.Task.IsCompleted)
-            {
-                if (Console.KeyAvailable && Console.ReadKey(intercept: true).Key == ConsoleKey.Q)
-                    RequestStop();
-                else
-                    await Task.Delay(150);
-            }
-        });
-    }
 
     /// <summary>Unhooks Ctrl+C.</summary>
     public void Dispose()

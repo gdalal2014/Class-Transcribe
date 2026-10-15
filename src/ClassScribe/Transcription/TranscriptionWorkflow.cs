@@ -1,6 +1,7 @@
 using System.Text;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -15,24 +16,32 @@ public sealed class TranscriptionWorkflow(
     ITranscriptionClient client,
     KeytermLoader keytermLoader,
     TranscriptFormatter formatter,
+    ClassFolders folders,
+    ClassMarks marks,
     IOptions<ElevenLabsOptions> elevenLabs,
     IOptions<RecordingOptions> recording,
     ILogger<TranscriptionWorkflow> logger)
 {
+    private const string UploadFileName = "upload.wav";
+    private const string TranscriptBaseName = "transcript";
+
     private static readonly UTF8Encoding Utf8WithBom = new(encoderShouldEmitUTF8Identifier: true);
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    /// <summary>Transcribes the segments of one recording and saves transcript.txt and transcript.json in its folder.</summary>
+    /// <summary>
+    /// Transcribes the segments of one recording and saves transcript.txt and transcript.json in its
+    /// folder. The marks set while recording are placed in the transcript.
+    /// </summary>
     public async Task<TranscriptFiles> TranscribeSegmentsAsync(IReadOnlyList<string> segmentPaths, string folder, CancellationToken cancellationToken)
     {
         try
         {
-            var uploadPath = Path.Combine(folder, "upload.wav");
+            var uploadPath = Path.Combine(folder, UploadFileName);
             File.Delete(uploadPath);
             logger.LogInformation("Preparing the recording for upload ({Segments} segment(s)); this takes a moment for a long class", segmentPaths.Count);
             preparer.Prepare(segmentPaths, uploadPath);
 
-            var files = await UploadAndSaveAsync(uploadPath, folder, "transcript", cancellationToken);
+            var files = await UploadAndSaveAsync(uploadPath, folder, marks.Read(folder), cancellationToken);
             if (!recording.Value.KeepUploadFile) File.Delete(uploadPath);
             return files;
         }
@@ -44,21 +53,22 @@ public sealed class TranscriptionWorkflow(
     }
 
     /// <summary>
-    /// Transcribes one audio or video file and saves the transcript next to it. A WAV file is first
-    /// reduced to 16 kHz mono; anything else is uploaded as it is.
+    /// Transcribes one audio or video file into a new folder of its own in the recordings folder; the
+    /// file itself stays where it is. A WAV file is first reduced to 16 kHz mono; anything else is
+    /// uploaded as it is.
     /// </summary>
     public async Task<TranscriptFiles> TranscribeFileAsync(string path, CancellationToken cancellationToken)
     {
         try
         {
-            var folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
-            var name = Path.GetFileNameWithoutExtension(path);
-            var uploadPath = Path.Combine(folder, $"{name}.upload.wav");
+            var folder = folders.CreateForFile(path);
+            logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), folder);
 
+            var uploadPath = Path.Combine(folder, UploadFileName);
             if (!TryPrepare(path, uploadPath))
-                return await UploadAndSaveAsync(path, folder, $"{name}.transcript", cancellationToken);
+                return await UploadAndSaveAsync(path, folder, [], cancellationToken);
 
-            var files = await UploadAndSaveAsync(uploadPath, folder, $"{name}.transcript", cancellationToken);
+            var files = await UploadAndSaveAsync(uploadPath, folder, [], cancellationToken);
             if (!recording.Value.KeepUploadFile) File.Delete(uploadPath);
             return files;
         }
@@ -88,15 +98,15 @@ public sealed class TranscriptionWorkflow(
         }
     }
 
-    /// <summary>Uploads the audio and writes the raw JSON and the formatted text.</summary>
-    private async Task<TranscriptFiles> UploadAndSaveAsync(string audioPath, string folder, string baseName, CancellationToken cancellationToken)
+    /// <summary>Uploads the audio and writes the raw JSON and the formatted text, with the marks in place.</summary>
+    private async Task<TranscriptFiles> UploadAndSaveAsync(string audioPath, string folder, IReadOnlyList<ClassMark> classMarks, CancellationToken cancellationToken)
     {
         var keyterms = keytermLoader.Load(ResolveKeytermsPath());
         var result = await client.TranscribeAsync(audioPath, keyterms, cancellationToken);
 
-        var files = new TranscriptFiles(Path.Combine(folder, $"{baseName}.txt"), Path.Combine(folder, $"{baseName}.json"));
+        var files = new TranscriptFiles(Path.Combine(folder, $"{TranscriptBaseName}.txt"), Path.Combine(folder, $"{TranscriptBaseName}.json"));
         await File.WriteAllTextAsync(files.JsonPath, result.RawJson, Utf8NoBom, cancellationToken);
-        await File.WriteAllTextAsync(files.TextPath, formatter.Format(result), Utf8WithBom, cancellationToken);
+        await File.WriteAllTextAsync(files.TextPath, formatter.Format(result, classMarks), Utf8WithBom, cancellationToken);
         return files;
     }
 

@@ -393,4 +393,60 @@ public class RecordingSessionTests
 
         Assert.That(second.SegmentPaths, Is.EqualTo(first.SegmentPaths));
     }
+
+    /// <summary>Audio that arrives while the recording is paused is not kept; the file carries on after the pause.</summary>
+    [Test]
+    public void Audio_that_arrives_while_paused_is_not_recorded()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateSession();
+
+        session.Start(_folder.Path);
+        capture.Deliver(TestAudio.Shorts(1, 2));
+        session.Pause();
+        var paused = session.GetStatus();
+        capture.Deliver(TestAudio.Shorts(3, 4));
+        session.Resume();
+        capture.Deliver(TestAudio.Shorts(5, 6));
+        var result = session.Stop();
+
+        Assert.That(paused.Paused, Is.True);
+        Assert.That(session.GetStatus().Paused, Is.False);
+        Assert.That(result.SegmentPaths, Has.Count.EqualTo(1));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { 1, 2, 5, 6 }));
+    }
+
+    /// <summary>Pausing brings the file on disk up to date, so a crash during a long break loses nothing before it.</summary>
+    [Test]
+    public void Pausing_brings_the_file_on_disk_up_to_date()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateSession();
+
+        session.Start(_folder.Path);
+        capture.Deliver(TestAudio.Shorts(1, 2));   // the clock has not moved, so no save has been due yet
+        var path = Directory.GetFiles(_folder.Path).Single();
+        var before = TestAudio.ReadWav(path).Samples;
+        session.Pause();
+        var after = TestAudio.ReadWav(path).Samples;
+
+        Assert.That(before, Is.Empty);
+        Assert.That(after, Is.EqualTo(new short[] { 1, 2 }));
+    }
+
+    /// <summary>After a break the silence clock starts afresh, so resuming does not set off a warning about the break itself.</summary>
+    [Test]
+    public void Resuming_restarts_the_silence_clock()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateSession();
+
+        session.Start(_folder.Path);
+        capture.Deliver(TestAudio.Shorts(0, 5000));
+        session.Pause();
+        _time.Advance(TimeSpan.FromMinutes(15));
+        session.Resume();
+
+        Assert.That(session.GetStatus().SinceLastSound, Is.EqualTo(TimeSpan.Zero));
+    }
 }

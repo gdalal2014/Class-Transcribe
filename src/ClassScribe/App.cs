@@ -1,19 +1,22 @@
 using ClassScribe.Commands;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe;
 
-/// <summary>Reads the command line and runs the matching command.</summary>
-public sealed class App(IServiceProvider services, ILogger<App> logger)
+/// <summary>Reads the command line and runs the matching command, or the menu when there is none.</summary>
+public sealed class App(ICommandRunner commands, MenuCommand menu, IConsoleUi ui, ILogger<App> logger)
 {
-    /// <summary>Help text shown for an unknown command.</summary>
+    /// <summary>Help text shown on request and for an unknown command.</summary>
     public const string Usage = """
         ClassScribe records the sound your computer plays and gets a transcript from ElevenLabs.
 
-          ClassScribe                      Record now. Press Q to stop and transcribe.
+          ClassScribe                      Show the menu.
+          ClassScribe record               Record now. Q stops and transcribes.
+          ClassScribe record-only          Record now. Q stops; transcribe later from the menu.
           ClassScribe transcribe <path>    Transcribe a class folder, or any audio or video file.
+          ClassScribe <path>               The same. Dropping a file on ClassScribe.exe does this.
 
+        While recording, P pauses or resumes and M marks a moment.
         The API key is read from the ELEVENLABS_API_KEY environment variable.
         """;
 
@@ -24,15 +27,28 @@ public sealed class App(IServiceProvider services, ILogger<App> logger)
         {
             switch (args)
             {
-                case [] or ["record"]:
-                    return await services.GetRequiredService<RecordCommand>().RunAsync();
+                case [] when ui.IsInteractive:
+                    return await menu.RunAsync();
+
+                case ["record"]:
+                    return await commands.RecordAsync(transcribe: true);
+
+                case ["record-only"]:
+                    return await commands.RecordAsync(transcribe: false);
 
                 case ["transcribe", var path]:
-                    return await services.GetRequiredService<TranscribeCommand>().RunAsync(path);
+                    return await commands.TranscribeAsync(path);
+
+                case ["help" or "--help" or "-h" or "/?"]:
+                    ui.WriteLine(Usage);
+                    return 0;
+
+                case [var path] when File.Exists(path) || Directory.Exists(path):
+                    return await commands.TranscribeAsync(path);
 
                 default:
-                    Console.WriteLine(Usage);
-                    return args is ["help" or "--help" or "-h" or "/?"] ? 0 : 2;
+                    ui.WriteLine(Usage);
+                    return 2;
             }
         }
         catch (OperationCanceledException)

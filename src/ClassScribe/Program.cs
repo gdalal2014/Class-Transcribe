@@ -1,4 +1,5 @@
 using ClassScribe;
+using ClassScribe.Commands;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,8 +33,9 @@ using (var host = builder.Build())
     exitCode = await host.Services.GetRequiredService<App>().RunAsync(args);
 }
 
-// When started by double-click, keep the window open so the result can be read.
-if (args.Length == 0 && !Console.IsInputRedirected)
+// A command run in a window of its own (a file dropped on the exe, or a shortcut with arguments) would
+// close the window the moment it ends, so it waits for Enter first. The menu is left with Q and needs no pause.
+if (args.Length > 0 && !Console.IsInputRedirected && ConsoleUi.OwnsConsoleWindow())
 {
     Console.WriteLine();
     Console.WriteLine("Press Enter to close.");

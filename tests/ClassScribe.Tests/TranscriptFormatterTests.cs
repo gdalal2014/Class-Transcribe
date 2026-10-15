@@ -1,4 +1,5 @@
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Options;
 
@@ -65,5 +66,63 @@ public class TranscriptFormatterTests
         var text = Formatter().Format(Transcript("  Just the text.  "));
 
         Assert.That(text, Is.EqualTo("Just the text." + Environment.NewLine));
+    }
+
+    /// <summary>A mark becomes a line of its own at its position, splitting the paragraph there.</summary>
+    [Test]
+    public void A_mark_splits_the_paragraph_at_its_position()
+    {
+        var transcript = Transcript("Hello world. Next part.",
+            Word("Hello", 0.0, 0.4), Space(0.4, 0.5), Word("world.", 0.5, 1.0), Space(1.0, 1.2),
+            Word("Next", 1.2, 1.5), Space(1.5, 1.6), Word("part.", 1.6, 2.0));
+
+        var text = Formatter().Format(transcript, [new ClassMark(1, TimeSpan.FromSeconds(1.1), null)]);
+
+        Assert.That(text, Is.EqualTo($"[00:00:00] Hello world.{Blank}[00:00:01] *** Mark 1 ***{Blank}[00:00:01] Next part.{Environment.NewLine}"));
+    }
+
+    /// <summary>A label typed after a mark's time in marks.txt is shown with it; without timestamps the mark stands alone.</summary>
+    [Test]
+    public void A_mark_shows_its_label()
+    {
+        var transcript = Transcript("Hello world.", Word("Hello", 0.0, 0.4), Space(0.4, 0.5), Word("world.", 0.5, 1.0));
+
+        var text = Formatter(new TranscriptOptions { IncludeTimestamps = false })
+            .Format(transcript, [new ClassMark(3, TimeSpan.FromSeconds(0.45), "Key definition")]);
+
+        Assert.That(text, Is.EqualTo($"Hello{Blank}*** Mark 3: Key definition ***{Blank}world.{Environment.NewLine}"));
+    }
+
+    /// <summary>Marks are placed by time, whatever their order in the file.</summary>
+    [Test]
+    public void Marks_are_placed_in_time_order()
+    {
+        var transcript = Transcript("One two three.",
+            Word("One", 0.0, 0.3), Space(0.3, 0.4), Word("two", 0.4, 0.7), Space(0.7, 0.8), Word("three.", 0.8, 1.2));
+
+        var text = Formatter(new TranscriptOptions { IncludeTimestamps = false })
+            .Format(transcript, [new ClassMark(2, TimeSpan.FromSeconds(0.75), null), new ClassMark(1, TimeSpan.FromSeconds(0.35), null)]);
+
+        Assert.That(text, Is.EqualTo($"One{Blank}*** Mark 1 ***{Blank}two{Blank}*** Mark 2 ***{Blank}three.{Environment.NewLine}"));
+    }
+
+    /// <summary>A mark set after the last word, during silence at the end, closes the transcript.</summary>
+    [Test]
+    public void Marks_after_the_last_word_close_the_transcript()
+    {
+        var transcript = Transcript("Hello world.", Word("Hello", 0.0, 0.4), Space(0.4, 0.5), Word("world.", 0.5, 1.0));
+
+        var text = Formatter().Format(transcript, [new ClassMark(1, TimeSpan.FromSeconds(30), null)]);
+
+        Assert.That(text, Is.EqualTo($"[00:00:00] Hello world.{Blank}[00:00:30] *** Mark 1 ***{Environment.NewLine}"));
+    }
+
+    /// <summary>Without word timings a mark cannot be placed, so the marks follow the text.</summary>
+    [Test]
+    public void Without_word_timings_marks_follow_the_text()
+    {
+        var text = Formatter().Format(Transcript("Just the text."), [new ClassMark(1, TimeSpan.FromSeconds(75), null)]);
+
+        Assert.That(text, Is.EqualTo($"Just the text.{Blank}[00:01:15] *** Mark 1 ***{Environment.NewLine}"));
     }
 }

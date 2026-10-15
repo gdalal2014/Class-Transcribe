@@ -3,6 +3,7 @@ using ClassScribe.Audio;
 using ClassScribe.Audio.Windows;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +24,13 @@ public static class ServiceCollectionExtensions
         services.Configure<TranscriptOptions>(configuration.GetSection(TranscriptOptions.SectionName));
 
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton<IUserSignals, ConsoleUserSignals>();
+        services.AddSingleton<IConsoleUi, ConsoleUi>();
+        services.AddSingleton<IDesktop, WindowsDesktop>();
+        services.AddSingleton<ClassFolders>();
+        services.AddSingleton<ClassMarks>();
+
+        // One per run: each recording or transcription gets fresh Ctrl+C signals (see ICommandRunner).
+        services.AddScoped<IUserSignals, ConsoleUserSignals>();
 
         // Only resolved by the record command, so transcribing an existing file works on any system.
         services.AddSingleton<ILoopbackCaptureProvider>(provider => OperatingSystem.IsWindows()
@@ -48,6 +55,8 @@ public static class ServiceCollectionExtensions
 
         services.AddTransient<RecordCommand>();
         services.AddTransient<TranscribeCommand>();
+        services.AddSingleton<ICommandRunner, CommandRunner>();
+        services.AddTransient<MenuCommand>();
         services.AddTransient<App>();
         return services;
     }

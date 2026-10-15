@@ -8,7 +8,7 @@ namespace ClassScribe.Audio;
 public sealed record RecordingResult(string Folder, IReadOnlyList<string> SegmentPaths, TimeSpan Duration);
 
 /// <summary>A snapshot of a running recording.</summary>
-public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound, string DeviceName, int SegmentCount);
+public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound, string DeviceName, int SegmentCount, bool Paused);
 
 /// <summary>
 /// Records the default output device into WAV segment files. The header of the open segment is
@@ -62,6 +62,7 @@ public sealed class RecordingSession(
     private int _writeFailures;
     private long? _lastEndedRestart;
     private bool _started;
+    private bool _paused;
     private volatile bool _stopping;
     private int _restartQueued;
     private int _failedRestarts;
@@ -154,7 +155,46 @@ public sealed class RecordingSession(
         lock (_gate)
         {
             var captured = _closedDuration + (_writer?.Duration ?? TimeSpan.Zero);
-            return new RecordingStatus(captured, time.GetUtcNow() - _lastSound, _deviceName, _segments.Count);
+            return new RecordingStatus(captured, time.GetUtcNow() - _lastSound, _deviceName, _segments.Count, _paused);
+        }
+    }
+
+    /// <summary>
+    /// Stops keeping captured audio until <see cref="Resume"/>. The capture itself keeps running, so a
+    /// switch of output device during the break is still followed.
+    /// </summary>
+    public void Pause()
+    {
+        lock (_gate)
+        {
+            if (_paused) return;
+            _paused = true;
+
+            // A break can be long, so the file on disk is brought up to date now rather than at the next save.
+            try
+            {
+                _writer?.Flush();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Deliberately not rethrown: what was written stays readable to its last save, and the
+                // next audio after the break goes to a new file, as after any other write failure.
+                logger.LogError(ex, "Could not bring the recording on disk up to date for the pause");
+                CloseSegmentLocked();
+            }
+        }
+    }
+
+    /// <summary>Keeps captured audio again after <see cref="Pause"/>.</summary>
+    public void Resume()
+    {
+        lock (_gate)
+        {
+            if (!_paused) return;
+            _paused = false;
+
+            // The silence warning counts from now: the quiet of the break itself is no cause for one.
+            _lastSound = time.GetUtcNow();
         }
     }
 
@@ -215,7 +255,7 @@ public sealed class RecordingSession(
 
         lock (_gate)
         {
-            if (_capture is null || !ReferenceEquals(sender, _capture)) return;
+            if (_capture is null || !ReferenceEquals(sender, _capture) || _paused) return;
 
             var format = _capture.Format;
             var needed = e.ByteCount / format.BytesPerFrame * 2;

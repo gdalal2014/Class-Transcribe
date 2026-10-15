@@ -131,6 +131,9 @@ public sealed class RecordingLogger<T> : ILogger<T>
     /// <summary>The messages logged as warnings or errors, in order.</summary>
     public IReadOnlyList<string> Problems => [.. _entries.Where(entry => entry.Level >= LogLevel.Warning).Select(entry => entry.Message)];
 
+    /// <summary>Every message logged, whatever its level, in order.</summary>
+    public IReadOnlyList<string> Messages => [.. _entries.Select(entry => entry.Message)];
+
     /// <inheritdoc />
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -303,9 +306,86 @@ public sealed class FakeUserSignals : IUserSignals
 
     /// <inheritdoc />
     public void RequestStop() => _stop.TrySetResult();
+}
+
+/// <summary>
+/// A console the test types into. Keys and lines are queued in advance, and everything the app shows is
+/// kept. A key read with nothing queued waits until the test types more, or until it is cancelled.
+/// </summary>
+public sealed class FakeConsoleUi : IConsoleUi
+{
+    private readonly Lock _gate = new();
+    private readonly Queue<ConsoleKeyInfo> _keys = new();
+    private readonly Queue<string?> _lines = new();
+    private readonly ConcurrentQueue<string> _output = new();
+    private TaskCompletionSource _typed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <inheritdoc />
-    public void ListenForStopKey() { }
+    public bool IsInteractive { get; init; } = true;
+
+    /// <summary>Everything shown so far, as one text.</summary>
+    public string Screen => string.Join(Environment.NewLine, _output);
+
+    /// <summary>Queues key presses: letters and digits as they are, '\r' for Enter, '\u001b' for Esc and '\u0003' for Ctrl+C.</summary>
+    public void Type(params char[] keys)
+    {
+        lock (_gate)
+        {
+            foreach (var key in keys) _keys.Enqueue(ToKeyInfo(key));
+            _typed.TrySetResult();
+            _typed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+
+    /// <summary>Queues a line, as typed or dragged in and followed by Enter.</summary>
+    public void TypeLine(string? line)
+    {
+        lock (_gate) _lines.Enqueue(line);
+    }
+
+    /// <inheritdoc />
+    public async Task<ConsoleKeyInfo?> ReadKeyAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            Task typed;
+            lock (_gate)
+            {
+                if (_keys.TryDequeue(out var key)) return key;
+                typed = _typed.Task;
+            }
+
+            try
+            {
+                await typed.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public string? ReadLine()
+    {
+        lock (_gate) return _lines.TryDequeue(out var line) ? line : null;
+    }
+
+    /// <inheritdoc />
+    public void WriteLine(string text = "") => _output.Enqueue(text);
+
+    /// <summary>Turns a character into the key press that types it.</summary>
+    private static ConsoleKeyInfo ToKeyInfo(char key) => key switch
+    {
+        '\r' => new(key, ConsoleKey.Enter, false, false, false),
+        '\u001b' => new(key, ConsoleKey.Escape, false, false, false),
+        '\u0003' => new(key, ConsoleKey.C, false, false, true),
+        >= '0' and <= '9' => new(key, ConsoleKey.D0 + (key - '0'), false, false, false),
+        >= 'a' and <= 'z' => new(key, ConsoleKey.A + (key - 'a'), false, false, false),
+        >= 'A' and <= 'Z' => new(key, ConsoleKey.A + (key - 'A'), true, false, false),
+        _ => throw new ArgumentOutOfRangeException(nameof(key), key, "No key press defined for this character.")
+    };
 }
 
 /// <summary>

@@ -47,13 +47,17 @@ history are in `docs/HANDOFF.md` (kept out of git); read it before larger change
 ```powershell
 dotnet build
 dotnet test
-dotnet run --project src/ClassScribe                                   # record; Q or Ctrl+C stops and transcribes
+dotnet run --project src/ClassScribe                                   # the menu
+dotnet run --project src/ClassScribe -- record                         # record; Q stops and transcribes
+dotnet run --project src/ClassScribe -- record-only                    # record only
 dotnet run --project src/ClassScribe -- transcribe "C:\path\to\folder-or-file"
 dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
+- While recording: Q or Ctrl+C stops, P pauses or resumes, M writes a mark to `marks.txt`.
 - Exit codes: 0 success; 1 failure; 2 unknown command; 130 cancelled.
-- Recordings go to `%USERPROFILE%\ClassScribe\<yyyy-MM-dd_HH-mm-ss>\`.
+- Recordings go to `Recording:OutputFolder` (`%USERPROFILE%\ClassScribe`), one folder per class
+  (`<yyyy-MM-dd_HH-mm-ss>`) and one per transcribed file.
 - Settings are in `src/ClassScribe/appsettings.json`, read from the exe's folder; environment
   overrides such as `ElevenLabs__BaseUrl` work.
 
@@ -61,7 +65,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -p:P
 
 - `src/ClassScribe/Audio`: capture (`Windows/` holds the WASAPI code), `RecordingSession`, WAV
   writing, upload preparation.
-- `src/ClassScribe/Transcription`: ElevenLabs client, glossary loader, transcript formatter, workflow.
-- `src/ClassScribe/Commands`: the `record` and `transcribe` commands and keyboard signals.
-- `tests/ClassScribe.Tests`: NUnit and Moq; hand-written fakes for the device, clock and HTTP
-  transport are in `TestDoubles.cs`.
+- `src/ClassScribe/Transcription`: ElevenLabs client (a Refit interface plus `ElevenLabsClient`
+  around it), glossary loader, transcript formatter, workflow.
+- `src/ClassScribe/Storage`: class folders under the output folder, and marks.
+- `src/ClassScribe/Commands`: the menu, the `record` and `transcribe` commands, the console and
+  desktop abstractions. Each command runs in its own DI scope (`ICommandRunner`).
+- `tests/ClassScribe.Tests`: NUnit and Moq; hand-written fakes for the device, keyboard, clock and
+  HTTP transport are in `TestDoubles.cs`.
