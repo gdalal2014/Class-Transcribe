@@ -27,7 +27,10 @@ public class ServiceRegistrationTests
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 
-    /// <summary>Every setting section binds, and settings that are not given keep their defaults.</summary>
+    /// <summary>
+    /// Every setting section binds, and settings that are not given keep their defaults. (The API key is
+    /// bound the same way, but only ever from ELEVENLABS_API_KEY: see <see cref="AppHostTests"/>.)
+    /// </summary>
     [Test]
     public void Settings_are_bound_from_configuration()
     {
@@ -37,7 +40,6 @@ public class ServiceRegistrationTests
             ["Recording:OutputFolder"] = "D:\\Classes",
             ["Recording:OpenTranscriptWhenDone"] = "false",
             ["Recording:Device"] = "Pixel Buds",
-            ["ElevenLabs:ApiKey"] = "from-config",
             ["ElevenLabs:TimeoutMinutes"] = "90",
             ["Transcript:IncludeTimestamps"] = "false"
         });
@@ -53,7 +55,6 @@ public class ServiceRegistrationTests
         Assert.That(provider.GetRequiredService<SourceChoice>().Device, Is.EqualTo("Pixel Buds"), "the choice starts from the setting");
         Assert.That(recording.SilenceWarningSeconds, Is.EqualTo(60), "defaults survive for settings that are not given");
         Assert.That(recording.OpenFolderWhenDone, Is.True);
-        Assert.That(elevenLabs.ApiKey, Is.EqualTo("from-config"));
         Assert.That(elevenLabs.TimeoutMinutes, Is.EqualTo(90));
         Assert.That(elevenLabs.ModelId, Is.EqualTo("scribe_v2"));
         Assert.That(transcript.IncludeTimestamps, Is.False);
@@ -66,6 +67,8 @@ public class ServiceRegistrationTests
         using var provider = BuildProvider(new() { ["ElevenLabs:ApiKey"] = "k" });
         using var scope = provider.CreateScope();
 
+        Assert.That(provider.GetRequiredService<SettingsCheck>(), Is.Not.Null);
+        Assert.That(provider.GetRequiredService<IExitWarnings>(), Is.InstanceOf<ProcessExitWarnings>());
         Assert.That(provider.GetRequiredService<App>(), Is.Not.Null);
         Assert.That(provider.GetRequiredService<MenuCommand>(), Is.Not.Null);
         Assert.That(scope.ServiceProvider.GetRequiredService<TranscribeCommand>(), Is.Not.Null);
@@ -96,6 +99,25 @@ public class ServiceRegistrationTests
         Assert.That(settings.TransportExceptionFactory(new HttpRequestMessage(), failure, CancellationToken.None), Is.SameAs(failure));
     }
 
+    /// <summary>
+    /// The upload streams from disk as it is sent: the Refit settings the ElevenLabs client is registered with
+    /// neither buffer the request body nor capture it, either of which would hold a whole class in memory
+    /// before the first byte goes out, and they do not keep the call's arguments, the API key among them,
+    /// on the request. The client's own tests build their client outside the app's registration, so only this
+    /// test sees the settings the app really uses.
+    /// </summary>
+    [Test]
+    public void The_ElevenLabs_upload_is_streamed_not_buffered()
+    {
+        using var provider = BuildProvider(new() { ["ElevenLabs:ApiKey"] = "k" });
+
+        var settings = provider.GetRequiredService<SettingsFor<IElevenLabsApi>>().Settings!;
+
+        Assert.That(settings.Buffered, Is.False, "a buffered body is read into memory before it is sent");
+        Assert.That(settings.CaptureRequestContent, Is.False, "a captured body is read into a string before it is sent");
+        Assert.That(settings.CaptureMethodArguments, Is.False, "captured arguments stay on the request and on any exception made from it");
+    }
+
     /// <summary>An unknown command shows the usage and fails with exit code 2.</summary>
     [Test]
     public async Task An_unknown_command_shows_the_usage_and_fails()
@@ -107,15 +129,20 @@ public class ServiceRegistrationTests
         Assert.That(exitCode, Is.EqualTo(2));
     }
 
-    /// <summary>Without a key, transcribing stops before any work is done.</summary>
+    /// <summary>
+    /// Without a key, transcribing fails, through the real services, in a folder of its own rather than
+    /// the user's temporary folder. What exactly it skips is checked in <see cref="TranscribeCommandTests"/>.
+    /// </summary>
     [Test]
     public async Task Transcribing_without_a_key_fails_before_any_work()
     {
-        using var provider = BuildProvider(new());
+        using var folder = new TempFolder();
+        using var provider = BuildProvider(new() { ["Recording:OutputFolder"] = folder.File("Recordings") });
 
-        var exitCode = await provider.GetRequiredService<App>().RunAsync(["transcribe", Path.GetTempPath()]);
+        var exitCode = await provider.GetRequiredService<App>().RunAsync(["transcribe", folder.Path]);
 
         Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(Directory.GetFileSystemEntries(folder.Path), Is.Empty, "nothing was written");
     }
 
     /// <summary>A path that leads nowhere is reported as a failure, not a crash.</summary>

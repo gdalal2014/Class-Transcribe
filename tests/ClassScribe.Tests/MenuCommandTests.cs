@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
@@ -20,8 +21,9 @@ public class MenuCommandTests
     private Mock<ICommandRunner> _commands = null!;
     private Mock<IDesktop> _desktop = null!;
     private RecordingLogger<MenuCommand> _log = null!;
+    private RecordingLogger<ClassFolders> _foldersLog = null!;
 
-    /// <summary>Creates a temporary recordings folder, the scripted keyboard, the simulated devices and the mocks.</summary>
+    /// <summary>Creates a temporary recordings folder, the scripted keyboard, the simulated devices, the mocks and the logs to inspect.</summary>
     [SetUp]
     public void SetUp()
     {
@@ -34,6 +36,7 @@ public class MenuCommandTests
         _commands.Setup(c => c.TranscribeAsync(It.IsAny<string>())).ReturnsAsync(0);
         _desktop = new Mock<IDesktop>();
         _log = new RecordingLogger<MenuCommand>();
+        _foldersLog = new RecordingLogger<ClassFolders>();
     }
 
     /// <summary>Deletes the temporary folder.</summary>
@@ -41,23 +44,65 @@ public class MenuCommandTests
     public void TearDown() => _folder.Dispose();
 
     /// <summary>Runs the menu until it is left, failing the test rather than hanging if it never is.</summary>
-    private Task<int> RunMenuAsync(string? recordings = null)
+    private Task<int> RunMenuAsync(string? recordings = null, ILoopbackCaptureProvider? devices = null)
     {
-        var folders = new ClassFolders(Options.Create(new RecordingOptions { OutputFolder = recordings ?? _folder.Path }), TimeProvider.System);
-        var menu = new MenuCommand(_commands.Object, _ui, folders, _devices, _choice, new RecordingNamePrompt(_ui), _desktop.Object, TimeProvider.System, _log);
+        var menu = new MenuCommand(_commands.Object, _ui, Folders(recordings), devices ?? _devices, _choice, new RecordingNamePrompt(_ui), _desktop.Object, TimeProvider.System, _log);
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
 
+    /// <summary>
+    /// The recordings folders as the menu sees them, with the recordings in <paramref name="recordings"/> or else in the
+    /// temporary folder. What they log goes to <see cref="_foldersLog"/>.
+    /// </summary>
+    private ClassFolders Folders(string? recordings = null) =>
+        new(Options.Create(new RecordingOptions { OutputFolder = recordings ?? _folder.Path }), TimeProvider.System, _foldersLog);
+
+    /// <summary>A drive letter, such as Z:\, that no drive uses on this machine, or null when every one is in use.</summary>
+    private static string? MissingDrive() =>
+        Enumerable.Range('D', 'Z' - 'D' + 1)
+            .Select(letter => $"{(char)letter}:\\")
+            .Reverse()
+            .FirstOrDefault(drive => !Directory.Exists(drive));
+
+    /// <summary>The line the menu shows right under the one that names the recordings folder.</summary>
+    private string LineUnderTheFolder(string root)
+    {
+        var lines = _ui.Screen.Split(Environment.NewLine);
+        var folderLine = Array.IndexOf(lines, $"Recordings and transcripts: {root}");
+        Assert.That(folderLine, Is.GreaterThanOrEqualTo(0), "the menu names the recordings folder");
+        return lines[folderLine + 1];
+    }
+
+    /// <summary>
+    /// Opens the menu on <paramref name="recordings"/>, which cannot be used, and picks 3. Checks that the
+    /// problem shows under the folder's line, and that choice 3 gives it as the reason it lists nothing.
+    /// </summary>
+    private async Task AssertTheProblemIsPointedOutAsync(string recordings)
+    {
+        var problem = Folders(recordings).DescribeRootProblem();
+        Assert.That(problem, Is.Not.Null, "the folder really cannot be used");
+        _ui.Type('3', 'q');
+
+        Assert.That(await RunMenuAsync(recordings), Is.EqualTo(0));
+
+        Assert.That(LineUnderTheFolder(recordings), Is.EqualTo($"WARNING  {problem}."));
+        Assert.That(_ui.Screen, Does.Contain($"No recordings found. {problem}.").And.Not.Contain("No recordings to pick from"));
+        _commands.VerifyNoOtherCalls();
+    }
+
     /// <summary>Writes a recording into its folder under the recordings root, started at the given time.</summary>
-    private RecordingFiles WriteRecording(string name, DateTimeOffset started, bool withTranscript = false)
+    private RecordingFiles WriteRecording(string name, DateTimeOffset started, bool withTranscript = false, int sampleRate = 16000, int samples = 1600)
     {
         var files = RecordingFiles.ForNew(_folder.File(name), name, started);
         Directory.CreateDirectory(files.Folder);
-        TestAudio.WriteWav(files.Segment(1), 16000, new short[1600]);
+        TestAudio.WriteWav(files.Segment(1), sampleRate, new short[samples]);
         File.SetLastWriteTimeUtc(files.Segment(1), started.UtcDateTime);
         if (withTranscript) File.WriteAllText(files.Transcript(), "# Kalam");
         return files;
     }
+
+    /// <summary>How many times the menu has been shown.</summary>
+    private int MenusShown() => _ui.Screen.Split(Environment.NewLine).Count(line => line == "  Q  Quit");
 
     /// <summary>The menu lists its choices, where the files go and what is recorded; Q leaves it.</summary>
     [Test]
@@ -76,7 +121,34 @@ public class MenuCommandTests
             .And.Contain("6  Choose what to record: a device or an app")
             .And.Contain("Recording from: the device the class plays on")
             .And.Contain(_folder.Path));
+        Assert.That(LineUnderTheFolder(_folder.Path), Does.StartWith("Recording from:"), "a usable folder brings no warning");
         _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// A recordings folder on a drive that is not there, such as an unplugged USB drive, is pointed out under
+    /// the folder's line, and choice 3 gives that reason rather than saying there are no recordings yet.
+    /// </summary>
+    [Test]
+    public async Task A_recordings_folder_on_a_missing_drive_is_pointed_out()
+    {
+        var drive = MissingDrive();
+        Assume.That(drive, Is.Not.Null, "every drive letter is in use on this machine");
+
+        await AssertTheProblemIsPointedOutAsync(Path.Combine(drive!, "Classes"));
+    }
+
+    /// <summary>
+    /// A file where the recordings folder should be is pointed out under the folder's line, and choice 3 gives
+    /// that reason rather than saying there are no recordings yet.
+    /// </summary>
+    [Test]
+    public async Task A_file_in_place_of_the_recordings_folder_is_pointed_out()
+    {
+        var inTheWay = _folder.File("Recordings");
+        File.WriteAllText(inTheWay, "not a folder");
+
+        await AssertTheProblemIsPointedOutAsync(inTheWay);
     }
 
     /// <summary>1 and 2 ask for the recording's name, then record only, or record and transcribe. The menu comes back afterwards.</summary>
@@ -169,6 +241,57 @@ public class MenuCommandTests
         Assert.That(_ui.Screen, Does.Contain("billed again"));
     }
 
+    /// <summary>
+    /// A recording whose answer was paid for but did not become a transcript is listed with "answer kept". Transcribing
+    /// it again is billed again, so it is only redone after a yes, and the question says where the kept answer is.
+    /// </summary>
+    [Test]
+    public async Task A_recording_with_a_kept_answer_is_only_redone_after_a_yes()
+    {
+        var kept = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        File.WriteAllText(kept.UnreadAnswer(), "{}");
+        _ui.Type('3', '1', 'n', '3', '1', 'y', 'q');
+
+        await RunMenuAsync();
+
+        _commands.Verify(c => c.TranscribeAsync(kept.Segment(1)), Times.Once);
+        Assert.That(_ui.Screen, Does.Contain($"  1  {kept.BaseName}  00:00:00  answer kept")
+            .And.Contain($"kept in {kept.UnreadAnswer()}")
+            .And.Contain("billed again"));
+    }
+
+    /// <summary>
+    /// A recording that has a transcript and also an answer kept from another try is listed as "transcript ready", and
+    /// the question before a new try is the one for a recording with a transcript. A no goes back without transcribing.
+    /// </summary>
+    [Test]
+    public async Task A_recording_with_a_transcript_and_a_kept_answer_counts_as_transcribed()
+    {
+        var both = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), withTranscript: true);
+        File.WriteAllText(both.UnreadAnswer(), "{}");
+        _ui.Type('3', '1', 'n', 'q');
+
+        await RunMenuAsync();
+
+        var lines = _ui.Screen.Split(Environment.NewLine);
+        Assert.That(lines, Has.Member($"  1  {both.BaseName}  00:00:00  transcript ready"));
+        Assert.That(lines, Has.Member("This recording already has a transcript, and transcribing it again is billed again. Press Y to go ahead, any other key to go back."));
+        Assert.That(_ui.Screen, Does.Not.Contain("answer kept").And.Not.Contain("kept in"));
+        _commands.Verify(c => c.TranscribeAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    /// <summary>A recording of a day or more is listed with all its hours, not the hours past the last full day.</summary>
+    [Test]
+    public async Task A_recording_of_a_day_or_more_is_listed_with_all_its_hours()
+    {
+        WriteRecording("Overnight", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), sampleRate: 1, samples: 25 * 3600);
+        _ui.Type('3', '\u001b', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen, Does.Contain("  25:00:00  "));
+    }
+
     /// <summary>Esc leaves the list of recordings without transcribing anything.</summary>
     [Test]
     public async Task Esc_leaves_the_recording_list()
@@ -181,7 +304,7 @@ public class MenuCommandTests
         _commands.VerifyNoOtherCalls();
     }
 
-    /// <summary>Without any recording the menu says so instead of showing an empty list.</summary>
+    /// <summary>Without any recording the menu says so instead of showing an empty list, and names the folder it looked in.</summary>
     [Test]
     public async Task Without_recordings_the_menu_says_so()
     {
@@ -189,7 +312,7 @@ public class MenuCommandTests
 
         await RunMenuAsync();
 
-        Assert.That(_ui.Screen, Does.Contain("No recordings"));
+        Assert.That(_ui.Screen, Does.Contain($"No recordings to pick from in {_folder.Path}."));
         _commands.VerifyNoOtherCalls();
     }
 
@@ -342,5 +465,109 @@ public class MenuCommandTests
         _ui.Type('2', 'q');
 
         Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+    }
+
+    /// <summary>
+    /// Keys typed while a choice runs, such as a Q pressed during the upload, were not meant for the menu
+    /// that comes back afterwards: it waits for a key pressed after it is shown.
+    /// </summary>
+    [Test]
+    public async Task Keys_typed_while_a_choice_runs_are_not_taken_as_the_next_choice()
+    {
+        _commands.Setup(c => c.RecordAsync("Kalam", true)).Callback(() => _ui.TypeAhead('q', '1')).ReturnsAsync(0);
+        _ui.TypeLine("Kalam");
+        _ui.Type('2', '5', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+        _desktop.Verify(d => d.OpenFolder(_folder.Path), Times.Once, "the menu waited for the 5 pressed after it came back");
+        _commands.Verify(c => c.RecordAsync(It.IsAny<string>(), false), Times.Never);
+    }
+
+    /// <summary>
+    /// A recording that cannot be read while the recent ones are listed (another program holds it open) is left out
+    /// with a warning, and the others are still offered: here the readable one becomes number 1.
+    /// </summary>
+    [Test]
+    public async Task Three_offers_the_recordings_that_can_be_read_when_one_cannot_be()
+    {
+        var held = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        var readable = WriteRecording("Fiqh", new DateTimeOffset(2026, 10, 11, 14, 5, 0, TimeSpan.Zero));
+        _ui.Type('3', '1', 'q');
+
+        using (new FileStream(held.Segment(1), FileMode.Open, FileAccess.Read, FileShare.None))
+            Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.Verify(c => c.TranscribeAsync(readable.Segment(1)), Times.Once);
+        _commands.VerifyNoOtherCalls();
+        Assert.That(_foldersLog.Problems, Has.Count.EqualTo(1));
+        Assert.That(_foldersLog.Problems[0], Does.Contain(held.BaseName));
+    }
+
+    /// <summary>
+    /// When the only recording cannot be read (another program holds it open), it is left out with a warning, and
+    /// choice 3 says there is nothing to pick from, in words that do not deny that the recording exists.
+    /// </summary>
+    [Test]
+    public async Task Three_with_only_a_recording_that_cannot_be_read_has_nothing_to_offer()
+    {
+        var held = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        _ui.Type('3', 'q');
+
+        using (new FileStream(held.Segment(1), FileMode.Open, FileAccess.Read, FileShare.None))
+            Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        Assert.That(_ui.Screen, Does.Contain($"No recordings to pick from in {_folder.Path}."));
+        Assert.That(_foldersLog.Problems, Has.Some.Contains(held.BaseName));
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// A recordings folder ClassScribe may not look into makes choice 3 fail, since no list can be made. That is
+    /// reported, and the menu comes back for the next choice.
+    /// </summary>
+    [Test, Platform("Win")]
+    [SupportedOSPlatform("windows")]
+    public async Task Three_with_a_recordings_folder_that_cannot_be_looked_into_returns_to_the_menu()
+    {
+        WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        _ui.Type('3', 'q');
+
+        int exitCode;
+        using (Denied.ListingOf(_folder.Path))
+        {
+            Assume.That(() => Directory.GetDirectories(_folder.Path), Throws.InstanceOf<UnauthorizedAccessException>(), "the folder could not be shut to this user");
+            exitCode = await RunMenuAsync();
+        }
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(_log.Problems, Is.EqualTo(new[] { "Stopped because of an error" }));
+        Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back after the failed choice");
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>A recordings folder that cannot be created (a file is in its way) is reported, and the menu carries on.</summary>
+    [Test]
+    public async Task Five_with_a_recordings_folder_that_cannot_be_created_returns_to_the_menu()
+    {
+        var inTheWay = _folder.File("Recordings");
+        File.WriteAllText(inTheWay, "not a folder");
+        _ui.Type('5', '5', 'q');
+
+        Assert.That(await RunMenuAsync(inTheWay), Is.EqualTo(0));
+        Assert.That(_log.Problems, Has.Count.EqualTo(2));
+        Assert.That(MenusShown(), Is.EqualTo(3));
+    }
+
+    /// <summary>Output devices that cannot be listed, such as while Windows' audio service restarts, are reported, and the menu carries on.</summary>
+    [Test]
+    public async Task Six_when_the_devices_cannot_be_listed_returns_to_the_menu()
+    {
+        var devices = new Mock<ILoopbackCaptureProvider>();
+        devices.Setup(d => d.GetOutputDevices()).Throws(new System.Runtime.InteropServices.COMException("The audio service is not running."));
+        _ui.Type('6', '5', 'q');
+
+        Assert.That(await RunMenuAsync(devices: devices.Object), Is.EqualTo(0));
+        Assert.That(_log.Problems, Has.Count.EqualTo(1));
+        _desktop.Verify(d => d.OpenFolder(_folder.Path), Times.Once, "the menu was still there for the next choice");
     }
 }

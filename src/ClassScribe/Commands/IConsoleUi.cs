@@ -23,6 +23,12 @@ public interface IConsoleUi
     /// </summary>
     Task<string?> ReadLineAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Drops the keys typed while nothing was reading the keyboard, such as during an upload, so that the
+    /// next read waits for a key pressed after its prompt.
+    /// </summary>
+    void DiscardPendingKeys();
+
     /// <summary>Shows text without ending the line, such as a prompt.</summary>
     void Write(string text);
 
@@ -110,10 +116,34 @@ public sealed class ConsoleUi : IConsoleUi, IDisposable
     }
 
     /// <inheritdoc />
+    public void DiscardPendingKeys()
+    {
+        if (!IsInteractive) return;
+
+        while (Console.KeyAvailable) Console.ReadKey(intercept: true);
+    }
+
+    /// <inheritdoc />
     public void Write(string text) => Console.Write(text);
 
     /// <inheritdoc />
     public void WriteLine(string text = "") => Console.WriteLine(text);
+
+    /// <summary>
+    /// Lets the console show every character the app prints: Arabic and IJMES letters in names and
+    /// paths, and device names such as "Intel® Smart Sound". A console opened on its own (a double-click,
+    /// the published exe) otherwise keeps its old code page, such as 437, and prints those as ? or
+    /// without their marks. UTF-16 goes through the console's own wide-character calls and, unlike
+    /// UTF-8, leaves the window's code page, which it shares with the shell it was started from, as it
+    /// was. Keys are already read as UTF-16. Call it before anything writes to the console: the logger
+    /// keeps the writer it finds when it starts. Output sent to a file or a pipe is left alone, because
+    /// the setting covers both output and errors, and a file should not receive UTF-16.
+    /// </summary>
+    public static void UseUnicode()
+    {
+        if (OperatingSystem.IsWindows() && !Console.IsOutputRedirected && !Console.IsErrorRedirected)
+            Console.OutputEncoding = Encoding.Unicode;
+    }
 
     /// <summary>
     /// True when this process is the only one attached to its console. The window was then opened for

@@ -17,6 +17,8 @@ public class TranscribeCommandTests
     private Mock<IAudioPreparer> _preparer = null!;
     private Mock<ITranscriptionClient> _client = null!;
     private Mock<IDesktop> _desktop = null!;
+    private FakeUserSignals _signals = null!;
+    private RecordingLogger<TranscribeCommand> _log = null!;
 
     /// <summary>Creates a temporary folder and the mocks.</summary>
     [SetUp]
@@ -26,6 +28,8 @@ public class TranscribeCommandTests
         _preparer = Mocks.AudioPreparer();
         _client = Mocks.TranscriptionClient();
         _desktop = new Mock<IDesktop>();
+        _signals = new FakeUserSignals();
+        _log = new RecordingLogger<TranscribeCommand>();
     }
 
     /// <summary>Deletes the temporary folder. That fails if a test left a file open, which is the point.</summary>
@@ -33,7 +37,7 @@ public class TranscribeCommandTests
     public void TearDown() => _folder.Dispose();
 
     /// <summary>Builds the command with the real workflow around the mocks, with its recordings folder inside the temporary folder.</summary>
-    private TranscribeCommand CreateCommand(bool openWhenDone = false)
+    private TranscribeCommand CreateCommand(bool openWhenDone = false, string apiKey = "test-key")
     {
         var recording = Options.Create(new RecordingOptions
         {
@@ -41,19 +45,19 @@ public class TranscribeCommandTests
             OpenFolderWhenDone = openWhenDone,
             OpenTranscriptWhenDone = openWhenDone
         });
-        var elevenLabs = Options.Create(new ElevenLabsOptions { ApiKey = "test-key", KeytermsFile = _folder.File("no-glossary.txt") });
+        var elevenLabs = Options.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = _folder.File("no-glossary.txt") });
         var workflow = new TranscriptionWorkflow(
             _preparer.Object,
             _client.Object,
             new KeytermLoader(NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(Options.Create(new TranscriptOptions())),
-            new ClassFolders(recording, TimeProvider.System),
+            new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             elevenLabs,
             recording,
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new TranscribeCommand(workflow, new FakeUserSignals(), _desktop.Object, recording, elevenLabs, NullLogger<TranscribeCommand>.Instance);
+        return new TranscribeCommand(workflow, _signals, _desktop.Object, recording, elevenLabs, _log);
     }
 
     /// <summary>Writes a recording's segment files into the temporary folder and returns the recording.</summary>
@@ -76,7 +80,7 @@ public class TranscribeCommandTests
         var exitCode = await CreateCommand().RunAsync(_folder.Path);
 
         Assert.That(exitCode, Is.EqualTo(0));
-        _preparer.Verify(p => p.Prepare(new[] { newest.Segment(1), newest.Segment(2), newest.Segment(3) }, newest.Upload), Times.Once);
+        _preparer.Verify(p => p.Prepare(new[] { newest.Segment(1), newest.Segment(2), newest.Segment(3) }, newest.Upload, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     /// <summary>A segment file of a recording, dropped on the app for instance, means the whole recording, with its marks.</summary>
@@ -89,7 +93,7 @@ public class TranscribeCommandTests
         var exitCode = await CreateCommand().RunAsync(recording.Segment(2));
 
         Assert.That(exitCode, Is.EqualTo(0));
-        _preparer.Verify(p => p.Prepare(new[] { recording.Segment(1), recording.Segment(2) }, recording.Upload), Times.Once);
+        _preparer.Verify(p => p.Prepare(new[] { recording.Segment(1), recording.Segment(2) }, recording.Upload, It.IsAny<CancellationToken>()), Times.Once);
         Assert.That(File.ReadAllText(recording.Transcript()), Does.Contain("## [00:00:00] Mark 1"));
     }
 
@@ -130,5 +134,35 @@ public class TranscribeCommandTests
 
         _desktop.Verify(d => d.OpenFolder(transcriptFolder), Times.Once);
         _desktop.Verify(d => d.OpenFile(It.Is<string>(p => p.StartsWith(transcriptFolder) && p.EndsWith(".md"))), Times.Once);
+    }
+
+    /// <summary>
+    /// Without a key the command stops before any work: a long recording is not prepared only to fail at
+    /// the upload, and the error says where the key belongs.
+    /// </summary>
+    [Test]
+    public async Task Without_a_key_nothing_is_prepared_or_sent()
+    {
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+
+        var exitCode = await CreateCommand(apiKey: " ").RunAsync(recording.Segment(1));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        _preparer.Verify(Calls.AnyPreparation, Times.Never);
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+        Assert.That(_log.Problems, Has.Some.StartsWith("No ElevenLabs API key found").And.Contain(ElevenLabsOptions.ApiKeyVariable)
+            .And.Contain("quit every VS Code window"));
+    }
+
+    /// <summary>Nothing is recording here, so the run counts as stopped from the start, and the first Ctrl+C cancels the upload.</summary>
+    [Test]
+    public async Task The_run_counts_as_stopped_from_the_start()
+    {
+        var video = _folder.File("class.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+
+        await CreateCommand().RunAsync(video);
+
+        Assert.That(_signals.StopRequested.IsCompleted, Is.True);
     }
 }

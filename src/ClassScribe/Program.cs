@@ -1,45 +1,36 @@
 using ClassScribe;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
+
+// First, before anything writes to the console, so that the log shows Arabic, transliteration and
+// device names such as "Intel®" as they are.
+ConsoleUi.UseUnicode();
 
 // Settings are read from the folder the app lives in, whatever folder it is started from.
-var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { ContentRootPath = AppContext.BaseDirectory });
-
-// ELEVENLABS_API_KEY is the variable ElevenLabs' own samples use. A key in configuration wins over it.
-var apiKey = Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable);
-if (!string.IsNullOrWhiteSpace(apiKey) && string.IsNullOrWhiteSpace(builder.Configuration[$"{ElevenLabsOptions.SectionName}:{nameof(ElevenLabsOptions.ApiKey)}"]))
-{
-    builder.Configuration.AddInMemoryCollection(
-        [new KeyValuePair<string, string?>($"{ElevenLabsOptions.SectionName}:{nameof(ElevenLabsOptions.ApiKey)}", apiKey.Trim())]);
-}
-
-// Plain one-line log output by default. Logging:Console:FormatterName = "simple" brings back full stack traces.
-var formatterName = builder.Configuration["Logging:Console:FormatterName"];
-builder.Logging.ClearProviders();
-builder.Logging
-    .AddConsole(console => console.FormatterName = string.IsNullOrWhiteSpace(formatterName) ? PlainConsoleFormatter.FormatterName : formatterName)
-    .AddConsoleFormatter<PlainConsoleFormatter, ConsoleFormatterOptions>();
-
-builder.Services.AddClassScribe(builder.Configuration);
-
+var contentRoot = AppContext.BaseDirectory;
 int exitCode;
-using (var host = builder.Build())
+try
 {
-    exitCode = await host.Services.GetRequiredService<App>().RunAsync(args);
+    using var host = AppHost.Build(contentRoot, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable));
+    exitCode = await AppHost.RunAsync(host.Services, args);
+}
+catch (Exception ex)
+{
+    // Deliberately not rethrown: this is the last stop before the process exits, and once App runs it
+    // reports its own failures. What arrives here happened while ClassScribe was being put together,
+    // mostly an appsettings.json that cannot be read, before any logger exists; a stack trace would
+    // bury the one line that matters, so the reason is printed plainly and becomes exit code 1.
+    Console.Error.WriteLine(AppHost.DescribeFailure(ex, contentRoot));
+    exitCode = 1;
 }
 
-// A command run in a window of its own (a file dropped on the exe, or a shortcut with arguments) would
-// close the window the moment it ends, so it waits for Enter first. The menu is left with Q and needs no pause.
-if (args.Length > 0 && !Console.IsInputRedirected && ConsoleUi.OwnsConsoleWindow())
+// A window opened for this run alone (a double-click, or a file dropped on the exe) closes the moment
+// the process ends, so it waits for Enter when there is something left to read: a command's result,
+// or a failure. The menu, once left with Q, needs no pause.
+if (ClosePrompt.IsNeeded(args, exitCode, interactive: !Console.IsInputRedirected, ownsWindow: ConsoleUi.OwnsConsoleWindow()))
 {
-    Console.WriteLine();
-    Console.WriteLine("Press Enter to close.");
-    Console.ReadLine();
+    using var ui = new ConsoleUi();
+    await new ClosePrompt(ui).WaitAsync();
 }
 
 return exitCode;

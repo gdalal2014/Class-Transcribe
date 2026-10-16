@@ -20,11 +20,28 @@ public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    /// <summary>Adds a mark straight to the recording's marks file, so it survives a crash, and returns its number.</summary>
+    /// <summary>
+    /// Adds a mark straight to the recording's marks file, so it survives a crash, and returns its number.
+    /// The file may have been edited by hand meanwhile, so the mark is written in the encoding it was saved
+    /// in, and on a line of its own even when the editor left no line break at the end.
+    /// </summary>
     public int Add(RecordingFiles files, TimeSpan position)
     {
-        var line = string.Create(CultureInfo.InvariantCulture, $"{(int)position.TotalHours:00}:{position.Minutes:00}:{position.Seconds:00}.{position.Milliseconds:000}");
-        File.AppendAllText(files.Marks, line + Environment.NewLine, Utf8NoBom);
+        var line = string.Create(CultureInfo.InvariantCulture, $"{Durations.Format(position)}.{position.Milliseconds:000}");
+
+        // Appended, never rewritten, so a crash part-way through cannot take the earlier marks with it.
+        using (var file = new FileStream(files.Marks, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read))
+        {
+            var (encoding, preambleLength) = DetectEncoding(file);
+            var endsWithLineBreak = EndsWithLineBreak(file, encoding, preambleLength);
+
+            // Positioned at the end before the writer is made, so it does not write a byte order mark again.
+            file.Seek(0, SeekOrigin.End);
+            using var writer = new StreamWriter(file, encoding);
+            if (!endsWithLineBreak) writer.Write(Environment.NewLine);
+            writer.Write(line + Environment.NewLine);
+        }
+
         return Parse(files.Marks, reportProblems: false).Count;
     }
 
@@ -63,6 +80,35 @@ public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
         }
 
         return marks;
+    }
+
+    /// <summary>
+    /// The encoding the marks file was saved in, read from its byte order mark, and how many bytes that
+    /// byte order mark takes: UTF-16 as Notepad can save it, otherwise UTF-8. The encodings returned
+    /// write no byte order mark of their own.
+    /// </summary>
+    private static (Encoding Encoding, int PreambleLength) DetectEncoding(FileStream file)
+    {
+        Span<byte> buffer = stackalloc byte[3];
+        file.Seek(0, SeekOrigin.Begin);
+        ReadOnlySpan<byte> start = buffer[..file.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false)];
+
+        if (start.StartsWith(Encoding.UTF8.Preamble)) return (Utf8NoBom, Encoding.UTF8.Preamble.Length);
+        if (start.StartsWith(Encoding.Unicode.Preamble)) return (new UnicodeEncoding(bigEndian: false, byteOrderMark: false), Encoding.Unicode.Preamble.Length);
+        if (start.StartsWith(Encoding.BigEndianUnicode.Preamble)) return (new UnicodeEncoding(bigEndian: true, byteOrderMark: false), Encoding.BigEndianUnicode.Preamble.Length);
+        return (Utf8NoBom, 0);
+    }
+
+    /// <summary>True when the file holds nothing after its byte order mark, or its last character is a line break.</summary>
+    private static bool EndsWithLineBreak(FileStream file, Encoding encoding, int preambleLength)
+    {
+        var width = encoding.GetByteCount("\n");
+        if (file.Length - preambleLength < width) return true;
+
+        var last = new byte[width];
+        file.Seek(-width, SeekOrigin.End);
+        file.ReadExactly(last);
+        return encoding.GetString(last) is "\n" or "\r";
     }
 
     /// <summary>A mark's line: hours, minutes, seconds and optional milliseconds, then an optional label.</summary>

@@ -3,8 +3,12 @@
 # Blank lines and lines starting with # are ignored.
 # Limits: up to 1000 terms, each under 50 characters and at most 5 words,
 # without the characters < > { } [ ] \
+# Parts joined by a hyphen count as separate words, so Ahl al-Sunna is three.
 #
 # Starter list for an Ashʿarī kalām class, in IJMES transliteration.
+# Technical terms, school names among them, are fully transliterated.
+# Personal names and book titles follow IJMES in leaving out macrons and
+# dots while keeping ʿayn and hamza: al-Ghazali, al-Iqtisad fi al-Iʿtiqad.
 # Edit it to match the terms, names and texts your teacher uses.
 # Very short terms that sound like everyday English words are left out on purpose.
 
@@ -65,16 +69,16 @@ muʿjiza
 samʿiyyāt
 
 # Scholars and texts
-al-Ashʿarī
-al-Māturīdī
-al-Bāqillānī
-al-Juwaynī
-al-Ghazālī
-al-Rāzī
-al-Sanūsī
-al-Taftāzānī
+al-Ashʿari
+al-Maturidi
+al-Baqillani
+al-Juwayni
+al-Ghazali
+al-Razi
+al-Sanusi
+al-Taftazani
 Ibn Juzayy
-Umm al-Barāhīn
-al-Nūr al-Mubīn
-Jawharat al-Tawḥīd
-al-Iqtiṣād fī al-Iʿtiqād
+Umm al-Barahin
+al-Nur al-Mubin
+Jawharat al-Tawhid
+al-Iqtisad fi al-Iʿtiqad

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
@@ -33,12 +34,13 @@ public sealed class TranscriptionWorkflow(
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             File.Delete(files.Upload);
             logger.LogInformation("Preparing the recording for upload ({Segments} segment(s)); this takes a moment for a long class", segmentPaths.Count);
-            preparer.Prepare(segmentPaths, files.Upload);
+            preparer.Prepare(segmentPaths, files.Upload, cancellationToken);
 
             var saved = await UploadAndSaveAsync(files.Upload, files, files.Name, files.StartedUtc, marks.Read(files), cancellationToken);
-            if (!recording.Value.KeepUploadFile) File.Delete(files.Upload);
+            if (!recording.Value.KeepUploadFile) RemoveUploadCopy(files.Upload);
             return saved;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -57,14 +59,15 @@ public sealed class TranscriptionWorkflow(
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var files = folders.CreateForFile(path);
             logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), files.Folder);
 
-            if (!TryPrepare(path, files.Upload))
+            if (!TryPrepare(path, files.Upload, cancellationToken))
                 return await UploadAndSaveAsync(path, files, files.Name, recordedUtc: null, [], cancellationToken);
 
             var saved = await UploadAndSaveAsync(files.Upload, files, files.Name, recordedUtc: null, [], cancellationToken);
-            if (!recording.Value.KeepUploadFile) File.Delete(files.Upload);
+            if (!recording.Value.KeepUploadFile) RemoveUploadCopy(files.Upload);
             return saved;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -75,14 +78,15 @@ public sealed class TranscriptionWorkflow(
     }
 
     /// <summary>Makes the smaller upload copy of a WAV file. Returns false when the file should be uploaded as it is.</summary>
-    private bool TryPrepare(string path, string uploadPath)
+    private bool TryPrepare(string path, string uploadPath, CancellationToken cancellationToken)
     {
         if (!string.Equals(Path.GetExtension(path), ".wav", StringComparison.OrdinalIgnoreCase)) return false;
 
         try
         {
             File.Delete(uploadPath);
-            preparer.Prepare([path], uploadPath);
+            logger.LogInformation("Preparing {File} for upload; this takes a moment for a long recording", Path.GetFileName(path));
+            preparer.Prepare([path], uploadPath, cancellationToken);
             return true;
         }
         catch (Exception ex) when (ex is NotSupportedException or FormatException or ArgumentException or InvalidOperationException)
@@ -93,27 +97,135 @@ public sealed class TranscriptionWorkflow(
         }
     }
 
-    /// <summary>Uploads the audio and writes the raw JSON and the Markdown transcript, as the next free copy of the recording's transcript.</summary>
+    /// <summary>
+    /// Uploads the audio, with the glossary that ElevenLabs:KeytermsFile names, and saves ElevenLabs' answer and the
+    /// Markdown transcript, as the next free copy of the recording's transcript. An answer that has arrived has been
+    /// paid for: one that cannot be read is kept for later rather than lost, and the error is marked as following a
+    /// charged answer (see <see cref="ChargedAnswer"/>), so that whoever reports it can say a new try is charged again.
+    /// No transcription ID can be read from such an answer, so the mark carries none.
+    /// </summary>
     private async Task<TranscriptFiles> UploadAndSaveAsync(
         string audioPath, RecordingFiles files, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks, CancellationToken cancellationToken)
     {
-        var keyterms = keytermLoader.Load(ResolveKeytermsPath());
-        var result = await client.TranscribeAsync(audioPath, keyterms, cancellationToken);
+        // A cancel made while the upload file was prepared must not go on to "Uploading", which would look as if it had been ignored.
+        cancellationToken.ThrowIfCancellationRequested();
+        var keyterms = keytermLoader.Load(KeytermLoader.ResolvePath(elevenLabs.Value.KeytermsFile));
 
-        // An earlier transcript, perhaps corrected by hand, is never overwritten.
-        var copy = 1;
-        while (File.Exists(files.Transcript(copy)) || File.Exists(files.Json(copy))) copy++;
+        TranscriptionResult result;
+        try
+        {
+            result = await client.TranscribeAsync(audioPath, keyterms, cancellationToken);
+        }
+        catch (TranscriptionException ex) when (ex.ResponseBody is { } answer && IsSuccess(ex.StatusCode))
+        {
+            // ElevenLabs answered, and charged for it, but the answer could not be read. It is kept, so that what was paid for is not lost.
+            ChargedAnswer.Mark(ex, KeepAnswer(files, answer, transcriptionId: null), transcriptionId: null);
+            throw;
+        }
 
-        var saved = new TranscriptFiles(files.Transcript(copy), files.Json(copy));
-        await File.WriteAllTextAsync(saved.JsonPath, result.RawJson, Utf8NoBom, cancellationToken);
-        await File.WriteAllTextAsync(saved.TranscriptPath, formatter.Format(result, title, recordedUtc, classMarks), Utf8NoBom, cancellationToken);
+        if (string.IsNullOrWhiteSpace(result.Text))
+            logger.LogWarning("ElevenLabs heard no speech in {File}: the transcript is empty", Path.GetFileName(audioPath));
+
+        return await SaveAsync(files, result, title, recordedUtc, classMarks);
+    }
+
+    /// <summary>
+    /// Saves ElevenLabs' answer and the Markdown transcript made from it, as the next free copy. The answer has
+    /// been paid for, so a Ctrl+C that comes now no longer stops this. An answer that cannot be saved as the
+    /// transcript's is kept under a name of its own (see <see cref="KeepAnswer"/>), and once it is saved, whatever
+    /// keeps the transcript from being made leaves it as the place to look. Either way the error is marked as
+    /// following a charged answer, with where the answer is, if anywhere, and its transcription ID (see
+    /// <see cref="ChargedAnswer"/>).
+    /// </summary>
+    private async Task<TranscriptFiles> SaveAsync(RecordingFiles files, TranscriptionResult result, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks)
+    {
+        var saved = NextFreeCopy(files);
+        try
+        {
+            await File.WriteAllTextAsync(saved.JsonPath, result.RawJson, Utf8NoBom, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ChargedAnswer.Mark(ex, KeepAnswer(files, result.RawJson, result.TranscriptionId), result.TranscriptionId);
+            throw;
+        }
+
+        try
+        {
+            await File.WriteAllTextAsync(saved.TranscriptPath, formatter.Format(result, title, recordedUtc, classMarks), Utf8NoBom, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // Any failure counts here, not only the disk's: the answer is saved and paid for, so whatever kept the
+            // transcript from being made, that answer is where its text is.
+            logger.LogError("The transcript could not be made, but ElevenLabs' answer is saved in {Path}. It has been paid for, so look there for the transcript's text before transcribing again, which is charged again", saved.JsonPath);
+            ChargedAnswer.Mark(ex, saved.JsonPath, result.TranscriptionId);
+            throw;
+        }
+
         return saved;
     }
 
-    /// <summary>Finds the glossary file, looking next to the executable for a relative path.</summary>
-    private string ResolveKeytermsPath()
+    /// <summary>The next copy of the recording's transcript that is free: an earlier transcript, perhaps corrected by hand, is never overwritten.</summary>
+    private static TranscriptFiles NextFreeCopy(RecordingFiles files)
     {
-        var configured = elevenLabs.Value.KeytermsFile;
-        return Path.IsPathRooted(configured) ? configured : Path.Combine(AppContext.BaseDirectory, configured);
+        var copy = 1;
+        while (File.Exists(files.Transcript(copy)) || File.Exists(files.Json(copy))) copy++;
+        return new TranscriptFiles(files.Transcript(copy), files.Json(copy));
     }
+
+    /// <summary>
+    /// Keeps an answer ElevenLabs has charged for that did not become a transcript, so that what was paid for is not
+    /// lost, and returns where it went. It goes under a name of its own (<see cref="RecordingFiles.NextFreeUnreadAnswer"/>),
+    /// which counts as no transcript and takes no transcript's place: beside the recording or, when its folder will
+    /// not take it, under the same name in the recordings folder, which a problem with one recording's folder may have
+    /// spared. Nothing is ever overwritten. When neither place works, it returns null and logs the answer's
+    /// <paramref name="transcriptionId"/>, with which the transcript can still be fetched from ElevenLabs. When that is
+    /// null, as it is for an answer that could not be read, the log says the ID is unknown.
+    /// </summary>
+    private string? KeepAnswer(RecordingFiles files, string answer, string? transcriptionId)
+    {
+        // The recording's own names, first in its folder, then in the recordings folder.
+        foreach (var place in new[] { files, files with { Folder = folders.Root } })
+        {
+            var target = place.NextFreeUnreadAnswer();
+            try
+            {
+                using (var writer = new StreamWriter(new FileStream(target, FileMode.CreateNew, FileAccess.Write), Utf8NoBom))
+                    writer.Write(answer);
+
+                logger.LogWarning("ElevenLabs' answer is kept in {Path}. It has been paid for, so look there for the transcript's text before transcribing again, which is charged again", target);
+                return target;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Deliberately not rethrown: the error that led here is the one to report, and the next place is tried.
+                logger.LogWarning(ex, "Could not keep ElevenLabs' answer in {Path}", target);
+            }
+        }
+
+        logger.LogError("ElevenLabs' answer could not be kept anywhere. Its transcription ID at ElevenLabs is {Id}. It has been paid for, so transcribing again is charged again", transcriptionId ?? "unknown");
+        return null;
+    }
+
+    /// <summary>
+    /// Removes the upload copy once the transcript is saved. A copy that cannot be removed, because another
+    /// program holds it, is only logged: the transcript is saved and paid for, and reporting the run as failed
+    /// would invite a second, charged attempt.
+    /// </summary>
+    private void RemoveUploadCopy(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: see the summary. The copy can be deleted by hand.
+            logger.LogWarning(ex, "The transcript is saved, but the upload copy {Path} could not be removed; it can be deleted by hand", path);
+        }
+    }
+
+    /// <summary>True for a 2xx status: ElevenLabs answered, and has charged for the transcript.</summary>
+    private static bool IsSuccess(HttpStatusCode? status) => (int?)status is >= 200 and <= 299;
 }

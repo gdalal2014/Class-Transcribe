@@ -23,9 +23,13 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     private readonly Dictionary<string, string> _names = [];
 
     private GCHandle _keepAlive;
+    private bool _registered;
     private bool _disposed;
 
-    /// <summary>Registers for device notifications from Windows.</summary>
+    /// <summary>
+    /// Registers for device notifications from Windows. When Windows refuses, the provider works without
+    /// them: the recording's regular device check notices every change too, only a moment later.
+    /// </summary>
     public WasapiLoopbackCaptureProvider(ILogger<WasapiLoopbackCaptureProvider> logger)
     {
         _logger = logger;
@@ -36,9 +40,16 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
         _keepAlive = GCHandle.Alloc(this);
         try
         {
-            var result = _enumerator.RegisterEndpointNotificationCallback(this);
-            if (result < 0)
-                _logger.LogWarning("Windows did not accept the registration for device notifications (0x{Code:X8}). A change of output device is still noticed by the regular check", result);
+            // NAudio 2.2.1 turns a failed registration into a COMException; the number it returns is always 0.
+            _enumerator.RegisterEndpointNotificationCallback(this);
+            _registered = true;
+        }
+        catch (COMException ex)
+        {
+            // Deliberately not rethrown: notifications only make a change of device noticed sooner, and
+            // the regular device check notices it without them. Nothing is registered, so nothing needs rooting.
+            _keepAlive.Free();
+            _logger.LogWarning(ex, "Windows did not accept the registration for device notifications (0x{Code:X8}). A change of output device is still noticed by the regular check", ex.HResult);
         }
         catch
         {
@@ -168,19 +179,31 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     /// <summary>Not used.</summary>
     public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
 
-    /// <summary>Stops listening for device notifications.</summary>
+    /// <summary>
+    /// Stops listening for device notifications. This runs as the app exits, so a failure to unregister is
+    /// logged rather than thrown, and the enumerator is released whatever happens.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        var released = !_registered;
         try
         {
-            _enumerator.UnregisterEndpointNotificationCallback(this);
-            _enumerator.Dispose();
+            if (_registered) _enumerator.UnregisterEndpointNotificationCallback(this);
+            released = true;
+        }
+        catch (COMException ex)
+        {
+            // Deliberately not rethrown: the app is on its way out, and an exception here would cost its
+            // exit code and its last messages. Windows may still hold its pointer, though, so this object
+            // stays rooted: a notification that still comes must find it alive.
+            _logger.LogDebug(ex, "Windows did not take back the registration for device notifications (0x{Code:X8})", ex.HResult);
         }
         finally
         {
-            if (_keepAlive.IsAllocated) _keepAlive.Free();
+            _enumerator.Dispose();
+            if (released && _keepAlive.IsAllocated) _keepAlive.Free();
         }
     }
 

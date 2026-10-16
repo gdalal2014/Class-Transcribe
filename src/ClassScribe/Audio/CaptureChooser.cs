@@ -6,6 +6,7 @@ namespace ClassScribe.Audio;
 /// Otherwise the device the class is playing through is found with Windows' level meters: a device
 /// that is playing is kept, and one that has gone quiet is left for another only once the sound there
 /// has lasted a moment, so a short notification sound elsewhere does not pull the recording away.
+/// Those moments are timed on the steady clock, so Windows setting its time of day does not shorten them.
 /// </summary>
 public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
 {
@@ -19,7 +20,7 @@ public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
     public static readonly TimeSpan SustainFor = TimeSpan.FromSeconds(1);
 
     private string? _candidateId;
-    private DateTimeOffset _candidateSince;
+    private long _candidateSince;
 
     /// <summary>True when an app is recorded rather than a device.</summary>
     public bool IsApp => choice.App is not null;
@@ -35,18 +36,21 @@ public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
     /// <summary>
     /// Picks what to record from what the provider lists, or returns null when there is nothing to record yet.
     /// <paramref name="recordedId"/> is the device or app being recorded, null before the first one, and
-    /// <paramref name="recordedLastSound"/> when it last carried sound, null if it never has.
+    /// <paramref name="sinceRecordedSound"/> how long ago it last carried sound, null if it never has.
     /// </summary>
-    public CaptureTarget? Choose(ILoopbackCaptureProvider provider, string? recordedId, DateTimeOffset? recordedLastSound)
+    public CaptureTarget? Choose(ILoopbackCaptureProvider provider, string? recordedId, TimeSpan? sinceRecordedSound)
     {
         if (IsApp)
             return ChooseApp(provider.GetPlayingApps(), recordedId) is { } app ? CaptureTarget.ForApp(app) : null;
 
-        return ChooseDevice(provider.GetOutputDevices(), recordedId, recordedLastSound) is { } device ? CaptureTarget.ForDevice(device) : null;
+        return ChooseDevice(provider.GetOutputDevices(), recordedId, sinceRecordedSound) is { } device ? CaptureTarget.ForDevice(device) : null;
     }
 
-    /// <summary>Picks the device to record from those connected, or returns null when there is none to record.</summary>
-    public OutputDevice? ChooseDevice(IReadOnlyList<OutputDevice> devices, string? recordedId, DateTimeOffset? recordedLastSound)
+    /// <summary>
+    /// Picks the device to record from those connected, or returns null when there is none to record.
+    /// <paramref name="sinceRecordedSound"/> is how long ago the recorded device last carried sound, null if it never has.
+    /// </summary>
+    public OutputDevice? ChooseDevice(IReadOnlyList<OutputDevice> devices, string? recordedId, TimeSpan? sinceRecordedSound)
     {
         if (choice.Device is { } name) return devices.FirstOrDefault(device => Matches(device.Name, name));
 
@@ -62,14 +66,14 @@ public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
             return playing ?? devices.FirstOrDefault(device => device.IsDefault) ?? devices.FirstOrDefault();
         }
 
-        var now = time.GetUtcNow();
-        var quiet = recordedLastSound is not { } lastSound || now - lastSound >= LeaveAfter;
+        var quiet = sinceRecordedSound is not { } sinceSound || sinceSound >= LeaveAfter;
         if (!quiet || playing is null)
         {
             _candidateId = null;
             return recorded;
         }
 
+        var now = time.GetTimestamp();
         if (playing.Id != _candidateId)
         {
             _candidateId = playing.Id;
@@ -77,7 +81,7 @@ public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
             return recorded;
         }
 
-        if (now - _candidateSince < SustainFor) return recorded;
+        if (time.GetElapsedTime(_candidateSince, now) < SustainFor) return recorded;
 
         _candidateId = null;
         return playing;

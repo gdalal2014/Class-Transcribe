@@ -37,19 +37,17 @@ public class CaptureChooserTests
     [Test]
     public void Starts_on_the_device_with_sound_or_else_the_default_one()
     {
-        Assert.That(_chooser.ChooseDevice([Speakers, Playing(Headphones)], recordedId: null, recordedLastSound: null), Is.EqualTo(Playing(Headphones)));
-        Assert.That(_chooser.ChooseDevice([Speakers, Headphones], recordedId: null, recordedLastSound: null), Is.EqualTo(Speakers));
-        Assert.That(_chooser.ChooseDevice([Headphones], recordedId: null, recordedLastSound: null), Is.EqualTo(Headphones), "with no default, any device beats none");
-        Assert.That(_chooser.ChooseDevice([], recordedId: null, recordedLastSound: null), Is.Null);
+        Assert.That(_chooser.ChooseDevice([Speakers, Playing(Headphones)], recordedId: null, sinceRecordedSound: null), Is.EqualTo(Playing(Headphones)));
+        Assert.That(_chooser.ChooseDevice([Speakers, Headphones], recordedId: null, sinceRecordedSound: null), Is.EqualTo(Speakers));
+        Assert.That(_chooser.ChooseDevice([Headphones], recordedId: null, sinceRecordedSound: null), Is.EqualTo(Headphones), "with no default, any device beats none");
+        Assert.That(_chooser.ChooseDevice([], recordedId: null, sinceRecordedSound: null), Is.Null);
     }
 
     /// <summary>A device that is playing is kept, however loud another one is.</summary>
     [Test]
     public void Keeps_the_recorded_device_while_it_is_playing()
     {
-        var now = _time.GetUtcNow();
-
-        var chosen = _chooser.ChooseDevice([Speakers, Playing(Headphones, 0.9f)], Speakers.Id, recordedLastSound: now - TimeSpan.FromSeconds(1));
+        var chosen = _chooser.ChooseDevice([Speakers, Playing(Headphones, 0.9f)], Speakers.Id, sinceRecordedSound: TimeSpan.FromSeconds(1));
 
         Assert.That(chosen, Is.EqualTo(Speakers));
     }
@@ -58,12 +56,9 @@ public class CaptureChooserTests
     [Test]
     public void Leaves_a_silent_device_for_one_whose_sound_lasts()
     {
-        var lastSound = _time.GetUtcNow();
-        _time.Advance(CaptureChooser.LeaveAfter);
-
-        var first = _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, lastSound);
+        var first = _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, sinceRecordedSound: CaptureChooser.LeaveAfter);
         _time.Advance(CaptureChooser.SustainFor);
-        var second = _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, lastSound);
+        var second = _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, sinceRecordedSound: CaptureChooser.LeaveAfter + CaptureChooser.SustainFor);
 
         Assert.That(first, Is.EqualTo(Speakers), "the first sighting of sound elsewhere is not enough");
         Assert.That(second, Is.EqualTo(Playing(Headphones)));
@@ -73,31 +68,41 @@ public class CaptureChooserTests
     [Test]
     public void Leaves_a_device_that_never_had_sound()
     {
-        _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, recordedLastSound: null);
+        _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, sinceRecordedSound: null);
         _time.Advance(CaptureChooser.SustainFor);
 
-        Assert.That(_chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, recordedLastSound: null), Is.EqualTo(Playing(Headphones)));
+        Assert.That(_chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, sinceRecordedSound: null), Is.EqualTo(Playing(Headphones)));
     }
 
     /// <summary>A short sound elsewhere, such as a notification, is not followed: the sound has to last between two looks.</summary>
     [Test]
     public void Ignores_a_short_sound_on_another_device()
     {
-        _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, recordedLastSound: null);
+        _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, sinceRecordedSound: null);
         _time.Advance(CaptureChooser.SustainFor);
-        var afterQuiet = _chooser.ChooseDevice([Speakers, Headphones], Speakers.Id, recordedLastSound: null);
+        var afterQuiet = _chooser.ChooseDevice([Speakers, Headphones], Speakers.Id, sinceRecordedSound: null);
         _time.Advance(CaptureChooser.SustainFor);
-        var seenAgain = _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, recordedLastSound: null);
+        var seenAgain = _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, sinceRecordedSound: null);
 
         Assert.That(afterQuiet, Is.EqualTo(Speakers));
         Assert.That(seenAgain, Is.EqualTo(Speakers), "the sound has to last from this look to the next");
+    }
+
+    /// <summary>Setting the computer's clock forward does not make a short sound elsewhere look as if it had lasted: the chooser times sound on the steady clock.</summary>
+    [Test]
+    public void A_change_of_the_computer_clock_does_not_make_a_short_sound_look_lasting()
+    {
+        _chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, sinceRecordedSound: null);
+        _time.StepWallClock(TimeSpan.FromMinutes(1));        // Windows sets its clock forward between two looks
+
+        Assert.That(_chooser.ChooseDevice([Speakers, Playing(Headphones)], Speakers.Id, sinceRecordedSound: null), Is.EqualTo(Speakers));
     }
 
     /// <summary>A silent device is not left for the silent default one: a pause in the class must not move the recording.</summary>
     [Test]
     public void Stays_put_while_nothing_is_playing_anywhere()
     {
-        var chosen = _chooser.ChooseDevice([Speakers, Headphones], Headphones.Id, recordedLastSound: null);
+        var chosen = _chooser.ChooseDevice([Speakers, Headphones], Headphones.Id, sinceRecordedSound: null);
 
         Assert.That(chosen, Is.EqualTo(Headphones));
     }
@@ -108,7 +113,7 @@ public class CaptureChooserTests
     {
         var third = new OutputDevice("hdmi", "Monitor (HDMI)", IsDefault: false, Level: 0.5f);
 
-        var chosen = _chooser.ChooseDevice([Playing(Speakers, 0.1f), Playing(Headphones, 0.3f), third], recordedId: "gone", recordedLastSound: null);
+        var chosen = _chooser.ChooseDevice([Playing(Speakers, 0.1f), Playing(Headphones, 0.3f), third], recordedId: "gone", sinceRecordedSound: null);
 
         Assert.That(chosen, Is.EqualTo(third));
     }
@@ -117,8 +122,8 @@ public class CaptureChooserTests
     [Test]
     public void Replaces_a_device_that_is_gone_at_once()
     {
-        Assert.That(_chooser.ChooseDevice([Speakers, Playing(Headphones)], recordedId: "gone", recordedLastSound: null), Is.EqualTo(Playing(Headphones)));
-        Assert.That(_chooser.ChooseDevice([Speakers, Headphones], recordedId: "gone", recordedLastSound: null), Is.EqualTo(Speakers));
+        Assert.That(_chooser.ChooseDevice([Speakers, Playing(Headphones)], recordedId: "gone", sinceRecordedSound: null), Is.EqualTo(Playing(Headphones)));
+        Assert.That(_chooser.ChooseDevice([Speakers, Headphones], recordedId: "gone", sinceRecordedSound: null), Is.EqualTo(Speakers));
     }
 
     /// <summary>A device chosen by name is recorded whatever is playing elsewhere; part of the name is enough, in any case.</summary>
@@ -127,8 +132,8 @@ public class CaptureChooserTests
     {
         _choice.Device = "pixel buds";
 
-        var atStart = _chooser.ChooseDevice([Playing(Speakers, 0.9f), Headphones], recordedId: null, recordedLastSound: null);
-        var later = _chooser.ChooseDevice([Playing(Speakers, 0.9f), Headphones], Headphones.Id, recordedLastSound: null);
+        var atStart = _chooser.ChooseDevice([Playing(Speakers, 0.9f), Headphones], recordedId: null, sinceRecordedSound: null);
+        var later = _chooser.ChooseDevice([Playing(Speakers, 0.9f), Headphones], Headphones.Id, sinceRecordedSound: null);
 
         Assert.That(atStart, Is.EqualTo(Headphones));
         Assert.That(later, Is.EqualTo(Headphones));
@@ -140,7 +145,7 @@ public class CaptureChooserTests
     {
         _choice.Device = "Pixel Buds";
 
-        Assert.That(_chooser.ChooseDevice([Playing(Speakers)], recordedId: null, recordedLastSound: null), Is.Null);
+        Assert.That(_chooser.ChooseDevice([Playing(Speakers)], recordedId: null, sinceRecordedSound: null), Is.Null);
     }
 
     /// <summary>A chosen app is recorded from the process that has its sound; of several, the one playing loudest.</summary>
@@ -197,11 +202,11 @@ public class CaptureChooserTests
         provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"), level: 0.3f);
         provider.AddApp(4242, "chrome", "Speakers", level: 0.4f);
 
-        var automatic = _chooser.Choose(provider, recordedId: null, recordedLastSound: null);
+        var automatic = _chooser.Choose(provider, recordedId: null, sinceRecordedSound: null);
         _choice.Device = "speakers";
-        var device = _chooser.Choose(provider, recordedId: null, recordedLastSound: null);
+        var device = _chooser.Choose(provider, recordedId: null, sinceRecordedSound: null);
         _choice.App = "chrome";
-        var app = _chooser.Choose(provider, recordedId: null, recordedLastSound: null);
+        var app = _chooser.Choose(provider, recordedId: null, sinceRecordedSound: null);
 
         Assert.That(automatic, Is.EqualTo(new CaptureTarget("Headphones", "Headphones")));
         Assert.That(device, Is.EqualTo(new CaptureTarget("Speakers", "Speakers")));

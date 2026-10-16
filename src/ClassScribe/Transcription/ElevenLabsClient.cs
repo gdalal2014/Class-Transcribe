@@ -9,12 +9,13 @@ namespace ClassScribe.Transcription;
 
 /// <summary>
 /// Gets transcripts from ElevenLabs through <see cref="IElevenLabsApi"/>. Around the call itself it
-/// checks the key, retries temporary failures, reports upload progress, tells the app's own time limit
-/// apart from a cancel, and keeps the answer's JSON exactly as it arrived.
+/// checks the key, retries temporary failures, reports upload progress, holds the whole exchange to the
+/// app's own time limit and tells that apart from a cancel, and keeps the answer's JSON exactly as it arrived.
 /// </summary>
 public sealed class ElevenLabsClient(
     IElevenLabsApi api,
     IOptions<ElevenLabsOptions> options,
+    TimeProvider time,
     ILogger<ElevenLabsClient> logger) : ITranscriptionClient
 {
     /// <inheritdoc />
@@ -35,42 +36,56 @@ public sealed class ElevenLabsClient(
             {
                 var delay = TimeSpan.FromSeconds(Math.Max(0, settings.RetryDelaySeconds) * attempt);
                 logger.LogWarning(ex, "Attempt {Attempt} of {MaxAttempts} failed; trying again in {Seconds} seconds", attempt, maxAttempts, delay.TotalSeconds);
-                await Task.Delay(delay, cancellationToken);
+                await Task.Delay(delay, time, cancellationToken);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "The ElevenLabs request for {File} failed", Path.GetFileName(audioPath));
+                if (MayBeAnEarlyRefusal(ex))
+                    logger.LogWarning("If the connection breaks like this on every try, ElevenLabs may be turning the request down before it has read all of the upload, which looks the same from here. Check the API key and the account's credits before uploading again");
                 throw;
             }
         }
     }
 
-    /// <summary>Uploads the file once and parses the answer.</summary>
+    /// <summary>
+    /// Uploads the file once and parses the answer. Its arrival is logged with the transcription ID ElevenLabs gives
+    /// it, when there is one, by which a transcript that was paid for can be fetched again should saving it fail.
+    /// </summary>
     private async Task<TranscriptionResult> SendOnceAsync(string audioPath, IReadOnlyList<string> keyterms, ElevenLabsOptions settings, CancellationToken cancellationToken)
     {
         await using var file = new FileStream(audioPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 81920, useAsync: true);
         var megabytes = file.Length / (1024.0 * 1024.0);
         logger.LogInformation("Uploading {File} ({Megabytes:F1} MB) with {Keyterms} keyterms", Path.GetFileName(audioPath), megabytes, keyterms.Count);
 
-        using var response = await SendAsync(file, audioPath, keyterms, settings, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            throw new TranscriptionException(Describe(response.StatusCode, body), response.StatusCode, body);
+        var (status, body) = await ExchangeAsync(file, audioPath, keyterms, settings, cancellationToken);
+        if ((int)status is < 200 or > 299)
+            throw new TranscriptionException(Describe(status, body), status, body);
 
-        var result = Parse(body);
-        logger.LogInformation("Transcript received: {Characters} characters, language {Language}", result.Text.Length, result.LanguageCode ?? "unknown");
+        var result = Parse(body, status);
+        var language = result.LanguageCode ?? "unknown";
+        if (string.IsNullOrWhiteSpace(result.TranscriptionId))
+            logger.LogInformation("Transcript received: {Characters} characters, language {Language}", result.Text.Length, language);
+        else
+            logger.LogInformation("Transcript received: {Characters} characters, language {Language}, transcription ID {TranscriptionId}", result.Text.Length, language, result.TranscriptionId);
+
         return result;
     }
 
     /// <summary>
-    /// Sends the request. .NET reports its own timeout as a cancellation, so that case is turned into a
-    /// <see cref="TranscriptionException"/> here: only the person at the keyboard cancels.
+    /// Sends the request and reads the whole answer within the app's time limit. Refit hands the response
+    /// over as soon as its headers arrive, after which HttpClient's own timeout no longer applies, so the limit
+    /// is set here and covers the body too. .NET reports a time limit as a cancellation, so that case is turned
+    /// into a <see cref="TranscriptionException"/>: only the person at the keyboard cancels.
     /// </summary>
-    private async Task<HttpResponseMessage> SendAsync(FileStream file, string audioPath, IReadOnlyList<string> keyterms, ElevenLabsOptions settings, CancellationToken cancellationToken)
+    private async Task<(HttpStatusCode Status, string Body)> ExchangeAsync(
+        FileStream file, string audioPath, IReadOnlyList<string> keyterms, ElevenLabsOptions settings, CancellationToken cancellationToken)
     {
+        using var timeLimit = new CancellationTokenSource(settings.Timeout, time);
+        using var limited = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeLimit.Token);
         try
         {
-            return await api.TranscribeAsync(
+            using var response = await api.TranscribeAsync(
                 settings.ApiKey.Trim(),
                 settings.ModelId,
                 settings.TagAudioEvents ? "true" : "false",
@@ -79,7 +94,8 @@ public sealed class ElevenLabsClient(
                 string.IsNullOrWhiteSpace(settings.LanguageCode) ? null : settings.LanguageCode.Trim(),
                 keyterms,
                 CreateFilePart(file, audioPath),
-                cancellationToken);
+                limited.Token);
+            return (response.StatusCode, await response.Content.ReadAsStringAsync(limited.Token));
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -113,8 +129,11 @@ public sealed class ElevenLabsClient(
         return new StreamPart(stream, fileName, "application/octet-stream");
     }
 
-    /// <summary>Reads the fields this app uses out of the service's JSON answer.</summary>
-    private static TranscriptionResult Parse(string json)
+    /// <summary>
+    /// Reads the fields this app uses out of the service's JSON answer. An answer that cannot be read keeps its
+    /// status and body in the exception, so the caller can keep a transcript that has been paid for.
+    /// </summary>
+    private static TranscriptionResult Parse(string json, HttpStatusCode status)
     {
         SpeechToTextResponse? response;
         try
@@ -123,13 +142,15 @@ public sealed class ElevenLabsClient(
         }
         catch (JsonException ex)
         {
-            throw new TranscriptionException("ElevenLabs answered with something that is not valid JSON.", responseBody: json, innerException: ex);
+            throw new TranscriptionException("ElevenLabs answered in a form this app cannot read.", status, json, ex);
         }
 
         if (response?.Text is null)
-            throw new TranscriptionException("ElevenLabs answered without a transcript.", responseBody: json);
+            throw new TranscriptionException("ElevenLabs answered without a transcript.", status, json);
 
+        // An empty item in the word list is skipped rather than allowed to fail the whole answer.
         var words = (response.Words ?? [])
+            .OfType<SpeechToTextWord>()
             .Select(w => new TranscriptWord(w.Text ?? "", w.Start, w.End, w.Type, w.SpeakerId))
             .ToList();
 
@@ -146,17 +167,36 @@ public sealed class ElevenLabsClient(
         StatusCode: HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests or >= HttpStatusCode.InternalServerError
     };
 
-    /// <summary>Builds an error message that says what to check.</summary>
+    /// <summary>
+    /// True for a connection that broke without an answer once it was made. Over HTTP/1.1 the whole upload is sent
+    /// before any answer is read, so a refusal ElevenLabs sends early, followed by a closed connection, reaches this
+    /// app only as such a break. A connection that could not be made at all (the name did not resolve, the
+    /// connection was refused or never answered, the TLS handshake or the proxy failed) never reached ElevenLabs.
+    /// </summary>
+    private static bool MayBeAnEarlyRefusal(Exception exception) => exception is HttpRequestException
+    {
+        StatusCode: null,
+        HttpRequestError: not (HttpRequestError.NameResolutionError or HttpRequestError.ConnectionError
+            or HttpRequestError.SecureConnectionError or HttpRequestError.ProxyTunnelError)
+    };
+
+    /// <summary>
+    /// Builds an error message that says what to check, following the status codes ElevenLabs documents
+    /// (https://elevenlabs.io/docs/developers/resources/errors): 402 for missing credits, 429 for rate and
+    /// concurrency limits.
+    /// </summary>
     private static string Describe(HttpStatusCode status, string body)
     {
         var hint = status switch
         {
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
                 $"ElevenLabs rejected the API key. Check {ElevenLabsOptions.ApiKeyVariable} and that the key is allowed to use Speech to Text.",
+            HttpStatusCode.PaymentRequired =>
+                "The ElevenLabs account does not have enough credits for this transcript. Check the balance and the plan on elevenlabs.io.",
             HttpStatusCode.UnprocessableEntity or HttpStatusCode.BadRequest =>
                 "ElevenLabs could not accept the request.",
             HttpStatusCode.TooManyRequests =>
-                "ElevenLabs is rate limiting this account, or the plan's quota is used up.",
+                "ElevenLabs is rate limiting this account, or too many of its requests are running at once.",
             _ => "ElevenLabs could not transcribe the file."
         };
 

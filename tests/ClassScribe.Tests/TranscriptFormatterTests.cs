@@ -75,6 +75,84 @@ public class TranscriptFormatterTests
         Assert.That(text, Is.EqualTo($"{Title}One two. Three four.{Blank}Five.{Environment.NewLine}"));
     }
 
+    /// <summary>
+    /// A long paragraph is also split after a sentence that ends in a closing quote or bracket (a plain
+    /// apostrophe, or a German “ that looks like an opening quote, included), in an ellipsis, in Arabic
+    /// or Urdu punctuation, or in the East Asian full stop, question mark or exclamation mark.
+    /// </summary>
+    [TestCase("said.\"")]
+    [TestCase("said.'")]
+    [TestCase("said?)")]
+    [TestCase("said!”")]
+    [TestCase("said.’")]
+    [TestCase("said.»")]
+    [TestCase("gut.“")]
+    [TestCase("said…")]
+    [TestCase("قال؟")]
+    [TestCase("قال۔")]
+    [TestCase("了。")]
+    [TestCase("what？")]
+    [TestCase("好！")]
+    public void A_long_paragraph_is_split_after_any_sentence_end(string lastWord)
+    {
+        var transcript = Transcript($"He {lastWord} Then.",
+            Word("He", 0.0, 0.2), Space(0.2, 0.3), Word(lastWord, 0.3, 0.6), Space(0.6, 0.7), Word("Then.", 0.7, 1.0));
+
+        var text = Formatter(new TranscriptOptions { IncludeTimestamps = false, MaxParagraphCharacters = 5 }).Format(transcript, "Kalam", null);
+
+        Assert.That(text, Is.EqualTo($"{Title}He {lastWord}{Blank}Then.{Environment.NewLine}"));
+    }
+
+    /// <summary>A closing bracket without a sentence end before it, as in a tag such as (laughs), does not end a sentence.</summary>
+    [Test]
+    public void A_closing_bracket_alone_does_not_end_a_sentence()
+    {
+        var transcript = Transcript("He (laughs) then.",
+            Word("He", 0.0, 0.2), Space(0.2, 0.3), Word("(laughs)", 0.3, 0.6), Space(0.6, 0.7), Word("then.", 0.7, 1.0));
+
+        var text = Formatter(new TranscriptOptions { IncludeTimestamps = false, MaxParagraphCharacters = 5 }).Format(transcript, "Kalam", null);
+
+        Assert.That(text, Is.EqualTo($"{Title}He (laughs) then.{Environment.NewLine}"));
+    }
+
+    /// <summary>A pause setting of zero or less turns pause breaks off, rather than putting every word in a paragraph of its own.</summary>
+    [TestCase(0.0)]
+    [TestCase(-1.0)]
+    public void A_pause_setting_of_zero_or_less_turns_pause_breaks_off(double pause)
+    {
+        var transcript = Transcript("One two. Three.",
+            Word("One", 0.0, 0.2), Space(0.2, 5.0), Word("two.", 5.0, 5.4), Space(5.4, 5.5), Word("Three.", 5.5, 6.0));
+
+        var text = Formatter(new TranscriptOptions { IncludeTimestamps = false, ParagraphPauseSeconds = pause }).Format(transcript, "Kalam", null);
+
+        Assert.That(text, Is.EqualTo($"{Title}One two. Three.{Environment.NewLine}"));
+    }
+
+    /// <summary>A paragraph length of zero or less turns the length limit off, rather than starting a paragraph at every sentence.</summary>
+    [TestCase(0)]
+    [TestCase(-5)]
+    public void A_length_setting_of_zero_or_less_turns_the_length_limit_off(int length)
+    {
+        var transcript = Transcript("One. Two. Three.",
+            Word("One.", 0.0, 0.2), Space(0.2, 0.3), Word("Two.", 0.3, 0.5), Space(0.5, 0.6), Word("Three.", 0.6, 0.8));
+
+        var text = Formatter(new TranscriptOptions { IncludeTimestamps = false, MaxParagraphCharacters = length }).Format(transcript, "Kalam", null);
+
+        Assert.That(text, Is.EqualTo($"{Title}One. Two. Three.{Environment.NewLine}"));
+    }
+
+    /// <summary>Positions more than a day into the recording keep all their hours, in paragraphs and in mark headings.</summary>
+    [Test]
+    public void Positions_after_a_day_keep_all_their_hours()
+    {
+        const double at = 25 * 3600;
+        var transcript = Transcript("Late words.", Word("Late", at, at + 0.4), Space(at + 0.4, at + 0.5), Word("words.", at + 0.5, at + 1.0));
+
+        var text = Formatter().Format(transcript, "Kalam", null, [new ClassMark(1, TimeSpan.FromSeconds(at + 1.5), null)]);
+
+        Assert.That(text, Is.EqualTo($"{Title}[25:00:00] Late words.{Blank}## [25:00:01] Mark 1{Environment.NewLine}"));
+    }
+
     /// <summary>Without word timings the plain text is used.</summary>
     [Test]
     public void Without_word_timings_the_plain_text_is_used()

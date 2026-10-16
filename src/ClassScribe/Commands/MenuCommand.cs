@@ -1,4 +1,3 @@
-using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -7,7 +6,8 @@ namespace ClassScribe.Commands;
 
 /// <summary>
 /// The menu shown when ClassScribe starts without arguments. One key picks a choice; when the choice
-/// has run, successfully or not, the menu comes back, until Q or Ctrl+C leaves it.
+/// has run, successfully or not, the menu comes back, until Q or Ctrl+C leaves it. Keys typed while a
+/// choice ran are dropped, so the menu only acts on a key pressed after it is shown.
 /// </summary>
 public sealed class MenuCommand(
     ICommandRunner commands,
@@ -34,13 +34,29 @@ public sealed class MenuCommand(
     {
         for (var first = true; ; first = false)
         {
-            if (!first) await Task.Delay(LogSettleTime, time);
-            ShowMenu();
-
-            switch (await ReadChoiceAsync())
+            if (!first)
             {
-                case null:
-                    return 0;
+                await Task.Delay(LogSettleTime, time);
+
+                // A key pressed while the choice ran, such as a Q or an Enter during the upload, was not
+                // meant for this menu: taken as a choice, it could quit or start something unasked.
+                ui.DiscardPendingKeys();
+            }
+
+            ShowMenu();
+            if (await ReadChoiceAsync() is not { } picked) return 0;
+
+            await RunChoiceAsync(picked);
+        }
+    }
+
+    /// <summary>Runs the choice picked. A failure is reported, and the menu carries on.</summary>
+    private async Task RunChoiceAsync(char picked)
+    {
+        try
+        {
+            switch (picked)
+            {
                 case '1':
                     await RecordAsync(transcribe: false);
                     break;
@@ -61,14 +77,30 @@ public sealed class MenuCommand(
                     break;
             }
         }
+        catch (OperationCanceledException)
+        {
+            // Ctrl+C during an upload: a normal way back to the menu.
+            logger.LogWarning("Cancelled");
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: the menu outlives a failed choice, whether the recording, the
+            // upload, the list of recordings, the recordings folder or the list of devices failed, and
+            // this log line is the report.
+            logger.LogError(ex, "Stopped because of an error");
+        }
     }
 
-    /// <summary>Lists the choices, where the files go and which device is recorded.</summary>
+    /// <summary>
+    /// Lists the choices, where the files go and which device is recorded. A recordings folder that cannot be
+    /// used, such as one on a drive that is not there, is pointed out right under its name, before anything is recorded.
+    /// </summary>
     private void ShowMenu()
     {
         ui.WriteLine();
         ui.WriteLine("ClassScribe");
         ui.WriteLine($"Recordings and transcripts: {folders.Root}");
+        if (folders.DescribeRootProblem() is { } problem) ui.WriteLine($"WARNING  {problem}.");
         ui.WriteLine($"Recording from: {choice.Description}");
         ui.WriteLine();
         ui.WriteLine("  1  Record only");
@@ -159,40 +191,25 @@ public sealed class MenuCommand(
         }
     }
 
-    /// <summary>Runs a choice. A failure is reported, and the menu carries on.</summary>
-    private async Task RunChoiceAsync(Func<Task<int>> choice)
-    {
-        try
-        {
-            await choice();
-        }
-        catch (OperationCanceledException)
-        {
-            // Ctrl+C during an upload: a normal way back to the menu.
-            logger.LogWarning("Cancelled");
-        }
-        catch (Exception ex)
-        {
-            // Deliberately not rethrown: the menu outlives a failed choice, and this log line is the report.
-            logger.LogError(ex, "Stopped because of an error");
-        }
-    }
-
     /// <summary>Choices 1 and 2: ask for the recording's name, then record, and transcribe when asked to.</summary>
     private async Task RecordAsync(bool transcribe)
     {
         if (await prompt.AskAsync() is not { } name) return;
 
-        await RunChoiceAsync(() => commands.RecordAsync(name, transcribe));
+        await commands.RecordAsync(name, transcribe);
     }
 
-    /// <summary>Choice 3: lists the recent recordings and transcribes the one picked.</summary>
+    /// <summary>
+    /// Choice 3: lists the recent recordings and transcribes the one picked. When there are none because the
+    /// recordings folder cannot be used, it says why. Otherwise it only says there is nothing to pick from: a
+    /// recording left out because it cannot be read now still exists, and the warning above names it.
+    /// </summary>
     private async Task TranscribeRecentRecordingAsync()
     {
         var recordings = folders.ListRecent(RecentRecordings);
         if (recordings.Count == 0)
         {
-            ui.WriteLine($"No recordings in {folders.Root} yet.");
+            ui.WriteLine(folders.DescribeRootProblem() is { } problem ? $"No recordings found. {problem}." : $"No recordings to pick from in {folders.Root}.");
             return;
         }
 
@@ -200,22 +217,36 @@ public sealed class MenuCommand(
         for (var i = 0; i < recordings.Count; i++)
         {
             var recorded = recordings[i];
-            var length = recorded.Length.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
-            ui.WriteLine($"  {i + 1}  {recorded.Files.BaseName}  {length}  {(recorded.HasTranscript ? "transcript ready" : "no transcript yet")}");
+            ui.WriteLine($"  {i + 1}  {recorded.Files.BaseName}  {Durations.Format(recorded.Length)}  {TranscriptState(recorded)}");
         }
 
         ui.WriteLine("Press a recording's number to transcribe it, or Esc to go back.");
         if (await ReadNumberAsync(recordings.Count) is not { } index) return;
 
         var chosen = recordings[index];
-        if (chosen.HasTranscript)
+        if (WhyBilledAgain(chosen) is { } reason)
         {
-            ui.WriteLine("This recording already has a transcript, and transcribing it again is billed again. Press Y to go ahead, any other key to go back.");
+            ui.WriteLine($"{reason} Press Y to go ahead, any other key to go back.");
             if (await ui.ReadKeyAsync(CancellationToken.None) is not { Key: ConsoleKey.Y }) return;
         }
 
-        await RunChoiceAsync(() => commands.TranscribeAsync(chosen.Files.Segment(1)));
+        await commands.TranscribeAsync(chosen.Files.Segment(1));
     }
+
+    /// <summary>What the list says about a recording's transcript: ready, an answer paid for and kept without one, or none yet.</summary>
+    private static string TranscriptState(RecordedClass recorded) =>
+        recorded.HasTranscript ? "transcript ready"
+        : recorded.KeptAnswer is not null ? "answer kept"
+        : "no transcript yet";
+
+    /// <summary>
+    /// Why transcribing the recording again is billed again, said before asking for a yes: it has a transcript, or
+    /// ElevenLabs' answer to an earlier try, already paid for, is kept without one. Null when neither is so.
+    /// </summary>
+    private static string? WhyBilledAgain(RecordedClass recorded) =>
+        recorded.HasTranscript ? "This recording already has a transcript, and transcribing it again is billed again."
+        : recorded.KeptAnswer is { } answer ? $"ElevenLabs' answer to an earlier try, which has been paid for, is kept in {answer}: look there for the transcript's text first, because transcribing it again is billed again."
+        : null;
 
     /// <summary>Waits for a digit from 1 to <paramref name="count"/> and returns its index; null for Esc, Q or Ctrl+C.</summary>
     private async Task<int?> ReadNumberAsync(int count)
@@ -244,7 +275,7 @@ public sealed class MenuCommand(
             return;
         }
 
-        await RunChoiceAsync(() => commands.TranscribeAsync(path));
+        await commands.TranscribeAsync(path);
     }
 
     /// <summary>Choice 5: opens the recordings folder, creating it when it is not there yet.</summary>

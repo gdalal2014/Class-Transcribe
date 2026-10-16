@@ -29,7 +29,7 @@ public sealed class TranscribeCommand(
 
         if (string.IsNullOrWhiteSpace(elevenLabs.Value.ApiKey))
         {
-            logger.LogError("No ElevenLabs API key found. Set the {Variable} environment variable and open a new terminal", ElevenLabsOptions.ApiKeyVariable);
+            logger.LogError("No ElevenLabs API key found. Set the {Variable} environment variable and open a new terminal (in VS Code, quit every VS Code window and start it again; a new terminal inside it keeps the old settings)", ElevenLabsOptions.ApiKeyVariable);
             return 1;
         }
 

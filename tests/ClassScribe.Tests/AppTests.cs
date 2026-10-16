@@ -35,7 +35,7 @@ public class AppTests
     {
         _ui = new FakeConsoleUi { IsInteractive = interactive };
         var recording = Options.Create(new RecordingOptions { OutputFolder = _folder.Path });
-        var folders = new ClassFolders(recording, TimeProvider.System);
+        var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance);
         var prompt = new RecordingNamePrompt(_ui);
         var menu = new MenuCommand(_commands.Object, _ui, folders, new FakeCaptureProvider(), new SourceChoice(recording), prompt, Mock.Of<IDesktop>(), TimeProvider.System, NullLogger<MenuCommand>.Instance);
         return new App(_commands.Object, menu, prompt, _ui, NullLogger<App>.Instance);
@@ -122,6 +122,33 @@ public class AppTests
         _commands.Verify(c => c.TranscribeAsync(_folder.Path), Times.Once);
     }
 
+    /// <summary>
+    /// Windows PowerShell 5.1 hands a quoted folder that ends in a backslash over with a stray quote at
+    /// the end, which tab completion produces whenever the path has a space. A quote cannot be part of a
+    /// Windows path, so it is taken off, for the transcribe command and for a bare path alike.
+    /// </summary>
+    [Test]
+    public async Task A_stray_quote_from_PowerShell_is_taken_off_the_path()
+    {
+        var withStrayQuote = _folder.Path + "\"";
+
+        await CreateApp().RunAsync(["transcribe", withStrayQuote]);
+        await CreateApp().RunAsync([withStrayQuote]);
+
+        _commands.Verify(c => c.TranscribeAsync(_folder.Path), Times.Exactly(2));
+    }
+
+    /// <summary>Command names are taken in any case, so Transcribe, typed by habit, is not an unknown command.</summary>
+    [Test]
+    public async Task Command_names_are_taken_in_any_case()
+    {
+        await CreateApp().RunAsync(["Transcribe", @"C:\Classes\Kalam"]);
+        await CreateApp().RunAsync(["RECORD-ONLY", "Kalam"]);
+
+        _commands.Verify(c => c.TranscribeAsync(@"C:\Classes\Kalam"), Times.Once);
+        _commands.Verify(c => c.RecordAsync("Kalam", false), Times.Once);
+    }
+
     /// <summary>Asking for help shows the usage and succeeds; anything unknown shows it and fails.</summary>
     [TestCase("help", 0)]
     [TestCase("--help", 0)]
@@ -131,7 +158,7 @@ public class AppTests
         var exitCode = await CreateApp().RunAsync([argument]);
 
         Assert.That(exitCode, Is.EqualTo(expectedExitCode));
-        Assert.That(_ui.Screen, Does.Contain("record-only"));
+        Assert.That(_ui.Screen, Does.Contain("record-only").And.Contain("Q twice (or Ctrl+C) stops"));
         _commands.VerifyNoOtherCalls();
     }
 

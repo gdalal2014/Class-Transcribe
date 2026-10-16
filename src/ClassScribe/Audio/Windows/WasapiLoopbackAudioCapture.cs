@@ -27,7 +27,14 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
     private const int BufferMilliseconds = 1000;
 
     private const int PollMilliseconds = 50;
+
+    /// <summary>Where the channel mask sits in a WAVEFORMATEXTENSIBLE: after the 18 bytes of WAVEFORMATEX and the word of valid bits.</summary>
+    private const int ChannelMaskOffset = 20;
+
     private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>A capture held up again and again is reported at most this often.</summary>
+    private static readonly TimeSpan GapReportInterval = TimeSpan.FromSeconds(30);
 
     private readonly MMDevice? _device;
     private readonly AudioClient _client;
@@ -36,6 +43,7 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
     private readonly AutoResetEvent? _packetReady;
     private readonly ILogger _logger;
     private byte[] _buffer = [];
+    private long _packetsRead;
     private Thread? _thread;
     private volatile bool _stopRequested;
     private bool _disposed;
@@ -55,7 +63,7 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
             if (format.Encoding is not (WaveFormatEncoding.IeeeFloat or WaveFormatEncoding.Pcm))
                 throw new NotSupportedException($"The output device \"{DeviceName}\" uses the unsupported encoding {format.Encoding}.");
 
-            Format = new AudioFormat(format.SampleRate, format.Channels, format.BitsPerSample, format.Encoding == WaveFormatEncoding.IeeeFloat);
+            Format = new AudioFormat(format.SampleRate, format.Channels, format.BitsPerSample, format.Encoding == WaveFormatEncoding.IeeeFloat, ChannelMaskOf(_streamFormat));
 
             // Same stream flags NAudio's loopback capture uses.
             _streamFlags = AudioClientStreamFlags.Loopback | AudioClientStreamFlags.AutoConvertPcm | AudioClientStreamFlags.SrcDefaultQuality;
@@ -151,19 +159,20 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
         try
         {
             var capture = _client.AudioCaptureClient;
+            var gaps = new CaptureGapWatch(TimeSpan.FromMilliseconds(BufferMilliseconds), GapReportInterval, TimeProvider.System);
             _client.Start();
+            gaps.Drained(TimeSpan.Zero);
             while (!_stopRequested)
             {
                 WaitForPackets();
 
                 var began = Stopwatch.GetTimestamp();
                 ReadPackets(capture);
-                var took = Stopwatch.GetElapsedTime(began);
 
-                // Windows holds one second of audio for us. Whoever handles the audio (a slow disk, usually)
-                // took longer than that, so what arrived meanwhile is gone. At least it does not go unnoticed.
-                if (took.TotalMilliseconds >= BufferMilliseconds)
-                    _logger.LogWarning("Storing the captured audio took {Seconds:F1} seconds, longer than Windows keeps it waiting; the recording probably has a gap there", took.TotalSeconds);
+                // Windows holds one second of audio for us. When the loop has not emptied it for that long,
+                // because storing the audio was slow (a disk, usually) or because the loop did not get to run,
+                // what arrived first is gone. At least it does not go unnoticed.
+                if (gaps.Drained(Stopwatch.GetElapsedTime(began)) is { } gap) ReportGap(gap);
             }
 
             // Collect what arrived since the last poll.
@@ -204,12 +213,53 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
             _packetReady.WaitOne(PollMilliseconds);
     }
 
+    /// <summary>Warns that the recording probably has a gap, saying how long the capture was held up and how much of that went on storing the audio.</summary>
+    private void ReportGap(CaptureGap gap)
+    {
+        if (gap.Count == 1)
+            _logger.LogWarning(
+                "The capture was held up for {Seconds:F1} seconds ({Storing:F1} of them storing the audio), longer than Windows keeps audio waiting; the recording probably has a gap there",
+                gap.Longest.TotalSeconds, gap.Storing.TotalSeconds);
+        else
+            _logger.LogWarning(
+                "The capture was held up {Count} times since the last such message, once for {Seconds:F1} seconds ({Storing:F1} of them storing the audio), longer than Windows keeps audio waiting; the recording probably has gaps there",
+                gap.Count, gap.Longest.TotalSeconds, gap.Storing.TotalSeconds);
+    }
+
+    /// <summary>
+    /// Which speaker each channel of a mix format feeds, as Windows' channel mask, or 0 when the format does
+    /// not say. NAudio 2.2.1 keeps the mask to itself, so it is read from the format as Windows lays it out.
+    /// </summary>
+    public static int ChannelMaskOf(WaveFormat format)
+    {
+        if (format is not WaveFormatExtensible) return 0;
+
+        var pointer = WaveFormat.MarshalToPtr(format);
+        try
+        {
+            return Marshal.ReadInt32(pointer, ChannelMaskOffset);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pointer);
+        }
+    }
+
     /// <summary>Hands every waiting packet to the listeners. Silent packets are delivered as zeros.</summary>
     private void ReadPackets(AudioCaptureClient capture)
     {
         while (capture.GetNextPacketSize() > 0)
         {
             var pointer = capture.GetBuffer(out var frames, out var flags);
+
+            // Windows flags a packet that does not follow on from the one before. The first packet of a stream
+            // has nothing to follow on from, and with loopback the packets stop altogether while nothing plays,
+            // so the flag is no proof that audio was lost and is only noted for diagnosis. Real hold-ups are
+            // found by timing the loop (see CaptureLoop).
+            if (flags.HasFlag(AudioClientBufferFlags.DataDiscontinuity) && _packetsRead > 0)
+                _logger.LogDebug("Windows marked a break in the audio captured from \"{Device}\"", DeviceName);
+            _packetsRead++;
+
             var byteCount = frames * _streamFormat.BlockAlign;
             if (_buffer.Length < byteCount) _buffer = new byte[byteCount];
 

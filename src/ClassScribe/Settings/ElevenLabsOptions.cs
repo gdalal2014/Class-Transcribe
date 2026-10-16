@@ -9,7 +9,13 @@ public sealed class ElevenLabsOptions
     /// <summary>Environment variable that holds the API key. It is the name ElevenLabs' own samples use.</summary>
     public const string ApiKeyVariable = "ELEVENLABS_API_KEY";
 
-    /// <summary>API key. Leave it out of appsettings.json and set the environment variable instead.</summary>
+    /// <summary>The setting the API key is bound from. Only <see cref="ApiKeyFromEnvironment"/> fills it.</summary>
+    public const string ApiKeySetting = $"{SectionName}:{nameof(ApiKey)}";
+
+    /// <summary>
+    /// API key, taken from the <see cref="ApiKeyVariable"/> environment variable and nowhere else (see
+    /// <see cref="ApiKeyFromEnvironment"/>). A key written into appsettings.json is ignored, with a warning.
+    /// </summary>
     public string ApiKey { get; init; } = "";
 
     /// <summary>Base address of the API.</summary>
@@ -27,7 +33,11 @@ public sealed class ElevenLabsOptions
     /// <summary>Ask the model to drop filler words and false starts.</summary>
     public bool NoVerbatim { get; init; }
 
-    /// <summary>Glossary file, one term per line. Relative paths are resolved next to the executable.</summary>
+    /// <summary>
+    /// Glossary file, one term per line. Environment variables such as %USERPROFILE% are expanded, quotes around
+    /// the path are ignored, and a relative path is taken next to the executable. An empty value turns the
+    /// glossary off (see <see cref="Transcription.KeytermLoader.ResolvePath"/>).
+    /// </summary>
     public string KeytermsFile { get; init; } = "keyterms.txt";
 
     /// <summary>Longest time one request may take, covering the upload and the wait for the transcript.</summary>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Settings for every test run of ClassScribe.Tests. ClassScribe.Tests.csproj names this file in
+  RunSettingsFilePath, so dotnet test and Visual Studio use it without any switch.
+
+  TestSessionTimeout is the hang guard. A run still going after this many milliseconds (10 minutes)
+  is aborted and reported as failed, so a test that deadlocks fails the run instead of hanging it.
+  The whole suite normally takes well under a minute. To learn which test hung, run dotnet test
+  with the blame-hang-timeout option, which names the test that was running.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <TestSessionTimeout>600000</TestSessionTimeout>
+  </RunConfiguration>
+</RunSettings>

@@ -8,6 +8,10 @@
     <RootNamespace>ClassScribe</RootNamespace>
     <AssemblyName>ClassScribe</AssemblyName>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- The compiler then reports a public type or member without an XML summary (CS1591). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The summaries are for reading the code: ClassScribe.xml is not published next to the exe. -->
+    <PublishDocumentationFile>false</PublishDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>

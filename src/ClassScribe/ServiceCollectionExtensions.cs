@@ -23,9 +23,13 @@ public static class ServiceCollectionExtensions
         services.Configure<ElevenLabsOptions>(configuration.GetSection(ElevenLabsOptions.SectionName));
         services.Configure<TranscriptOptions>(configuration.GetSection(TranscriptOptions.SectionName));
 
+        // Run before anything that reads the settings is created (see AppHost.RunAsync).
+        services.AddSingleton(provider => new SettingsCheck(configuration, provider.GetRequiredService<ILogger<SettingsCheck>>()));
+
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IConsoleUi, ConsoleUi>();
         services.AddSingleton<IDesktop, WindowsDesktop>();
+        services.AddSingleton<IExitWarnings, ProcessExitWarnings>();
         services.AddSingleton<ClassFolders>();
         services.AddSingleton<ClassMarks>();
 

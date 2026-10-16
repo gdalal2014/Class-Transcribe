@@ -3,8 +3,11 @@ using System.Buffers.Binary;
 namespace ClassScribe.Audio;
 
 /// <summary>
-/// Writes mono 16-bit PCM to a WAV file. <see cref="Flush"/> rewrites the header sizes, so the file
-/// stays a valid WAV while recording and a crash loses only the audio written since the last flush.
+/// Writes mono 16-bit PCM to a WAV file. Each write goes to Windows at once, with no buffer of the writer's
+/// own, so a crash, a kill, a shutdown or a sign-out loses at most the write in progress, and
+/// <see cref="DataBytes"/> counts only what Windows accepted. <see cref="Flush"/> rewrites the header sizes and
+/// pushes everything to the disk itself, so the file stays a valid WAV while recording and a power cut loses
+/// at most what Windows had not yet written to the disk since the last flush.
 /// </summary>
 public sealed class WavSegmentWriter : IDisposable
 {
@@ -21,7 +24,8 @@ public sealed class WavSegmentWriter : IDisposable
     {
         Path = path;
         SampleRate = sampleRate;
-        _stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024);
+        // No buffer of its own (bufferSize 0): every write is handed to Windows as it comes (see the class summary).
+        _stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read, bufferSize: 0);
         try
         {
             // On disk the file is a valid, empty WAV from its first moment.
@@ -41,7 +45,7 @@ public sealed class WavSegmentWriter : IDisposable
     /// <summary>Sample rate of the audio in the file.</summary>
     public int SampleRate { get; }
 
-    /// <summary>Bytes of audio written so far.</summary>
+    /// <summary>Bytes of audio written so far, every one of them accepted by Windows.</summary>
     public long DataBytes { get; private set; }
 
     /// <summary>Length of the audio written so far.</summary>
@@ -75,20 +79,31 @@ public sealed class WavSegmentWriter : IDisposable
         return true;
     }
 
-    /// <summary>Appends mono 16-bit PCM samples.</summary>
+    /// <summary>Appends mono 16-bit PCM samples, handing them to Windows at once. A write that fails is not counted.</summary>
     public void Write(ReadOnlySpan<byte> mono16)
     {
         _stream.Write(mono16);
         DataBytes += mono16.Length;
     }
 
-    /// <summary>Rewrites the header with the current sizes and pushes everything to disk.</summary>
+    /// <summary>
+    /// Rewrites the header with the current sizes and pushes everything to disk. When that fails, the writer is left
+    /// as it was: the next audio still goes after the audio already written, and the next flush tries the header again.
+    /// </summary>
     public void Flush()
     {
         var end = _stream.Position;
         _stream.Position = 0;
-        WriteHeader();
-        _stream.Position = end;
+        try
+        {
+            WriteHeader();
+        }
+        finally
+        {
+            // Back to the end even when the header could not be written, or the next audio would go over the header.
+            _stream.Position = end;
+        }
+
         _stream.Flush(flushToDisk: true);
     }
 

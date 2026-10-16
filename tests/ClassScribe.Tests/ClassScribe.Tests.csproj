@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- The compiler then reports a test class or method without an XML summary (CS1591), and fails the build over it. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+    <!-- The hang guard: a run that takes too long fails instead of hanging (see ClassScribe.Tests.runsettings). -->
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)\ClassScribe.Tests.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>

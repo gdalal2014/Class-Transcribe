@@ -16,6 +16,7 @@ public class PlainConsoleFormatterTests
         return writer.ToString();
     }
 
+    /// <summary>An information line is the time of day and the message, and nothing else.</summary>
     [Test]
     public void Information_is_the_time_and_the_message()
     {
@@ -24,6 +25,7 @@ public class PlainConsoleFormatterTests
         Assert.That(line, Does.Match(@"^\d\d:\d\d:\d\d  Recording to C:\\Classes\r?\n$"));
     }
 
+    /// <summary>The clock reads hh:mm:ss with colons whatever the regional settings of the machine are.</summary>
     [Test, SetCulture("fi-FI")]   // a region that writes the time as 14.05.00
     public void The_clock_looks_the_same_under_any_regional_settings()
     {
@@ -32,6 +34,7 @@ public class PlainConsoleFormatterTests
         Assert.That(line, Does.Match(@"^\d\d:\d\d:\d\d  Recording"));
     }
 
+    /// <summary>Warnings and errors carry a label that stands out; information has none.</summary>
     [Test]
     public void Warnings_and_errors_are_labelled()
     {
@@ -39,6 +42,7 @@ public class PlainConsoleFormatterTests
         Assert.That(Format(LogLevel.Error, "Upload failed"), Does.Contain("  ERROR  Upload failed"));
     }
 
+    /// <summary>An exception adds one line per exception in its chain, its type and message, and no stack trace.</summary>
     [Test]
     public void Each_exception_in_the_chain_gets_one_line()
     {

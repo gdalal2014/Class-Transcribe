@@ -16,6 +16,9 @@ public sealed class TranscriptFormatter(IOptions<TranscriptOptions> options)
 {
     private const string SpacingType = "spacing";
 
+    /// <summary>The marks that end a sentence: . ? ! and the ellipsis, the Arabic question mark, the Urdu full stop, and their East Asian forms.</summary>
+    private const string SentenceEnds = ".?!…؟۔。？！";
+
     private static readonly string Blank = Environment.NewLine + Environment.NewLine;
 
     /// <summary>Formats the transcript as Markdown, with the recording's marks, if any, at their positions.</summary>
@@ -75,29 +78,40 @@ public sealed class TranscriptFormatter(IOptions<TranscriptOptions> options)
         return string.Join(Blank, blocks) + Environment.NewLine;
     }
 
-    /// <summary>Decides whether the word should open a new paragraph. The first word, and the first after a mark, always do.</summary>
+    /// <summary>
+    /// Decides whether the word should open a new paragraph. The first word, and the first after a mark,
+    /// always do. A pause or length setting of zero or less turns that kind of break off.
+    /// </summary>
     private static bool StartsNewParagraph(List<Paragraph> paragraphs, TranscriptWord word, double? lastEnd, TranscriptOptions settings)
     {
         if (paragraphs.Count == 0 || paragraphs[^1].Mark is not null) return true;
 
         var pause = word.Start is { } start && lastEnd is { } end ? start - end : 0;
-        if (pause >= settings.ParagraphPauseSeconds) return true;
+        if (settings.ParagraphPauseSeconds > 0 && pause >= settings.ParagraphPauseSeconds) return true;
 
         var current = paragraphs[^1].Text;
-        return current.Length >= settings.MaxParagraphCharacters && EndsSentence(current);
+        return settings.MaxParagraphCharacters > 0 && current.Length >= settings.MaxParagraphCharacters && EndsSentence(current);
     }
 
-    /// <summary>True when the text so far ends with sentence punctuation, ignoring trailing spaces.</summary>
+    /// <summary>
+    /// True when the text so far ends a sentence: with . ? ! or an ellipsis, or the Arabic, Urdu or
+    /// East Asian marks for them, perhaps followed by closing quotes, closing brackets and spaces.
+    /// </summary>
     private static bool EndsSentence(StringBuilder text)
     {
         for (var i = text.Length - 1; i >= 0; i--)
         {
-            if (char.IsWhiteSpace(text[i])) continue;
-            return text[i] is '.' or '?' or '!';
+            if (char.IsWhiteSpace(text[i]) || IsClosing(text[i])) continue;
+            return SentenceEnds.Contains(text[i]);
         }
 
         return false;
     }
+
+    /// <summary>True for a quote or bracket that can follow a sentence's end, such as " ’ ” » or ), and the opening-style quotes some languages close with, such as German “.</summary>
+    private static bool IsClosing(char c) =>
+        c is '"' or '\''
+        || CharUnicodeInfo.GetUnicodeCategory(c) is UnicodeCategory.ClosePunctuation or UnicodeCategory.FinalQuotePunctuation or UnicodeCategory.InitialQuotePunctuation;
 
     /// <summary>A paragraph that holds only a mark.</summary>
     private static Paragraph MarkParagraph(ClassMark mark) => new(mark.Position.TotalSeconds, new StringBuilder(), mark);
@@ -113,9 +127,8 @@ public sealed class TranscriptFormatter(IOptions<TranscriptOptions> options)
     private static string Line(double start, string text, TranscriptOptions settings) =>
         settings.IncludeTimestamps ? $"[{FormatTime(start)}] {text}" : text;
 
-    /// <summary>Formats seconds as hh:mm:ss.</summary>
-    private static string FormatTime(double seconds) =>
-        TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+    /// <summary>Formats seconds as hh:mm:ss, with as many hours as there are.</summary>
+    private static string FormatTime(double seconds) => Durations.Format(TimeSpan.FromSeconds(seconds));
 
     /// <summary>A paragraph being built: where it starts, its text so far, or the mark it stands for.</summary>
     private sealed record Paragraph(double Start, StringBuilder Text, ClassMark? Mark);

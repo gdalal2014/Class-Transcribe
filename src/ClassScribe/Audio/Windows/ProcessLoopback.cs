@@ -60,6 +60,12 @@ internal static class ProcessLoopback
         }
     }
 
+    /// <summary>
+    /// Asks Windows to activate an audio interface, here an audio client, for the device at
+    /// <paramref name="deviceInterfacePath"/> with the activation parameters given. It returns at once, and
+    /// Windows reports the result to <paramref name="completionHandler"/> on a thread of its own. A request
+    /// Windows refuses outright is thrown as an exception.
+    /// </summary>
     [DllImport("Mmdevapi.dll", ExactSpelling = true, PreserveSig = false)]
     private static extern void ActivateAudioInterfaceAsync(
         [MarshalAs(UnmanagedType.LPWStr)] string deviceInterfacePath,

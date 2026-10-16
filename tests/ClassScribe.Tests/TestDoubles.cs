@@ -48,17 +48,38 @@ public sealed class TempFolder : IDisposable
     }
 }
 
-/// <summary>A clock the test moves by hand. Timers made from it fire when the clock is moved past their time.</summary>
+/// <summary>
+/// A clock the test moves by hand. Timers made from it fire when the clock is moved past their time.
+/// Like the computer's clock it has two faces: the time of day (<see cref="GetUtcNow"/>), which Windows
+/// may set, and a steady count (<see cref="GetTimestamp"/>) that only moves forward and that timers follow.
+/// <see cref="Advance"/> moves both; <see cref="StepWallClock"/> moves the time of day alone.
+/// </summary>
 public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
 {
     private readonly Lock _gate = new();
     private readonly List<ManualTimer> _timers = [];
     private DateTimeOffset _now = start;
+    private TimeSpan _elapsed;
+
+    /// <summary>Timers made from this clock that have not been disposed.</summary>
+    public int ActiveTimers
+    {
+        get { lock (_gate) return _timers.Count; }
+    }
+
+    /// <inheritdoc />
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
 
     /// <inheritdoc />
     public override DateTimeOffset GetUtcNow()
     {
         lock (_gate) return _now;
+    }
+
+    /// <summary>The steady count, in ticks of 100 nanoseconds since the clock was made.</summary>
+    public override long GetTimestamp()
+    {
+        lock (_gate) return _elapsed.Ticks;
     }
 
     /// <inheritdoc />
@@ -70,25 +91,35 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
         return timer;
     }
 
-    /// <summary>Moves the clock forward, then runs every timer that has come due, once.</summary>
+    /// <summary>
+    /// Moves the clock forward, then runs every timer that has come due, once. A negative step only sets
+    /// the time of day back, as <see cref="StepWallClock"/> does, because the steady count never runs backwards.
+    /// </summary>
     public void Advance(TimeSpan by)
     {
         List<ManualTimer> due;
         lock (_gate)
         {
             _now += by;
-            due = [.. _timers.Where(timer => timer.Due <= _now)];
-            foreach (var timer in due) timer.Due = timer.Period > TimeSpan.Zero ? _now + timer.Period : DateTimeOffset.MaxValue;
+            if (by > TimeSpan.Zero) _elapsed += by;
+            due = [.. _timers.Where(timer => timer.Due <= _elapsed)];
+            foreach (var timer in due) timer.Due = timer.Period > TimeSpan.Zero ? _elapsed + timer.Period : TimeSpan.MaxValue;
         }
 
         foreach (var timer in due) timer.Run();
     }
 
+    /// <summary>Sets the time of day forward or back, as Windows does when it corrects its clock. The steady count and the timers do not notice.</summary>
+    public void StepWallClock(TimeSpan by)
+    {
+        lock (_gate) _now += by;
+    }
+
     /// <summary>A timer that only the test's clock can fire.</summary>
     private sealed class ManualTimer(ManualTimeProvider clock, TimerCallback callback, object? state) : ITimer
     {
-        /// <summary>When the timer fires next.</summary>
-        public DateTimeOffset Due { get; set; }
+        /// <summary>When the timer fires next, on the steady count; <see cref="TimeSpan.MaxValue"/> when it is not set to fire.</summary>
+        public TimeSpan Due { get; set; }
 
         /// <summary>The time between firings; zero or less for a timer that fires once.</summary>
         public TimeSpan Period { get; private set; }
@@ -101,7 +132,7 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
         {
             lock (clock._gate)
             {
-                Due = dueTime < TimeSpan.Zero ? DateTimeOffset.MaxValue : clock._now + dueTime;
+                Due = dueTime < TimeSpan.Zero ? TimeSpan.MaxValue : clock._elapsed + dueTime;
                 Period = period;
             }
 
@@ -151,8 +182,10 @@ public sealed class RecordingLogger<T> : ILogger<T>
 /// </summary>
 public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fake Speakers", string? deviceId = null) : IAudioCapture
 {
+    private volatile bool _startEntered;
     private volatile bool _started;
     private volatile bool _disposed;
+    private int _disposeCalls;
 
     /// <summary>The name doubles as the identifier unless one is given: two fakes with one name stand for the same device.</summary>
     public string DeviceId { get; } = deviceId ?? deviceName;
@@ -169,11 +202,26 @@ public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fa
     /// <summary>When set, Dispose throws this, as a driver that will not shut down cleanly would.</summary>
     public Exception? DisposeFailure { get; init; }
 
-    /// <summary>True once Start was called.</summary>
+    /// <summary>When set, Start throws this, as a device that cannot be opened at that moment would.</summary>
+    public Exception? StartFailure { get; init; }
+
+    /// <summary>When set, Start waits until it is signalled, as a driver that has stopped answering would.</summary>
+    public ManualResetEventSlim? StartGate { get; init; }
+
+    /// <summary>When set, Dispose waits until it is signalled, as a driver that has stopped answering would. It is counted in <see cref="DisposeCalls"/> before it waits.</summary>
+    public ManualResetEventSlim? DisposeGate { get; init; }
+
+    /// <summary>True once Start was entered, even while it still waits at <see cref="StartGate"/>.</summary>
+    public bool StartEntered => _startEntered;
+
+    /// <summary>True once Start has returned without failing.</summary>
     public bool Started => _started;
 
     /// <summary>True once Dispose was called.</summary>
     public bool Disposed => _disposed;
+
+    /// <summary>How many times Dispose was called. A capture is meant to be released once.</summary>
+    public int DisposeCalls => Volatile.Read(ref _disposeCalls);
 
     /// <inheritdoc />
     public event EventHandler<AudioDataEventArgs>? DataAvailable;
@@ -182,7 +230,13 @@ public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fa
     public event EventHandler<CaptureStoppedEventArgs>? Stopped;
 
     /// <inheritdoc />
-    public void Start() => _started = true;
+    public void Start()
+    {
+        _startEntered = true;
+        StartGate?.Wait();
+        if (StartFailure is not null) throw StartFailure;
+        _started = true;
+    }
 
     /// <inheritdoc />
     public void Stop() { }
@@ -190,6 +244,8 @@ public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fa
     /// <inheritdoc />
     public void Dispose()
     {
+        Interlocked.Increment(ref _disposeCalls);
+        DisposeGate?.Wait();
         if (_disposed) return;
         _disposed = true;
         if (_started && FinalAudio is { } audio) Deliver(audio);
@@ -220,6 +276,10 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     private string? _defaultDeviceId;
     private int _failedCreations;
     private int _deviceQueries;
+    private ManualResetEventSlim? _listingHold;
+    private ManualResetEventSlim? _creationHold;
+    private volatile bool _listingHeld;
+    private volatile bool _creationHeld;
 
     /// <summary>Captures handed out so far.</summary>
     public IReadOnlyList<FakeAudioCapture> Created
@@ -232,6 +292,15 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
 
     /// <summary>How often the devices or the apps were looked up: once per check the session makes.</summary>
     public int DeviceQueries => Volatile.Read(ref _deviceQueries);
+
+    /// <summary>True while anyone listens for <see cref="DevicesChanged"/>.</summary>
+    public bool HasListeners => DevicesChanged is not null;
+
+    /// <summary>True once a look at the devices held up by <see cref="HoldNextListing"/> has begun to wait.</summary>
+    public bool ListingHeld => _listingHeld;
+
+    /// <summary>True once a capture held up by <see cref="HoldNextCreation"/> has begun to wait.</summary>
+    public bool CreationHeld => _creationHeld;
 
     /// <inheritdoc />
     public event EventHandler? DevicesChanged;
@@ -249,6 +318,12 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
         }
 
         return capture;
+    }
+
+    /// <summary>Connects a device with no capture prepared for it, so every attempt to open it fails. The first device connected becomes the default one.</summary>
+    public void ConnectDevice(string deviceId, float level = 0)
+    {
+        lock (_gate) Connect(deviceId, level);
     }
 
     /// <summary>Sets what Windows' meter shows for a device: 0 for silence, more while sound plays on it.</summary>
@@ -295,6 +370,15 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     /// <summary>Simulates a device notification that changes nothing for the recording. Windows sends those too.</summary>
     public void RaiseDevicesChanged() => DevicesChanged?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>
+    /// Makes the next look at the output devices wait until <paramref name="gate"/> is signalled, as a call
+    /// that Windows holds up would. The look is counted in <see cref="DeviceQueries"/> before it waits.
+    /// </summary>
+    public void HoldNextListing(ManualResetEventSlim gate) => Volatile.Write(ref _listingHold, gate);
+
+    /// <summary>Makes the next request for a capture wait until <paramref name="gate"/> is signalled before the capture is made, as a call that Windows holds up would.</summary>
+    public void HoldNextCreation(ManualResetEventSlim gate) => Volatile.Write(ref _creationHold, gate);
+
     /// <summary>Simulates Windows reporting that no output device is left.</summary>
     public void RemoveDevices()
     {
@@ -311,6 +395,12 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     public IReadOnlyList<OutputDevice> GetOutputDevices()
     {
         Interlocked.Increment(ref _deviceQueries);
+        if (Interlocked.Exchange(ref _listingHold, null) is { } hold)
+        {
+            _listingHeld = true;
+            hold.Wait();
+        }
+
         lock (_gate) return [.. _connected.Select(id => new OutputDevice(id, id, id == _defaultDeviceId, _levels.GetValueOrDefault(id)))];
     }
 
@@ -324,6 +414,12 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     /// <inheritdoc />
     public IAudioCapture CreateCapture(CaptureTarget target)
     {
+        if (Interlocked.Exchange(ref _creationHold, null) is { } hold)
+        {
+            _creationHeld = true;
+            hold.Wait();
+        }
+
         lock (_gate)
         {
             if (!_queued.TryGetValue(target.Id, out var queue) || !queue.TryDequeue(out var capture))
@@ -360,24 +456,32 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
 public sealed class FakeUserSignals : IUserSignals
 {
     private readonly TaskCompletionSource _stop = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly CancellationTokenSource _cancellation = new();
 
     /// <inheritdoc />
     public Task StopRequested => _stop.Task;
 
     /// <inheritdoc />
-    public CancellationToken Cancellation => CancellationToken.None;
+    public CancellationToken Cancellation => _cancellation.Token;
 
     /// <inheritdoc />
     public void RequestStop() => _stop.TrySetResult();
+
+    /// <summary>Cancels whatever is still running, such as the upload, as a later Ctrl+C does.</summary>
+    public void Cancel() => _cancellation.Cancel();
 }
 
 /// <summary>
 /// A console the test types into. Keys and lines are queued in advance, and everything the app shows is
 /// kept. A key read with nothing queued waits until the test types more, or until it is cancelled.
+/// Keys queued with <see cref="Type"/> are pressed each after its prompt; keys queued with
+/// <see cref="TypeAhead"/> were pressed while nothing read the keyboard, such as during an upload, so
+/// they come first and <see cref="DiscardPendingKeys"/> drops them.
 /// </summary>
 public sealed class FakeConsoleUi : IConsoleUi
 {
     private readonly Lock _gate = new();
+    private readonly Queue<ConsoleKeyInfo> _typedAhead = new();
     private readonly Queue<ConsoleKeyInfo> _keys = new();
     private readonly Queue<string?> _lines = new();
     private readonly ConcurrentQueue<string> _output = new();
@@ -390,20 +494,24 @@ public sealed class FakeConsoleUi : IConsoleUi
     public string Screen => string.Join(Environment.NewLine, _output);
 
     /// <summary>Queues key presses: letters and digits as they are, '\r' for Enter, '\u001b' for Esc and '\u0003' for Ctrl+C.</summary>
-    public void Type(params char[] keys)
-    {
-        lock (_gate)
-        {
-            foreach (var key in keys) _keys.Enqueue(ToKeyInfo(key));
-            _typed.TrySetResult();
-            _typed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
-    }
+    public void Type(params char[] keys) => Enqueue(_keys, keys);
+
+    /// <summary>
+    /// Queues key presses made while nothing reads the keyboard, such as during an upload. They wait in
+    /// the console, so they are read before the keys queued with <see cref="Type"/>, unless they are discarded first.
+    /// </summary>
+    public void TypeAhead(params char[] keys) => Enqueue(_typedAhead, keys);
 
     /// <summary>Queues a line, as typed or dragged in and followed by Enter. Null stands for Esc.</summary>
     public void TypeLine(string? line)
     {
         lock (_gate) _lines.Enqueue(line);
+    }
+
+    /// <inheritdoc />
+    public void DiscardPendingKeys()
+    {
+        lock (_gate) _typedAhead.Clear();
     }
 
     /// <inheritdoc />
@@ -414,6 +522,7 @@ public sealed class FakeConsoleUi : IConsoleUi
             Task typed;
             lock (_gate)
             {
+                if (_typedAhead.TryDequeue(out var early)) return early;
                 if (_keys.TryDequeue(out var key)) return key;
                 typed = _typed.Task;
             }
@@ -441,6 +550,17 @@ public sealed class FakeConsoleUi : IConsoleUi
     /// <inheritdoc />
     public void WriteLine(string text = "") => _output.Enqueue(text);
 
+    /// <summary>Adds key presses to one of the queues and wakes a read that waits for them.</summary>
+    private void Enqueue(Queue<ConsoleKeyInfo> queue, char[] keys)
+    {
+        lock (_gate)
+        {
+            foreach (var key in keys) queue.Enqueue(ToKeyInfo(key));
+            _typed.TrySetResult();
+            _typed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+
     /// <summary>Turns a character into the key press that types it.</summary>
     private static ConsoleKeyInfo ToKeyInfo(char key) => key switch
     {
@@ -467,7 +587,7 @@ public static class Calls
 
     /// <summary>Any request to build an upload file.</summary>
     public static readonly Expression<Action<IAudioPreparer>> AnyPreparation =
-        preparer => preparer.Prepare(It.IsAny<IReadOnlyList<string>>(), It.IsAny<string>());
+        preparer => preparer.Prepare(It.IsAny<IReadOnlyList<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>());
 
     /// <summary>A request for the transcript of one particular file.</summary>
     public static Expression<Func<ITranscriptionClient, Task<TranscriptionResult>>> TranscriptionOf(string audioPath) =>
@@ -491,12 +611,19 @@ public static class Mocks
         return client;
     }
 
-    /// <summary>A preparer that writes a small placeholder where the upload file should go.</summary>
+    /// <summary>
+    /// A preparer that writes a small placeholder where the upload file should go and, like the real one,
+    /// fails rather than replace a file that is already there.
+    /// </summary>
     public static Mock<IAudioPreparer> AudioPreparer()
     {
         var preparer = new Mock<IAudioPreparer>();
         preparer.Setup(Calls.AnyPreparation)
-            .Callback((IReadOnlyList<string> _, string outputPath) => File.WriteAllBytes(outputPath, [1, 2, 3]));
+            .Callback((IReadOnlyList<string> _, string outputPath, CancellationToken _) =>
+            {
+                using var upload = new FileStream(outputPath, FileMode.CreateNew, FileAccess.Write);
+                upload.Write([1, 2, 3]);
+            });
         return preparer;
     }
 }
@@ -512,9 +639,16 @@ public sealed class StubHttpHandler : HttpMessageHandler
     /// <summary>Requests received so far.</summary>
     public List<CapturedRequest> Requests { get; } = [];
 
+    /// <summary>Runs as each request reaches the handler, before its body is read, so a test can look at what had happened by then.</summary>
+    public Action? OnSend { get; set; }
+
     /// <summary>Queues a response.</summary>
     public void Enqueue(HttpStatusCode status, string body) =>
         _answers.Enqueue(() => new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+
+    /// <summary>Queues a response whose headers arrive but whose body never does: reading it waits until the read is cancelled.</summary>
+    public void EnqueueStalledBody(HttpStatusCode status) =>
+        _answers.Enqueue(() => new HttpResponseMessage(status) { Content = new StreamContent(new StalledStream()) });
 
     /// <summary>Queues a failure, such as a broken connection.</summary>
     public void EnqueueFailure(Exception failure) => _answers.Enqueue(() => throw failure);
@@ -525,12 +659,63 @@ public sealed class StubHttpHandler : HttpMessageHandler
     /// <inheritdoc />
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        OnSend?.Invoke();
+
         // Taken before the body is read, so it shows whether the length was known up front.
         var contentLength = request.Content?.Headers.ContentLength;
         var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
         var apiKey = request.Headers.TryGetValues("xi-api-key", out var values) ? values.Single() : null;
         Requests.Add(new CapturedRequest(request.Method, request.RequestUri, apiKey, request.Content?.Headers.ContentType?.ToString(), contentLength, body));
         return _answers.Dequeue()();
+    }
+
+    /// <summary>A response body that never arrives, as from a server that stalls after sending the headers.</summary>
+    private sealed class StalledStream : Stream
+    {
+        /// <inheritdoc />
+        public override bool CanRead => true;
+
+        /// <inheritdoc />
+        public override bool CanSeek => false;
+
+        /// <inheritdoc />
+        public override bool CanWrite => false;
+
+        /// <inheritdoc />
+        public override long Length => throw new NotSupportedException();
+
+        /// <inheritdoc />
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        /// <inheritdoc />
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException("Only an asynchronous read can wait to be cancelled.");
+
+        /// <summary>Waits until the read is cancelled; no data ever comes.</summary>
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        /// <inheritdoc />
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        /// <inheritdoc />
+        public override void Flush() { }
+
+        /// <inheritdoc />
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        /// <inheritdoc />
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        /// <inheritdoc />
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }
 
