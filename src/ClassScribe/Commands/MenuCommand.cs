@@ -1,4 +1,5 @@
 using System.Globalization;
+using ClassScribe.Audio;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -12,6 +13,8 @@ public sealed class MenuCommand(
     ICommandRunner commands,
     IConsoleUi ui,
     ClassFolders folders,
+    ILoopbackCaptureProvider devices,
+    SourceChoice choice,
     IDesktop desktop,
     TimeProvider time,
     ILogger<MenuCommand> logger)
@@ -52,25 +55,97 @@ public sealed class MenuCommand(
                 case '5':
                     OpenRecordingsFolder();
                     break;
+                case '6':
+                    await ChooseSourceAsync();
+                    break;
             }
         }
     }
 
-    /// <summary>Lists the choices and where the files go.</summary>
+    /// <summary>Lists the choices, where the files go and which device is recorded.</summary>
     private void ShowMenu()
     {
         ui.WriteLine();
         ui.WriteLine("ClassScribe");
         ui.WriteLine($"Recordings and transcripts: {folders.Root}");
+        ui.WriteLine($"Recording from: {choice.Description}");
         ui.WriteLine();
         ui.WriteLine("  1  Record only");
         ui.WriteLine("  2  Record and transcribe");
         ui.WriteLine("  3  Transcribe a recent class");
         ui.WriteLine("  4  Transcribe a file");
         ui.WriteLine("  5  Open the recordings folder");
+        ui.WriteLine("  6  Choose what to record: a device or an app");
         ui.WriteLine("  Q  Quit");
         ui.WriteLine();
     }
+
+    /// <summary>
+    /// Choice 6: lists the connected output devices and the apps with sound open, and pins the one
+    /// picked for the rest of the run, or goes back to automatic.
+    /// </summary>
+    private async Task ChooseSourceAsync()
+    {
+        var connected = devices.GetOutputDevices();
+        if (connected.Count == 0)
+        {
+            ui.WriteLine("No output device is connected.");
+            return;
+        }
+
+        // One entry per app, at its loudest: a browser can have several processes with sound open.
+        var apps = devices.GetPlayingApps()
+            .GroupBy(app => app.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(app => app.Level).First())
+            .OrderBy(app => app.Name, StringComparer.OrdinalIgnoreCase);
+        var entries = connected
+            .Select(device => new SourceEntry(Describe(device), device.Name, "Recording:Device", () => choice.Device = device.Name))
+            .Concat(apps.Select(app => new SourceEntry(Describe(app), app.Name, "Recording:App", () => choice.App = app.Name)))
+            .Take(9)
+            .ToList();
+
+        ui.WriteLine("Output devices, then apps with sound:");
+        for (var i = 0; i < entries.Count; i++)
+            ui.WriteLine($"  {i + 1}  {entries[i].Line}");
+
+        ui.WriteLine("  A  Automatic: whichever device the class plays on");
+        ui.WriteLine("Press a number, A for automatic, or Esc to go back.");
+
+        while (true)
+        {
+            var key = await ui.ReadKeyAsync(CancellationToken.None);
+            if (key is not { } pressed || pressed.Key == ConsoleKey.Escape || IsQuit(pressed)) return;
+
+            if (pressed.Key == ConsoleKey.A)
+            {
+                choice.Device = null;
+                choice.App = null;
+                return;
+            }
+
+            if (pressed.KeyChar is >= '1' and <= '9' && pressed.KeyChar - '1' < entries.Count)
+            {
+                var entry = entries[pressed.KeyChar - '1'];
+                entry.Pick();
+                ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed. To keep that, set {entry.Setting} to \"{entry.Name}\" in appsettings.json.");
+                return;
+            }
+        }
+    }
+
+    /// <summary>A device's line in the list: its name, and whether it is the default one or playing.</summary>
+    private static string Describe(OutputDevice device)
+    {
+        var notes = string.Join(", ", new[] { device.IsDefault ? "default" : null, device.Level >= CaptureChooser.SoundLevel ? "playing" : null }.OfType<string>());
+        return notes.Length > 0 ? $"{device.Name}  ({notes})" : device.Name;
+    }
+
+    /// <summary>An app's line in the list: its name, the device it plays through, and whether it is playing now.</summary>
+    private static string Describe(PlayingApp app) =>
+        app.Level >= CaptureChooser.SoundLevel ? $"{app.Name}  (app on {app.DeviceName}, playing)" : $"{app.Name}  (app on {app.DeviceName})";
+
+    /// <summary>One line of the list of sources: what it shows, the name to pin, the setting that keeps it, and how to pin it.</summary>
+    private sealed record SourceEntry(string Line, string Name, string Setting, Action Pick);
 
     /// <summary>Waits for one of the menu's keys, ignoring any other. Returns null for Q, for Ctrl+C, or when nobody can type.</summary>
     private async Task<char?> ReadChoiceAsync()
@@ -79,7 +154,7 @@ public sealed class MenuCommand(
         {
             var key = await ui.ReadKeyAsync(CancellationToken.None);
             if (key is not { } pressed || IsQuit(pressed)) return null;
-            if (pressed.KeyChar is >= '1' and <= '5') return pressed.KeyChar;
+            if (pressed.KeyChar is >= '1' and <= '6') return pressed.KeyChar;
         }
     }
 

@@ -8,7 +8,7 @@ using NAudio.Wave;
 namespace ClassScribe.Audio.Windows;
 
 /// <summary>
-/// Captures what one Windows output device plays, using WASAPI loopback.
+/// Captures what one Windows output device plays, or what one app plays, using WASAPI loopback.
 /// </summary>
 /// <remarks>
 /// NAudio's audio client classes do the COM work, but the capture loop is our own. NAudio 2.2.1's
@@ -29,37 +29,61 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
     private const int PollMilliseconds = 50;
     private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly MMDevice _device;
+    private readonly MMDevice? _device;
     private readonly AudioClient _client;
-    private readonly WaveFormat _mixFormat;
+    private readonly WaveFormat _streamFormat;
+    private readonly AudioClientStreamFlags _streamFlags;
+    private readonly AutoResetEvent? _packetReady;
     private readonly ILogger _logger;
     private byte[] _buffer = [];
     private Thread? _thread;
     private volatile bool _stopRequested;
     private bool _disposed;
 
-    /// <summary>Prepares a loopback capture of <paramref name="device"/>. The capture takes ownership of the device.</summary>
-    public WasapiLoopbackAudioCapture(MMDevice device, ILogger logger)
+    /// <summary>Prepares a loopback capture of <paramref name="device"/>, known to the user as <paramref name="deviceName"/>. The capture takes ownership of the device.</summary>
+    public WasapiLoopbackAudioCapture(MMDevice device, string deviceName, ILogger logger)
     {
         _device = device;
         _logger = logger;
         DeviceId = device.ID;
-        DeviceName = device.FriendlyName;
+        DeviceName = deviceName;
         _client = device.AudioClient;
         try
         {
-            _mixFormat = _client.MixFormat;
-            var format = _mixFormat.AsStandardWaveFormat();
+            _streamFormat = _client.MixFormat;
+            var format = _streamFormat.AsStandardWaveFormat();
             if (format.Encoding is not (WaveFormatEncoding.IeeeFloat or WaveFormatEncoding.Pcm))
                 throw new NotSupportedException($"The output device \"{DeviceName}\" uses the unsupported encoding {format.Encoding}.");
 
             Format = new AudioFormat(format.SampleRate, format.Channels, format.BitsPerSample, format.Encoding == WaveFormatEncoding.IeeeFloat);
+
+            // Same stream flags NAudio's loopback capture uses.
+            _streamFlags = AudioClientStreamFlags.Loopback | AudioClientStreamFlags.AutoConvertPcm | AudioClientStreamFlags.SrcDefaultQuality;
         }
         catch
         {
             _client.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Prepares a capture of one app's sound from <paramref name="processClient"/>, an audio client opened
+    /// with <see cref="ProcessLoopback"/>. The capture takes ownership of the client.
+    /// </summary>
+    public WasapiLoopbackAudioCapture(AudioClient processClient, string id, string appName, ILogger logger)
+    {
+        _client = processClient;
+        _logger = logger;
+        DeviceId = id;
+        DeviceName = appName;
+
+        // A process loopback stream has no device format of its own: Windows delivers whatever format is
+        // asked for, and it insists on event-driven buffering, so there is an event to signal with.
+        _streamFormat = new WaveFormat(48000, 16, 2);
+        Format = new AudioFormat(48000, 2, 16, false);
+        _streamFlags = AudioClientStreamFlags.Loopback | AudioClientStreamFlags.EventCallback;
+        _packetReady = new AutoResetEvent(false);
     }
 
     /// <inheritdoc />
@@ -77,20 +101,21 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
     /// <inheritdoc />
     public event EventHandler<CaptureStoppedEventArgs>? Stopped;
 
-    /// <summary>Opens the loopback stream in the device's own mix format and starts the capture thread.</summary>
+    /// <summary>Opens the loopback stream and starts the capture thread.</summary>
     public void Start()
     {
         if (_thread is not null)
             throw new InvalidOperationException("This capture has already been started.");
 
-        // Same stream flags NAudio's loopback capture uses.
         _client.Initialize(
             AudioClientShareMode.Shared,
-            AudioClientStreamFlags.Loopback | AudioClientStreamFlags.AutoConvertPcm | AudioClientStreamFlags.SrcDefaultQuality,
+            _streamFlags,
             BufferMilliseconds * UnitsPerMillisecond,
             0,
-            _mixFormat,
+            _streamFormat,
             Guid.Empty);
+        if (_packetReady is not null)
+            _client.SetEventHandle(_packetReady.SafeWaitHandle.DangerousGetHandle());
 
         _thread = new Thread(CaptureLoop) { IsBackground = true, Name = "ClassScribe capture", Priority = ThreadPriority.AboveNormal };
         _thread.Start();
@@ -115,10 +140,11 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
         }
 
         _client.Dispose();
-        _device.Dispose();
+        _device?.Dispose();
+        _packetReady?.Dispose();
     }
 
-    /// <summary>Body of the capture thread: polls Windows for audio until asked to stop or until the device fails.</summary>
+    /// <summary>Body of the capture thread: collects audio from Windows until asked to stop or until the device fails.</summary>
     private void CaptureLoop()
     {
         Exception? failure = null;
@@ -128,7 +154,7 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
             _client.Start();
             while (!_stopRequested)
             {
-                Thread.Sleep(PollMilliseconds);
+                WaitForPackets();
 
                 var began = Stopwatch.GetTimestamp();
                 ReadPackets(capture);
@@ -169,13 +195,22 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
         }
     }
 
+    /// <summary>Waits a moment for audio: until Windows signals a packet for an app's sound, or a fixed poll interval for a device.</summary>
+    private void WaitForPackets()
+    {
+        if (_packetReady is null)
+            Thread.Sleep(PollMilliseconds);
+        else
+            _packetReady.WaitOne(PollMilliseconds);
+    }
+
     /// <summary>Hands every waiting packet to the listeners. Silent packets are delivered as zeros.</summary>
     private void ReadPackets(AudioCaptureClient capture)
     {
         while (capture.GetNextPacketSize() > 0)
         {
             var pointer = capture.GetBuffer(out var frames, out var flags);
-            var byteCount = frames * _mixFormat.BlockAlign;
+            var byteCount = frames * _streamFormat.BlockAlign;
             if (_buffer.Length < byteCount) _buffer = new byte[byteCount];
 
             if (flags.HasFlag(AudioClientBufferFlags.Silent))

@@ -1,3 +1,4 @@
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -34,7 +35,8 @@ public class AppTests
     {
         _ui = new FakeConsoleUi { IsInteractive = interactive };
         var folders = new ClassFolders(Options.Create(new RecordingOptions { OutputFolder = _folder.Path }), TimeProvider.System);
-        var menu = new MenuCommand(_commands.Object, _ui, folders, Mock.Of<IDesktop>(), TimeProvider.System, NullLogger<MenuCommand>.Instance);
+        var recording = Options.Create(new RecordingOptions { OutputFolder = _folder.Path });
+        var menu = new MenuCommand(_commands.Object, _ui, folders, new FakeCaptureProvider(), new SourceChoice(recording), Mock.Of<IDesktop>(), TimeProvider.System, NullLogger<MenuCommand>.Instance);
         return new App(_commands.Object, menu, _ui, NullLogger<App>.Instance);
     }
 

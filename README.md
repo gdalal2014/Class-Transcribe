@@ -31,6 +31,7 @@ ClassScribe starts with a menu. Press the number of what you want:
   3  Transcribe a recent class
   4  Transcribe a file
   5  Open the recordings folder
+  6  Choose what to record: a device or an app
   Q  Quit
 ```
 
@@ -40,8 +41,28 @@ ClassScribe starts with a menu. Press the number of what you want:
   A class that already has a transcript is only done again after you press Y, because it is billed again.
 - **4 Transcribe a file** asks for a file: drag it into the window, or type its path, and press Enter.
 - **5 Open the recordings folder** shows it in Explorer.
+- **6 Choose what to record** lists the output devices and the apps with sound; see below.
 
 When a choice is done, the menu comes back. Q or Ctrl+C leaves it.
+
+### What is recorded
+
+By default ClassScribe records whichever output device the class is playing through. It starts on
+the device with sound, or else on Windows' default device, and looks at every output device once a
+second. When the recorded device has been quiet for two seconds while sound has been playing
+elsewhere for a second, it moves there and continues in a new segment file; the segments are joined
+before upload. A short notification sound on another device does not move it.
+
+Menu choice 6 lists the connected output devices and the apps with sound open, and pins one for the
+rest of the run:
+
+- **A device**: that device and no other, even when sound plays elsewhere. If it is not connected
+  when the recording starts, ClassScribe waits for it.
+- **An app**, such as `chrome` or `msedge`: that app's sound alone, whatever device it plays
+  through, so a video in another browser or a notification stays out. Windows cannot tell two tabs
+  of the same browser apart. If the app has no sound open yet, ClassScribe waits until it plays.
+
+To keep a choice, set `Recording:Device` or `Recording:App` in `appsettings.json`.
 
 ### While recording
 
@@ -107,10 +128,12 @@ Take two minutes to check the whole path on your machine:
 - Pausing with P saves the file first, so a crash during a break loses nothing recorded before it.
 - The transcript step starts only after the audio file is closed. If the upload fails, the audio is
   untouched and the class can be transcribed again.
-- If Windows switches output device (headphones plugged in, Bluetooth dropping), ClassScribe follows
-  it and continues in a new segment file. The segments are joined before upload.
-- If the device fails, it is reopened. While there is no output device at all, ClassScribe keeps
-  trying every two seconds.
+- When the sound moves to another output device (headphones plugged in, Bluetooth dropping),
+  ClassScribe follows it within a few seconds and continues in a new segment file. The segments are
+  joined before upload.
+- If the device fails, it is reopened. While there is nothing to record (no output device, a chosen
+  device not connected, a chosen app not playing), ClassScribe keeps looking every two seconds and
+  says so every thirty.
 - If the disk cannot be written, it says so and continues in a new file as soon as writing works again.
 - It warns when it has heard nothing for 60 seconds, except while paused.
 - An existing recording is never overwritten.
@@ -134,6 +157,8 @@ That is billed as a new transcription.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where class folders and transcripts go. Environment variables work. |
+| `Recording:Device` | empty | Part of the name of the output device to record, such as `Pixel Buds`. Empty means the device the class plays on. |
+| `Recording:App` | empty | The app whose sound to record, by its process name, such as `chrome`. Overrides `Recording:Device`. |
 | `Recording:SilenceWarningSeconds` | 60 | Warn after this much silence. |
 | `Recording:KeepUploadFile` | false | Keep the 16 kHz copy that was uploaded. |
 | `Recording:OpenFolderWhenDone` | true | Open the folder in Explorer when the recording or transcript is ready. |
@@ -168,6 +193,7 @@ or Native AOT, because NAudio reaches Windows audio through COM interop.
 | --- | --- |
 | `No sound for 60 seconds` | Check that the class is playing through the device named in the message and that Windows is not muted. |
 | `Cannot capture an output device right now` | Windows has no usable output device at that moment. ClassScribe keeps trying; plug in or switch on a device. |
+| `Nothing to record yet; waiting for ...` | The chosen device is not connected, the chosen app is not playing, or there is no output device. ClassScribe keeps looking; connect the device or start the sound, or press Q and choose something else with 6. |
 | `Could not write the recording`, `Still cannot write the recording` | The disk is full or went away. Free some space; the recording continues by itself in a new file. |
 | `Storing the captured audio took ...` | The disk was too slow for a moment, and the recording has a gap there. Record to an internal drive. |
 | `ElevenLabs rejected the API key` | Check `ELEVENLABS_API_KEY` in a new terminal, and that the key may use Speech to Text. |

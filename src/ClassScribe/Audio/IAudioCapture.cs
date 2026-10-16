@@ -17,13 +17,13 @@ public sealed class CaptureStoppedEventArgs(Exception? error) : EventArgs
     public Exception? Error { get; } = error;
 }
 
-/// <summary>A running capture of one audio device.</summary>
+/// <summary>A running capture of one audio device, or of one app's sound.</summary>
 public interface IAudioCapture : IDisposable
 {
-    /// <summary>Identifier of the device being captured.</summary>
+    /// <summary>Identifier of what is being captured: the device's, or <c>process:</c> and the app's process id.</summary>
     string DeviceId { get; }
 
-    /// <summary>Name of the device being captured.</summary>
+    /// <summary>Name of what is being captured: the device, or the app.</summary>
     string DeviceName { get; }
 
     /// <summary>Format of the audio passed to <see cref="DataAvailable"/>.</summary>
@@ -42,19 +42,49 @@ public interface IAudioCapture : IDisposable
     void Stop();
 }
 
-/// <summary>Creates captures of whatever the computer is playing.</summary>
+/// <summary>An output device Windows can play through right now.</summary>
+/// <param name="Id">Windows' identifier for the device.</param>
+/// <param name="Name">The name Windows shows for it.</param>
+/// <param name="IsDefault">True for the device Windows plays through unless an app picks another.</param>
+/// <param name="Level">How loud the device is playing at this moment, from 0 (silence) to 1, as Windows' level meter reports it.</param>
+public sealed record OutputDevice(string Id, string Name, bool IsDefault, float Level);
+
+/// <summary>An app that has sound open on an output device.</summary>
+/// <param name="ProcessId">The process that plays the sound.</param>
+/// <param name="Name">The process name, such as chrome or msedge.</param>
+/// <param name="DeviceName">The output device the app plays through.</param>
+/// <param name="Level">How loud the app is playing at this moment, from 0 (silence) to 1, as Windows' level meter for its sound reports it.</param>
+public sealed record PlayingApp(int ProcessId, string Name, string DeviceName, float Level);
+
+/// <summary>What a capture records: an output device, or the sound of one app and its child processes.</summary>
+/// <param name="Id">The device's identifier, or <c>process:</c> and the app's process id.</param>
+/// <param name="Name">The device's or the app's name, for the log.</param>
+/// <param name="ProcessId">The app's process, or null for a device.</param>
+public sealed record CaptureTarget(string Id, string Name, int? ProcessId = null)
+{
+    /// <summary>The target that records an output device.</summary>
+    public static CaptureTarget ForDevice(OutputDevice device) => new(device.Id, device.Name);
+
+    /// <summary>The target that records one app's sound, from the process that has it open.</summary>
+    public static CaptureTarget ForApp(PlayingApp app) => new($"process:{app.ProcessId}", app.Name, app.ProcessId);
+}
+
+/// <summary>Creates captures of what the computer plays, and reports on its output devices and the apps playing through them.</summary>
 public interface ILoopbackCaptureProvider : IDisposable
 {
     /// <summary>
-    /// Raised when the operating system reports a change of default output device. It can also be
-    /// raised when nothing really changed, so listeners compare <see cref="GetDefaultDeviceId"/>
-    /// with what they are capturing.
+    /// Raised when Windows reports a change among output devices: a new default device, or a device
+    /// added, removed or changing state. It can also be raised when nothing changed for the recording,
+    /// so listeners look at <see cref="GetOutputDevices"/> rather than at the event.
     /// </summary>
-    event EventHandler? DefaultDeviceChanged;
+    event EventHandler? DevicesChanged;
 
-    /// <summary>Identifier of the current default output device, or null when there is none.</summary>
-    string? GetDefaultDeviceId();
+    /// <summary>The output devices Windows can play through right now, with how loud each is playing.</summary>
+    IReadOnlyList<OutputDevice> GetOutputDevices();
 
-    /// <summary>Creates a capture of the current default output device.</summary>
-    IAudioCapture CreateForDefaultDevice();
+    /// <summary>The apps that have sound open on an output device right now, with how loud each is playing.</summary>
+    IReadOnlyList<PlayingApp> GetPlayingApps();
+
+    /// <summary>Creates a capture of the device or the app the target names.</summary>
+    IAudioCapture CreateCapture(CaptureTarget target);
 }

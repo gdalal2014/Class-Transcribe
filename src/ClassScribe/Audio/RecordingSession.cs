@@ -7,13 +7,14 @@ namespace ClassScribe.Audio;
 /// <summary>What a finished recording produced.</summary>
 public sealed record RecordingResult(string Folder, IReadOnlyList<string> SegmentPaths, TimeSpan Duration);
 
-/// <summary>A snapshot of a running recording.</summary>
-public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound, string DeviceName, int SegmentCount, bool Paused);
+/// <summary>A snapshot of a running recording. <see cref="WaitingFor"/> says what is awaited while nothing can be recorded yet.</summary>
+public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound, string DeviceName, int SegmentCount, bool Paused, string? WaitingFor);
 
 /// <summary>
-/// Records the default output device into WAV segment files. The header of the open segment is
-/// rewritten every few seconds, so a crash keeps the audio. A new segment is started when Windows
-/// switches output device, when the capture or the disk fails, or when a segment grows too large.
+/// Records an output device into WAV segment files: the device the class is playing through, or the
+/// one chosen by name (see <see cref="CaptureChooser"/>). The header of the open segment is
+/// rewritten every few seconds, so a crash keeps the audio. A new segment is started when the
+/// recording moves to another device, when the capture or the disk fails, or when a segment grows too large.
 /// </summary>
 /// <remarks>
 /// Two locks, never taken in the other order: the lifecycle semaphore allows one start, stop or
@@ -22,6 +23,7 @@ public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound,
 /// </remarks>
 public sealed class RecordingSession(
     ILoopbackCaptureProvider provider,
+    CaptureChooser chooser,
     IOptions<RecordingOptions> options,
     TimeProvider time,
     ILogger<RecordingSession> logger) : IDisposable
@@ -36,11 +38,11 @@ public sealed class RecordingSession(
     private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// How often the session looks up the default device by itself. Windows normally announces a switch
-    /// at once; this is the safety net for an announcement that never arrives, because recording a
-    /// device that has gone quiet would lose the rest of the class without any error.
+    /// How often the session looks at the output devices by itself, to see where sound is playing.
+    /// Windows announces some changes at once; this catches the rest, such as a browser sent to another
+    /// device in the per-app sound settings, which no announcement covers.
     /// </summary>
-    private static readonly TimeSpan DeviceCheckInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan DeviceCheckInterval = TimeSpan.FromSeconds(1);
 
     private readonly RecordingOptions _options = options.Value;
     private readonly Lock _gate = new();
@@ -58,6 +60,7 @@ public sealed class RecordingSession(
     private TimeSpan _closedDuration;
     private DateTimeOffset _lastFlush;
     private DateTimeOffset _lastSound;
+    private DateTimeOffset? _captureSound;
     private DateTimeOffset _writeRetryAt;
     private int _writeFailures;
     private long? _lastEndedRestart;
@@ -71,7 +74,7 @@ public sealed class RecordingSession(
 
     private TimeSpan FlushInterval => TimeSpan.FromSeconds(Math.Max(1, _options.FlushSeconds));
 
-    /// <summary>Starts capturing the default output device into <paramref name="folder"/>.</summary>
+    /// <summary>Starts capturing the output device to record into <paramref name="folder"/>.</summary>
     public void Start(string folder)
     {
         _lifecycle.Wait();
@@ -84,15 +87,26 @@ public sealed class RecordingSession(
             _folder = folder;
             Directory.CreateDirectory(folder);
             _lastSound = time.GetUtcNow();
-            provider.DefaultDeviceChanged += OnDefaultDeviceChanged;
+            provider.DevicesChanged += OnDevicesChanged;
             try
             {
-                StartCapture();
+                if (chooser.Choose(provider, recordedId: null, recordedLastSound: null) is { } target)
+                {
+                    StartCapture(target);
+                }
+                else
+                {
+                    // Nothing to record yet: a chosen device not connected, a chosen app not playing, or no
+                    // device at all. The checks keep looking and start the capture once it is there.
+                    logger.LogWarning("Nothing to record yet; waiting for {What}", chooser.WaitingFor);
+                    _failedRestarts = 1;   // the warning just given counts as the first of the looks that are reported
+                    QueueRestart();
+                }
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Could not start capturing system audio");
-                provider.DefaultDeviceChanged -= OnDefaultDeviceChanged;
+                provider.DevicesChanged -= OnDevicesChanged;
                 throw;
             }
 
@@ -119,7 +133,7 @@ public sealed class RecordingSession(
                 capture = _capture;
             }
 
-            provider.DefaultDeviceChanged -= OnDefaultDeviceChanged;
+            provider.DevicesChanged -= OnDevicesChanged;
             _deviceCheck?.Dispose();
 
             try
@@ -155,7 +169,7 @@ public sealed class RecordingSession(
         lock (_gate)
         {
             var captured = _closedDuration + (_writer?.Duration ?? TimeSpan.Zero);
-            return new RecordingStatus(captured, time.GetUtcNow() - _lastSound, _deviceName, _segments.Count, _paused);
+            return new RecordingStatus(captured, time.GetUtcNow() - _lastSound, _deviceName, _segments.Count, _paused, _capture is null ? chooser.WaitingFor : null);
         }
     }
 
@@ -213,10 +227,10 @@ public sealed class RecordingSession(
         if (_started && _result is null) Stop();
     }
 
-    /// <summary>Opens a capture of the current default device. Its segment file is created when its first audio arrives.</summary>
-    private void StartCapture()
+    /// <summary>Opens a capture of <paramref name="target"/>. Its segment file is created when its first audio arrives.</summary>
+    private void StartCapture(CaptureTarget target)
     {
-        var capture = provider.CreateForDefaultDevice();
+        var capture = provider.CreateCapture(target);
         try
         {
             if (!PcmConverter.IsSupported(capture.Format))
@@ -229,6 +243,7 @@ public sealed class RecordingSession(
             {
                 _capture = capture;
                 _captureEnded = false;
+                _captureSound = null;
                 _deviceName = capture.DeviceName;
             }
 
@@ -266,7 +281,11 @@ public sealed class RecordingSession(
             if (mono.IsEmpty) return;
 
             var now = time.GetUtcNow();
-            if (PcmConverter.Peak(mono) >= SoundThreshold) _lastSound = now;
+            if (PcmConverter.Peak(mono) >= SoundThreshold)
+            {
+                _lastSound = now;
+                _captureSound = now;
+            }
 
             // While the disk keeps failing, the audio is dropped until the next attempt is due.
             if (_writer is null && now < _writeRetryAt) return;
@@ -324,8 +343,8 @@ public sealed class RecordingSession(
         QueueRestart();
     }
 
-    /// <summary>Has the capture checked against the new default device. Runs on a thread that belongs to Windows.</summary>
-    private void OnDefaultDeviceChanged(object? sender, EventArgs e) => QueueRestart();
+    /// <summary>Has the output devices looked at again. Runs on a thread that belongs to Windows.</summary>
+    private void OnDevicesChanged(object? sender, EventArgs e) => QueueRestart();
 
     /// <summary>
     /// Schedules one restart check on the thread pool. Requests made before it begins are merged into it.
@@ -347,7 +366,7 @@ public sealed class RecordingSession(
             Interlocked.Exchange(ref _restartQueued, 0);
             if (_stopping) return;
 
-            retryIn = SwitchToDefaultDevice();
+            retryIn = CheckDevices();
             if (retryIn is null) _failedRestarts = 0;
         }
         catch (Exception ex)
@@ -370,19 +389,23 @@ public sealed class RecordingSession(
     }
 
     /// <summary>
-    /// Replaces the capture when there is none, when it has ended, or when it records a device that is
-    /// no longer the default one. Otherwise it does nothing, so several notifications about one change
+    /// Replaces the capture when there is none, when it has ended, or when the chooser finds the sound
+    /// playing on another device. Otherwise it does nothing, so several notifications about one change
     /// cost a single restart. Returns null when the session is settled, or how long to wait before
     /// this has to be tried again.
     /// </summary>
-    private TimeSpan? SwitchToDefaultDevice()
+    private TimeSpan? CheckDevices()
     {
         IAudioCapture? old;
         bool ended;
+        bool paused;
+        DateTimeOffset? captureSound;
         lock (_gate)
         {
             old = _capture;
             ended = _captureEnded;
+            paused = _paused;
+            captureSound = _captureSound;
         }
 
         if (ended)
@@ -391,16 +414,48 @@ public sealed class RecordingSession(
             if (_lastEndedRestart is { } last && time.GetElapsedTime(last) < RestartRetryDelay) return RestartRetryDelay;
 
             _lastEndedRestart = time.GetTimestamp();
+            Replace(old);
+            old = null;
         }
-        else if (old is not null)
+
+        if (old is null)
         {
-            // Woken by a device notification or by the regular check. Usually nothing has changed for this recording.
-            var defaultId = provider.GetDefaultDeviceId();
-            if (defaultId is null || string.Equals(defaultId, old.DeviceId, StringComparison.OrdinalIgnoreCase)) return null;
+            if (chooser.Choose(provider, recordedId: null, recordedLastSound: null) is not { } target) return StillWaiting();
 
-            logger.LogInformation("Windows switched to another output device; following it");
+            StartCapture(target);
+            return null;
         }
 
+        // Nothing is kept while paused, so there is nothing to move; and a device Windows no longer
+        // lists is left to the capture, which ends by itself once its device is really gone.
+        if (paused) return null;
+        var chosen = chooser.Choose(provider, old.DeviceId, captureSound);
+        if (chosen is null || string.Equals(chosen.Id, old.DeviceId, StringComparison.OrdinalIgnoreCase)) return null;
+
+        if (chooser.IsApp)
+            logger.LogInformation("\"{App}\" now plays from another process; following it", chosen.Name);
+        else if (chooser.ChosenDevice is not null)
+            logger.LogInformation("Recording \"{Device}\", the chosen output device, instead of \"{Old}\"", chosen.Name, old.DeviceName);
+        else
+            logger.LogInformation("Sound is playing on \"{Device}\"; recording it instead of \"{Old}\"", chosen.Name, old.DeviceName);
+
+        Replace(old);
+        StartCapture(chosen);
+        return null;
+    }
+
+    /// <summary>Notes, now and then, that there is still nothing to record, and asks for another look after the usual pause.</summary>
+    private TimeSpan StillWaiting()
+    {
+        if (_failedRestarts++ % 15 == 0)
+            logger.LogWarning("Still nothing to record; waiting for {What}", chooser.WaitingFor);
+
+        return RestartRetryDelay;
+    }
+
+    /// <summary>Releases the capture and closes its segment, so the next capture starts a new one.</summary>
+    private void Replace(IAudioCapture? old)
+    {
         try
         {
             // Waits for the capture thread, so the old device's last buffers still reach its segment.
@@ -415,9 +470,6 @@ public sealed class RecordingSession(
                 CloseSegmentLocked();
             }
         }
-
-        StartCapture();
-        return null;
     }
 
     /// <summary>Stops and disposes a capture. Never call this with <see cref="_gate"/> held.</summary>

@@ -36,6 +36,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILoopbackCaptureProvider>(provider => OperatingSystem.IsWindows()
             ? new WasapiLoopbackCaptureProvider(provider.GetRequiredService<ILogger<WasapiLoopbackCaptureProvider>>())
             : throw new PlatformNotSupportedException("Recording system audio needs Windows."));
+        services.AddSingleton<SourceChoice>();
+        services.AddTransient<CaptureChooser>();
         services.AddTransient<RecordingSession>();
         services.AddSingleton<IAudioPreparer, AudioPreparer>();
 

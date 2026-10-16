@@ -12,6 +12,19 @@ public sealed class RecordingOptions
     /// </summary>
     public string OutputFolder { get; init; } = "";
 
+    /// <summary>
+    /// Part of the name of the output device to record, such as "Pixel Buds". Empty means whichever
+    /// device the class is playing through.
+    /// </summary>
+    public string Device { get; init; } = "";
+
+    /// <summary>
+    /// The app whose sound to record, by the name Windows gives its process, such as "chrome" or
+    /// "msedge". Its sound alone is recorded, whatever device it plays through. Empty means record a
+    /// device instead.
+    /// </summary>
+    public string App { get; init; } = "";
+
     /// <summary>How often the WAV header is rewritten, so a crash loses at most this much audio.</summary>
     public int FlushSeconds { get; init; } = 5;
 

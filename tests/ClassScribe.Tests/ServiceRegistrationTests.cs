@@ -1,3 +1,4 @@
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
 using ClassScribe.Transcription;
@@ -35,6 +36,7 @@ public class ServiceRegistrationTests
             ["Recording:FlushSeconds"] = "9",
             ["Recording:OutputFolder"] = "D:\\Classes",
             ["Recording:OpenTranscriptWhenDone"] = "false",
+            ["Recording:Device"] = "Pixel Buds",
             ["ElevenLabs:ApiKey"] = "from-config",
             ["ElevenLabs:TimeoutMinutes"] = "90",
             ["Transcript:IncludeTimestamps"] = "false"
@@ -47,6 +49,8 @@ public class ServiceRegistrationTests
         Assert.That(recording.FlushSeconds, Is.EqualTo(9));
         Assert.That(recording.OutputFolder, Is.EqualTo("D:\\Classes"));
         Assert.That(recording.OpenTranscriptWhenDone, Is.False);
+        Assert.That(recording.Device, Is.EqualTo("Pixel Buds"));
+        Assert.That(provider.GetRequiredService<SourceChoice>().Device, Is.EqualTo("Pixel Buds"), "the choice starts from the setting");
         Assert.That(recording.SilenceWarningSeconds, Is.EqualTo(60), "defaults survive for settings that are not given");
         Assert.That(recording.OpenFolderWhenDone, Is.True);
         Assert.That(elevenLabs.ApiKey, Is.EqualTo("from-config"));

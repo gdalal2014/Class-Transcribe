@@ -32,8 +32,31 @@ public class RecordingSessionTests
     public void TearDown() => _folder.Dispose();
 
     /// <summary>Creates the session under test.</summary>
-    private RecordingSession CreateSession(RecordingOptions? options = null) =>
-        new(_provider, Options.Create(options ?? new RecordingOptions()), _time, _log);
+    private RecordingSession CreateSession(RecordingOptions? options = null)
+    {
+        var settings = Options.Create(options ?? new RecordingOptions());
+        return new RecordingSession(_provider, new CaptureChooser(_time, new SourceChoice(settings)), settings, _time, _log);
+    }
+
+    /// <summary>Moves the clock on a second and waits for the device check that this sets off to begin.</summary>
+    private async Task TickAsync()
+    {
+        var before = _provider.DeviceQueries;
+        _time.Advance(TimeSpan.FromSeconds(1));
+        await Wait.UntilAsync(() => _provider.DeviceQueries > before);
+    }
+
+    /// <summary>Moves the clock on a second at a time, device check by device check, until the condition holds.</summary>
+    private async Task TickUntilAsync(Func<bool> condition, int maxTicks = 8)
+    {
+        for (var tick = 0; tick < maxTicks && !condition(); tick++)
+        {
+            await TickAsync();
+            await Task.Delay(50);   // lets the check finish before the clock moves again
+        }
+
+        await Wait.UntilAsync(condition);
+    }
 
     [Test]
     public void Captured_audio_is_stored_as_mono_16_bit()
@@ -82,16 +105,17 @@ public class RecordingSessionTests
         Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { 1, 2, 3, 4 }));
     }
 
+    /// <summary>When the sound moves to another device (headphones plugged in, say), the recording follows it into a new segment.</summary>
     [Test]
-    public async Task A_new_default_device_is_followed_into_a_new_segment()
+    public async Task Sound_moving_to_another_device_is_followed_into_a_new_segment()
     {
         var speakers = _provider.Enqueue(new FakeAudioCapture(Float48KStereo, "Speakers") { FinalAudio = TestAudio.Floats(0.125f, 0.125f) });
         using var session = CreateSession();
 
         session.Start(_folder.Path);
         speakers.Deliver(TestAudio.Floats(0.25f, 0.25f));
-        var headphones = _provider.SwitchDefaultDevice(new FakeAudioCapture(Float44KStereo, "Headphones"));
-        await Wait.UntilAsync(() => headphones.Started);
+        var headphones = _provider.SwitchDefaultDevice(new FakeAudioCapture(Float44KStereo, "Headphones"), level: 0.2f);
+        await TickUntilAsync(() => headphones.Started);
         speakers.Deliver(TestAudio.Floats(0.5f, 0.5f));      // late audio from the old device must be ignored
         headphones.Deliver(TestAudio.Floats(-0.25f, -0.25f));
         var result = session.Stop();
@@ -105,27 +129,157 @@ public class RecordingSessionTests
         Assert.That(second.SampleRate, Is.EqualTo(44100));
         Assert.That(second.Samples, Is.EqualTo(new short[] { -8192 }));
         Assert.That(session.GetStatus().DeviceName, Is.EqualTo("Headphones"));
-        Assert.That(_log.Problems, Is.Empty, "following a switch is routine, not a failure to report");
+        Assert.That(_log.Messages, Has.Some.Contains("Sound is playing on \"Headphones\""));
+        Assert.That(_log.Problems, Is.Empty, "following the sound is routine, not a failure to report");
     }
 
+    /// <summary>Sound on a device Windows never announced, such as one a browser was sent to in the per-app settings, is found by the regular check.</summary>
     [Test]
-    public async Task A_switch_that_windows_never_announced_is_still_followed()
+    public async Task Sound_on_a_device_windows_never_announced_is_still_followed()
     {
         var speakers = _provider.Enqueue(new FakeAudioCapture(Float48KStereo, "Speakers"));
         using var session = CreateSession();
 
         session.Start(_folder.Path);
-        speakers.Deliver(TestAudio.Floats(0.25f, 0.25f));
-        var headphones = _provider.SwitchDefaultDevice(new FakeAudioCapture(Float44KStereo, "Headphones"), announce: false);
-        _time.Advance(TimeSpan.FromSeconds(4));      // the session looks up the default device by itself every few seconds
-        await Wait.UntilAsync(() => headphones.Started);
+        var headphones = _provider.Enqueue(new FakeAudioCapture(Float44KStereo, "Headphones"), level: 0.2f);   // not the default: nothing is announced
+        await TickUntilAsync(() => headphones.Started);
         headphones.Deliver(TestAudio.Floats(-0.25f, -0.25f));
         var result = session.Stop();
 
-        Assert.That(result.SegmentPaths, Has.Count.EqualTo(2));
-        Assert.That(TestAudio.ReadWav(result.SegmentPaths[1]).Samples, Is.EqualTo(new short[] { -8192 }));
+        Assert.That(speakers.Disposed, Is.True);
+        Assert.That(result.SegmentPaths, Has.Count.EqualTo(1), "the silent device left no file behind");
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { -8192 }));
     }
 
+    /// <summary>A device that is playing is kept, however loud another one is.</summary>
+    [Test]
+    public async Task A_playing_device_is_kept_when_sound_starts_elsewhere()
+    {
+        var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.3f);
+        var headphones = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"));
+        using var session = CreateSession();
+
+        session.Start(_folder.Path);
+        _provider.SetLevel("Headphones", 0.9f);              // something loud starts on the headphones
+        for (var second = 0; second < 5; second++)
+        {
+            speakers.Deliver(TestAudio.Shorts(0, 5000));   // while the class keeps playing on the speakers
+            await TickAsync();
+            await Task.Delay(50);
+        }
+
+        var result = session.Stop();
+
+        Assert.That(headphones.Started, Is.False);
+        Assert.That(result.SegmentPaths, Has.Count.EqualTo(1));
+        Assert.That(session.GetStatus().DeviceName, Is.EqualTo("Speakers"));
+    }
+
+    /// <summary>A short sound elsewhere, such as a notification, does not move the recording.</summary>
+    [Test]
+    public async Task A_short_sound_elsewhere_does_not_move_the_recording()
+    {
+        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
+        var headphones = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"));
+        using var session = CreateSession();
+
+        session.Start(_folder.Path);
+        _provider.SetLevel("Headphones", 0.5f);              // a notification sounds on the headphones
+        await TickAsync();                                   // it is seen once
+        await Task.Delay(50);
+        _provider.SetLevel("Headphones", 0);                 // and is over by the next look
+        for (var second = 0; second < 4; second++)
+        {
+            await TickAsync();
+            await Task.Delay(50);
+        }
+
+        session.Stop();
+
+        Assert.That(headphones.Started, Is.False);
+    }
+
+    /// <summary>A device chosen in the settings is recorded whatever is playing elsewhere.</summary>
+    [Test]
+    public void A_chosen_device_is_recorded_whatever_is_playing()
+    {
+        var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.9f);
+        var headphones = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"));
+        using var session = CreateSession(new RecordingOptions { Device = "headphones" });
+
+        session.Start(_folder.Path);
+        headphones.Deliver(TestAudio.Shorts(1, 2));
+        var result = session.Stop();
+
+        Assert.That(speakers.Started, Is.False);
+        Assert.That(session.GetStatus().DeviceName, Is.EqualTo("Headphones"));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { 1, 2 }));
+    }
+
+    /// <summary>A chosen device that is not connected is waited for, with a warning that names it, rather than another device being recorded.</summary>
+    [Test]
+    public async Task Recording_waits_for_a_chosen_device_that_is_not_connected()
+    {
+        var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
+        using var session = CreateSession(new RecordingOptions { Device = "Pixel Buds" });
+
+        session.Start(_folder.Path);
+        var waiting = session.GetStatus();
+        var buds = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones (Pixel Buds Pro 2)"));
+        await Wait.UntilAsync(() => buds.Started, timeoutSeconds: 15);   // found by the next try, a couple of seconds on
+        buds.Deliver(TestAudio.Shorts(1, 2));
+        var recording = session.GetStatus();
+        var result = session.Stop();
+
+        Assert.That(waiting.WaitingFor, Is.EqualTo("the output device \"Pixel Buds\" to connect"));
+        Assert.That(recording.WaitingFor, Is.Null);
+        Assert.That(_log.Problems, Has.Some.Contains("Pixel Buds"));
+        Assert.That(speakers.Started, Is.False);
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths.Single()).Samples, Is.EqualTo(new short[] { 1, 2 }));
+    }
+
+    /// <summary>A chosen app is recorded from its process once it has sound open, and only that process.</summary>
+    [Test]
+    public async Task A_chosen_app_is_recorded_from_its_process_once_it_plays()
+    {
+        var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.5f);
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_folder.Path);
+        var waiting = session.GetStatus();
+        var chrome = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, new FakeAudioCapture(Pcm16KMono, "chrome", "process:4242"))!;
+        await Wait.UntilAsync(() => chrome.Started, timeoutSeconds: 15);
+        chrome.Deliver(TestAudio.Shorts(7, 8));
+        var result = session.Stop();
+
+        Assert.That(waiting.WaitingFor, Is.EqualTo("\"chrome\" to play sound"));
+        Assert.That(speakers.Started, Is.False, "the device itself is never recorded in app mode");
+        Assert.That(session.GetStatus().DeviceName, Is.EqualTo("chrome"));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths.Single()).Samples, Is.EqualTo(new short[] { 7, 8 }));
+    }
+
+    /// <summary>When the app's process goes and another process of the app has sound, the recording follows it into a new segment.</summary>
+    [Test]
+    public async Task A_chosen_app_is_followed_to_its_new_process()
+    {
+        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
+        var first = _provider.AddApp(1, "chrome", "Speakers", level: 0, new FakeAudioCapture(Pcm16KMono, "chrome", "process:1"))!;
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_folder.Path);
+        first.Deliver(TestAudio.Shorts(1));
+        _provider.RemoveApp(1);
+        var second = _provider.AddApp(2, "chrome", "Speakers", level: 0.2f, new FakeAudioCapture(Pcm16KMono, "chrome", "process:2"))!;
+        await TickUntilAsync(() => second.Started);
+        second.Deliver(TestAudio.Shorts(2));
+        var result = session.Stop();
+
+        Assert.That(first.Disposed, Is.True);
+        Assert.That(result.SegmentPaths, Has.Count.EqualTo(2));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[1]).Samples, Is.EqualTo(new short[] { 2 }));
+    }
+
+    /// <summary>Windows sends device notifications that change nothing for the recording; they cost nothing.</summary>
     [Test]
     public async Task A_device_notification_that_changes_nothing_is_ignored()
     {
@@ -135,8 +289,8 @@ public class RecordingSessionTests
 
         session.Start(_folder.Path);
         capture.Deliver(TestAudio.Shorts(1, 2));
-        _provider.RaiseDefaultDeviceChanged();
-        await Wait.UntilAsync(() => _provider.DefaultDeviceQueries > 0);
+        _provider.RaiseDevicesChanged();
+        await Wait.UntilAsync(() => _provider.DeviceQueries > 0);
         capture.Deliver(TestAudio.Shorts(3));
         var result = session.Stop();
 
@@ -145,16 +299,17 @@ public class RecordingSessionTests
         Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { 1, 2, 3 }));
     }
 
+    /// <summary>When Windows lists no output device at all, the running capture is left to decide for itself whether it is gone.</summary>
     [Test]
-    public async Task A_running_capture_is_kept_when_windows_reports_no_default_device()
+    public async Task A_running_capture_is_kept_when_windows_reports_no_output_device()
     {
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
         session.Start(_folder.Path);
         capture.Deliver(TestAudio.Shorts(1, 2));
-        _provider.RemoveDefaultDevice();
-        await Wait.UntilAsync(() => _provider.DefaultDeviceQueries > 0);
+        _provider.RemoveDevices();
+        await Wait.UntilAsync(() => _provider.DeviceQueries > 0);
         capture.Deliver(TestAudio.Shorts(3));     // if the device really is gone, the capture says so itself
         var result = session.Stop();
 
@@ -162,6 +317,7 @@ public class RecordingSessionTests
         Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { 1, 2, 3 }));
     }
 
+    /// <summary>A device change that Windows reports several ways, while the old device fails, still costs a single restart.</summary>
     [Test]
     public async Task One_device_change_reported_several_ways_costs_one_restart()
     {
@@ -172,10 +328,10 @@ public class RecordingSessionTests
         speakers.Deliver(TestAudio.Floats(0.25f, 0.25f));
         var headphones = _provider.SwitchDefaultDevice(new FakeAudioCapture(Float44KStereo, "Headphones"));
         var spare = _provider.Enqueue(new FakeAudioCapture(Float44KStereo, "Headphones"));
-        _provider.RaiseDefaultDeviceChanged();                           // Windows repeats the notification
+        _provider.RaiseDevicesChanged();                                 // Windows repeats the notification
         speakers.Fail(new IOException("The device was unplugged."));     // and the old device fails at the same moment
         await Wait.UntilAsync(() => headphones.Started);
-        _provider.RaiseDefaultDeviceChanged();
+        _provider.RaiseDevicesChanged();
         await Task.Delay(300);                                           // time for a needless extra restart to show itself
         headphones.Deliver(TestAudio.Floats(-0.25f, -0.25f));
         var result = session.Stop();

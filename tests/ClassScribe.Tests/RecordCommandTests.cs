@@ -44,7 +44,7 @@ public class RecordCommandTests
     public void TearDown() => _folder.Dispose();
 
     /// <summary>Builds the command with the real session, preparer and workflow around the simulated device and the mocked service.</summary>
-    private RecordCommand CreateCommand(string apiKey, TimeProvider? time = null, bool openWhenDone = false, int statusIntervalSeconds = 60)
+    private RecordCommand CreateCommand(string apiKey, TimeProvider? time = null, bool openWhenDone = false, int statusIntervalSeconds = 60, string device = "")
     {
         time ??= TimeProvider.System;
         var recording = Options.Create(new RecordingOptions
@@ -52,12 +52,13 @@ public class RecordCommandTests
             OutputFolder = _folder.Path,
             OpenFolderWhenDone = openWhenDone,
             OpenTranscriptWhenDone = openWhenDone,
-            StatusIntervalSeconds = statusIntervalSeconds
+            StatusIntervalSeconds = statusIntervalSeconds,
+            Device = device
         });
         var elevenLabs = Options.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = _folder.File("no-glossary.txt") });
         var folders = new ClassFolders(recording, time);
         var marks = new ClassMarks(NullLogger<ClassMarks>.Instance);
-        var session = new RecordingSession(_provider, recording, time, NullLogger<RecordingSession>.Instance);
+        var session = new RecordingSession(_provider, new CaptureChooser(time, new SourceChoice(recording)), recording, time, NullLogger<RecordingSession>.Instance);
         var workflow = new TranscriptionWorkflow(
             new AudioPreparer(NullLogger<AudioPreparer>.Instance),
             _client.Object,
@@ -170,6 +171,25 @@ public class RecordCommandTests
         {
             time.Advance(TimeSpan.FromSeconds(61));
             return _log.Messages.Any(m => m.Contains("(paused)"));
+        });
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(_log.Problems.Where(p => p.StartsWith("No sound")), Is.Empty);
+    }
+
+    /// <summary>While nothing can be recorded yet, the status line says what is being waited for, and there is no warning about silence.</summary>
+    [Test]
+    public async Task While_waiting_for_the_source_the_status_says_so()
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        _provider.Enqueue(new FakeAudioCapture(new AudioFormat(16000, 1, 16, false), "Speakers"));
+        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1, device: "Pixel Buds").RunAsync(transcribe: false);
+
+        await Wait.UntilAsync(() =>
+        {
+            time.Advance(TimeSpan.FromSeconds(61));
+            return _log.Messages.Any(m => m.Contains("waiting for the output device \"Pixel Buds\""));
         });
         _signals.RequestStop();
         await run;

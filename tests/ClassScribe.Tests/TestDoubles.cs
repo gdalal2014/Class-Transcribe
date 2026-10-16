@@ -149,13 +149,13 @@ public sealed class RecordingLogger<T> : ILogger<T>
 /// A capture the test feeds by hand. Like the real one, it reports that it stopped when it is
 /// disposed, after handing over whatever it still held.
 /// </summary>
-public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fake Speakers") : IAudioCapture
+public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fake Speakers", string? deviceId = null) : IAudioCapture
 {
     private volatile bool _started;
     private volatile bool _disposed;
 
-    /// <summary>The name doubles as the identifier: two fakes with one name stand for the same device.</summary>
-    public string DeviceId { get; } = deviceName;
+    /// <summary>The name doubles as the identifier unless one is given: two fakes with one name stand for the same device.</summary>
+    public string DeviceId { get; } = deviceId ?? deviceName;
 
     /// <inheritdoc />
     public string DeviceName { get; } = deviceName;
@@ -205,17 +205,21 @@ public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fa
 }
 
 /// <summary>
-/// Hands out prepared fake captures in order. The default device is the one the latest capture was
-/// made for, until a test switches it.
+/// The output devices a test connects, each with the level Windows' meter would show for it, the apps
+/// with sound open on them, and the fake captures handed out in order. The first device connected is
+/// the default one until a test says otherwise. A capture's device name doubles as its identifier.
 /// </summary>
 public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
 {
     private readonly Lock _gate = new();
-    private readonly Queue<FakeAudioCapture> _queued = new();
+    private readonly List<string> _connected = [];
+    private readonly Dictionary<string, float> _levels = [];
+    private readonly Dictionary<int, PlayingApp> _apps = [];
+    private readonly Dictionary<string, Queue<FakeAudioCapture>> _queued = [];
     private readonly List<FakeAudioCapture> _created = [];
     private string? _defaultDeviceId;
     private int _failedCreations;
-    private int _defaultDeviceQueries;
+    private int _deviceQueries;
 
     /// <summary>Captures handed out so far.</summary>
     public IReadOnlyList<FakeAudioCapture> Created
@@ -223,74 +227,133 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
         get { lock (_gate) return [.. _created]; }
     }
 
-    /// <summary>How often a capture was asked for while none was queued.</summary>
+    /// <summary>How often a capture was asked for while none was prepared for that device.</summary>
     public int FailedCreations => Volatile.Read(ref _failedCreations);
 
-    /// <summary>How often the default device was looked up.</summary>
-    public int DefaultDeviceQueries => Volatile.Read(ref _defaultDeviceQueries);
+    /// <summary>How often the devices or the apps were looked up: once per check the session makes.</summary>
+    public int DeviceQueries => Volatile.Read(ref _deviceQueries);
 
     /// <inheritdoc />
-    public event EventHandler? DefaultDeviceChanged;
+    public event EventHandler? DevicesChanged;
 
-    /// <summary>Queues the capture the next call will return.</summary>
-    public FakeAudioCapture Enqueue(FakeAudioCapture capture)
+    /// <summary>
+    /// Connects the capture's device, if it is not yet, and queues the capture as the next one made for
+    /// it. The first device connected becomes the default one. A level given here is what the meter shows for the device.
+    /// </summary>
+    public FakeAudioCapture Enqueue(FakeAudioCapture capture, float? level = null)
     {
-        lock (_gate) _queued.Enqueue(capture);
+        lock (_gate)
+        {
+            Connect(capture.DeviceId, level);
+            Queue(capture);
+        }
+
         return capture;
     }
 
-    /// <inheritdoc />
-    public string? GetDefaultDeviceId()
+    /// <summary>Sets what Windows' meter shows for a device: 0 for silence, more while sound plays on it.</summary>
+    public void SetLevel(string deviceId, float level)
     {
-        Interlocked.Increment(ref _defaultDeviceQueries);
-        lock (_gate) return _defaultDeviceId;
+        lock (_gate) _levels[deviceId] = level;
     }
 
-    /// <inheritdoc />
-    public IAudioCapture CreateForDefaultDevice()
+    /// <summary>Gives an app sound open on a device, playing at the given level, and queues the capture made for it, if one is given.</summary>
+    public FakeAudioCapture? AddApp(int processId, string name, string deviceName, float level = 0, FakeAudioCapture? capture = null)
     {
         lock (_gate)
         {
-            if (!_queued.TryDequeue(out var capture))
-            {
-                Interlocked.Increment(ref _failedCreations);
-                throw new InvalidOperationException("No output device.");
-            }
-
-            _created.Add(capture);
-            _defaultDeviceId = capture.DeviceId;
-            return capture;
+            _apps[processId] = new PlayingApp(processId, name, deviceName, level);
+            if (capture is not null) Queue(capture);
         }
+
+        return capture;
+    }
+
+    /// <summary>Takes an app's sound away, as when the app closes.</summary>
+    public void RemoveApp(int processId)
+    {
+        lock (_gate) _apps.Remove(processId);
     }
 
     /// <summary>
-    /// Simulates Windows switching to another output device, which the next capture then records.
-    /// With <paramref name="announce"/> off, the switch happens without the usual notification.
+    /// Simulates Windows switching its default output device to the capture's device, which plays at the
+    /// given level from now on. With <paramref name="announce"/> off, the switch happens without the usual notification.
     /// </summary>
-    public FakeAudioCapture SwitchDefaultDevice(FakeAudioCapture capture, bool announce = true)
+    public FakeAudioCapture SwitchDefaultDevice(FakeAudioCapture capture, float level = 0, bool announce = true)
     {
         lock (_gate)
         {
-            _queued.Enqueue(capture);
+            Connect(capture.DeviceId, level);
+            Queue(capture);
             _defaultDeviceId = capture.DeviceId;
         }
 
-        if (announce) DefaultDeviceChanged?.Invoke(this, EventArgs.Empty);
+        if (announce) DevicesChanged?.Invoke(this, EventArgs.Empty);
         return capture;
     }
 
     /// <summary>Simulates a device notification that changes nothing for the recording. Windows sends those too.</summary>
-    public void RaiseDefaultDeviceChanged() => DefaultDeviceChanged?.Invoke(this, EventArgs.Empty);
+    public void RaiseDevicesChanged() => DevicesChanged?.Invoke(this, EventArgs.Empty);
 
     /// <summary>Simulates Windows reporting that no output device is left.</summary>
-    public void RemoveDefaultDevice()
+    public void RemoveDevices()
     {
-        lock (_gate) _defaultDeviceId = null;
-        DefaultDeviceChanged?.Invoke(this, EventArgs.Empty);
+        lock (_gate)
+        {
+            _connected.Clear();
+            _defaultDeviceId = null;
+        }
+
+        DevicesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<OutputDevice> GetOutputDevices()
+    {
+        Interlocked.Increment(ref _deviceQueries);
+        lock (_gate) return [.. _connected.Select(id => new OutputDevice(id, id, id == _defaultDeviceId, _levels.GetValueOrDefault(id)))];
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<PlayingApp> GetPlayingApps()
+    {
+        Interlocked.Increment(ref _deviceQueries);
+        lock (_gate) return [.. _apps.Values];
+    }
+
+    /// <inheritdoc />
+    public IAudioCapture CreateCapture(CaptureTarget target)
+    {
+        lock (_gate)
+        {
+            if (!_queued.TryGetValue(target.Id, out var queue) || !queue.TryDequeue(out var capture))
+            {
+                Interlocked.Increment(ref _failedCreations);
+                throw new InvalidOperationException($"No capture is prepared for {target.Id}.");
+            }
+
+            _created.Add(capture);
+            return capture;
+        }
     }
 
     /// <inheritdoc />
     public void Dispose() { }
+
+    /// <summary>Adds the device to the connected ones. Call with the gate held.</summary>
+    private void Connect(string deviceId, float? level)
+    {
+        if (!_connected.Contains(deviceId)) _connected.Add(deviceId);
+        if (level is { } known) _levels[deviceId] = known;
+        _defaultDeviceId ??= deviceId;
+    }
+
+    /// <summary>Queues a capture for its device. Call with the gate held.</summary>
+    private void Queue(FakeAudioCapture capture)
+    {
+        if (!_queued.TryGetValue(capture.DeviceId, out var queue)) _queued[capture.DeviceId] = queue = new Queue<FakeAudioCapture>();
+        queue.Enqueue(capture);
+    }
 }
 
 /// <summary>Stop and cancel signals the test raises by hand.</summary>

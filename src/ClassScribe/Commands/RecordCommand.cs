@@ -143,7 +143,7 @@ public sealed class RecordCommand(
 
                 var now = time.GetUtcNow();
                 var status = session.GetStatus();
-                if (!status.Paused && status.SinceLastSound >= silenceAfter && now - lastSilenceWarning >= silenceAfter)
+                if (status.WaitingFor is null && !status.Paused && status.SinceLastSound >= silenceAfter && now - lastSilenceWarning >= silenceAfter)
                 {
                     lastSilenceWarning = now;
                     logger.LogWarning(
@@ -154,8 +154,11 @@ public sealed class RecordCommand(
                 if (now - lastStatus >= statusEvery)
                 {
                     lastStatus = now;
-                    logger.LogInformation("Recording: {Captured} captured from \"{Device}\"{Paused}",
-                        status.Captured.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture), status.DeviceName, status.Paused ? " (paused)" : "");
+                    var captured = status.Captured.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+                    if (status.WaitingFor is { } waitingFor)
+                        logger.LogInformation("Recording: {Captured} captured; waiting for {What}", captured, waitingFor);
+                    else
+                        logger.LogInformation("Recording: {Captured} captured from \"{Device}\"{Paused}", captured, status.DeviceName, status.Paused ? " (paused)" : "");
                 }
             }
         }

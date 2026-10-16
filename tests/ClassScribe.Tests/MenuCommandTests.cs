@@ -1,3 +1,4 @@
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -10,18 +11,24 @@ namespace ClassScribe.Tests;
 [TestFixture]
 public class MenuCommandTests
 {
+    private static readonly AudioFormat Pcm16KMono = new(16000, 1, 16, false);
+
     private TempFolder _folder = null!;
     private FakeConsoleUi _ui = null!;
+    private FakeCaptureProvider _devices = null!;
+    private SourceChoice _choice = null!;
     private Mock<ICommandRunner> _commands = null!;
     private Mock<IDesktop> _desktop = null!;
     private RecordingLogger<MenuCommand> _log = null!;
 
-    /// <summary>Creates a temporary recordings folder, the scripted keyboard and the mocks.</summary>
+    /// <summary>Creates a temporary recordings folder, the scripted keyboard, the simulated devices and the mocks.</summary>
     [SetUp]
     public void SetUp()
     {
         _folder = new TempFolder();
         _ui = new FakeConsoleUi();
+        _devices = new FakeCaptureProvider();
+        _choice = new SourceChoice(Options.Create(new RecordingOptions()));
         _commands = new Mock<ICommandRunner>();
         _commands.Setup(c => c.RecordAsync(It.IsAny<bool>())).ReturnsAsync(0);
         _commands.Setup(c => c.TranscribeAsync(It.IsAny<string>())).ReturnsAsync(0);
@@ -37,7 +44,7 @@ public class MenuCommandTests
     private Task<int> RunMenuAsync(string? recordings = null)
     {
         var folders = new ClassFolders(Options.Create(new RecordingOptions { OutputFolder = recordings ?? _folder.Path }), TimeProvider.System);
-        var menu = new MenuCommand(_commands.Object, _ui, folders, _desktop.Object, TimeProvider.System, _log);
+        var menu = new MenuCommand(_commands.Object, _ui, folders, _devices, _choice, _desktop.Object, TimeProvider.System, _log);
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
 
@@ -66,8 +73,83 @@ public class MenuCommandTests
             .And.Contain("3  Transcribe a recent class")
             .And.Contain("4  Transcribe a file")
             .And.Contain("5  Open the recordings folder")
+            .And.Contain("6  Choose what to record: a device or an app")
+            .And.Contain("Recording from: the device the class plays on")
             .And.Contain(_folder.Path));
         _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>6 lists the connected output devices, marking the default one and any that plays, and pins the one picked.</summary>
+    [Test]
+    public async Task Six_lists_the_devices_and_pins_the_one_picked()
+    {
+        _devices.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers (Realtek(R) Audio)"));
+        _devices.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones (Pixel Buds Pro 2)"), level: 0.3f);
+        _ui.Type('6', '2', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_choice.Device, Is.EqualTo("Headphones (Pixel Buds Pro 2)"));
+        Assert.That(_ui.Screen, Does.Contain("1  Speakers (Realtek(R) Audio)  (default)")
+            .And.Contain("2  Headphones (Pixel Buds Pro 2)  (playing)")
+            .And.Contain("Recording from: the output device \"Headphones (Pixel Buds Pro 2)\"")
+            .And.Contain("Recording:Device"), "the menu says how to make the choice permanent");
+    }
+
+    /// <summary>The list goes on with the apps that have sound open, and picking one records that app alone.</summary>
+    [Test]
+    public async Task Six_lists_the_apps_with_sound_and_pins_the_one_picked()
+    {
+        _devices.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
+        _devices.AddApp(4242, "chrome", "Speakers", level: 0.4f);
+        _devices.AddApp(5151, "msedge", "Speakers");
+        _ui.Type('6', '2', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That((_choice.App, _choice.Device), Is.EqualTo(("chrome", (string?)null)));
+        Assert.That(_ui.Screen, Does.Contain("2  chrome  (app on Speakers, playing)")
+            .And.Contain("3  msedge  (app on Speakers)")
+            .And.Contain("Recording from: the app \"chrome\"")
+            .And.Contain("Recording:App"), "the menu says how to make the choice permanent");
+    }
+
+    /// <summary>A in the list goes back to automatic.</summary>
+    [Test]
+    public async Task Six_with_A_goes_back_to_automatic()
+    {
+        _devices.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
+        _choice.App = "chrome";
+        _ui.Type('6', 'a', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That((_choice.App, _choice.Device), Is.EqualTo(((string?)null, (string?)null)));
+        Assert.That(_ui.Screen, Does.Contain("Recording from: the device the class plays on"));
+    }
+
+    /// <summary>Esc leaves the list with the choice as it was.</summary>
+    [Test]
+    public async Task Six_with_Esc_keeps_the_choice()
+    {
+        _devices.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
+        _choice.Device = "Headphones";
+        _ui.Type('6', '\u001b', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_choice.Device, Is.EqualTo("Headphones"));
+    }
+
+    /// <summary>Without any output device the list says so instead of showing nothing.</summary>
+    [Test]
+    public async Task Six_without_devices_says_so()
+    {
+        _ui.Type('6', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen, Does.Contain("No output device is connected"));
     }
 
     /// <summary>1 records only; 2 records and then transcribes. The menu comes back afterwards.</summary>

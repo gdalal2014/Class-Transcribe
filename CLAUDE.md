@@ -55,6 +55,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -p:P
 ```
 
 - While recording: Q or Ctrl+C stops, P pauses or resumes, M writes a mark to `marks.txt`.
+- What is recorded (`CaptureChooser`): by default the output device with sound, found with Windows'
+  level meters once a second; `Recording:Device` pins a device; `Recording:App` records one app's
+  process tree through Windows process loopback (`ProcessLoopback`). Menu choice 6 changes it per run.
 - Exit codes: 0 success; 1 failure; 2 unknown command; 130 cancelled.
 - Recordings go to `Recording:OutputFolder` (`%USERPROFILE%\ClassScribe`), one folder per class
   (`<yyyy-MM-dd_HH-mm-ss>`) and one per transcribed file.
