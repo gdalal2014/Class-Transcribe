@@ -40,8 +40,18 @@ public sealed class ElevenLabsOptions
     /// </summary>
     public string KeytermsFile { get; init; } = "keyterms.txt";
 
-    /// <summary>Longest time one request may take, covering the upload and the wait for the transcript.</summary>
+    /// <summary>
+    /// The least time one request is given, covering the upload and the wait for the transcript. A longer upload gets
+    /// more, as <see cref="SlowestUploadMbps"/> allows (see <see cref="Transcription.UploadTimeLimit"/>). From 1 to 1440.
+    /// </summary>
     public int TimeoutMinutes { get; init; } = 60;
+
+    /// <summary>
+    /// The slowest upload speed, in megabits per second, that the time limit of a request allows for, so that a long
+    /// recording sent over a slow line gets the time its upload needs. The limit never falls below
+    /// <see cref="TimeoutMinutes"/>. From 0.1 to 1000.
+    /// </summary>
+    public double SlowestUploadMbps { get; init; } = 1;
 
     /// <summary><see cref="TimeoutMinutes"/> as a time span, at least one minute.</summary>
     public TimeSpan Timeout => TimeSpan.FromMinutes(Math.Max(1, TimeoutMinutes));

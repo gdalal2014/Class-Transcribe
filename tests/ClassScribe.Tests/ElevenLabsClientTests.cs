@@ -1,10 +1,10 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using ClassScribe.Audio;
 using ClassScribe.Settings;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Refit;
 
 namespace ClassScribe.Tests;
@@ -53,7 +53,7 @@ public class ElevenLabsClientTests
         var api = RestService.ForGenerated<IElevenLabsApi>(http, ElevenLabsJson.Default, ElevenLabsApiSettings.Create());
         return new ElevenLabsClient(
             api,
-            Options.Create(options ?? new ElevenLabsOptions { ApiKey = "test-key", RetryDelaySeconds = 0 }),
+            TestOptions.Create(options ?? new ElevenLabsOptions { ApiKey = "test-key", RetryDelaySeconds = 0 }),
             time ?? TimeProvider.System,
             logger ?? NullLogger<ElevenLabsClient>.Instance);
     }
@@ -332,22 +332,73 @@ public class ElevenLabsClientTests
 
     /// <summary>
     /// The time limit covers the whole answer: a body that stops arriving after the headers ends in a clear
-    /// failure once the limit is reached, rather than a wait without end.
+    /// failure once the limit is reached, rather than a wait without end. For a small upload the limit is
+    /// ElevenLabs:TimeoutMinutes, here 15 minutes.
     /// </summary>
     [Test]
     public async Task A_body_that_stops_arriving_runs_into_the_time_limit()
     {
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         _handler.EnqueueStalledBody(HttpStatusCode.OK);
-        var client = CreateClient(new ElevenLabsOptions { ApiKey = "test-key", TimeoutMinutes = 5, RetryDelaySeconds = 0 }, time);
+        var client = CreateClient(new ElevenLabsOptions { ApiKey = "test-key", TimeoutMinutes = 15, RetryDelaySeconds = 0 }, time);
 
         var request = client.TranscribeAsync(_audioPath, [], CancellationToken.None);
         await Wait.UntilAsync(() => _handler.Requests.Count == 1);
-        time.Advance(TimeSpan.FromMinutes(5));
+        time.Advance(TimeSpan.FromMinutes(15));
 
         var error = Assert.ThrowsAsync<TranscriptionException>(async () => await request.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.That(error!.Message, Does.Contain("did not answer in time"));
         Assert.That(_handler.Requests, Has.Count.EqualTo(1), "not sent again: the same wait would follow");
+    }
+
+    /// <summary>
+    /// Writes the upload as six hours of audio, with the recorder's own writer, at ten samples a second, so the file
+    /// stays small while its time limit is that of six hours: 10 minutes, the few seconds the small file takes to upload,
+    /// and a quarter of six hours, 100 minutes in all.
+    /// </summary>
+    private void WriteSixHoursOfAudio()
+    {
+        File.Delete(_audioPath);
+        using var writer = new WavSegmentWriter(_audioPath, 10);
+        writer.Write(new byte[6 * 3600 * 10 * 2]);
+    }
+
+    /// <summary>
+    /// The time limit grows with the upload: a recording of six hours is given 100 minutes, past ElevenLabs:TimeoutMinutes,
+    /// and the failure when even that runs out gives the limit and says which setting allows more on a slow line. A
+    /// limit that runs out ends the request on another thread a moment after the clock moves, so the test gives it a
+    /// second to end before it counts the request as still waiting.
+    /// </summary>
+    [Test]
+    public async Task The_time_limit_grows_with_the_audio_of_the_upload()
+    {
+        WriteSixHoursOfAudio();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        _handler.EnqueueStalledBody(HttpStatusCode.OK);
+        var client = CreateClient(new ElevenLabsOptions { ApiKey = "test-key", TimeoutMinutes = 60, RetryDelaySeconds = 0 }, time);
+
+        var request = client.TranscribeAsync(_audioPath, [], CancellationToken.None);
+        await Wait.UntilAsync(() => _handler.Requests.Count == 1);
+        time.Advance(TimeSpan.FromMinutes(100) - TimeSpan.FromTicks(1));
+        await Task.WhenAny(request, Task.Delay(TimeSpan.FromSeconds(1)));
+        Assert.That(request.IsCompleted, Is.False, "still waiting after TimeoutMinutes, short of the limit");
+        time.Advance(TimeSpan.FromTicks(1));
+
+        var error = Assert.ThrowsAsync<TranscriptionException>(async () => await request.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.That(error!.Message, Does.Contain("did not answer in time").And.Contain("100 minutes").And.Contain("ElevenLabs:SlowestUploadMbps"));
+    }
+
+    /// <summary>The upload is announced with its size, in megabytes of a million bytes as the upload speed counts them, and its time limit.</summary>
+    [Test]
+    public async Task The_upload_is_announced_with_its_size_and_its_time_limit()
+    {
+        var log = new RecordingLogger<ElevenLabsClient>();
+        File.WriteAllBytes(_audioPath, new byte[1_500_000]);
+        _handler.Enqueue(HttpStatusCode.OK, Answer);
+
+        await CreateClient(logger: log).TranscribeAsync(_audioPath, ["kalām"], CancellationToken.None);
+
+        Assert.That(log.Messages, Has.Some.EqualTo("Uploading upload.wav (1.5 MB) with 1 keyterms; time limit 60 minutes"));
     }
 
     /// <summary>

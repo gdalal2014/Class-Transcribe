@@ -1,4 +1,5 @@
 using ClassScribe.Audio;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -7,11 +8,14 @@ namespace ClassScribe.Commands;
 /// <summary>
 /// The menu shown when ClassScribe starts without arguments. One key picks a choice; when the choice
 /// has run, successfully or not, the menu comes back, until Q or Ctrl+C leaves it. Keys typed while a
-/// choice ran are dropped, so the menu only acts on a key pressed after it is shown.
+/// choice ran are dropped, so the menu only acts on a key pressed after it is shown. Each choice reads
+/// the settings again first, and runs only once they have passed the check (see <see cref="RunGate"/>).
 /// </summary>
 public sealed class MenuCommand(
     ICommandRunner commands,
     IConsoleUi ui,
+    RunGate gate,
+    SettingsFile settings,
     ClassFolders folders,
     ILoopbackCaptureProvider devices,
     SourceChoice choice,
@@ -28,6 +32,9 @@ public sealed class MenuCommand(
     /// again lets the last lines of a choice appear above the menu rather than below it.
     /// </summary>
     private static readonly TimeSpan LogSettleTime = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>The warning about an out-of-date copy of the settings that the menu's header gave when it was last shown; null when it gave none.</summary>
+    private string? _staleCopyShown;
 
     /// <summary>Shows the menu until it is left. Returns the exit code, which is 0.</summary>
     public async Task<int> RunAsync()
@@ -50,11 +57,22 @@ public sealed class MenuCommand(
         }
     }
 
-    /// <summary>Runs the choice picked. A failure is reported, and the menu carries on.</summary>
+    /// <summary>
+    /// Runs the choice picked, once the settings, read again, have passed the check: an edit made since the last choice
+    /// counts, and one that cannot be used stops the choice before anything starts. Under dotnet run, an edit made to the
+    /// project's own appsettings.json while the menu was shown does not count until the next build, so that is said
+    /// first, unless the menu's header has said it already. A failure is reported, and the menu carries on.
+    /// </summary>
     private async Task RunChoiceAsync(char picked)
     {
         try
         {
+            // Written here rather than logged, so that it shows before whatever the choice shows first, such as the
+            // question for the recording's name; the log is written on a thread of its own.
+            if (_staleCopyShown is null && settings.DescribeStaleCopy() is { } stale) ui.WriteLine($"WARNING  {stale}.");
+
+            if (!gate.TryOpen(GateUse.MenuChoice)) return;
+
             switch (picked)
             {
                 case '1':
@@ -92,13 +110,25 @@ public sealed class MenuCommand(
     }
 
     /// <summary>
-    /// Lists the choices, where the files go and which device is recorded. A recordings folder that cannot be
-    /// used, such as one on a drive that is not there, is pointed out right under its name, before anything is recorded.
+    /// Lists the choices, the settings file read, where the files go and which device is recorded. Under the file's name
+    /// it points out a copy of the settings that a build has not brought up to date, and settings that could not be used
+    /// when they were last read, at start or for the last choice: each problem, and that no choice runs until the file is
+    /// fixed, so the folder and the source shown below are not taken for the file's. A recordings folder that cannot be
+    /// used, such as one on a drive that is not there, is pointed out right under its own, before anything is recorded.
     /// </summary>
     private void ShowMenu()
     {
         ui.WriteLine();
         ui.WriteLine("ClassScribe");
+        ui.WriteLine($"Settings: {settings.Path}");
+        _staleCopyShown = settings.DescribeStaleCopy();
+        if (_staleCopyShown is { } stale) ui.WriteLine($"WARNING  {stale}.");
+        if (gate.Problems is [_, ..] settingsProblems)
+        {
+            foreach (var settingsProblem in settingsProblems) ui.WriteLine($"ERROR  {settingsProblem}");
+            ui.WriteLine("ERROR  No choice runs until the file is fixed. Until then ClassScribe keeps its last usable settings, or the defaults.");
+        }
+
         ui.WriteLine($"Recordings and transcripts: {folders.Root}");
         if (folders.DescribeRootProblem() is { } problem) ui.WriteLine($"WARNING  {problem}.");
         ui.WriteLine($"Recording from: {choice.Description}");
@@ -114,8 +144,9 @@ public sealed class MenuCommand(
     }
 
     /// <summary>
-    /// Choice 6: lists the connected output devices and the apps with sound open, and pins the one
-    /// picked for the rest of the run, or goes back to automatic.
+    /// Choice 6: lists the connected output devices and the apps with sound open, and pins the one picked, or automatic,
+    /// until ClassScribe is closed, whatever the settings say (see <see cref="SourceChoice"/>). It says so, and which
+    /// setting keeps the pick.
     /// </summary>
     private async Task ChooseSourceAsync()
     {
@@ -153,6 +184,7 @@ public sealed class MenuCommand(
             {
                 choice.Device = null;
                 choice.App = null;
+                ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed, whatever the settings say. To keep that, leave Recording:Device and Recording:App empty in {settings.Path}.");
                 return;
             }
 
@@ -160,7 +192,7 @@ public sealed class MenuCommand(
             {
                 var entry = entries[pressed.KeyChar - '1'];
                 entry.Pick();
-                ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed. To keep that, set {entry.Setting} to \"{entry.Name}\" in appsettings.json.");
+                ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed, whatever the settings say. To keep that, set {entry.Setting} to \"{entry.Name}\" in {settings.Path}.");
                 return;
             }
         }
@@ -200,9 +232,9 @@ public sealed class MenuCommand(
     }
 
     /// <summary>
-    /// Choice 3: lists the recent recordings and transcribes the one picked. When there are none because the
-    /// recordings folder cannot be used, it says why. Otherwise it only says there is nothing to pick from: a
-    /// recording left out because it cannot be read now still exists, and the warning above names it.
+    /// Choice 3: lists the recent recordings and transcribes the one picked (see <see cref="TranscribeRecordingAsync"/>).
+    /// When there are none because the recordings folder cannot be used, it says why. Otherwise it only says there is
+    /// nothing to pick from: a recording left out because it cannot be read now still exists, and the warning above names it.
     /// </summary>
     private async Task TranscribeRecentRecordingAsync()
     {
@@ -224,29 +256,83 @@ public sealed class MenuCommand(
         if (await ReadNumberAsync(recordings.Count) is not { } index) return;
 
         var chosen = recordings[index];
-        if (WhyBilledAgain(chosen) is { } reason)
-        {
-            ui.WriteLine($"{reason} Press Y to go ahead, any other key to go back.");
-            if (await ui.ReadKeyAsync(CancellationToken.None) is not { Key: ConsoleKey.Y }) return;
-        }
-
-        await commands.TranscribeAsync(chosen.Files.Segment(1));
+        await TranscribeRecordingAsync(chosen, chosen.Files.Segment(1));
     }
 
-    /// <summary>What the list says about a recording's transcript: ready, an answer paid for and kept without one, or none yet.</summary>
+    /// <summary>
+    /// Transcribes a recording picked in choice 3 or given in choice 4 by sending <paramref name="path"/>, which names it,
+    /// with the care such a recording needs. One being recorded now is not sent: what was sent would stop short. One that
+    /// would be billed again offers the free rebuild first, with R, when there is an answer to rebuild from (see
+    /// <see cref="WhyBilledAgain"/>), and the new try with Y; any other key goes back without either.
+    /// </summary>
+    private async Task TranscribeRecordingAsync(RecordedClass recorded, string path)
+    {
+        if (recorded.BeingWritten)
+        {
+            ui.WriteLine($"{recorded.Files.BaseName} is being recorded now; transcribe it once it has stopped.");
+            return;
+        }
+
+        if (WhyBilledAgain(recorded) is { } offer)
+        {
+            ui.WriteLine(offer.Question);
+            switch ((await ui.ReadKeyAsync(CancellationToken.None))?.Key)
+            {
+                case ConsoleKey.R when offer.RebuildFrom is { } rebuildFrom:
+                    await commands.RebuildAsync(rebuildFrom, open: true);
+                    return;
+                case ConsoleKey.Y:
+                    break;
+                default:
+                    return;
+            }
+        }
+
+        await commands.TranscribeAsync(new TranscribeRequest(path));
+    }
+
+    /// <summary>What the list says about a recording: being recorded now, its transcript ready, an answer paid for and kept without one, or none yet.</summary>
     private static string TranscriptState(RecordedClass recorded) =>
-        recorded.HasTranscript ? "transcript ready"
+        recorded.BeingWritten ? "being recorded now"
+        : recorded.HasTranscript ? "transcript ready"
         : recorded.KeptAnswer is not null ? "answer kept"
         : "no transcript yet";
 
     /// <summary>
-    /// Why transcribing the recording again is billed again, said before asking for a yes: it has a transcript, or
-    /// ElevenLabs' answer to an earlier try, already paid for, is kept without one. Null when neither is so.
+    /// The question asked before a recording is transcribed again, which is billed again, and what R rebuilds from for
+    /// free instead. For a recording with a transcript, that is the recording, from its newest saved answer; when that
+    /// answer is no longer there, an answer to another try that was paid for and kept apart, as one is after R laid it out;
+    /// and when there is neither, nothing, so only Y is offered. For a recording without a transcript whose answer to an
+    /// earlier try was paid for and kept, it is that answer. Null when the recording has neither a transcript nor a kept answer.
     /// </summary>
-    private static string? WhyBilledAgain(RecordedClass recorded) =>
-        recorded.HasTranscript ? "This recording already has a transcript, and transcribing it again is billed again."
-        : recorded.KeptAnswer is { } answer ? $"ElevenLabs' answer to an earlier try, which has been paid for, is kept in {answer}: look there for the transcript's text first, because transcribing it again is billed again."
-        : null;
+    private static BilledAgain? WhyBilledAgain(RecordedClass recorded)
+    {
+        if (!recorded.HasTranscript)
+        {
+            return recorded.KeptAnswer is { } answer
+                ? new($"ElevenLabs' answer to an earlier try, which has been paid for, is kept in {answer}: look there for the transcript's text first, because transcribing it again is billed again. R lays that answer out as a transcript (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back.",
+                    answer)
+                : null;
+        }
+
+        if (TranscriptCopies.NewestAnswer(recorded.Files) is not null)
+        {
+            return new("This recording has a transcript. R rebuilds it from ElevenLabs' saved answer, with the current marks and Transcript settings (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back.",
+                recorded.Files.Segment(1));
+        }
+
+        return recorded.KeptAnswer is { } kept
+            ? new($"This recording has a transcript. R makes a new transcript from ElevenLabs' answer kept in {kept}, with the current marks and Transcript settings (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back.",
+                kept)
+            : new("This recording has a transcript, but its saved answer from ElevenLabs is no longer there, so it cannot be rebuilt for free. Y transcribes it again (billed again). Any other key goes back.",
+                RebuildFrom: null);
+    }
+
+    /// <summary>
+    /// The question choices 3 and 4 ask before they send a recording that would be billed again, and the path R rebuilds
+    /// from for free; null when there is nothing to rebuild from, and R then goes back as any other key does.
+    /// </summary>
+    private sealed record BilledAgain(string Question, string? RebuildFrom);
 
     /// <summary>Waits for a digit from 1 to <paramref name="count"/> and returns its index; null for Esc, Q or Ctrl+C.</summary>
     private async Task<int?> ReadNumberAsync(int count)
@@ -259,7 +345,11 @@ public sealed class MenuCommand(
         }
     }
 
-    /// <summary>Choice 4: asks for a file, dragged into the window or typed, and transcribes it.</summary>
+    /// <summary>
+    /// Choice 4: asks for a file, dragged into the window or typed, and transcribes it. A recording, given by one of its
+    /// segment files or by its folder (see <see cref="RecordingAt"/>), gets the same care as in choice 3 (see
+    /// <see cref="TranscribeRecordingAsync"/>), and the path is sent as given; any other file is sent at once.
+    /// </summary>
     private async Task TranscribeFileAsync()
     {
         ui.WriteLine("Drag a file into this window, or type its path, then press Enter. Esc, or Enter alone, goes back.");
@@ -275,7 +365,26 @@ public sealed class MenuCommand(
             return;
         }
 
-        await commands.TranscribeAsync(path);
+        if (RecordingAt(path) is { } recording)
+        {
+            await TranscribeRecordingAsync(folders.Describe(recording), path);
+            return;
+        }
+
+        await commands.TranscribeAsync(new TranscribeRequest(path));
+    }
+
+    /// <summary>
+    /// The recording <paramref name="path"/> names, as transcribe takes it (see <see cref="TranscribeCommand"/>): for a
+    /// folder, the recording started last in it; for a segment file of a recording with audio on disk, that recording.
+    /// Null for any other file, which is sent on its own, and for a folder without a recording, which transcribe reports.
+    /// </summary>
+    private static RecordingFiles? RecordingAt(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (Directory.Exists(fullPath)) return ClassFolders.FindNewest(fullPath);
+
+        return RecordingFiles.TryParse(fullPath) is { } files && files.FindSegments().Count > 0 ? files : null;
     }
 
     /// <summary>Choice 5: opens the recordings folder, creating it when it is not there yet.</summary>

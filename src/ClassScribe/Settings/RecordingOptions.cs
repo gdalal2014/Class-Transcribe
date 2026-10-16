@@ -1,5 +1,22 @@
 namespace ClassScribe.Settings;
 
+/// <summary>When the screen is kept on while ClassScribe records and uploads (see <see cref="RecordingOptions.KeepScreenOn"/>).</summary>
+public enum KeepScreenOn
+{
+    /// <summary>
+    /// Only while the laptop runs on battery. There a laptop with Modern Standby goes into standby once the screen
+    /// turns off, whatever a program asks, so keeping the screen on is what keeps it recording. On mains, keeping
+    /// the laptop awake is enough, and the screen may turn off.
+    /// </summary>
+    OnBattery,
+
+    /// <summary>Always, on battery and on mains.</summary>
+    Always,
+
+    /// <summary>Never. On battery Windows may then go into standby a few minutes after the last key press, and stop the recording.</summary>
+    Never
+}
+
 /// <summary>Settings that control how the class audio is captured and stored.</summary>
 public sealed class RecordingOptions
 {
@@ -45,4 +62,11 @@ public sealed class RecordingOptions
 
     /// <summary>Open the transcript in the app Windows uses for text files when it is ready.</summary>
     public bool OpenTranscriptWhenDone { get; init; } = true;
+
+    /// <summary>
+    /// When the screen is kept on while recording and uploading: <see cref="Settings.KeepScreenOn.OnBattery"/> (the
+    /// default), <see cref="Settings.KeepScreenOn.Always"/> or <see cref="Settings.KeepScreenOn.Never"/>. The names are
+    /// taken in any case; a number is refused.
+    /// </summary>
+    public KeepScreenOn KeepScreenOn { get; init; } = KeepScreenOn.OnBattery;
 }

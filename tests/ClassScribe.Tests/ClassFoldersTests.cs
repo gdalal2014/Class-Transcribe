@@ -5,7 +5,6 @@ using ClassScribe.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Tests;
 
@@ -34,11 +33,15 @@ public class ClassFoldersTests
 
     /// <summary>Creates the folders under test, rooted in the temporary folder unless another root is given.</summary>
     private ClassFolders Folders(string? outputFolder = null) =>
-        new(Options.Create(new RecordingOptions { OutputFolder = outputFolder ?? _folder.Path }), _time, _log);
+        new(TestOptions.Create(new RecordingOptions { OutputFolder = outputFolder ?? _folder.Path }), _time, _log);
 
     /// <summary>Holds a recording's first file open without sharing, as another program might.</summary>
     private static FileStream HoldOpen(RecordingFiles files) =>
         new(files.Segment(1), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+    /// <summary>Holds a segment open for writing while letting others read it, as the recorder holds the segment it writes.</summary>
+    private static FileStream HoldForWriting(string segment) =>
+        new(segment, FileMode.Open, FileAccess.Write, FileShare.Read);
 
     /// <summary>
     /// Makes <paramref name="link"/> a junction to <paramref name="target"/>, as mklink /J does. Unlike a
@@ -128,6 +131,33 @@ public class ClassFoldersTests
     [Test]
     public void Quotes_around_the_setting_are_ignored() =>
         Assert.That(Folders(outputFolder: $" \"{_folder.File("Classes")}\" ").Root, Is.EqualTo(_folder.File("Classes")));
+
+    /// <summary>The folders live as long as the app; the root, and what is said about it, follow the setting as it is read again.</summary>
+    [Test]
+    public void The_root_follows_the_setting_as_it_is_read_again()
+    {
+        var settings = TestOptions.Create(new RecordingOptions { OutputFolder = _folder.File("First") });
+        var folders = new ClassFolders(settings, _time, _log);
+        var inTheWay = _folder.File("Second");
+        File.WriteAllText(inTheWay, "not a folder");
+
+        settings.Set(new RecordingOptions { OutputFolder = inTheWay });
+
+        Assert.That(folders.Root, Is.EqualTo(inTheWay));
+        Assert.That(folders.DescribeRootProblem(), Does.StartWith($"{inTheWay} is a file"));
+    }
+
+    /// <summary>The root a setting stands for is worked out the same way everywhere: here for an empty setting, a relative one and one with quotes.</summary>
+    [Test]
+    public void The_root_for_a_setting_is_worked_out_without_the_folders()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        Assert.That(ClassFolders.RootFor(""), Is.EqualTo(Path.Combine(profile, "ClassScribe")));
+        Assert.That(ClassFolders.RootFor(null), Is.EqualTo(Path.Combine(profile, "ClassScribe")));
+        Assert.That(ClassFolders.RootFor("Classes"), Is.EqualTo(Path.Combine(profile, "Classes")));
+        Assert.That(ClassFolders.RootFor($"\"{_folder.File("Classes")}\""), Is.EqualTo(_folder.File("Classes")));
+    }
 
     /// <summary>A usable root has nothing to report, even before its folder has been made.</summary>
     [Test]
@@ -539,5 +569,151 @@ public class ClassFoldersTests
 
         Assert.That(ClassFolders.FindNewest(_folder.File("Kalam")), Is.EqualTo(newest));
         Assert.That(ClassFolders.FindNewest(_folder.Path), Is.Null, "the root holds folders, not recordings");
+    }
+
+    /// <summary>
+    /// A recording is being written while a writer holds its newest segment open and lets others read it, as the
+    /// recorder does with the segment it writes. An earlier segment held that way does not count, since the recorder has
+    /// closed those, and once the writer lets go the recording is no longer being written.
+    /// </summary>
+    [Test]
+    public void A_recording_whose_newest_segment_is_held_open_for_writing_is_being_written()
+    {
+        var files = WriteRecording("Kalam", Now);
+        TestAudio.WriteWav(files.Segment(2), 16000, new short[1600]);
+
+        using (HoldForWriting(files.Segment(2)))
+            Assert.That(ClassFolders.IsBeingWritten(files), Is.True);
+
+        using (HoldForWriting(files.Segment(1)))
+            Assert.That(ClassFolders.IsBeingWritten(files), Is.False, "an earlier segment is not the one being written");
+
+        Assert.That(ClassFolders.IsBeingWritten(files), Is.False, "nothing writes to it any more");
+    }
+
+    /// <summary>
+    /// A newest segment that another program holds without sharing it at all, as a scanner might, does not make the
+    /// recording one being recorded: the recorder always lets others read what it writes. Transcribing it then fails on
+    /// the file itself, with the real reason.
+    /// </summary>
+    [Test]
+    public void A_segment_held_without_any_sharing_is_not_taken_for_one_being_recorded()
+    {
+        var files = WriteRecording("Kalam", Now);
+        using var held = HoldOpen(files);
+
+        Assert.That(ClassFolders.IsBeingWritten(files), Is.False);
+    }
+
+    /// <summary>A recording without any segment on disk, such as one whose audio was deleted, is not being written.</summary>
+    [Test]
+    public void A_recording_without_audio_is_not_being_written()
+    {
+        var files = WriteRecording("Kalam", Now);
+        File.Delete(files.Segment(1));
+
+        Assert.That(ClassFolders.IsBeingWritten(files), Is.False);
+        Assert.That(ClassFolders.IsBeingWritten(new RecordingFiles(_folder.File("not-there"), "Kalam_2026-10-14_18-30-00Z")), Is.False);
+    }
+
+    /// <summary>The list says which recording is being written, so that the menu can show it and refuse to transcribe it.</summary>
+    [Test]
+    public void The_list_marks_a_recording_that_is_being_written()
+    {
+        var recordingNow = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        var stopped = WriteRecording("Fiqh", new DateTimeOffset(2026, 10, 12, 10, 0, 0, TimeSpan.Zero));
+
+        IReadOnlyList<RecordedClass> recordings;
+        using (HoldForWriting(recordingNow.Segment(1)))
+            recordings = Folders().ListRecent(9);
+
+        Assert.That(recordings.Select(r => (r.Files, r.BeingWritten)), Is.EqualTo(new[] { (recordingNow, true), (stopped, false) }));
+        Assert.That(_log.Problems, Is.Empty, "a recording being written is listed, not left out");
+    }
+
+    /// <summary>
+    /// The recordings in one folder are listed newest first by the time each started, whatever their files' write
+    /// times, so that the first is the one <see cref="ClassFolders.FindNewest"/> finds. Each is described as the menu's
+    /// list describes it: its length, its transcript and the answer kept for it. Other folders and stray files are left out.
+    /// </summary>
+    [Test]
+    public void The_recordings_in_one_folder_are_listed_newest_first_and_described()
+    {
+        var older = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 11, 14, 5, 0, TimeSpan.Zero), seconds: 2.0, withTranscript: true);
+        var newer = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), seconds: 1.0);
+        File.SetLastWriteTimeUtc(older.Segment(1), new DateTime(2026, 10, 15, 9, 0, 0, DateTimeKind.Utc));
+        File.WriteAllText(newer.UnreadAnswer(), "{}");
+        WriteRecording("Fiqh", new DateTimeOffset(2026, 10, 16, 10, 0, 0, TimeSpan.Zero));
+        File.WriteAllBytes(_folder.File("Kalam/notes.wav"), [0]);
+        File.WriteAllBytes(newer.Upload, [0]);
+
+        var recordings = Folders().RecordingsIn(newer.Folder);
+
+        Assert.That(recordings.Select(r => r.Files), Is.EqualTo(new[] { newer, older }));
+        Assert.That(recordings[0].Files, Is.EqualTo(ClassFolders.FindNewest(newer.Folder)));
+        Assert.That(recordings.Select(r => r.HasTranscript), Is.EqualTo(new[] { false, true }));
+        Assert.That(recordings.Select(r => r.KeptAnswer), Is.EqualTo(new[] { newer.UnreadAnswer(), null }));
+        Assert.That(recordings.Select(r => r.Length.TotalSeconds), Is.EqualTo(new[] { 1.0, 2.0 }).Within(0.001));
+    }
+
+    /// <summary>
+    /// A recording in the folder with a file another program holds without sharing is left out of the recordings in the
+    /// folder with a warning that names it, as in the menu's list; the others are still given.
+    /// </summary>
+    [Test]
+    public void A_recording_in_the_folder_that_cannot_be_read_is_left_out_with_a_warning()
+    {
+        var held = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        var readable = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 11, 14, 5, 0, TimeSpan.Zero));
+        using var stream = HoldOpen(held);
+
+        Assert.That(Folders().RecordingsIn(held.Folder).Select(r => r.Files), Is.EqualTo(new[] { readable }));
+        Assert.That(_log.Problems, Has.Count.EqualTo(1));
+        Assert.That(_log.Problems[0], Does.Contain(held.BaseName));
+    }
+
+    /// <summary>A folder ClassScribe may not look into is an error for the recordings in it, as it is for the newest one: not a folder without recordings.</summary>
+    [Test, Platform("Win")]
+    [SupportedOSPlatform("windows")]
+    public void The_recordings_in_a_folder_that_cannot_be_looked_into_are_an_error()
+    {
+        var folder = WriteRecording("Kalam", Now).Folder;
+        using var denied = Denied.ListingOf(folder);
+        Assume.That(() => Directory.GetFiles(folder), Throws.InstanceOf<UnauthorizedAccessException>(), "the folder could not be shut to this user");
+
+        Assert.That(() => Folders().RecordingsIn(folder), Throws.InstanceOf<UnauthorizedAccessException>());
+    }
+
+    /// <summary>A segment is measured to the end of its file, as the upload reads it, even when its header was left behind by a crash.</summary>
+    [Test]
+    public void A_segment_is_measured_to_the_end_of_its_file()
+    {
+        var segment = WriteRecording("Kalam", Now, seconds: 1.0).Segment(1);
+        using (var stream = new FileStream(segment, FileMode.Append)) stream.Write(new byte[16000]);
+
+        Assert.That(ClassFolders.MeasureSegment(segment).TotalSeconds, Is.EqualTo(1.5).Within(0.001));
+    }
+
+    /// <summary>
+    /// The answer kept for a recording is found beside it or, when its own folder would not take it, in the recordings
+    /// folder; of several, the newest. A recording without one has none, even with a transcript.
+    /// </summary>
+    [Test]
+    public void The_answer_kept_for_a_recording_is_found_beside_it_or_in_the_recordings_folder()
+    {
+        var beside = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        var inTheRoot = WriteRecording("Fiqh", new DateTimeOffset(2026, 10, 12, 10, 0, 0, TimeSpan.Zero));
+        var without = WriteRecording("Tafsir", new DateTimeOffset(2026, 10, 11, 10, 0, 0, TimeSpan.Zero), withTranscript: true);
+        File.WriteAllText(beside.UnreadAnswer(), "{}");
+        File.SetLastWriteTimeUtc(beside.UnreadAnswer(), new DateTime(2026, 10, 14, 21, 0, 0, DateTimeKind.Utc));
+        File.WriteAllText(beside.Json(2), "{}");
+        File.SetLastWriteTimeUtc(beside.Json(2), new DateTime(2026, 10, 15, 9, 0, 0, DateTimeKind.Utc));
+        var keptInTheRoot = (inTheRoot with { Folder = _folder.Path }).UnreadAnswer();
+        File.WriteAllText(keptInTheRoot, "{}");
+        var folders = Folders();
+
+        Assert.That(folders.KeptAnswerOf(beside), Is.EqualTo(beside.Json(2)));
+        Assert.That(folders.KeptAnswerOf(inTheRoot), Is.EqualTo(keptInTheRoot));
+        Assert.That(folders.KeptAnswerOf(without), Is.Null);
     }
 }

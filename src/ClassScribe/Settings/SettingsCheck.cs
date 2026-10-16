@@ -1,49 +1,37 @@
 using System.Globalization;
 using System.Reflection;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 
 namespace ClassScribe.Settings;
 
 /// <summary>
-/// Checks the settings before anything is recorded or uploaded. Settings are otherwise read only when
-/// first used, which for the transcript layout is after the paid upload; here a value that cannot be
-/// read, or one that makes no sense, stops ClassScribe at once, with a message that names the setting.
-/// AppHost reads appsettings.json once, at start, so the values checked are those used for the whole
-/// run. It also warns about an API key written into the settings, which is never used.
+/// Checks settings before they are used. Settings are otherwise read only when first used, which for the transcript
+/// layout is after the paid upload; here a value that cannot be read, or one that makes no sense, is found at once, with
+/// a message that names the setting. The settings to check are an argument, so that a staged copy of them is checked
+/// before any of it reaches the app (see <see cref="SettingsReloader"/>). The log's own settings are checked too, since
+/// they are read again with the others.
 /// </summary>
-public sealed class SettingsCheck(IConfiguration configuration, ILogger<SettingsCheck> logger)
+public sealed class SettingsCheck
 {
     /// <summary>How to write a path in appsettings.json. A single backslash there escapes the next letter: \t becomes a tab, \n a line break.</summary>
     private const string PathAdvice = "In appsettings.json, write each backslash twice, as in \"D:\\\\Classes\", or use forward slashes, as in \"D:/Classes\".";
 
-    /// <summary>
-    /// Reports each problem with the settings as an error, and a key written into the settings as a
-    /// warning. Returns true when the settings can be used.
-    /// </summary>
-    public bool AreUsable()
-    {
-        if (ApiKeyFromEnvironment.IsSetElsewhere(configuration))
-        {
-            logger.LogWarning(
-                "{Setting} is set in the settings, in appsettings.json or as an environment variable. It is not used: the key is read only from {Variable}. Remove it from the file, so it cannot end up in git or be shared by mistake",
-                ElevenLabsOptions.ApiKeySetting, ElevenLabsOptions.ApiKeyVariable);
-        }
+    /// <summary>The section that holds the log's settings.</summary>
+    private const string LoggingSection = "Logging";
 
-        var problems = FindProblems();
-        foreach (var problem in problems) logger.LogError("{Problem}", problem);
-        if (problems.Count > 0) logger.LogError("Nothing was started. Fix the settings above in appsettings.json, then start ClassScribe again");
+    /// <summary>The environment variables in which Windows names the OneDrive folders.</summary>
+    private static readonly string[] OneDriveVariables = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"];
 
-        return problems.Count == 0;
-    }
-
-    /// <summary>Lists what is wrong with the settings, one sentence per problem, each starting with the setting's name. Empty when they can be used.</summary>
-    public IReadOnlyList<string> FindProblems()
+    /// <summary>Lists what is wrong with <paramref name="configuration"/>, one sentence per problem, each starting with the setting's name. Empty when it can be used.</summary>
+    public IReadOnlyList<string> FindProblems(IConfiguration configuration)
     {
         List<string> problems = [];
 
         const string recordingSection = RecordingOptions.SectionName;
-        var recording = Bind<RecordingOptions>(recordingSection, problems);
+        var recording = Bind<RecordingOptions>(configuration, recordingSection, problems);
         CheckPath(problems, Name(recordingSection, nameof(RecordingOptions.OutputFolder)), recording.OutputFolder);
         CheckRange(problems, Name(recordingSection, nameof(RecordingOptions.FlushSeconds)), recording.FlushSeconds, 1);
         CheckRange(problems, Name(recordingSection, nameof(RecordingOptions.SilenceWarningSeconds)), recording.SilenceWarningSeconds, 1);
@@ -53,7 +41,7 @@ public sealed class SettingsCheck(IConfiguration configuration, ILogger<Settings
         CheckRange(problems, Name(recordingSection, nameof(RecordingOptions.MaxSegmentMegabytes)), recording.MaxSegmentMegabytes, 10, 4000);
 
         const string elevenLabsSection = ElevenLabsOptions.SectionName;
-        var elevenLabs = Bind<ElevenLabsOptions>(elevenLabsSection, problems);
+        var elevenLabs = Bind<ElevenLabsOptions>(configuration, elevenLabsSection, problems);
         var baseUrl = Name(elevenLabsSection, nameof(ElevenLabsOptions.BaseUrl));
         if (!Uri.TryCreate(elevenLabs.BaseUrl, UriKind.Absolute, out var address) || address.Scheme is not ("https" or "http"))
             problems.Add($"{baseUrl} is \"{elevenLabs.BaseUrl}\"; it must be a web address, such as https://api.elevenlabs.io/.");
@@ -72,8 +60,12 @@ public sealed class SettingsCheck(IConfiguration configuration, ILogger<Settings
         CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.MaxAttempts)), elevenLabs.MaxAttempts, 1, 10);
         CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.RetryDelaySeconds)), elevenLabs.RetryDelaySeconds, 0, 3600);
 
+        // A tenth of a megabit per second still gives the longest recording ElevenLabs takes a time limit of about a day;
+        // a gigabit line is faster than any upload needs to be allowed for.
+        CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.SlowestUploadMbps)), elevenLabs.SlowestUploadMbps, 0.1, 1000, "megabits per second", "1");
+
         const string transcriptSection = TranscriptOptions.SectionName;
-        var transcript = Bind<TranscriptOptions>(transcriptSection, problems);
+        var transcript = Bind<TranscriptOptions>(configuration, transcriptSection, problems);
 
         // 0 turns a kind of paragraph break off, as TranscriptFormatter reads it. A value below 0 would do the
         // same there, but it is far more likely a slip than a way of saying "off", so it is refused.
@@ -85,7 +77,92 @@ public sealed class SettingsCheck(IConfiguration configuration, ILogger<Settings
         if (length < 0)
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"{Name(transcriptSection, nameof(TranscriptOptions.MaxParagraphCharacters))} is {length}; it must be 0 or more, such as 900. 0 turns the splitting of long paragraphs off."));
 
+        CheckLogging(configuration, problems);
         return problems;
+    }
+
+    /// <summary>
+    /// Lists what is worth saying about <paramref name="configuration"/> without refusing it: an API key written into the
+    /// settings, which is never used, and a recordings folder inside OneDrive.
+    /// </summary>
+    public IReadOnlyList<string> FindWarnings(IConfiguration configuration)
+    {
+        List<string> warnings = [];
+        if (ApiKeyFromEnvironment.IsSetElsewhere(configuration))
+            warnings.Add($"{ElevenLabsOptions.ApiKeySetting} is set in the settings, in appsettings.json or as an environment variable. It is not used: the key is read only from {ElevenLabsOptions.ApiKeyVariable}. Remove it from the file, so it cannot end up in git or be shared by mistake");
+
+        // A path that cannot be a path is a problem of its own (see FindProblems), not a place to look up.
+        var outputFolder = configuration[Name(RecordingOptions.SectionName, nameof(RecordingOptions.OutputFolder))];
+        if (outputFolder is null || outputFolder.IndexOfAny(Path.GetInvalidPathChars()) < 0)
+        {
+            var root = ClassFolders.RootFor(outputFolder);
+            if (IsInsideOneDrive(root))
+                warnings.Add($"{Name(RecordingOptions.SectionName, nameof(RecordingOptions.OutputFolder))} is inside OneDrive ({root}). OneDrive uploads a recording again and again while it grows, and can hold files that ClassScribe needs to delete; a folder outside OneDrive, such as %USERPROFILE%\\ClassScribe, is safer");
+        }
+
+        return warnings;
+    }
+
+    /// <summary>True when <paramref name="folder"/> is a OneDrive folder that Windows names, or lies inside one.</summary>
+    private static bool IsInsideOneDrive(string folder) =>
+        OneDriveVariables
+            .Select(Environment.GetEnvironmentVariable)
+            .OfType<string>()
+            .Select(oneDrive => oneDrive.Trim())
+            .Where(oneDrive => oneDrive.Length > 0 && oneDrive.IndexOfAny(Path.GetInvalidPathChars()) < 0 && Path.IsPathFullyQualified(oneDrive))
+            .Select(oneDrive => Path.TrimEndingDirectorySeparator(Path.GetFullPath(oneDrive)))
+            .Any(oneDrive => folder.Equals(oneDrive, StringComparison.OrdinalIgnoreCase)
+                || folder.StartsWith(oneDrive + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The log's settings. Each log level, under Logging:LogLevel and under a log's own section such as
+    /// Logging:Console:LogLevel, must be a level's name; an empty one is passed over, as the log passes it over. The
+    /// console log's settings and those of its formats must be values the console log takes. Read again while
+    /// ClassScribe runs, a value the log cannot take would keep it from taking any new settings at all.
+    /// </summary>
+    private static void CheckLogging(IConfiguration configuration, List<string> problems)
+    {
+        foreach (var section in configuration.GetSection(LoggingSection).GetChildren())
+        {
+            var levels = section.Key.Equals("LogLevel", StringComparison.OrdinalIgnoreCase) ? section : section.GetSection("LogLevel");
+            foreach (var (key, text) in levels.AsEnumerable())
+            {
+                if (string.IsNullOrEmpty(text) || IsName(typeof(LogLevel), text)) continue;
+                problems.Add($"{key} is \"{text}\", which is not {Names(typeof(LogLevel))}.");
+            }
+        }
+
+        var captureScopes = $"{LoggingSection}:CaptureScopes";
+        if (configuration[captureScopes] is { } scopes && !bool.TryParse(scopes, out _))
+            problems.Add($"{captureScopes} is \"{scopes}\", which is not true or false.");
+
+        CheckBinding<ConsoleLoggerOptions>(configuration, $"{LoggingSection}:Console", problems);
+
+        // Every format of the console log reads the same section; the two richest cover the settings of the others.
+        var formatterOptions = $"{LoggingSection}:Console:FormatterOptions";
+        if (CheckBinding<SimpleConsoleFormatterOptions>(configuration, formatterOptions, problems))
+            CheckBinding<JsonConsoleFormatterOptions>(configuration, formatterOptions, problems);
+    }
+
+    /// <summary>
+    /// Binds the section at <paramref name="path"/> to <typeparamref name="TOptions"/> as the log does, and adds a problem
+    /// when that fails: a value of the wrong kind, or one the log refuses. Returns true when the section can be used.
+    /// </summary>
+    private static bool CheckBinding<TOptions>(IConfiguration configuration, string path, List<string> problems) where TOptions : new()
+    {
+        try
+        {
+            configuration.GetSection(path).Bind(new TOptions());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: a value the log cannot take is a problem to report with the others, in words,
+            // and the reason is in the problem; it is not a failure of the check itself.
+            var reason = ex is TargetInvocationException { InnerException: { } inner } ? inner : ex;
+            problems.Add($"{path} holds a value the console log cannot use: {reason.Message}");
+            return false;
+        }
     }
 
     /// <summary>
@@ -93,7 +170,7 @@ public sealed class SettingsCheck(IConfiguration configuration, ILogger<Settings
     /// its setting needs. Those values are left out of the binding, so that the section's other settings
     /// can still be checked; the settings left out keep their defaults here.
     /// </summary>
-    private TOptions Bind<TOptions>(string section, List<string> problems) where TOptions : class, new()
+    private static TOptions Bind<TOptions>(IConfiguration configuration, string section, List<string> problems) where TOptions : class, new()
     {
         var unreadable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var property in typeof(TOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(property => property.CanWrite))
@@ -111,7 +188,9 @@ public sealed class SettingsCheck(IConfiguration configuration, ILogger<Settings
 
     /// <summary>
     /// What a setting of type <paramref name="type"/> must look like, when <paramref name="text"/> cannot
-    /// be read as one; null when it can. The rules are those the settings are bound with.
+    /// be read as one; null when it can. The rules are those the settings are bound with, except that an
+    /// enum setting takes only the names of its values, in any case: the binding would also take a number,
+    /// or several names joined by a comma, and read them as some value without saying which.
     /// </summary>
     private static string? Expected(Type type, string text)
     {
@@ -124,7 +203,21 @@ public sealed class SettingsCheck(IConfiguration configuration, ILogger<Settings
         if (type == typeof(bool))
             return bool.TryParse(text, out _) ? null : "true or false";
 
+        if (type.IsEnum)
+            return IsName(type, text) ? null : Names(type);
+
         return null;
+    }
+
+    /// <summary>True when <paramref name="text"/> is the name of one of the values of the enum <paramref name="type"/>, in any case.</summary>
+    private static bool IsName(Type type, string text) =>
+        Enum.GetNames(type).Any(name => name.Equals(text.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The names of the values of the enum <paramref name="type"/>, as in "OnBattery, Always or Never".</summary>
+    private static string Names(Type type)
+    {
+        var names = Enum.GetNames(type);
+        return names.Length == 1 ? names[0] : $"{string.Join(", ", names[..^1])} or {names[^1]}";
     }
 
     /// <summary>Adds a problem when a whole-number setting is below <paramref name="min"/> or above <paramref name="max"/>.</summary>
@@ -136,6 +229,14 @@ public sealed class SettingsCheck(IConfiguration configuration, ILogger<Settings
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"{name} is {value}; it must be {min} or more."));
         else
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"{name} is {value}; it must be from {min} to {max}."));
+    }
+
+    /// <summary>Adds a problem when a number setting is not a number from <paramref name="min"/> to <paramref name="max"/>, saying in what <paramref name="unit"/>, with an <paramref name="example"/>.</summary>
+    private static void CheckRange(List<string> problems, string name, double value, double min, double max, string unit, string example)
+    {
+        if (double.IsFinite(value) && value >= min && value <= max) return;
+
+        problems.Add(string.Create(CultureInfo.InvariantCulture, $"{name} is {value}; it must be from {min} to {max} ({unit}), such as {example}."));
     }
 
     /// <summary>Adds a problem when a path holds a character no path can hold, which is what a single backslash in appsettings.json often turns into.</summary>

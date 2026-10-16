@@ -55,6 +55,9 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
         _logger = logger;
         DeviceId = device.ID;
         DeviceName = deviceName;
+
+        // A device's loopback hands over nothing while nothing plays on the device.
+        DeliversContinuously = false;
         _client = device.AudioClient;
         try
         {
@@ -92,6 +95,9 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
         Format = new AudioFormat(48000, 2, 16, false);
         _streamFlags = AudioClientStreamFlags.Loopback | AudioClientStreamFlags.EventCallback;
         _packetReady = new AutoResetEvent(false);
+
+        // Process loopback hands over silence while the app plays nothing, so it never falls quiet by itself.
+        DeliversContinuously = true;
     }
 
     /// <inheritdoc />
@@ -102,6 +108,9 @@ public sealed class WasapiLoopbackAudioCapture : IAudioCapture
 
     /// <inheritdoc />
     public AudioFormat Format { get; }
+
+    /// <inheritdoc />
+    public bool DeliversContinuously { get; }
 
     /// <inheritdoc />
     public event EventHandler<AudioDataEventArgs>? DataAvailable;

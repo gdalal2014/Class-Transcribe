@@ -10,9 +10,10 @@ namespace ClassScribe.Transcription;
 /// Lays a transcript out as a Markdown document: a title, the recording time when known, and readable
 /// paragraphs. A new paragraph starts after a long pause, or at a sentence end once the paragraph has
 /// grown long. Marks set while recording become headings at their position, so they show in an
-/// outline. Each paragraph can carry its position in the recording.
+/// outline. Each paragraph can carry its position in the recording. It lives as long as the app, and
+/// lays each transcript out with the Transcript settings as they are when that transcript is made.
 /// </summary>
-public sealed class TranscriptFormatter(IOptions<TranscriptOptions> options)
+public sealed class TranscriptFormatter(IOptionsMonitor<TranscriptOptions> options)
 {
     private const string SpacingType = "spacing";
 
@@ -24,7 +25,7 @@ public sealed class TranscriptFormatter(IOptions<TranscriptOptions> options)
     /// <summary>Formats the transcript as Markdown, with the recording's marks, if any, at their positions.</summary>
     public string Format(TranscriptionResult result, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark>? marks = null)
     {
-        var settings = options.Value;
+        var settings = options.CurrentValue;
         var pending = new Queue<ClassMark>((marks ?? []).OrderBy(mark => mark.Position));
         var blocks = new List<string> { $"# {title}" };
         if (recordedUtc is { } recorded)

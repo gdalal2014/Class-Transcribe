@@ -29,6 +29,13 @@ public interface IAudioCapture : IDisposable
     /// <summary>Format of the audio passed to <see cref="DataAvailable"/>.</summary>
     AudioFormat Format { get; }
 
+    /// <summary>
+    /// True when the capture hands over audio all the time, silence included, as an app's process loopback does: a
+    /// stretch with no audio at all then means that the capture has stopped working although it is still open. False
+    /// for an output device's loopback, which hands over nothing while nothing plays, so a gap there is no fault in itself.
+    /// </summary>
+    bool DeliversContinuously { get; }
+
     /// <summary>Raised on the capture thread whenever audio arrives.</summary>
     event EventHandler<AudioDataEventArgs>? DataAvailable;
 

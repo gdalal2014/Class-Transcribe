@@ -5,11 +5,139 @@ using System.Net;
 using System.Text;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Settings;
 using ClassScribe.Transcription;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace ClassScribe.Tests;
+
+/// <summary>
+/// Settings a test hands to the code under test and may change by hand. One object stands in for
+/// <see cref="IOptions{TOptions}"/>, <see cref="IOptionsSnapshot{TOptions}"/> and <see cref="IOptionsMonitor{TOptions}"/>
+/// at once; <see cref="Set"/> changes the value and tells whoever listens, as a reload of the settings does.
+/// </summary>
+public sealed class TestOptions<T>(T value) : IOptions<T>, IOptionsSnapshot<T>, IOptionsMonitor<T> where T : class
+{
+    private readonly Lock _gate = new();
+    private readonly List<Action<T, string?>> _listeners = [];
+    private T _value = value;
+
+    /// <inheritdoc />
+    public T Value => CurrentValue;
+
+    /// <inheritdoc />
+    public T CurrentValue
+    {
+        get { lock (_gate) return _value; }
+    }
+
+    /// <inheritdoc />
+    public T Get(string? name) => CurrentValue;
+
+    /// <inheritdoc />
+    public IDisposable? OnChange(Action<T, string?> listener)
+    {
+        lock (_gate) _listeners.Add(listener);
+        return new Listening(this, listener);
+    }
+
+    /// <summary>Replaces the value, as a reload of the settings does, and tells every listener.</summary>
+    public void Set(T next)
+    {
+        Action<T, string?>[] listeners;
+        lock (_gate)
+        {
+            _value = next;
+            listeners = [.. _listeners];
+        }
+
+        foreach (var listener in listeners) listener(next, Options.DefaultName);
+    }
+
+    /// <summary>One listener's registration; disposing it stops the calls.</summary>
+    private sealed class Listening(TestOptions<T> options, Action<T, string?> listener) : IDisposable
+    {
+        /// <summary>Stops calling the listener.</summary>
+        public void Dispose()
+        {
+            lock (options._gate) options._listeners.Remove(listener);
+        }
+    }
+}
+
+/// <summary>Makes <see cref="TestOptions{T}"/> without naming the type.</summary>
+public static class TestOptions
+{
+    /// <summary>Settings holding <paramref name="value"/>, for any of the three ways the app takes its settings.</summary>
+    public static TestOptions<T> Create<T>(T value) where T : class => new(value);
+}
+
+/// <summary>
+/// An appsettings.json in a folder of the test's own, and the settings that take it in through the gate, put
+/// together as AppHost puts them: the file reaches the settings only once checked, through a
+/// <see cref="CheckedSettingsSource"/>. For tests that need the gate but not the whole app.
+/// </summary>
+public sealed class TestSettings
+{
+    /// <summary>
+    /// Writes <paramref name="json"/> as the appsettings.json in <paramref name="folder"/> and reads it in once, as the app
+    /// does at start. <paramref name="pause"/>, when given, plays each wait of a read before it tries again, so that a test
+    /// can act at that moment, as another program would; otherwise the read sleeps.
+    /// </summary>
+    public TestSettings(string folder, string json = "{}", Action<TimeSpan>? pause = null)
+    {
+        File = pause is null
+            ? new SettingsFile(folder, NullLogger<SettingsFile>.Instance)
+            : new SettingsFile(folder, NullLogger<SettingsFile>.Instance, pause);
+        Write(json);
+        var accepted = new CheckedSettingsSource();
+        Configuration = new ConfigurationManager();
+        ((IConfigurationBuilder)Configuration).Add(accepted);
+        Reloader = new SettingsReloader(Configuration, accepted, File, new SettingsCheck(), NullLogger<SettingsReloader>.Instance);
+        Reloader.TryReload();
+    }
+
+    /// <summary>The file.</summary>
+    public SettingsFile File { get; }
+
+    /// <summary>The settings as the app holds them: what last passed the check.</summary>
+    public ConfigurationManager Configuration { get; }
+
+    /// <summary>What reads the file again and checks it.</summary>
+    public SettingsReloader Reloader { get; }
+
+    /// <summary>Replaces the file's text, as an edit does.</summary>
+    public void Write(string json) => System.IO.File.WriteAllText(File.Path, json);
+
+    /// <summary>The gate over these settings, reporting to <paramref name="logger"/> or to nobody.</summary>
+    public RunGate Gate(ILogger<RunGate>? logger = null) => new(Reloader, File, logger ?? NullLogger<RunGate>.Instance);
+}
+
+/// <summary>
+/// An environment variable of the test process, set for the length of a test. Disposing it puts back the value the
+/// variable had before, or removes it when it had none, so that a variable set for the whole test run, such as
+/// ElevenLabs__BaseUrl pointing at a local stub, still holds for the tests that come after.
+/// </summary>
+public sealed class TemporaryVariable : IDisposable
+{
+    private readonly string _name;
+    private readonly string? _before;
+
+    /// <summary>Sets <paramref name="name"/> to <paramref name="value"/>, after noting the value it had.</summary>
+    public TemporaryVariable(string name, string? value)
+    {
+        _name = name;
+        _before = Environment.GetEnvironmentVariable(name);
+        Environment.SetEnvironmentVariable(name, value);
+    }
+
+    /// <summary>Puts back the value the variable had before, or removes it when it had none.</summary>
+    public void Dispose() => Environment.SetEnvironmentVariable(_name, _before);
+}
 
 /// <summary>A temporary folder that is deleted when the test ends.</summary>
 public sealed class TempFolder : IDisposable
@@ -154,16 +282,34 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
     }
 }
 
-/// <summary>Keeps what was logged, so a test can check what was reported as a problem.</summary>
+/// <summary>
+/// Keeps what was logged, so a test can check what was reported as a problem. It can also hold the code that logs at one
+/// message, so that a test can act while that code is held there (see <see cref="HoldNext"/>).
+/// </summary>
 public sealed class RecordingLogger<T> : ILogger<T>
 {
     private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
+
+    /// <summary>The message to hold the code that logs at, and what lets it go; null when no message is to be held.</summary>
+    private Hold? _hold;
+
+    private volatile bool _held;
 
     /// <summary>The messages logged as warnings or errors, in order.</summary>
     public IReadOnlyList<string> Problems => [.. _entries.Where(entry => entry.Level >= LogLevel.Warning).Select(entry => entry.Message)];
 
     /// <summary>Every message logged, whatever its level, in order.</summary>
     public IReadOnlyList<string> Messages => [.. _entries.Select(entry => entry.Message)];
+
+    /// <summary>True once the code that logs is held at the message <see cref="HoldNext"/> named.</summary>
+    public bool Held => _held;
+
+    /// <summary>
+    /// Holds the code that logs the next message starting with <paramref name="prefix"/>, once the message is kept, until
+    /// <paramref name="gate"/> is signalled, as a thread held up there would be; <see cref="Held"/> turns true meanwhile. The
+    /// code must log on a thread other than the test's, or the test holds itself.
+    /// </summary>
+    public void HoldNext(string prefix, ManualResetEventSlim gate) => Volatile.Write(ref _hold, new Hold(prefix, gate));
 
     /// <inheritdoc />
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
@@ -172,8 +318,20 @@ public sealed class RecordingLogger<T> : ILogger<T>
     public bool IsEnabled(LogLevel logLevel) => true;
 
     /// <inheritdoc />
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-        _entries.Enqueue((logLevel, formatter(state, exception)));
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        var message = formatter(state, exception);
+        _entries.Enqueue((logLevel, message));
+
+        if (Volatile.Read(ref _hold) is not { } hold || !message.StartsWith(hold.Prefix, StringComparison.Ordinal)) return;
+        if (Interlocked.CompareExchange(ref _hold, null, hold) != hold) return;
+
+        _held = true;
+        hold.Gate.Wait();
+    }
+
+    /// <summary>A message to hold the code that logs at, by how it starts, and what lets it go.</summary>
+    private sealed record Hold(string Prefix, ManualResetEventSlim Gate);
 }
 
 /// <summary>
@@ -195,6 +353,12 @@ public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fa
 
     /// <inheritdoc />
     public AudioFormat Format { get; } = format;
+
+    /// <summary>
+    /// True for a capture that hands over audio all the time, silence included, as an app's process loopback does.
+    /// False, the default, for one that hands over nothing while nothing plays, as an output device's loopback does.
+    /// </summary>
+    public bool DeliversContinuously { get; init; }
 
     /// <summary>Audio the device still holds when it is asked to stop. It is delivered during Dispose.</summary>
     public byte[]? FinalAudio { get; init; }
@@ -278,6 +442,7 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     private int _deviceQueries;
     private ManualResetEventSlim? _listingHold;
     private ManualResetEventSlim? _creationHold;
+    private Exception? _listingFailure;
     private volatile bool _listingHeld;
     private volatile bool _creationHeld;
 
@@ -344,6 +509,12 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
         return capture;
     }
 
+    /// <summary>Sets what Windows' meter shows for the sound of an app added with <see cref="AddApp"/>: 0 for silence, more while it plays.</summary>
+    public void SetAppLevel(int processId, float level)
+    {
+        lock (_gate) _apps[processId] = _apps[processId] with { Level = level };
+    }
+
     /// <summary>Takes an app's sound away, as when the app closes.</summary>
     public void RemoveApp(int processId)
     {
@@ -379,6 +550,13 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     /// <summary>Makes the next request for a capture wait until <paramref name="gate"/> is signalled before the capture is made, as a call that Windows holds up would.</summary>
     public void HoldNextCreation(ManualResetEventSlim gate) => Volatile.Write(ref _creationHold, gate);
 
+    /// <summary>
+    /// Makes every look at the devices or the apps from now on throw <paramref name="failure"/>, as Windows' listings do
+    /// while its audio service restarts; null makes them answer again. A look that fails is still counted in
+    /// <see cref="DeviceQueries"/>. Captures already open are not affected.
+    /// </summary>
+    public void FailListings(Exception? failure) => Volatile.Write(ref _listingFailure, failure);
+
     /// <summary>Simulates Windows reporting that no output device is left.</summary>
     public void RemoveDevices()
     {
@@ -401,6 +579,7 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
             hold.Wait();
         }
 
+        if (Volatile.Read(ref _listingFailure) is { } failure) throw failure;
         lock (_gate) return [.. _connected.Select(id => new OutputDevice(id, id, id == _defaultDeviceId, _levels.GetValueOrDefault(id)))];
     }
 
@@ -408,6 +587,7 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     public IReadOnlyList<PlayingApp> GetPlayingApps()
     {
         Interlocked.Increment(ref _deviceQueries);
+        if (Volatile.Read(ref _listingFailure) is { } failure) throw failure;
         lock (_gate) return [.. _apps.Values];
     }
 
@@ -487,11 +667,26 @@ public sealed class FakeConsoleUi : IConsoleUi
     private readonly ConcurrentQueue<string> _output = new();
     private TaskCompletionSource _typed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    /// <summary>What lets the next read of a key go on, when it is to be held as it begins; null otherwise.</summary>
+    private ManualResetEventSlim? _readHold;
+
+    private volatile bool _readHeld;
+
     /// <inheritdoc />
     public bool IsInteractive { get; init; } = true;
 
     /// <summary>Everything shown so far, as one text.</summary>
     public string Screen => string.Join(Environment.NewLine, _output);
+
+    /// <summary>True once the read of a key that <see cref="HoldNextRead"/> holds has begun to wait.</summary>
+    public bool ReadHeld => _readHeld;
+
+    /// <summary>
+    /// Holds the next read of a key as it begins, before it looks for a key, until <paramref name="gate"/> is signalled, as a
+    /// console slow to answer would; <see cref="ReadHeld"/> turns true meanwhile. The code that reads is held at that point,
+    /// so it must read on a thread other than the test's.
+    /// </summary>
+    public void HoldNextRead(ManualResetEventSlim gate) => Volatile.Write(ref _readHold, gate);
 
     /// <summary>Queues key presses: letters and digits as they are, '\r' for Enter, '\u001b' for Esc and '\u0003' for Ctrl+C.</summary>
     public void Type(params char[] keys) => Enqueue(_keys, keys);
@@ -517,6 +712,12 @@ public sealed class FakeConsoleUi : IConsoleUi
     /// <inheritdoc />
     public async Task<ConsoleKeyInfo?> ReadKeyAsync(CancellationToken cancellationToken)
     {
+        if (Interlocked.Exchange(ref _readHold, null) is { } hold)
+        {
+            _readHeld = true;
+            hold.Wait(CancellationToken.None);
+        }
+
         while (true)
         {
             Task typed;

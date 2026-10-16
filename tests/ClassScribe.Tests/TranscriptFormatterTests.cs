@@ -1,7 +1,6 @@
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
-using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Tests;
 
@@ -14,7 +13,7 @@ public class TranscriptFormatterTests
 
     /// <summary>Creates the formatter under test.</summary>
     private static TranscriptFormatter Formatter(TranscriptOptions? options = null) =>
-        new(Options.Create(options ?? new TranscriptOptions()));
+        new(TestOptions.Create(options ?? new TranscriptOptions()));
 
     /// <summary>Builds a transcript from its text and words.</summary>
     private static TranscriptionResult Transcript(string text, params TranscriptWord[] words) =>
@@ -59,6 +58,21 @@ public class TranscriptFormatterTests
         var text = Formatter(new TranscriptOptions { IncludeTimestamps = false }).Format(transcript, "Kalam", null);
 
         Assert.That(text, Is.EqualTo($"{Title}Hello world.{Environment.NewLine}"));
+    }
+
+    /// <summary>The formatter lives as long as the app, and lays each transcript out with the settings as they are when it is made.</summary>
+    [Test]
+    public void Each_transcript_follows_the_settings_as_they_are_then()
+    {
+        var settings = TestOptions.Create(new TranscriptOptions());
+        var formatter = new TranscriptFormatter(settings);
+        var transcript = Transcript("Hello world.", Word("Hello", 0.0, 0.4), Space(0.4, 0.5), Word("world.", 0.5, 1.0));
+        var before = formatter.Format(transcript, "Kalam", null);
+
+        settings.Set(new TranscriptOptions { IncludeTimestamps = false });
+
+        Assert.That(before, Is.EqualTo($"{Title}[00:00:00] Hello world.{Environment.NewLine}"));
+        Assert.That(formatter.Format(transcript, "Kalam", null), Is.EqualTo($"{Title}Hello world.{Environment.NewLine}"));
     }
 
     /// <summary>A paragraph that has grown long is split at the next sentence end.</summary>

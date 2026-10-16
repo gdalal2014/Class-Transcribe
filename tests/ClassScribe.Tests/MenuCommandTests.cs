@@ -3,7 +3,6 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
-using Microsoft.Extensions.Options;
 using Moq;
 
 namespace ClassScribe.Tests;
@@ -15,6 +14,8 @@ public class MenuCommandTests
     private static readonly AudioFormat Pcm16KMono = new(16000, 1, 16, false);
 
     private TempFolder _folder = null!;
+    private TempFolder _settingsFolder = null!;
+    private TestSettings _settings = null!;
     private FakeConsoleUi _ui = null!;
     private FakeCaptureProvider _devices = null!;
     private SourceChoice _choice = null!;
@@ -22,31 +23,41 @@ public class MenuCommandTests
     private Mock<IDesktop> _desktop = null!;
     private RecordingLogger<MenuCommand> _log = null!;
     private RecordingLogger<ClassFolders> _foldersLog = null!;
+    private RecordingLogger<RunGate> _gateLog = null!;
 
-    /// <summary>Creates a temporary recordings folder, the scripted keyboard, the simulated devices, the mocks and the logs to inspect.</summary>
+    /// <summary>Creates a temporary recordings folder, settings that can be used, the scripted keyboard, the simulated devices, the mocks and the logs to inspect.</summary>
     [SetUp]
     public void SetUp()
     {
         _folder = new TempFolder();
+        _settingsFolder = new TempFolder();
+        _settings = new TestSettings(_settingsFolder.Path);
         _ui = new FakeConsoleUi();
         _devices = new FakeCaptureProvider();
-        _choice = new SourceChoice(Options.Create(new RecordingOptions()));
+        _choice = new SourceChoice(TestOptions.Create(new RecordingOptions()));
         _commands = new Mock<ICommandRunner>();
         _commands.Setup(c => c.RecordAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
-        _commands.Setup(c => c.TranscribeAsync(It.IsAny<string>())).ReturnsAsync(0);
+        _commands.Setup(c => c.TranscribeAsync(It.IsAny<TranscribeRequest>())).ReturnsAsync(0);
+        _commands.Setup(c => c.RebuildAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
         _desktop = new Mock<IDesktop>();
         _log = new RecordingLogger<MenuCommand>();
         _foldersLog = new RecordingLogger<ClassFolders>();
+        _gateLog = new RecordingLogger<RunGate>();
     }
 
-    /// <summary>Deletes the temporary folder.</summary>
+    /// <summary>Deletes the temporary folders.</summary>
     [TearDown]
-    public void TearDown() => _folder.Dispose();
+    public void TearDown()
+    {
+        _folder.Dispose();
+        _settingsFolder.Dispose();
+    }
 
     /// <summary>Runs the menu until it is left, failing the test rather than hanging if it never is.</summary>
     private Task<int> RunMenuAsync(string? recordings = null, ILoopbackCaptureProvider? devices = null)
     {
-        var menu = new MenuCommand(_commands.Object, _ui, Folders(recordings), devices ?? _devices, _choice, new RecordingNamePrompt(_ui), _desktop.Object, TimeProvider.System, _log);
+        var menu = new MenuCommand(
+            _commands.Object, _ui, _settings.Gate(_gateLog), _settings.File, Folders(recordings), devices ?? _devices, _choice, new RecordingNamePrompt(_ui), _desktop.Object, TimeProvider.System, _log);
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
 
@@ -55,7 +66,7 @@ public class MenuCommandTests
     /// temporary folder. What they log goes to <see cref="_foldersLog"/>.
     /// </summary>
     private ClassFolders Folders(string? recordings = null) =>
-        new(Options.Create(new RecordingOptions { OutputFolder = recordings ?? _folder.Path }), TimeProvider.System, _foldersLog);
+        new(TestOptions.Create(new RecordingOptions { OutputFolder = recordings ?? _folder.Path }), TimeProvider.System, _foldersLog);
 
     /// <summary>A drive letter, such as Z:\, that no drive uses on this machine, or null when every one is in use.</summary>
     private static string? MissingDrive() =>
@@ -90,21 +101,33 @@ public class MenuCommandTests
         _commands.VerifyNoOtherCalls();
     }
 
-    /// <summary>Writes a recording into its folder under the recordings root, started at the given time.</summary>
+    /// <summary>
+    /// Writes a recording into its folder under the recordings root, started at the given time; with
+    /// <paramref name="withTranscript"/>, also a transcript and the answer it was made from, as a transcription that went
+    /// well leaves them.
+    /// </summary>
     private RecordingFiles WriteRecording(string name, DateTimeOffset started, bool withTranscript = false, int sampleRate = 16000, int samples = 1600)
     {
         var files = RecordingFiles.ForNew(_folder.File(name), name, started);
         Directory.CreateDirectory(files.Folder);
         TestAudio.WriteWav(files.Segment(1), sampleRate, new short[samples]);
         File.SetLastWriteTimeUtc(files.Segment(1), started.UtcDateTime);
-        if (withTranscript) File.WriteAllText(files.Transcript(), "# Kalam");
+        if (withTranscript)
+        {
+            File.WriteAllText(files.Json(), """{"text":"Hello world."}""");
+            File.WriteAllText(files.Transcript(), "# Kalam");
+        }
+
         return files;
     }
 
     /// <summary>How many times the menu has been shown.</summary>
     private int MenusShown() => _ui.Screen.Split(Environment.NewLine).Count(line => line == "  Q  Quit");
 
-    /// <summary>The menu lists its choices, where the files go and what is recorded; Q leaves it.</summary>
+    /// <summary>What transcribing <paramref name="path"/> from the menu asks for: the menu has asked whatever it had to ask.</summary>
+    private static TranscribeRequest FromMenu(string path) => new(path);
+
+    /// <summary>The menu lists its choices, the settings file it reads, where the files go and what is recorded; Q leaves it.</summary>
     [Test]
     public async Task The_menu_shows_its_choices_and_Q_quits()
     {
@@ -121,8 +144,77 @@ public class MenuCommandTests
             .And.Contain("6  Choose what to record: a device or an app")
             .And.Contain("Recording from: the device the class plays on")
             .And.Contain(_folder.Path));
+        Assert.That(_ui.Screen.Split(Environment.NewLine), Has.Member($"Settings: {_settings.File.Path}"));
         Assert.That(LineUnderTheFolder(_folder.Path), Does.StartWith("Recording from:"), "a usable folder brings no warning");
         _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// Every choice reads the settings first. While they cannot be used, the choice does not run, whichever it is: the
+    /// log says what is wrong and to choose again, and the menu comes back.
+    /// </summary>
+    [Test]
+    public async Task No_choice_runs_while_the_settings_cannot_be_used()
+    {
+        WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        _settings.Write("""{ "Recording": { "KeepScreenOn": "Sometimes" } }""");
+        _ui.TypeLine("Kalam");
+        _ui.TypeLine("Kalam");
+        _ui.Type('1', '2', '3', '4', '5', '6', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.VerifyNoOtherCalls();
+        _desktop.VerifyNoOtherCalls();
+        Assert.That(_ui.Screen, Does.Not.Contain("Name for this recording").And.Not.Contain("Recent recordings"));
+        Assert.That(_gateLog.Problems.Count(problem => problem.EndsWith("then choose again", StringComparison.Ordinal)), Is.EqualTo(6));
+        Assert.That(MenusShown(), Is.EqualTo(7), "the menu came back after each refused choice");
+    }
+
+    /// <summary>
+    /// Settings that cannot be used when ClassScribe starts are shown in the menu's header, under the file's name, before
+    /// any choice is made: each problem, then that no choice runs until the file is fixed, so the folder and the source
+    /// shown below are not taken for the file's. Once the file is fixed, the next choice runs and the header is clear again.
+    /// </summary>
+    [Test]
+    public async Task Settings_that_cannot_be_used_at_start_are_shown_in_the_menu_until_fixed()
+    {
+        _settings = new TestSettings(_settingsFolder.Path, """{ "Recording": { "FlushSeconds": "five" } }""");
+        var menu = RunMenuAsync();
+        await Wait.UntilAsync(() => MenusShown() == 1);
+        var atStart = _ui.Screen.Split(Environment.NewLine);
+        _settings.Write("""{ "Recording": { "FlushSeconds": 5 } }""");
+        _ui.Type('5', 'q');
+
+        Assert.That(await menu, Is.EqualTo(0));
+
+        var settingsLine = Array.IndexOf(atStart, $"Settings: {_settings.File.Path}");
+        Assert.That(settingsLine, Is.GreaterThanOrEqualTo(0), "the menu names the file it reads");
+        Assert.That(atStart[(settingsLine + 1)..(settingsLine + 4)], Is.EqualTo(new[]
+        {
+            "ERROR  Recording:FlushSeconds is \"five\", which is not a whole number, such as 60.",
+            "ERROR  No choice runs until the file is fixed. Until then ClassScribe keeps its last usable settings, or the defaults.",
+            $"Recordings and transcripts: {_folder.Path}"
+        }));
+        _desktop.Verify(d => d.OpenFolder(_folder.Path), Times.Once, "the fixed file let the choice run");
+        var lines = _ui.Screen.Split(Environment.NewLine);
+        Assert.That(lines[Array.LastIndexOf(lines, "ClassScribe")..], Has.None.StartsWith("ERROR"), "the menu shown after it has nothing to say about the settings");
+    }
+
+    /// <summary>Once the file is fixed, the next choice runs: nothing has to be restarted.</summary>
+    [Test]
+    public async Task The_next_choice_runs_once_the_settings_are_fixed()
+    {
+        _settings.Write("""{ "Recording": { "FlushSeconds": "five" } }""");
+        _ui.Type('5');
+        var menu = RunMenuAsync();
+        await Wait.UntilAsync(() => _gateLog.Problems.Count > 0);
+        _settings.Write("""{ "Recording": { "FlushSeconds": 5 } }""");
+
+        _ui.Type('5', 'q');
+        Assert.That(await menu, Is.EqualTo(0));
+
+        _desktop.Verify(d => d.OpenFolder(_folder.Path), Times.Once, "the first 5 was refused, the second ran");
     }
 
     /// <summary>
@@ -223,7 +315,7 @@ public class MenuCommandTests
 
         await RunMenuAsync();
 
-        _commands.Verify(c => c.TranscribeAsync(older.Segment(1)), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(older.Segment(1))), Times.Once);
         Assert.That(_ui.Screen.IndexOf(newer.BaseName, StringComparison.Ordinal),
             Is.LessThan(_ui.Screen.IndexOf(older.BaseName, StringComparison.Ordinal)), "newest first");
     }
@@ -237,8 +329,72 @@ public class MenuCommandTests
 
         await RunMenuAsync();
 
-        _commands.Verify(c => c.TranscribeAsync(done.Segment(1)), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(done.Segment(1))), Times.Once);
         Assert.That(_ui.Screen, Does.Contain("billed again"));
+    }
+
+    /// <summary>
+    /// For a recording that already has a transcript, choice 3 offers the free rebuild before the billed new try: R
+    /// rebuilds it from ElevenLabs' saved answer, Y transcribes it again, and any other key goes back without either.
+    /// </summary>
+    [TestCase("r", "rebuild")]
+    [TestCase("R", "rebuild")]
+    [TestCase("y", "transcribe")]
+    [TestCase("n", "nothing")]
+    [TestCase("Esc", "nothing")]
+    public async Task Three_offers_R_to_rebuild_and_Y_to_transcribe_a_transcribed_recording_again(string key, string expected)
+    {
+        var done = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), withTranscript: true);
+        _ui.Type('3', '1', key == "Esc" ? '\u001b' : key[0], 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen.Split(Environment.NewLine), Has.Member(
+            "This recording has a transcript. R rebuilds it from ElevenLabs' saved answer, with the current marks and Transcript settings (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back."));
+        _commands.Verify(c => c.RebuildAsync(done.Segment(1), true), expected == "rebuild" ? Times.Once() : Times.Never());
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(done.Segment(1))), expected == "transcribe" ? Times.Once() : Times.Never());
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// For a recording with a transcript whose saved answer from ElevenLabs is no longer there, as when it was deleted by
+    /// hand, choice 3 does not offer R, which would find nothing to rebuild from: it says why and asks only for Y, so R goes
+    /// back as any other key does.
+    /// </summary>
+    [TestCase("r", "nothing")]
+    [TestCase("y", "transcribe")]
+    public async Task Three_offers_only_Y_when_the_saved_answer_of_a_transcript_is_gone(string key, string expected)
+    {
+        var done = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), withTranscript: true);
+        File.Delete(done.Json());
+        _ui.Type('3', '1', key[0], 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen.Split(Environment.NewLine), Has.Member(
+            "This recording has a transcript, but its saved answer from ElevenLabs is no longer there, so it cannot be rebuilt for free. Y transcribes it again (billed again). Any other key goes back."));
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(done.Segment(1))), expected == "transcribe" ? Times.Once() : Times.Never());
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// For a recording with a transcript whose saved answer is no longer there but whose answer to another try was paid for
+    /// and kept apart, as after R laid such an answer out, R makes a new transcript from that kept answer.
+    /// </summary>
+    [Test]
+    public async Task Three_with_R_rebuilds_a_transcript_from_the_kept_answer_when_the_saved_one_is_gone()
+    {
+        var done = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), withTranscript: true);
+        File.Delete(done.Json());
+        File.WriteAllText(done.UnreadAnswer(), "{}");
+        _ui.Type('3', '1', 'r', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen.Split(Environment.NewLine), Has.Member(
+            $"This recording has a transcript. R makes a new transcript from ElevenLabs' answer kept in {done.UnreadAnswer()}, with the current marks and Transcript settings (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back."));
+        _commands.Verify(c => c.RebuildAsync(done.UnreadAnswer(), true), Times.Once);
+        _commands.VerifyNoOtherCalls();
     }
 
     /// <summary>
@@ -254,10 +410,26 @@ public class MenuCommandTests
 
         await RunMenuAsync();
 
-        _commands.Verify(c => c.TranscribeAsync(kept.Segment(1)), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(kept.Segment(1))), Times.Once);
         Assert.That(_ui.Screen, Does.Contain($"  1  {kept.BaseName}  00:00:00  answer kept")
             .And.Contain($"kept in {kept.UnreadAnswer()}")
             .And.Contain("billed again"));
+    }
+
+    /// <summary>For a recording whose answer is kept without a transcript, R lays that very answer out as a transcript, for free.</summary>
+    [Test]
+    public async Task Three_with_R_lays_a_kept_answer_out_for_free()
+    {
+        var kept = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        File.WriteAllText(kept.UnreadAnswer(), "{}");
+        _ui.Type('3', '1', 'r', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen.Split(Environment.NewLine), Has.Member(
+            $"ElevenLabs' answer to an earlier try, which has been paid for, is kept in {kept.UnreadAnswer()}: look there for the transcript's text first, because transcribing it again is billed again. R lays that answer out as a transcript (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back."));
+        _commands.Verify(c => c.RebuildAsync(kept.UnreadAnswer(), true), Times.Once);
+        _commands.VerifyNoOtherCalls();
     }
 
     /// <summary>
@@ -275,9 +447,29 @@ public class MenuCommandTests
 
         var lines = _ui.Screen.Split(Environment.NewLine);
         Assert.That(lines, Has.Member($"  1  {both.BaseName}  00:00:00  transcript ready"));
-        Assert.That(lines, Has.Member("This recording already has a transcript, and transcribing it again is billed again. Press Y to go ahead, any other key to go back."));
+        Assert.That(lines, Has.Member("This recording has a transcript. R rebuilds it from ElevenLabs' saved answer, with the current marks and Transcript settings (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back."));
         Assert.That(_ui.Screen, Does.Not.Contain("answer kept").And.Not.Contain("kept in"));
-        _commands.Verify(c => c.TranscribeAsync(It.IsAny<string>()), Times.Never);
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// A recording that is being recorded now, in another window, is listed as such, and picking it says to transcribe it
+    /// once it has stopped: what was sent now would stop short. Nothing is sent, and the menu comes back.
+    /// </summary>
+    [Test]
+    public async Task Three_refuses_a_recording_that_is_being_recorded_now()
+    {
+        var recordingNow = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        _ui.Type('3', '1', 'q');
+
+        using (new FileStream(recordingNow.Segment(1), FileMode.Open, FileAccess.Write, FileShare.Read))
+            Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        var lines = _ui.Screen.Split(Environment.NewLine);
+        Assert.That(lines, Has.Member($"  1  {recordingNow.BaseName}  00:00:00  being recorded now"));
+        Assert.That(lines, Has.Member($"{recordingNow.BaseName} is being recorded now; transcribe it once it has stopped."));
+        Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back");
+        _commands.VerifyNoOtherCalls();
     }
 
     /// <summary>A recording of a day or more is listed with all its hours, not the hours past the last full day.</summary>
@@ -327,7 +519,99 @@ public class MenuCommandTests
 
         await RunMenuAsync();
 
-        _commands.Verify(c => c.TranscribeAsync(video), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(video)), Times.Once);
+    }
+
+    /// <summary>
+    /// A recording dragged into choice 4 that already has a transcript is billed again, so 4 asks first, as 3 does: R
+    /// rebuilds it for free from ElevenLabs' saved answer, Y transcribes it again, and any other key goes back without either.
+    /// </summary>
+    [TestCase("r", "rebuild")]
+    [TestCase("y", "transcribe")]
+    [TestCase("n", "nothing")]
+    public async Task Four_offers_R_to_rebuild_and_Y_to_transcribe_a_transcribed_recording_again(string key, string expected)
+    {
+        var done = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), withTranscript: true);
+        _ui.TypeLine($"\"{done.Segment(1)}\"");
+        _ui.Type('4', key[0], 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen.Split(Environment.NewLine), Has.Member(
+            "This recording has a transcript. R rebuilds it from ElevenLabs' saved answer, with the current marks and Transcript settings (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back."));
+        _commands.Verify(c => c.RebuildAsync(done.Segment(1), true), expected == "rebuild" ? Times.Once() : Times.Never());
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(done.Segment(1))), expected == "transcribe" ? Times.Once() : Times.Never());
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// A folder typed into choice 4 means its newest recording, as transcribe takes it, so when that one has a transcript, 4
+    /// asks first too: a no sends nothing, and a yes sends the folder, as typed.
+    /// </summary>
+    [Test]
+    public async Task Four_asks_first_for_a_folder_whose_newest_recording_has_a_transcript()
+    {
+        WriteRecording("Kalam", new DateTimeOffset(2026, 10, 11, 14, 5, 0, TimeSpan.Zero));
+        var newest = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), withTranscript: true);
+        _ui.TypeLine(newest.Folder);
+        _ui.TypeLine(newest.Folder);
+        _ui.Type('4', 'n', '4', 'y', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen.Split(Environment.NewLine).Count(line => line.StartsWith("This recording has a transcript.", StringComparison.Ordinal)), Is.EqualTo(2));
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(newest.Folder)), Times.Once);
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>For a recording dragged into choice 4 whose paid answer is kept without a transcript, R lays that answer out for free, as in choice 3.</summary>
+    [Test]
+    public async Task Four_with_R_lays_a_kept_answer_out_for_free()
+    {
+        var kept = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        File.WriteAllText(kept.UnreadAnswer(), "{}");
+        _ui.TypeLine(kept.Segment(1));
+        _ui.Type('4', 'r', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen, Does.Contain($"kept in {kept.UnreadAnswer()}"));
+        _commands.Verify(c => c.RebuildAsync(kept.UnreadAnswer(), true), Times.Once);
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// A recording dragged into choice 4 while it is being recorded, in another window, is not sent, as in choice 3: what
+    /// was sent now would stop short. The menu comes back.
+    /// </summary>
+    [Test]
+    public async Task Four_refuses_a_recording_that_is_being_recorded_now()
+    {
+        var recordingNow = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        _ui.TypeLine(recordingNow.Segment(1));
+        _ui.Type('4', 'q');
+
+        using (new FileStream(recordingNow.Segment(1), FileMode.Open, FileAccess.Write, FileShare.Read))
+            Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        Assert.That(_ui.Screen.Split(Environment.NewLine), Has.Member($"{recordingNow.BaseName} is being recorded now; transcribe it once it has stopped."));
+        Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back");
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>A recording without a transcript or a kept answer, dragged into choice 4, is sent at once: nothing about it is billed twice.</summary>
+    [Test]
+    public async Task Four_sends_a_recording_without_a_transcript_at_once()
+    {
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        _ui.TypeLine(recording.Segment(1));
+        _ui.Type('4', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(recording.Segment(1))), Times.Once);
+        _commands.VerifyNoOtherCalls();
+        Assert.That(_ui.Screen, Does.Not.Contain("billed again"));
     }
 
     /// <summary>An empty line or Esc at the file prompt goes back to the menu.</summary>
@@ -404,7 +688,10 @@ public class MenuCommandTests
             .And.Contain("Recording:App"), "the menu says how to make the choice permanent");
     }
 
-    /// <summary>A in the list goes back to automatic.</summary>
+    /// <summary>
+    /// A in the list goes back to automatic, and like a device or an app picked there, that holds until ClassScribe is
+    /// closed, whatever the settings say: the menu says so, and how to keep it.
+    /// </summary>
     [Test]
     public async Task Six_with_A_goes_back_to_automatic()
     {
@@ -416,6 +703,8 @@ public class MenuCommandTests
 
         Assert.That((_choice.App, _choice.Device), Is.EqualTo(((string?)null, (string?)null)));
         Assert.That(_ui.Screen, Does.Contain("Recording from: the device the class plays on"));
+        Assert.That(_ui.Screen.Split(Environment.NewLine), Has.Member(
+            $"Recording from the device the class plays on until ClassScribe is closed, whatever the settings say. To keep that, leave Recording:Device and Recording:App empty in {_settings.File.Path}."));
     }
 
     /// <summary>Esc leaves the list with the choice as it was.</summary>
@@ -497,7 +786,7 @@ public class MenuCommandTests
         using (new FileStream(held.Segment(1), FileMode.Open, FileAccess.Read, FileShare.None))
             Assert.That(await RunMenuAsync(), Is.EqualTo(0));
 
-        _commands.Verify(c => c.TranscribeAsync(readable.Segment(1)), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(readable.Segment(1))), Times.Once);
         _commands.VerifyNoOtherCalls();
         Assert.That(_foldersLog.Problems, Has.Count.EqualTo(1));
         Assert.That(_foldersLog.Problems[0], Does.Contain(held.BaseName));

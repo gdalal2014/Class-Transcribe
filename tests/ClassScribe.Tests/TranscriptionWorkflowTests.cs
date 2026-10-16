@@ -6,18 +6,23 @@ using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 using NAudio.Wave;
 
 namespace ClassScribe.Tests;
 
-/// <summary>Preparation, upload and saving, with a mocked preparer and service.</summary>
+/// <summary>Preparation, upload and saving, and the free rebuild of a transcript, with a mocked preparer and service.</summary>
 [TestFixture]
 public class TranscriptionWorkflowTests
 {
     private static readonly DateTimeOffset Started = new(2026, 10, 15, 20, 55, 27, TimeSpan.Zero);
     private static readonly string Blank = Environment.NewLine + Environment.NewLine;
+
+    /// <summary>
+    /// An answer in ElevenLabs' form whose words carry their times, so that a transcript made from it again, by a
+    /// rebuild, comes out as the one made when it arrived: two sentences, the second after a pause of three seconds.
+    /// </summary>
+    private const string Answer = """{"language_code":"en","language_probability":0.99,"text":"Hello world. Goodbye.","words":[{"text":"Hello","start":0.0,"end":0.4,"type":"word","speaker_id":"speaker_0"},{"text":" ","start":0.4,"end":0.5,"type":"spacing","speaker_id":"speaker_0"},{"text":"world.","start":0.5,"end":1.0,"type":"word","speaker_id":"speaker_0"},{"text":" ","start":1.0,"end":4.0,"type":"spacing","speaker_id":"speaker_0"},{"text":"Goodbye.","start":4.0,"end":4.6,"type":"word","speaker_id":"speaker_0"}],"transcription_id":"id-answer"}""";
 
     private TempFolder _folder = null!;
     private string _recordings = null!;
@@ -25,7 +30,10 @@ public class TranscriptionWorkflowTests
     private Mock<IAudioPreparer> _preparer = null!;
     private Mock<ITranscriptionClient> _client = null!;
 
-    /// <summary>Creates a temporary folder, a recordings folder with one recording's folder inside it, and the mocks.</summary>
+    /// <summary>
+    /// Creates a temporary folder, a recordings folder with one recording's folder inside it, the recording's first
+    /// segment on disk, and the mocks.
+    /// </summary>
     [SetUp]
     public void SetUp()
     {
@@ -33,6 +41,7 @@ public class TranscriptionWorkflowTests
         _recordings = _folder.File("Recordings");
         _files = RecordingFiles.ForNew(Path.Combine(_recordings, "Kalam"), "Kalam", Started);
         Directory.CreateDirectory(_files.Folder);
+        WriteSegment(1);
         _preparer = Mocks.AudioPreparer();
         _client = Mocks.TranscriptionClient();
     }
@@ -41,23 +50,25 @@ public class TranscriptionWorkflowTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Creates the workflow under test around the mocks, or around the preparer and loggers given.</summary>
+    /// <summary>Creates the workflow under test around the mocks, or around the preparer, settings and loggers given.</summary>
     private TranscriptionWorkflow CreateWorkflow(
         bool keepUploadFile = false,
         string? keytermsFile = null,
         IAudioPreparer? preparer = null,
         ILogger<TranscriptionWorkflow>? logger = null,
-        ILogger<KeytermLoader>? glossaryLogger = null)
+        ILogger<KeytermLoader>? glossaryLogger = null,
+        string apiKey = "dummy-key-for-a-local-test",
+        TestOptions<TranscriptOptions>? transcript = null)
     {
-        var recording = Options.Create(new RecordingOptions { KeepUploadFile = keepUploadFile, OutputFolder = _recordings });
+        var recording = TestOptions.Create(new RecordingOptions { KeepUploadFile = keepUploadFile, OutputFolder = _recordings });
         return new(
             preparer ?? _preparer.Object,
             _client.Object,
             new KeytermLoader(glossaryLogger ?? NullLogger<KeytermLoader>.Instance),
-            new TranscriptFormatter(Options.Create(new TranscriptOptions())),
+            new TranscriptFormatter(transcript ?? TestOptions.Create(new TranscriptOptions())),
             new ClassFolders(recording, new ManualTimeProvider(Started), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
-            Options.Create(new ElevenLabsOptions { ApiKey = "test-key", KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") }),
+            TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") }),
             recording,
             logger ?? NullLogger<TranscriptionWorkflow>.Instance);
     }
@@ -68,24 +79,128 @@ public class TranscriptionWorkflowTests
     /// <summary>The bytes of <paramref name="text"/> in UTF-8, without the byte order mark, which <see cref="Encoding.GetBytes(string)"/> never adds.</summary>
     private static byte[] Utf8(string text) => Encoding.UTF8.GetBytes(text);
 
+    /// <summary>Writes segment <paramref name="number"/> of the recording: a fifth of a second of tone, as the recorder writes it.</summary>
+    private void WriteSegment(int number) =>
+        TestAudio.WriteWav(_files.Segment(number), 16000, TestAudio.Tone(16000, seconds: 0.2, frequency: 440, amplitude: 0.5));
+
     /// <summary>
-    /// A recording's segments are prepared into one upload, and its transcript is saved beside them under the
+    /// Writes segment <paramref name="number"/> of the recording as <paramref name="length"/> of audio, with the recorder's
+    /// own writer, at ten samples a second, so that hours of it take less than a megabyte.
+    /// </summary>
+    private void WriteLongSegment(int number, TimeSpan length)
+    {
+        File.Delete(_files.Segment(number));
+        using var writer = new WavSegmentWriter(_files.Segment(number), 10);
+        writer.Write(new byte[(int)Math.Round(length.TotalSeconds * 10) * 2]);
+    }
+
+    /// <summary>Has the mocked service answer with <see cref="Answer"/>, read as the client reads it.</summary>
+    private void AnswerWithTimedWords() =>
+        _client.Setup(Calls.AnyTranscription).ReturnsAsync(ElevenLabsAnswer.Parse(Answer, HttpStatusCode.OK));
+
+    /// <summary>
+    /// A recording's segments on disk are prepared into one upload, and its transcript is saved beside them under the
     /// recording's name: the Markdown and ElevenLabs' answer byte for byte, in UTF-8 without a byte order mark.
     /// </summary>
     [Test]
     public async Task A_recording_is_prepared_uploaded_and_saved_under_its_name()
     {
-        string[] segments = [_files.Segment(1), _files.Segment(2)];
+        WriteSegment(2);
 
-        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, segments, CancellationToken.None);
+        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
 
-        _preparer.Verify(p => p.Prepare(segments, _files.Upload, It.IsAny<CancellationToken>()), Times.Once);
+        _preparer.Verify(p => p.Prepare(new[] { _files.Segment(1), _files.Segment(2) }, _files.Upload, It.IsAny<CancellationToken>()), Times.Once);
         _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
         Assert.That(files.TranscriptPath, Is.EqualTo(_files.Transcript()));
         Assert.That(files.JsonPath, Is.EqualTo(_files.Json()));
         Assert.That(File.ReadAllBytes(files.TranscriptPath), Is.EqualTo(Utf8($"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC.{Blank}[00:00:00] Hello world.{Environment.NewLine}")));
         Assert.That(File.ReadAllBytes(files.JsonPath), Is.EqualTo(Utf8(Mocks.Transcript.RawJson)));
         Assert.That(File.Exists(_files.Upload), Is.False, "the upload copy is removed after success");
+    }
+
+    /// <summary>
+    /// Every segment of the recording on disk is sent, in recording order, and nothing else: not the upload copy a run
+    /// left behind, nor another recording in the same folder.
+    /// </summary>
+    [Test]
+    public async Task Every_segment_on_disk_is_prepared_in_order_and_nothing_else()
+    {
+        WriteSegment(3);
+        WriteSegment(2);
+        File.WriteAllBytes(_files.Upload, [1, 2, 3]);
+        TestAudio.WriteWav(RecordingFiles.ForNew(_files.Folder, "Kalam", Started.AddDays(1)).Segment(1), 16000, [1000, -1000]);
+
+        await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        _preparer.Verify(p => p.Prepare(new[] { _files.Segment(1), _files.Segment(2), _files.Segment(3) }, _files.Upload, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>The overload that is given the segments, which the record command still uses, prepares those it is given.</summary>
+    [Test]
+    public async Task The_overload_given_the_segments_prepares_those_it_is_given()
+    {
+        WriteSegment(2);
+        string[] given = [_files.Segment(1)];
+
+        await CreateWorkflow().TranscribeRecordingAsync(_files, given, CancellationToken.None);
+
+        _preparer.Verify(p => p.Prepare(given, _files.Upload, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>A recording with no audio on disk is refused, by its name, before anything is prepared or sent.</summary>
+    [Test]
+    public void A_recording_without_audio_on_disk_is_refused_before_anything_is_prepared_or_sent()
+    {
+        File.Delete(_files.Segment(1));
+        var workflow = CreateWorkflow();
+
+        var error = Assert.ThrowsAsync<FileNotFoundException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
+
+        Assert.That(error!.Message, Does.Contain(_files.BaseName));
+        _preparer.Verify(Calls.AnyPreparation, Times.Never);
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+    }
+
+    /// <summary>
+    /// A recording longer than nine and a half hours, here in two segments, is refused before anything is prepared or
+    /// sent: ElevenLabs takes at most 10 hours per file. The message gives the length and says what to do instead.
+    /// </summary>
+    [Test]
+    public void A_recording_longer_than_nine_and_a_half_hours_is_refused_before_anything_is_prepared_or_sent()
+    {
+        WriteLongSegment(1, new TimeSpan(4, 45, 0));
+        WriteLongSegment(2, new TimeSpan(4, 45, 1));
+        var workflow = CreateWorkflow();
+
+        var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
+
+        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("at most 10 hours per file").And.Contain("Nothing was prepared or sent"));
+        _preparer.Verify(Calls.AnyPreparation, Times.Never);
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+        Assert.That(File.Exists(_files.Upload), Is.False);
+    }
+
+    /// <summary>The overload given the segments refuses a recording that is too long in the same way.</summary>
+    [Test]
+    public void The_overload_given_the_segments_refuses_a_recording_that_is_too_long_too()
+    {
+        WriteLongSegment(1, new TimeSpan(9, 30, 1));
+        var workflow = CreateWorkflow();
+
+        Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+
+        _preparer.Verify(Calls.AnyPreparation, Times.Never);
+    }
+
+    /// <summary>A recording of exactly nine and a half hours is still sent.</summary>
+    [Test]
+    public async Task A_recording_of_nine_and_a_half_hours_is_still_sent()
+    {
+        WriteLongSegment(1, TimeSpan.FromHours(9.5));
+
+        await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
     }
 
     /// <summary>
@@ -99,7 +214,7 @@ public class TranscriptionWorkflowTests
         const string answer = """{"text":"Kalām of the Ashʿarī."}""";
         _client.Setup(Calls.AnyTranscription).ReturnsAsync(Mocks.Transcript with { Text = text, Words = [new TranscriptWord(text, 0.0, 1.0, "word", null)], RawJson = answer });
 
-        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
 
         Assert.That(File.ReadAllBytes(files.TranscriptPath), Is.EqualTo(Utf8($"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC.{Blank}[00:00:00] {text}{Environment.NewLine}")));
         Assert.That(File.ReadAllBytes(files.JsonPath), Is.EqualTo(Utf8(answer)));
@@ -111,7 +226,7 @@ public class TranscriptionWorkflowTests
     {
         File.WriteAllLines(_files.Marks, ["00:00:00.450"]);
 
-        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
 
         Assert.That(File.ReadAllText(files.TranscriptPath), Does.Contain($"[00:00:00] Hello{Blank}## [00:00:00] Mark 1{Blank}[00:00:00] world."));
     }
@@ -122,8 +237,8 @@ public class TranscriptionWorkflowTests
     {
         var workflow = CreateWorkflow();
 
-        var first = await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
-        var second = await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        var first = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
+        var second = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
 
         Assert.That(second.TranscriptPath, Is.EqualTo(_files.Transcript(2)));
         Assert.That(second.JsonPath, Is.EqualTo(_files.Json(2)));
@@ -134,7 +249,7 @@ public class TranscriptionWorkflowTests
     [Test]
     public async Task The_upload_copy_can_be_kept()
     {
-        await CreateWorkflow(keepUploadFile: true).TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        await CreateWorkflow(keepUploadFile: true).TranscribeRecordingAsync(_files, CancellationToken.None);
 
         Assert.That(File.Exists(_files.Upload), Is.True);
     }
@@ -146,7 +261,7 @@ public class TranscriptionWorkflowTests
         var glossary = _folder.File("keyterms.txt");
         File.WriteAllLines(glossary, ["# terms", "kalām", "Ashʿarī"]);
 
-        await CreateWorkflow(keytermsFile: glossary).TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        await CreateWorkflow(keytermsFile: glossary).TranscribeRecordingAsync(_files, CancellationToken.None);
 
         _client.Verify(c => c.TranscribeAsync(It.IsAny<string>(), new[] { "kalām", "Ashʿarī" }, It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -160,7 +275,7 @@ public class TranscriptionWorkflowTests
     {
         var glossaryLog = new RecordingLogger<KeytermLoader>();
 
-        await CreateWorkflow(keytermsFile: "", glossaryLogger: glossaryLog).TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        await CreateWorkflow(keytermsFile: "", glossaryLogger: glossaryLog).TranscribeRecordingAsync(_files, CancellationToken.None);
 
         _client.Verify(c => c.TranscribeAsync(It.IsAny<string>(), It.Is<IReadOnlyList<string>>(terms => terms.Count == 0), It.IsAny<CancellationToken>()), Times.Once);
         Assert.That(glossaryLog.Problems, Is.Empty);
@@ -174,15 +289,10 @@ public class TranscriptionWorkflowTests
         const string variable = "CLASSSCRIBE_TEST_WORKFLOW_GLOSSARY";
         var glossaryLog = new RecordingLogger<KeytermLoader>();
         File.WriteAllLines(_folder.File("terms.txt"), ["kalām", "Ashʿarī"]);
-        Environment.SetEnvironmentVariable(variable, _folder.Path);
-        try
+        using (new TemporaryVariable(variable, _folder.Path))
         {
             await CreateWorkflow(keytermsFile: $@"%{variable}%\terms.txt", glossaryLogger: glossaryLog)
-                .TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(variable, null);
+                .TranscribeRecordingAsync(_files, CancellationToken.None);
         }
 
         _client.Verify(c => c.TranscribeAsync(It.IsAny<string>(), new[] { "kalām", "Ashʿarī" }, It.IsAny<CancellationToken>()), Times.Once);
@@ -295,37 +405,112 @@ public class TranscriptionWorkflowTests
         _client.Verify(Calls.AnyTranscription, Times.Never);
     }
 
-    /// <summary>A failed upload surfaces as an error, and the audio and upload copy stay for another try.</summary>
+    /// <summary>A failed upload surfaces as an error; the recording stays for another try, and the upload copy made for it is removed.</summary>
     [Test]
-    public void A_failed_upload_surfaces_and_keeps_the_audio()
+    public void A_failed_upload_surfaces_keeps_the_recording_and_removes_the_upload_copy()
     {
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
         var workflow = CreateWorkflow();
 
-        Assert.ThrowsAsync<TranscriptionException>(async () =>
-            await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
-        Assert.That(File.Exists(_files.Upload), Is.True, "kept so the upload can be retried");
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
+        Assert.That(File.Exists(_files.Upload), Is.False, "the upload copy is removed after a failure");
+        Assert.That(File.Exists(_files.Segment(1)), Is.True, "the recording stays");
         Assert.That(File.Exists(_files.Transcript()), Is.False);
     }
 
+    /// <summary>An upload cancelled with Ctrl+C leaves no upload copy behind either; the recording stays.</summary>
+    [Test]
+    public void A_cancelled_upload_leaves_no_upload_copy()
+    {
+        using var cancellation = new CancellationTokenSource();
+        _client.Setup(Calls.AnyTranscription).Returns(() =>
+        {
+            cancellation.Cancel();
+            return Task.FromCanceled<TranscriptionResult>(cancellation.Token);
+        });
+        var workflow = CreateWorkflow();
+
+        Assert.CatchAsync<OperationCanceledException>(async () => await workflow.TranscribeRecordingAsync(_files, cancellation.Token));
+
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
+        Assert.That(File.Exists(_files.Upload), Is.False);
+        Assert.That(File.Exists(_files.Segment(1)), Is.True);
+    }
+
+    /// <summary>With KeepUploadFile the upload copy stays after a failed upload as well.</summary>
+    [Test]
+    public void With_KeepUploadFile_the_upload_copy_stays_after_a_failed_upload()
+    {
+        _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
+        var workflow = CreateWorkflow(keepUploadFile: true);
+
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
+
+        Assert.That(File.Exists(_files.Upload), Is.True);
+    }
+
     /// <summary>
-    /// A recording whose upload failed can be transcribed again with the real preparer, which never writes over
-    /// a file: the upload copy the failed attempt left behind is made afresh rather than tripped over.
+    /// When the upload copy cannot be removed after a failed upload, because another program holds it, the failure
+    /// is still the error reported, and the copy left behind is named with a warning that does not claim a saved transcript.
     /// </summary>
     [Test]
-    public async Task A_recording_whose_upload_failed_can_be_transcribed_again()
+    public void An_upload_copy_that_cannot_be_removed_after_a_failure_leaves_the_failure_as_the_error()
     {
-        TestAudio.WriteWav(_files.Segment(1), 16000, TestAudio.Tone(16000, seconds: 0.2, frequency: 440, amplitude: 0.5));
+        var log = new RecordingLogger<TranscriptionWorkflow>();
+        FileStream? holder = null;
+        _client.Setup(Calls.AnyTranscription)
+            .Callback((string path, IReadOnlyList<string> _, CancellationToken _) => holder = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            .ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
+        var workflow = CreateWorkflow(logger: log);
+
+        try
+        {
+            var error = Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
+
+            Assert.That(error!.Message, Is.EqualTo("ElevenLabs is down."));
+            Assert.That(log.Problems, Has.Some.Contains(Path.GetFileName(_files.Upload)).And.Not.Contains("transcript is saved"));
+        }
+        finally
+        {
+            holder?.Dispose();
+        }
+    }
+
+    /// <summary>The upload copy of a WAV file transcribed on its own is removed after a failed upload too; the file itself stays.</summary>
+    [Test]
+    public void The_upload_copy_of_a_wav_file_is_removed_after_a_failed_upload()
+    {
+        var wav = _folder.File("class.wav");
+        File.WriteAllBytes(wav, [1, 2, 3]);
+        var upload = Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.upload.wav");
+        _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
+        var workflow = CreateWorkflow();
+
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeFileAsync(wav, CancellationToken.None));
+
+        _client.Verify(Calls.TranscriptionOf(upload), Times.Once);
+        Assert.That(File.Exists(upload), Is.False);
+        Assert.That(File.Exists(wav), Is.True);
+    }
+
+    /// <summary>
+    /// A recording can be transcribed again after a failed upload with the real preparer, which never writes over a
+    /// file, and an upload copy left behind by a run that was ended part-way, before it could remove it, is made afresh
+    /// rather than tripped over.
+    /// </summary>
+    [Test]
+    public async Task A_recording_can_be_transcribed_again_after_a_failure_or_a_run_that_was_ended()
+    {
         _client.SetupSequence(Calls.AnyTranscription)
             .ThrowsAsync(new TranscriptionException("ElevenLabs is down."))
             .ReturnsAsync(Mocks.Transcript);
         var workflow = CreateWorkflow(preparer: RealPreparer());
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
+        File.WriteAllBytes(_files.Upload, [9, 9, 9]);   // as a run ended part-way leaves it
 
-        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
-        Assert.That(File.Exists(_files.Upload), Is.True, "the failed attempt leaves its upload copy");
-
-        var saved = await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        var saved = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
 
         Assert.That(File.Exists(saved.TranscriptPath), Is.True);
     }
@@ -339,7 +524,7 @@ public class TranscriptionWorkflowTests
         File.WriteAllBytes(wav, [1, 2, 3]);
         var workflow = CreateWorkflow();
 
-        await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], cancellation.Token);
+        await workflow.TranscribeRecordingAsync(_files, cancellation.Token);
         await workflow.TranscribeFileAsync(wav, cancellation.Token);
 
         _preparer.Verify(p => p.Prepare(It.IsAny<IReadOnlyList<string>>(), _files.Upload, cancellation.Token), Times.Once);
@@ -354,15 +539,18 @@ public class TranscriptionWorkflowTests
         cancellation.Cancel();
         var workflow = CreateWorkflow();
 
-        Assert.CatchAsync<OperationCanceledException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], cancellation.Token));
+        Assert.CatchAsync<OperationCanceledException>(async () => await workflow.TranscribeRecordingAsync(_files, cancellation.Token));
 
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
         _client.Verify(Calls.AnyTranscription, Times.Never);
     }
 
-    /// <summary>A cancel that comes while the upload file is made stops the run before anything is sent or announced as sent.</summary>
+    /// <summary>
+    /// A cancel that comes while the upload file is made stops the run before anything is sent or announced as sent,
+    /// and the upload file it made is removed.
+    /// </summary>
     [Test]
-    public void A_cancel_during_the_preparation_sends_nothing()
+    public void A_cancel_during_the_preparation_sends_nothing_and_leaves_no_upload_copy()
     {
         using var cancellation = new CancellationTokenSource();
         _preparer.Setup(Calls.AnyPreparation).Callback((IReadOnlyList<string> _, string outputPath, CancellationToken _) =>
@@ -372,9 +560,10 @@ public class TranscriptionWorkflowTests
         });
         var workflow = CreateWorkflow();
 
-        Assert.CatchAsync<OperationCanceledException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], cancellation.Token));
+        Assert.CatchAsync<OperationCanceledException>(async () => await workflow.TranscribeRecordingAsync(_files, cancellation.Token));
 
         _client.Verify(Calls.AnyTranscription, Times.Never);
+        Assert.That(File.Exists(_files.Upload), Is.False);
     }
 
     /// <summary>Ctrl+C just as the transcript arrives does not throw it away: it has been paid for, so it is saved.</summary>
@@ -388,7 +577,7 @@ public class TranscriptionWorkflowTests
             return Mocks.Transcript;
         });
 
-        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, [_files.Segment(1)], cancellation.Token);
+        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, cancellation.Token);
 
         Assert.That(File.ReadAllText(files.JsonPath), Is.EqualTo(Mocks.Transcript.RawJson));
         Assert.That(File.Exists(files.TranscriptPath), Is.True);
@@ -411,10 +600,10 @@ public class TranscriptionWorkflowTests
 
         try
         {
-            var files = await CreateWorkflow(logger: log).TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+            var files = await CreateWorkflow(logger: log).TranscribeRecordingAsync(_files, CancellationToken.None);
 
             Assert.That(File.Exists(files.TranscriptPath), Is.True);
-            Assert.That(log.Problems, Has.Some.Contains(Path.GetFileName(_files.Upload)));
+            Assert.That(log.Problems, Has.Some.Contains(Path.GetFileName(_files.Upload)).And.Contains("transcript is saved"));
         }
         finally
         {
@@ -470,7 +659,7 @@ public class TranscriptionWorkflowTests
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(Unreadable(answer));
         var workflow = CreateWorkflow(logger: log);
 
-        var error = Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        var error = Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(File.ReadAllText(Path.Combine(_files.Folder, "Kalam_2026-10-15_20-55-27Z.unread.json")), Is.EqualTo(answer));
         Assert.That(log.Problems, Has.Some.Contains("Kalam_2026-10-15_20-55-27Z.unread.json"));
@@ -493,7 +682,7 @@ public class TranscriptionWorkflowTests
             .ThrowsAsync(Unreadable("""{"text":"Hello"""));
         var workflow = CreateWorkflow(logger: log);
 
-        var error = Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        var error = Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(log.Problems, Has.Some.Contains("could not be kept anywhere. Its transcription ID at ElevenLabs is unknown.").And.Contains("charged again"));
         Assert.That(ChargedAnswer.Of(error!), Is.EqualTo(new ChargedAnswer(KeptIn: null, TranscriptionId: null)));
@@ -510,9 +699,9 @@ public class TranscriptionWorkflowTests
             .ThrowsAsync(Unreadable("""{"text":"Hello world.","words":[{"text":"Hello","speaker_id":3}]}"""))
             .ReturnsAsync(Mocks.Transcript);
         var workflow = CreateWorkflow();
-        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
-        var saved = await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        var saved = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
 
         Assert.That(saved, Is.EqualTo(new TranscriptFiles(_files.Transcript(), _files.Json())));
         Assert.That(_files.HasTranscript, Is.True);
@@ -528,7 +717,7 @@ public class TranscriptionWorkflowTests
         var workflow = CreateWorkflow();
 
         for (var attempt = 0; attempt < 2; attempt++)
-            Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+            Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(File.ReadAllText(Path.Combine(_files.Folder, "Kalam_2026-10-15_20-55-27Z.unread.json")), Is.EqualTo("""{"first":1}"""));
         Assert.That(File.ReadAllText(Path.Combine(_files.Folder, "Kalam_2026-10-15_20-55-27Z (2).unread.json")), Is.EqualTo("""{"second":2}"""));
@@ -541,7 +730,7 @@ public class TranscriptionWorkflowTests
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs rejected the API key.", HttpStatusCode.Unauthorized, """{"detail":{"status":"invalid_api_key"}}"""));
         var workflow = CreateWorkflow();
 
-        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(Directory.GetFiles(_recordings, "*.json", SearchOption.AllDirectories), Is.Empty);
     }
@@ -549,21 +738,22 @@ public class TranscriptionWorkflowTests
     /// <summary>
     /// When saving fails after the upload (here a folder is in the way of the answer's .json), the error surfaces, only
     /// the one upload has been made, and the answer, already paid for, is kept beside the recording under a name of its
-    /// own, byte for byte, which the error gives. The upload copy stays, and the recording does not count as transcribed.
+    /// own, byte for byte, which the error gives. The upload copy is removed as after any failure, and the recording does
+    /// not count as transcribed.
     /// </summary>
     [Test]
-    public void An_answer_that_cannot_be_saved_is_kept_under_a_name_of_its_own_and_the_upload_copy_stays()
+    public void An_answer_that_cannot_be_saved_is_kept_under_a_name_of_its_own()
     {
         Directory.CreateDirectory(_files.Json());   // a folder in the way of the answer, so saving it fails
         var log = new RecordingLogger<TranscriptionWorkflow>();
         var workflow = CreateWorkflow(logger: log);
 
-        var error = Assert.ThrowsAsync<UnauthorizedAccessException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        var error = Assert.ThrowsAsync<UnauthorizedAccessException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         _client.Verify(Calls.AnyTranscription, Times.Once);
         Assert.That(File.ReadAllBytes(_files.UnreadAnswer()), Is.EqualTo(Utf8(Mocks.Transcript.RawJson)));
         Assert.That(log.Problems, Has.Some.Contains(_files.UnreadAnswer()));
-        Assert.That(File.Exists(_files.Upload), Is.True, "the upload copy stays");
+        Assert.That(File.Exists(_files.Upload), Is.False, "the upload copy is removed");
         Assert.That(_files.HasTranscript, Is.False);
         Assert.That(ChargedAnswer.Of(error!), Is.EqualTo(new ChargedAnswer(_files.UnreadAnswer(), Mocks.Transcript.TranscriptionId)));
     }
@@ -580,7 +770,7 @@ public class TranscriptionWorkflowTests
         _client.Setup(Calls.AnyTranscription).ReturnsAsync(() => GoneDuringTheUpload(Mocks.Transcript));
         var workflow = CreateWorkflow();
 
-        var error = Assert.CatchAsync<IOException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        var error = Assert.CatchAsync<IOException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(File.ReadAllText(kept), Is.EqualTo(Mocks.Transcript.RawJson));
         Assert.That(ChargedAnswer.Of(error!), Is.EqualTo(new ChargedAnswer(kept, Mocks.Transcript.TranscriptionId)));
@@ -597,7 +787,7 @@ public class TranscriptionWorkflowTests
         var log = new RecordingLogger<TranscriptionWorkflow>();
         var workflow = CreateWorkflow(logger: log);
 
-        var error = Assert.CatchAsync(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        var error = Assert.CatchAsync(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(File.ReadAllBytes(_files.Json()), Is.EqualTo(Utf8(Mocks.Transcript.RawJson)));
         Assert.That(log.Problems, Has.Some.Contains(_files.Json()).And.Contains("charged again"));
@@ -615,7 +805,7 @@ public class TranscriptionWorkflowTests
         var log = new RecordingLogger<TranscriptionWorkflow>();
         var workflow = CreateWorkflow(logger: log);
 
-        var error = Assert.CatchAsync(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        var error = Assert.CatchAsync(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(File.Exists(_files.Transcript()), Is.False, "no transcript could be made");
         Assert.That(File.ReadAllBytes(_files.Json()), Is.EqualTo(Utf8(Mocks.Transcript.RawJson)));
@@ -634,8 +824,14 @@ public class TranscriptionWorkflowTests
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            Directory.CreateDirectory(_files.Folder);
-            Assert.CatchAsync<IOException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+            if (!Directory.Exists(_files.Folder))
+            {
+                // The recording comes back, as when it is put back after the first attempt took its folder away.
+                Directory.CreateDirectory(_files.Folder);
+                WriteSegment(1);
+            }
+
+            Assert.CatchAsync<IOException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
         }
 
         Assert.That(File.ReadAllText(Path.Combine(_recordings, "Kalam_2026-10-15_20-55-27Z.unread.json")), Is.EqualTo("""{"first":1}"""));
@@ -673,7 +869,7 @@ public class TranscriptionWorkflowTests
         });
         var workflow = CreateWorkflow(logger: log);
 
-        var error = Assert.CatchAsync<IOException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        var error = Assert.CatchAsync<IOException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(log.Problems, Has.Some.Contains("could not be kept anywhere").And.Contains(Mocks.Transcript.TranscriptionId).And.Contains("charged again"));
         Assert.That(ChargedAnswer.Of(error!), Is.EqualTo(new ChargedAnswer(KeptIn: null, Mocks.Transcript.TranscriptionId)));
@@ -708,9 +904,248 @@ public class TranscriptionWorkflowTests
         var log = new RecordingLogger<TranscriptionWorkflow>();
         _client.Setup(Calls.AnyTranscription).ReturnsAsync(Mocks.Transcript with { Text = "", Words = [] });
 
-        var files = await CreateWorkflow(logger: log).TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        var files = await CreateWorkflow(logger: log).TranscribeRecordingAsync(_files, CancellationToken.None);
 
         Assert.That(File.Exists(files.TranscriptPath), Is.True);
         Assert.That(log.Problems, Has.Some.Contains("no speech"));
+    }
+
+    /// <summary>
+    /// A rebuild of a recording whose marks and settings have not changed since it was transcribed gives the same
+    /// transcript, byte for byte, as the next copy: the title, the recording time, the paragraphs and the mark.
+    /// </summary>
+    [Test]
+    public async Task A_rebuild_gives_the_same_transcript_byte_for_byte_when_nothing_has_changed()
+    {
+        File.WriteAllLines(_files.Marks, ["00:00:02.000"]);
+        AnswerWithTimedWords();
+        var workflow = CreateWorkflow();
+        var transcribed = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        var rebuilt = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(rebuilt, Is.EqualTo(_files.Transcript(2)));
+        Assert.That(File.ReadAllText(transcribed.TranscriptPath), Does.Contain("Recorded 15 October 2026").And.Contain("## [00:00:02] Mark 1").And.Contain("[00:00:04] Goodbye."));
+        Assert.That(File.ReadAllBytes(rebuilt), Is.EqualTo(File.ReadAllBytes(transcribed.TranscriptPath)));
+    }
+
+    /// <summary>A rebuild of a file transcribed on its own gives the same transcript too, without a recording time, as the first had none.</summary>
+    [Test]
+    public async Task A_rebuild_of_a_file_transcribed_on_its_own_gives_the_same_transcript()
+    {
+        var video = _folder.File("class.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+        AnswerWithTimedWords();
+        var workflow = CreateWorkflow();
+        var transcribed = await workflow.TranscribeFileAsync(video, CancellationToken.None);
+        var files = new RecordingFiles(Path.GetDirectoryName(transcribed.TranscriptPath)!, Path.GetFileNameWithoutExtension(transcribed.TranscriptPath));
+
+        var rebuilt = await workflow.RebuildAsync(files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(rebuilt), Does.Not.Contain("Recorded"));
+        Assert.That(File.ReadAllBytes(rebuilt), Is.EqualTo(File.ReadAllBytes(transcribed.TranscriptPath)));
+    }
+
+    /// <summary>
+    /// A rebuild of a recording whose audio was deleted after it was transcribed, and which never had marks, still gives
+    /// the same transcript byte for byte, its recording time included: the transcript saved with the answer says when
+    /// the recording was made.
+    /// </summary>
+    [Test]
+    public async Task A_rebuild_after_the_audio_was_deleted_gives_the_same_transcript_byte_for_byte()
+    {
+        AnswerWithTimedWords();
+        var workflow = CreateWorkflow();
+        var transcribed = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
+        File.Delete(_files.Segment(1));
+
+        var rebuilt = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(transcribed.TranscriptPath), Does.Contain("Recorded 15 October 2026, 20:55 UTC."));
+        Assert.That(File.ReadAllBytes(rebuilt), Is.EqualTo(File.ReadAllBytes(transcribed.TranscriptPath)));
+    }
+
+    /// <summary>
+    /// A rebuild keeps a recording's time while anything beside it shows that it is a recording: its audio, its marks,
+    /// or a transcript made of it. Here only <paramref name="left"/> is left of the three.
+    /// </summary>
+    [TestCase("audio")]
+    [TestCase("marks")]
+    [TestCase("transcript")]
+    public async Task A_rebuild_keeps_the_recording_time_while_its_audio_its_marks_or_a_transcript_is_left(string left)
+    {
+        File.WriteAllLines(_files.Marks, ["00:00:02.000"]);
+        AnswerWithTimedWords();
+        var workflow = CreateWorkflow();
+        await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
+        if (left != "audio") File.Delete(_files.Segment(1));
+        if (left != "marks") File.Delete(_files.Marks);
+        if (left != "transcript") File.Delete(_files.Transcript());
+
+        var rebuilt = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(rebuilt), Does.StartWith($"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC.{Blank}"));
+    }
+
+    /// <summary>
+    /// The transcript that says when the recording was made need not be the one saved with the answer: here that one was
+    /// deleted with the audio, and a copy rebuilt earlier was kept, so the next rebuild comes out as that copy.
+    /// </summary>
+    [Test]
+    public async Task A_rebuild_keeps_the_recording_time_that_any_transcript_of_the_recording_gives()
+    {
+        AnswerWithTimedWords();
+        var workflow = CreateWorkflow();
+        var transcribed = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
+        var kept = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+        File.Delete(_files.Segment(1));
+        File.Delete(transcribed.TranscriptPath);
+
+        var rebuilt = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(rebuilt, Is.EqualTo(_files.Transcript(3)));
+        Assert.That(File.ReadAllText(kept), Does.Contain("Recorded 15 October 2026, 20:55 UTC."));
+        Assert.That(File.ReadAllBytes(rebuilt), Is.EqualTo(File.ReadAllBytes(kept)));
+    }
+
+    /// <summary>
+    /// With nothing of a recording left but ElevenLabs' answer, a rebuild cannot tell it from a file transcribed on its
+    /// own, whose name gives the time it was transcribed rather than recorded, so it gives no recording time at all.
+    /// </summary>
+    [Test]
+    public async Task A_rebuild_of_an_answer_with_nothing_else_of_its_recording_left_gives_no_recording_time()
+    {
+        File.Delete(_files.Segment(1));
+        File.WriteAllText(_files.Json(), Answer);
+
+        var rebuilt = await CreateWorkflow().RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(rebuilt), Is.EqualTo($"# Kalam{Blank}[00:00:00] Hello world.{Blank}[00:00:04] Goodbye.{Environment.NewLine}"));
+    }
+
+    /// <summary>
+    /// A rebuild lays the answer out with the marks as they are now, such as a label typed in after the class, and
+    /// with the Transcript settings as they are now; the earlier transcript stays as it was.
+    /// </summary>
+    [Test]
+    public async Task A_rebuild_uses_the_marks_and_the_settings_as_they_are_now()
+    {
+        File.WriteAllLines(_files.Marks, ["00:00:02.000"]);
+        AnswerWithTimedWords();
+        var transcript = TestOptions.Create(new TranscriptOptions());
+        var workflow = CreateWorkflow(transcript: transcript);
+        var transcribed = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
+        var before = File.ReadAllBytes(transcribed.TranscriptPath);
+        File.WriteAllLines(_files.Marks, ["00:00:02.000 Ashʿarī on atoms"]);
+        transcript.Set(new TranscriptOptions { IncludeTimestamps = false });
+
+        var rebuilt = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(rebuilt), Is.EqualTo($"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC.{Blank}Hello world.{Blank}## Mark 1: Ashʿarī on atoms{Blank}Goodbye.{Environment.NewLine}"));
+        Assert.That(File.ReadAllBytes(transcribed.TranscriptPath), Is.EqualTo(before));
+    }
+
+    /// <summary>
+    /// A rebuild needs no API key and makes no request: nothing is prepared and nothing goes to ElevenLabs. It writes
+    /// the transcript alone, without a new answer beside it, at the first copy that has neither file: here the answer,
+    /// whose own transcript is missing, keeps copy 1 to itself.
+    /// </summary>
+    [Test]
+    public async Task A_rebuild_needs_no_key_and_sends_nothing()
+    {
+        File.WriteAllText(_files.Json(), Answer);
+
+        var rebuilt = await CreateWorkflow(apiKey: "").RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(rebuilt, Is.EqualTo(_files.Transcript(2)));
+        Assert.That(File.ReadAllText(rebuilt), Does.Contain("[00:00:00] Hello world."));
+        _preparer.Verify(Calls.AnyPreparation, Times.Never);
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+        Assert.That(Directory.GetFiles(_files.Folder, "*.json"), Is.EqualTo(new[] { _files.Json() }), "no new answer");
+    }
+
+    /// <summary>A rebuild takes the newest saved answer, never an answer kept as unread, however new.</summary>
+    [Test]
+    public async Task A_rebuild_takes_the_newest_answer_and_never_an_unread_one()
+    {
+        File.WriteAllText(_files.Json(1), """{"text":"First answer."}""");
+        File.WriteAllText(_files.Json(2), """{"text":"Second answer."}""");
+        File.WriteAllText(_files.UnreadAnswer(1), """{"text":"Unread answer."}""");
+
+        var rebuilt = await CreateWorkflow().RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(rebuilt), Does.Contain("Second answer.").And.Not.Contain("Unread"));
+    }
+
+    /// <summary>A rebuild from an answer named by hand uses that answer, even one kept as unread because it could not be saved in its place.</summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task A_rebuild_from_an_answer_named_by_hand_uses_that_answer(bool unread)
+    {
+        File.WriteAllText(_files.Json(1), """{"text":"First answer."}""");
+        File.WriteAllText(_files.Json(2), """{"text":"Second answer."}""");
+        File.WriteAllText(_files.UnreadAnswer(1), """{"text":"Unread answer."}""");
+
+        var rebuilt = await CreateWorkflow().RebuildAsync(_files, unread ? _files.UnreadAnswer(1) : _files.Json(1), CancellationToken.None);
+
+        Assert.That(File.ReadAllText(rebuilt), Does.Contain(unread ? "Unread answer." : "First answer."));
+    }
+
+    /// <summary>
+    /// A rebuild writes the next free copy and never overwrites one: the transcripts there, and a file made by hand at the
+    /// next number, stay as they were.
+    /// </summary>
+    [Test]
+    public async Task A_rebuild_writes_the_next_free_copy_and_never_overwrites_one()
+    {
+        File.WriteAllText(_files.Json(1), Answer);
+        File.WriteAllText(_files.Transcript(1), "first");
+        File.WriteAllText(_files.Transcript(2), "made by hand");
+
+        var rebuilt = await CreateWorkflow().RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(rebuilt, Is.EqualTo(_files.Transcript(3)));
+        Assert.That(File.ReadAllText(_files.Transcript(1)), Is.EqualTo("first"));
+        Assert.That(File.ReadAllText(_files.Transcript(2)), Is.EqualTo("made by hand"));
+    }
+
+    /// <summary>A rebuild says what it was made from and where it went, and that nothing was uploaded.</summary>
+    [Test]
+    public async Task A_rebuild_says_what_it_was_made_from_and_where_it_went()
+    {
+        var log = new RecordingLogger<TranscriptionWorkflow>();
+        File.WriteAllText(_files.Json(1), Answer);
+        File.WriteAllText(_files.Transcript(1), "first");
+
+        await CreateWorkflow(logger: log).RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(log.Messages, Has.Some.EqualTo("Rebuilt from Kalam_2026-10-15_20-55-27Z.json into Kalam_2026-10-15_20-55-27Z (2).md; nothing was uploaded"));
+    }
+
+    /// <summary>A recording without a saved answer cannot be rebuilt: the error says to transcribe it first, and nothing is written.</summary>
+    [Test]
+    public void A_rebuild_without_a_saved_answer_says_to_transcribe_it_first()
+    {
+        File.WriteAllText(_files.UnreadAnswer(1), Answer);
+        var workflow = CreateWorkflow();
+
+        var error = Assert.ThrowsAsync<FileNotFoundException>(async () => await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None));
+
+        Assert.That(error!.Message, Is.EqualTo("This recording has no saved answer from ElevenLabs yet; transcribe it first."));
+        Assert.That(Directory.GetFiles(_files.Folder, "*.md"), Is.Empty);
+    }
+
+    /// <summary>A saved answer that cannot be read is refused with the reason, the log names it, and nothing is written.</summary>
+    [Test]
+    public void A_rebuild_from_an_answer_that_cannot_be_read_is_refused_and_writes_nothing()
+    {
+        var log = new RecordingLogger<TranscriptionWorkflow>();
+        File.WriteAllText(_files.Json(1), "not an answer");
+        var workflow = CreateWorkflow(logger: log);
+
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None));
+
+        Assert.That(log.Problems, Has.Some.Contains("Kalam_2026-10-15_20-55-27Z.json"));
+        Assert.That(Directory.GetFiles(_files.Folder, "*.md"), Is.Empty);
     }
 }

@@ -1,6 +1,6 @@
+using System.Runtime.InteropServices;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
-using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Tests;
 
@@ -23,7 +23,7 @@ public class CaptureChooserTests
     public void SetUp()
     {
         _time = new ManualTimeProvider(new DateTimeOffset(2026, 10, 15, 19, 0, 0, TimeSpan.Zero));
-        _choice = new SourceChoice(Options.Create(new RecordingOptions()));
+        _choice = new SourceChoice(TestOptions.Create(new RecordingOptions()));
         _chooser = new CaptureChooser(_time, _choice);
     }
 
@@ -213,6 +213,92 @@ public class CaptureChooserTests
         Assert.That(app, Is.EqualTo(new CaptureTarget("process:4242", "chrome", 4242)));
     }
 
+    /// <summary>
+    /// Each look reads how loud Windows' meter shows the device it keeps or moves to, so the level follows the device
+    /// from look to look. There is none before the first look, nor after a look that found nothing to record.
+    /// </summary>
+    [Test]
+    public void Each_look_reads_the_level_of_the_recorded_device()
+    {
+        var provider = new FakeCaptureProvider();
+        provider.ConnectDevice("Speakers", level: 0.25f);
+        provider.ConnectDevice("Headphones");
+
+        var beforeAnyLook = _chooser.RecordedLevel;
+        _chooser.Choose(provider, recordedId: null, sinceRecordedSound: null);
+        var atStart = _chooser.RecordedLevel;
+        provider.SetLevel("Speakers", 0.5f);
+        _chooser.Choose(provider, recordedId: "Speakers", sinceRecordedSound: TimeSpan.Zero);
+        var nextLook = _chooser.RecordedLevel;
+        provider.SetLevel("Speakers", 0);
+        provider.SetLevel("Headphones", 0.75f);
+        _chooser.Choose(provider, recordedId: "Speakers", sinceRecordedSound: null);       // first sight of sound elsewhere: kept
+        var kept = _chooser.RecordedLevel;
+        _time.Advance(CaptureChooser.SustainFor);
+        var moved = _chooser.Choose(provider, recordedId: "Speakers", sinceRecordedSound: null);
+        var afterTheMove = _chooser.RecordedLevel;
+        _choice.Device = "Pixel Buds";                                                     // not connected: nothing to record
+        _chooser.Choose(provider, recordedId: "Headphones", sinceRecordedSound: null);
+        var nothingToRecord = _chooser.RecordedLevel;
+
+        Assert.That(beforeAnyLook, Is.Null);
+        Assert.That(atStart, Is.EqualTo(0.25f));
+        Assert.That(nextLook, Is.EqualTo(0.5f));
+        Assert.That(kept, Is.EqualTo(0f), "the device kept is the one whose level counts");
+        Assert.That(moved, Is.EqualTo(new CaptureTarget("Headphones", "Headphones")));
+        Assert.That(afterTheMove, Is.EqualTo(0.75f), "and once the recording moves, the new device's");
+        Assert.That(nothingToRecord, Is.Null);
+    }
+
+    /// <summary>Each look reads how loud Windows' meter shows the recorded app's sound; none once the app has closed.</summary>
+    [Test]
+    public void Each_look_reads_the_level_of_the_recorded_app()
+    {
+        _choice.App = "chrome";
+        var provider = new FakeCaptureProvider();
+        provider.ConnectDevice("Speakers", level: 0.9f);
+        provider.AddApp(4242, "chrome", "Speakers", level: 0.3f);
+        provider.AddApp(5151, "msedge", "Speakers", level: 0.8f);
+        var recorded = CaptureTarget.ForApp(Chrome).Id;
+
+        _chooser.Choose(provider, recordedId: recorded, sinceRecordedSound: null);
+        var first = _chooser.RecordedLevel;
+        provider.SetAppLevel(4242, 0.6f);
+        _chooser.Choose(provider, recordedId: recorded, sinceRecordedSound: null);
+        var second = _chooser.RecordedLevel;
+        provider.RemoveApp(4242);
+        _chooser.Choose(provider, recordedId: recorded, sinceRecordedSound: null);
+        var closed = _chooser.RecordedLevel;
+
+        Assert.That(first, Is.EqualTo(0.3f), "the app's own level, not its device's or another app's");
+        Assert.That(second, Is.EqualTo(0.6f));
+        Assert.That(closed, Is.Null);
+    }
+
+    /// <summary>
+    /// A look that fails, as Windows' listings do while its audio service restarts, hands the failure on and leaves no
+    /// level behind, for a device and for an app alike: not the level the look before read, because what plays now is
+    /// not known.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void A_look_that_fails_leaves_no_level(bool app)
+    {
+        if (app) _choice.App = "chrome";
+        var provider = new FakeCaptureProvider();
+        provider.ConnectDevice("Speakers", level: 0.4f);
+        provider.AddApp(4242, "chrome", "Speakers", level: 0.4f);
+        var recorded = app ? CaptureTarget.ForApp(Chrome).Id : "Speakers";
+
+        _chooser.Choose(provider, recordedId: null, sinceRecordedSound: null);
+        var before = _chooser.RecordedLevel;
+        provider.FailListings(new COMException("The audio service is restarting."));
+
+        Assert.Throws<COMException>(() => _chooser.Choose(provider, recorded, sinceRecordedSound: TimeSpan.Zero));
+        Assert.That(before, Is.EqualTo(0.4f));
+        Assert.That(_chooser.RecordedLevel, Is.Null);
+    }
+
     /// <summary>What the recording waits for when nothing can be recorded yet, in each mode.</summary>
     [Test]
     public void Says_what_it_is_waiting_for()
@@ -228,9 +314,9 @@ public class CaptureChooserTests
     [Test]
     public void The_choice_comes_from_the_settings_and_is_one_thing_at_a_time()
     {
-        var fromSettings = new SourceChoice(Options.Create(new RecordingOptions { Device = "  Pixel Buds " }));
-        var app = new SourceChoice(Options.Create(new RecordingOptions { App = "chrome" }));
-        var blank = new SourceChoice(Options.Create(new RecordingOptions { Device = "   ", App = "" }));
+        var fromSettings = new SourceChoice(TestOptions.Create(new RecordingOptions { Device = "  Pixel Buds " }));
+        var app = new SourceChoice(TestOptions.Create(new RecordingOptions { App = "chrome" }));
+        var blank = new SourceChoice(TestOptions.Create(new RecordingOptions { Device = "   ", App = "" }));
 
         Assert.That(fromSettings.Device, Is.EqualTo("Pixel Buds"));
         Assert.That((app.App, app.Device), Is.EqualTo(("chrome", (string?)null)));
@@ -244,5 +330,29 @@ public class CaptureChooserTests
         Assert.That(fromSettings.Description, Is.EqualTo("the device the class plays on"));
         fromSettings.App = "chrome";
         Assert.That(fromSettings.Description, Is.EqualTo("the app \"chrome\""));
+    }
+
+    /// <summary>
+    /// Until menu 6 picks something, the choice follows the settings as they are read again; once it has, the pick holds
+    /// for the rest of the session, automatic included, whatever the settings say next.
+    /// </summary>
+    [Test]
+    public void The_choice_follows_the_settings_until_menu_6_picks_something()
+    {
+        var settings = TestOptions.Create(new RecordingOptions { Device = "Speakers" });
+        var choice = new SourceChoice(settings);
+
+        settings.Set(new RecordingOptions { App = "msedge" });
+        Assert.That((choice.App, choice.Device), Is.EqualTo(("msedge", (string?)null)), "followed the settings");
+
+        choice.App = null;
+        choice.Device = null;
+        settings.Set(new RecordingOptions { Device = "Headphones" });
+        Assert.That((choice.App, choice.Device), Is.EqualTo(((string?)null, (string?)null)), "automatic, as picked, whatever the settings say");
+        Assert.That(choice.Description, Is.EqualTo("the device the class plays on"));
+
+        choice.Device = "Pixel Buds";
+        settings.Set(new RecordingOptions { App = "chrome" });
+        Assert.That((choice.App, choice.Device), Is.EqualTo(((string?)null, "Pixel Buds")));
     }
 }

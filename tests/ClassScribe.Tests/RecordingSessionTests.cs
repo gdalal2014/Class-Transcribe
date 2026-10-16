@@ -1,14 +1,17 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Windows;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
+using Moq;
+using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 
 namespace ClassScribe.Tests;
 
-/// <summary>The recording session, driven by a fake capture device.</summary>
+/// <summary>The recording session, driven by a fake capture device, and what its arrival watch takes from Windows' capture of an app.</summary>
 [TestFixture]
 public class RecordingSessionTests
 {
@@ -40,7 +43,7 @@ public class RecordingSessionTests
     /// <summary>Creates the session under test, on the test's manual clock unless <paramref name="time"/> gives another.</summary>
     private RecordingSession CreateSession(RecordingOptions? options = null, TimeProvider? time = null)
     {
-        var settings = Options.Create(options ?? new RecordingOptions());
+        var settings = TestOptions.Create(options ?? new RecordingOptions());
         time ??= _time;
         return new RecordingSession(_provider, new CaptureChooser(time, new SourceChoice(settings)), settings, time, _log);
     }
@@ -67,6 +70,10 @@ public class RecordingSessionTests
 
     /// <summary>Mono 16-bit audio holding <paramref name="count"/> samples of one value.</summary>
     private static byte[] Samples(int count, short value) => TestAudio.Shorts(Enumerable.Repeat(value, count).ToArray());
+
+    /// <summary>A capture of an app's sound, which like Windows' process loopback hands over audio all the time, silence included.</summary>
+    private static FakeAudioCapture AppCapture(int processId, string name = "chrome") =>
+        new(Pcm16KMono, name, $"process:{processId}") { DeliversContinuously = true };
 
     /// <summary>
     /// Makes the disk look full to the file being written: another handle locks everything past what is on
@@ -1257,5 +1264,358 @@ public class RecordingSessionTests
         session.Resume();
 
         Assert.That(session.GetStatus().SinceLastSound, Is.EqualTo(TimeSpan.Zero));
+    }
+
+    /// <summary>
+    /// An app's sound arrives all the time, silence included. So the time since its last packet stays at zero while it
+    /// delivers, even through silence, and grows once nothing arrives any more: the sign of a capture that is still open
+    /// but has stopped working. Until the first packet it counts from the start of the capture.
+    /// </summary>
+    [Test]
+    public void A_continuous_source_that_stops_shows_the_time_since_its_last_packet_growing()
+    {
+        var chrome = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_files);
+        var atStart = session.GetStatus();
+        _time.Advance(TimeSpan.FromSeconds(2));
+        var beforeTheFirstPacket = session.GetStatus();
+        chrome.Deliver(Samples(1600, 0));                    // silence, which an app's capture hands over too
+        var delivering = session.GetStatus();
+        _time.Advance(TimeSpan.FromSeconds(3));              // then nothing arrives any more
+        var stalled = session.GetStatus();
+        _time.Advance(TimeSpan.FromSeconds(4));
+        var later = session.GetStatus();
+        session.Stop();
+
+        Assert.That(atStart.DeliversContinuously, Is.True);
+        Assert.That(atStart.SinceLastPacket, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(beforeTheFirstPacket.SinceLastPacket, Is.EqualTo(TimeSpan.FromSeconds(2)));
+        Assert.That(delivering.SinceLastPacket, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(delivering.SinceLastSound, Is.EqualTo(TimeSpan.FromSeconds(2)), "silence arrived, but no sound");
+        Assert.That(stalled.SinceLastPacket, Is.EqualTo(TimeSpan.FromSeconds(3)));
+        Assert.That(later.SinceLastPacket, Is.EqualTo(TimeSpan.FromSeconds(7)));
+        Assert.That(later.DeliversContinuously, Is.True);
+    }
+
+    /// <summary>
+    /// A capture that hands over nothing while nothing plays, as an output device's loopback does (the fake's default
+    /// stands for it), is reported as not continuous: a gap between its packets is no fault in itself. The status still
+    /// gives the time since its last packet, on the steady clock, and the device's level, which together show a capture
+    /// that has stopped although its device plays.
+    /// </summary>
+    [Test]
+    public void A_capture_that_does_not_deliver_continuously_is_reported_so()
+    {
+        var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.4f);
+        using var session = CreateSession();
+
+        session.Start(_files);
+        speakers.Deliver(TestAudio.Shorts(0, 5000));
+        _time.StepWallClock(TimeSpan.FromSeconds(3));        // the time of day alone moves: no look is due
+        var afterAClockStep = session.GetStatus();
+        _time.Advance(TimeSpan.FromSeconds(3));              // and the device plays, but nothing arrives
+        var status = session.GetStatus();
+        session.Stop();
+
+        Assert.That(status.DeliversContinuously, Is.False);
+        Assert.That(afterAClockStep.SinceLastPacket, Is.EqualTo(TimeSpan.Zero), "timed on the steady clock");
+        Assert.That(status.SinceLastPacket, Is.EqualTo(TimeSpan.FromSeconds(3)));
+        Assert.That(status.RecordedLevel, Is.EqualTo(0.4f));
+    }
+
+    /// <summary>
+    /// Windows' capture of an app's sound, through process loopback, says that it delivers continuously: it hands over
+    /// silence while the app plays nothing, so the arrival watch may expect its packets all the time. It is made around a
+    /// stand-in for Windows' audio client that refuses every call, and making it calls none, so no audio device is
+    /// touched. It is not disposed, because that would hand the stand-in to COM to release. The capture of an output
+    /// device can only be made around a real device (see <see cref="Windows_capture_of_an_output_device_does_not_deliver_continuously"/>).
+    /// </summary>
+    [Test, Platform("Win")]
+    [SupportedOSPlatform("windows")]
+    public void Windows_capture_of_an_app_delivers_continuously()
+    {
+        var client = new Mock<IAudioClient>(MockBehavior.Strict);
+
+        var capture = new WasapiLoopbackAudioCapture(new AudioClient(client.Object), "process:4242", "chrome", NullLogger.Instance);
+
+        Assert.That(capture.DeliversContinuously, Is.True);
+    }
+
+    /// <summary>
+    /// Windows' capture of an output device, through device loopback, says that it does not deliver continuously: it hands
+    /// over nothing while nothing plays on the device, so the arrival watch must not take a quiet stretch of the class for
+    /// a stalled capture. It is made around the default output device, as a device's capture can only be, and is never
+    /// started: making it opens the device's audio client only to read its format, so nothing is recorded or played.
+    /// </summary>
+    [Test, Platform("Win"), Category("WindowsAudio")]
+    [SupportedOSPlatform("windows")]
+    public void Windows_capture_of_an_output_device_does_not_deliver_continuously()
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        Assume.That(enumerator.HasDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia), Is.True, "this computer has no output device");
+
+        using var capture = new WasapiLoopbackAudioCapture(enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia), "the default output device", NullLogger.Instance);
+
+        Assert.That(capture.DeliversContinuously, Is.False);
+    }
+
+    /// <summary>While nothing is captured, nothing is said about arriving audio: there is no capture for it to come from.</summary>
+    [Test]
+    public void While_nothing_is_captured_there_is_no_time_since_a_packet()
+    {
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });   // chrome is not playing
+
+        session.Start(_files);
+        _time.Advance(TimeSpan.FromSeconds(10));
+        var status = session.GetStatus();
+        session.Stop();
+
+        Assert.That(status.WaitingFor, Is.Not.Null);
+        Assert.That(status.SinceLastPacket, Is.Null);
+        Assert.That(status.DeliversContinuously, Is.False);
+        Assert.That(status.RecordedLevel, Is.Null);
+    }
+
+    /// <summary>
+    /// A capture that failed leaves nothing behind in the status about arriving audio while its replacement cannot be
+    /// opened yet: not that it delivered continuously, nor the level of the app the last look picked but could not open.
+    /// Only an open capture has such facts.
+    /// </summary>
+    [Test]
+    public async Task A_failed_capture_leaves_no_arrival_facts_behind()
+    {
+        var chrome = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_files);
+        var open = session.GetStatus();
+        chrome.Fail(new IOException("The app's sound went away."));   // and no capture of it can be opened again yet
+        await Wait.UntilAsync(() => _provider.FailedCreations > 0);
+        var waiting = session.GetStatus();
+        session.Stop();
+
+        Assert.That(open.DeliversContinuously, Is.True);
+        Assert.That(open.RecordedLevel, Is.EqualTo(0.3f));
+        Assert.That(waiting.WaitingFor, Is.EqualTo("\"chrome\" to play sound"));
+        Assert.That(waiting.SinceLastPacket, Is.Null);
+        Assert.That(waiting.DeliversContinuously, Is.False);
+        Assert.That(waiting.RecordedLevel, Is.Null, "the app still plays at 0.3, but nothing captures it");
+    }
+
+    /// <summary>
+    /// Audio that arrives during a pause is not kept, but it shows that the capture works: the time since the last packet
+    /// does not grow through a pause while audio keeps arriving.
+    /// </summary>
+    [Test]
+    public void Audio_that_arrives_while_paused_still_counts_as_arriving()
+    {
+        var chrome = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_files);
+        session.Pause();
+        _time.Advance(TimeSpan.FromSeconds(10));
+        chrome.Deliver(Samples(160, 0));
+        var paused = session.GetStatus();
+        var result = session.Stop();
+
+        Assert.That(paused.Paused, Is.True);
+        Assert.That(paused.SinceLastPacket, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(result.SegmentPaths, Is.Empty, "and none of it was kept");
+    }
+
+    /// <summary>The level Windows' meter shows for the recorded device is read again at each look, once a second, and given in the status.</summary>
+    [Test]
+    public async Task The_recorded_device_s_level_is_read_at_each_look()
+    {
+        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.25f);
+        using var session = CreateSession();
+
+        session.Start(_files);
+        var atStart = session.GetStatus().RecordedLevel;
+        _provider.SetLevel("Speakers", 0.5f);
+        await TickAsync();
+        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel == 0.5f);
+        _provider.SetLevel("Speakers", 0.125f);
+        await TickAsync();
+        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel == 0.125f);
+        session.Stop();
+
+        Assert.That(atStart, Is.EqualTo(0.25f), "read by the look at the start");
+    }
+
+    /// <summary>
+    /// The level Windows' meter shows for the recorded app's sound is read again at each look and given in the status.
+    /// Once the app has closed, its capture stays open and the level is not known.
+    /// </summary>
+    [Test]
+    public async Task The_recorded_app_s_level_is_read_at_each_look()
+    {
+        _provider.ConnectDevice("Speakers", level: 0.9f);
+        _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242));
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_files);
+        var atStart = session.GetStatus().RecordedLevel;
+        _provider.SetAppLevel(4242, 0.6f);
+        await TickAsync();
+        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel == 0.6f);
+        _provider.RemoveApp(4242);                           // the app closes
+        await TickAsync();
+        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel is null);
+        var afterItClosed = session.GetStatus();
+        session.Stop();
+
+        Assert.That(atStart, Is.EqualTo(0.3f), "the app's own level, not its device's");
+        Assert.That(afterItClosed.WaitingFor, Is.Null, "its capture is still open");
+    }
+
+    /// <summary>
+    /// The looks made while paused leave the devices alone, so they read no level either: the status then gives none,
+    /// rather than one from before the pause, which could be sound that has long stopped. After the pause the next
+    /// look reads it again.
+    /// </summary>
+    [Test]
+    public async Task While_paused_no_level_is_given()
+    {
+        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.25f);
+        using var session = CreateSession();
+
+        session.Start(_files);
+        var before = session.GetStatus().RecordedLevel;
+        session.Pause();
+        _time.Advance(TimeSpan.FromSeconds(1));              // a look while paused
+        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel is null);
+        session.Resume();
+        await TickAsync();
+        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel == 0.25f);
+        session.Stop();
+
+        Assert.That(before, Is.EqualTo(0.25f));
+    }
+
+    /// <summary>
+    /// A look that fails, as Windows' listings do while its audio service restarts, leaves no level in the status rather
+    /// than the one an earlier look read: what plays now is not known. The capture stays open meanwhile, and the next look
+    /// that works reads the level again.
+    /// </summary>
+    [Test]
+    public async Task A_look_that_fails_leaves_no_level()
+    {
+        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.4f);
+        using var session = CreateSession();
+
+        session.Start(_files);
+        var before = session.GetStatus();
+        _provider.FailListings(new COMException("The audio service is restarting."));
+        await TickAsync();
+        await Wait.UntilAsync(() => _log.Problems.Any(problem => problem.StartsWith("Cannot capture")));   // the look has failed
+        var failed = session.GetStatus();
+        _provider.FailListings(null);
+        await TickAsync();
+        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel is not null);
+        var after = session.GetStatus();
+        session.Stop();
+
+        Assert.That(before.RecordedLevel, Is.EqualTo(0.4f));
+        Assert.That(failed.WaitingFor, Is.Null, "the capture is still open");
+        Assert.That(failed.RecordedLevel, Is.Null);
+        Assert.That(after.RecordedLevel, Is.EqualTo(0.4f), "read again by the next look that works");
+    }
+
+    /// <summary>
+    /// A capture that is still open but has stopped delivering is replaced, on request, at the next look: not at once,
+    /// and in a new part, as after a failure. The reason is written to the log. It works the same during a pause, so
+    /// that the recording can go on once the pause ends.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Reopen_replaces_the_capture_at_the_next_look(bool paused)
+    {
+        var first = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
+        var second = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;   // ready to open the app again
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_files);
+        first.Deliver(TestAudio.Shorts(1, 2));
+        if (paused) session.Pause();
+        session.Reopen("no audio has arrived for 5 seconds");
+        await Task.Delay(100);                               // a capture replaced before the next look would show up meanwhile
+        var beforeTheLook = second.StartEntered;
+        await TickAsync();
+        await Wait.UntilAsync(() => second.Started);
+        var reopened = session.GetStatus();
+        second.Deliver(TestAudio.Shorts(9, 9));              // kept unless paused
+        if (paused) session.Resume();
+        second.Deliver(TestAudio.Shorts(3, 4));
+        var result = session.Stop();
+
+        Assert.That(beforeTheLook, Is.False, "replaced at the next look, not at once");
+        Assert.That(first.DisposeCalls, Is.EqualTo(1), "the old capture is released once");
+        Assert.That(reopened.SinceLastPacket, Is.EqualTo(TimeSpan.Zero), "the new capture counts from its own start");
+        Assert.That(result.SegmentPaths, Has.Count.EqualTo(2), "the new capture records into a new part");
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { 1, 2 }));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[1]).Samples, Is.EqualTo(paused ? new short[] { 3, 4 } : new short[] { 9, 9, 3, 4 }));
+        Assert.That(_log.Messages, Has.Some.Contains("no audio has arrived for 5 seconds"));
+        Assert.That(_log.Problems, Is.Empty, "the caller warns; for the session this is routine");
+    }
+
+    /// <summary>
+    /// A reopen is for the capture it was asked for. When that capture is replaced for another reason first, here because
+    /// it failed, the capture that replaced it is not replaced again for it.
+    /// </summary>
+    [Test]
+    public async Task A_reopen_is_for_the_capture_it_was_asked_for()
+    {
+        var first = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
+        var second = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
+        var spare = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_files);
+        session.Reopen("no audio has arrived for 5 seconds");
+        first.Fail(new IOException("The app's sound went away."));   // replaced at once, before the next look
+        await Wait.UntilAsync(() => second.Started);
+        for (var look = 0; look < 3; look++)
+        {
+            await TickAsync();
+            await Task.Delay(50);                            // a replacement would show up meanwhile
+        }
+
+        second.Deliver(TestAudio.Shorts(5, 6));
+        var result = session.Stop();
+
+        Assert.That(spare.StartEntered, Is.False);
+        Assert.That(second.DisposeCalls, Is.EqualTo(1), "released by the stop alone");
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths.Single()).Samples, Is.EqualTo(new short[] { 5, 6 }));
+    }
+
+    /// <summary>A reopen asked for while nothing is captured, or after the recording has stopped, changes nothing.</summary>
+    [Test]
+    public async Task A_reopen_with_no_capture_open_changes_nothing()
+    {
+        using var session = CreateSession(new RecordingOptions { Device = "Pixel Buds" });   // not connected yet
+
+        session.Start(_files);
+        session.Reopen("no audio has arrived for 5 seconds");
+        var buds = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Pixel Buds"));
+        var spare = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Pixel Buds"));
+        await TickUntilAsync(() => buds.Started);            // found by the next look
+        for (var look = 0; look < 2; look++)
+        {
+            await TickAsync();
+            await Task.Delay(50);                            // a replacement would show up meanwhile
+        }
+
+        buds.Deliver(TestAudio.Shorts(1, 2));
+        var result = session.Stop();
+        session.Reopen("no audio has arrived for 5 seconds");
+        await Task.Delay(100);
+
+        Assert.That(spare.StartEntered, Is.False, "the open capture was not asked about, so it is kept");
+        Assert.That(_provider.Created, Is.EqualTo(new[] { buds }), "and nothing is opened after the stop");
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths.Single()).Samples, Is.EqualTo(new short[] { 1, 2 }));
     }
 }
