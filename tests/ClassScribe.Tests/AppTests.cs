@@ -22,7 +22,7 @@ public class AppTests
     {
         _folder = new TempFolder();
         _commands = new Mock<ICommandRunner>();
-        _commands.Setup(c => c.RecordAsync(It.IsAny<bool>())).ReturnsAsync(0);
+        _commands.Setup(c => c.RecordAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
         _commands.Setup(c => c.TranscribeAsync(It.IsAny<string>())).ReturnsAsync(0);
     }
 
@@ -34,10 +34,11 @@ public class AppTests
     private App CreateApp(bool interactive = true)
     {
         _ui = new FakeConsoleUi { IsInteractive = interactive };
-        var folders = new ClassFolders(Options.Create(new RecordingOptions { OutputFolder = _folder.Path }), TimeProvider.System);
         var recording = Options.Create(new RecordingOptions { OutputFolder = _folder.Path });
-        var menu = new MenuCommand(_commands.Object, _ui, folders, new FakeCaptureProvider(), new SourceChoice(recording), Mock.Of<IDesktop>(), TimeProvider.System, NullLogger<MenuCommand>.Instance);
-        return new App(_commands.Object, menu, _ui, NullLogger<App>.Instance);
+        var folders = new ClassFolders(recording, TimeProvider.System);
+        var prompt = new RecordingNamePrompt(_ui);
+        var menu = new MenuCommand(_commands.Object, _ui, folders, new FakeCaptureProvider(), new SourceChoice(recording), prompt, Mock.Of<IDesktop>(), TimeProvider.System, NullLogger<MenuCommand>.Instance);
+        return new App(_commands.Object, menu, prompt, _ui, NullLogger<App>.Instance);
     }
 
     /// <summary>Started without arguments by someone at the keyboard, the app shows the menu.</summary>
@@ -64,24 +65,47 @@ public class AppTests
         _commands.VerifyNoOtherCalls();
     }
 
-    /// <summary>"record" records and transcribes; "record-only" only records.</summary>
+    /// <summary>"record" records and transcribes; "record-only" only records; both take the recording's name.</summary>
     [TestCase("record", true)]
     [TestCase("record-only", false)]
-    public async Task The_record_commands_record(string command, bool transcribe)
+    public async Task The_record_commands_record_under_the_name_given(string command, bool transcribe)
     {
-        var exitCode = await CreateApp().RunAsync([command]);
+        var exitCode = await CreateApp().RunAsync([command, "Kalam lesson 12"]);
 
         Assert.That(exitCode, Is.EqualTo(0));
-        _commands.Verify(c => c.RecordAsync(transcribe), Times.Once);
+        _commands.Verify(c => c.RecordAsync("Kalam lesson 12", transcribe), Times.Once);
+    }
+
+    /// <summary>Without a name on the command line, someone at the keyboard is asked for one.</summary>
+    [Test]
+    public async Task Record_without_a_name_asks_for_one()
+    {
+        var app = CreateApp();
+        _ui.TypeLine("Kalam");
+
+        var exitCode = await app.RunAsync(["record"]);
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        _commands.Verify(c => c.RecordAsync("Kalam", true), Times.Once);
+    }
+
+    /// <summary>Without a name and without a keyboard, there is nothing to record under, so the usage is shown.</summary>
+    [Test]
+    public async Task Record_without_a_name_or_a_keyboard_shows_the_usage()
+    {
+        var exitCode = await CreateApp(interactive: false).RunAsync(["record-only"]);
+
+        Assert.That(exitCode, Is.EqualTo(2));
+        _commands.VerifyNoOtherCalls();
     }
 
     /// <summary>"transcribe" takes the path that follows it.</summary>
     [Test]
     public async Task The_transcribe_command_transcribes_its_path()
     {
-        await CreateApp().RunAsync(["transcribe", @"C:\Classes\2026-10-14_19-30-00"]);
+        await CreateApp().RunAsync(["transcribe", @"C:\Classes\Kalam"]);
 
-        _commands.Verify(c => c.TranscribeAsync(@"C:\Classes\2026-10-14_19-30-00"), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(@"C:\Classes\Kalam"), Times.Once);
     }
 
     /// <summary>A file or folder dropped on the exe arrives as its only argument and is transcribed.</summary>
@@ -115,10 +139,10 @@ public class AppTests
     [Test]
     public async Task Failures_and_cancels_have_their_own_exit_codes()
     {
-        _commands.Setup(c => c.RecordAsync(true)).ThrowsAsync(new InvalidOperationException("No output device."));
-        _commands.Setup(c => c.RecordAsync(false)).ThrowsAsync(new OperationCanceledException());
+        _commands.Setup(c => c.RecordAsync("Kalam", true)).ThrowsAsync(new InvalidOperationException("No output device."));
+        _commands.Setup(c => c.RecordAsync("Kalam", false)).ThrowsAsync(new OperationCanceledException());
 
-        Assert.That(await CreateApp().RunAsync(["record"]), Is.EqualTo(1));
-        Assert.That(await CreateApp().RunAsync(["record-only"]), Is.EqualTo(130));
+        Assert.That(await CreateApp().RunAsync(["record", "Kalam"]), Is.EqualTo(1));
+        Assert.That(await CreateApp().RunAsync(["record-only", "Kalam"]), Is.EqualTo(130));
     }
 }

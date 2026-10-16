@@ -12,28 +12,24 @@ namespace ClassScribe.Storage;
 public sealed record ClassMark(int Number, TimeSpan Position, string? Label);
 
 /// <summary>
-/// The marks of a class, one per line in marks.txt in its folder: a position in the recording
-/// (hh:mm:ss.fff), optionally followed by a label typed in by hand. Blank lines and lines starting with
-/// # are ignored.
+/// The marks of a recording, one per line in its marks file (see <see cref="RecordingFiles.Marks"/>):
+/// a position in the recording (hh:mm:ss.fff), optionally followed by a label typed in by hand. Blank
+/// lines and lines starting with # are ignored.
 /// </summary>
 public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
 {
-    /// <summary>Name of the file in the class folder.</summary>
-    public const string FileName = "marks.txt";
-
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    /// <summary>Adds a mark straight to the file, so it survives a crash, and returns its number.</summary>
-    public int Add(string folder, TimeSpan position)
+    /// <summary>Adds a mark straight to the recording's marks file, so it survives a crash, and returns its number.</summary>
+    public int Add(RecordingFiles files, TimeSpan position)
     {
-        var path = Path.Combine(folder, FileName);
         var line = string.Create(CultureInfo.InvariantCulture, $"{(int)position.TotalHours:00}:{position.Minutes:00}:{position.Seconds:00}.{position.Milliseconds:000}");
-        File.AppendAllText(path, line + Environment.NewLine, Utf8NoBom);
-        return Parse(path, reportProblems: false).Count;
+        File.AppendAllText(files.Marks, line + Environment.NewLine, Utf8NoBom);
+        return Parse(files.Marks, reportProblems: false).Count;
     }
 
-    /// <summary>Reads the marks of the class in <paramref name="folder"/>, in the order they were set. A line that is not a mark is skipped with a warning.</summary>
-    public IReadOnlyList<ClassMark> Read(string folder) => Parse(Path.Combine(folder, FileName), reportProblems: true);
+    /// <summary>Reads the recording's marks, in the order they were set. A line that is not a mark is skipped with a warning.</summary>
+    public IReadOnlyList<ClassMark> Read(RecordingFiles files) => Parse(files.Marks, reportProblems: true);
 
     /// <summary>Parses the marks file; a missing file holds no marks.</summary>
     private List<ClassMark> Parse(string path, bool reportProblems)
@@ -52,7 +48,7 @@ public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
             if (!match.Success)
             {
                 if (reportProblems)
-                    logger.LogWarning("Skipping line {Line} of {File} ({Text}): a mark starts with its time, such as 00:42:13", lineNumber, FileName, text);
+                    logger.LogWarning("Skipping line {Line} of {File} ({Text}): a mark starts with its time, such as 00:42:13", lineNumber, Path.GetFileName(path), text);
                 continue;
             }
 

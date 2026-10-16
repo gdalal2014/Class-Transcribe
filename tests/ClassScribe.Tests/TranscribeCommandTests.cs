@@ -56,29 +56,48 @@ public class TranscribeCommandTests
         return new TranscribeCommand(workflow, new FakeUserSignals(), _desktop.Object, recording, elevenLabs, NullLogger<TranscribeCommand>.Instance);
     }
 
-    /// <summary>A class folder is sent as its segment files, in the order they were recorded, and nothing else.</summary>
-    [Test]
-    public async Task A_class_folder_is_sent_as_its_segments_in_recording_order()
+    /// <summary>Writes a recording's segment files into the temporary folder and returns the recording.</summary>
+    private RecordingFiles WriteRecording(string name, DateTimeOffset started, int segments = 1)
     {
-        string[] names =
-        [
-            "recording-010.wav", "recording-002.wav", "recording-001.wav",   // the recorder's segments
-            "recording-001.upload.wav", "recording-notes.wav", "upload.wav", "transcript.txt"   // everything else stays out
-        ];
-        foreach (var name in names) File.WriteAllBytes(_folder.File(name), [0]);
+        var files = RecordingFiles.ForNew(_folder.Path, name, started);
+        for (var i = 1; i <= segments; i++) File.WriteAllBytes(files.Segment(i), [0]);
+        return files;
+    }
+
+    /// <summary>A folder is transcribed from the recording started last in it: its segments in order, and nothing else.</summary>
+    [Test]
+    public async Task A_folder_is_transcribed_from_its_newest_recording()
+    {
+        WriteRecording("Kalam", new DateTimeOffset(2026, 10, 11, 14, 5, 0, TimeSpan.Zero));
+        var newest = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), segments: 3);
+        foreach (var stray in new[] { newest.Upload, _folder.File("notes.wav"), _folder.File("transcript.txt") })
+            File.WriteAllBytes(stray, [0]);
 
         var exitCode = await CreateCommand().RunAsync(_folder.Path);
 
-        string[] segments = [_folder.File("recording-001.wav"), _folder.File("recording-002.wav"), _folder.File("recording-010.wav")];
         Assert.That(exitCode, Is.EqualTo(0));
-        _preparer.Verify(p => p.Prepare(segments, _folder.File("upload.wav")), Times.Once);
+        _preparer.Verify(p => p.Prepare(new[] { newest.Segment(1), newest.Segment(2), newest.Segment(3) }, newest.Upload), Times.Once);
     }
 
-    /// <summary>A folder without the recorder's segment files is an error, and nothing is sent.</summary>
+    /// <summary>A segment file of a recording, dropped on the app for instance, means the whole recording, with its marks.</summary>
     [Test]
-    public async Task A_folder_without_segments_is_an_error()
+    public async Task A_segment_file_is_transcribed_as_its_whole_recording()
     {
-        File.WriteAllBytes(_folder.File("upload.wav"), [0]);
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), segments: 2);
+        File.WriteAllLines(recording.Marks, ["00:00:00.450"]);
+
+        var exitCode = await CreateCommand().RunAsync(recording.Segment(2));
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        _preparer.Verify(p => p.Prepare(new[] { recording.Segment(1), recording.Segment(2) }, recording.Upload), Times.Once);
+        Assert.That(File.ReadAllText(recording.Transcript()), Does.Contain("## [00:00:00] Mark 1"));
+    }
+
+    /// <summary>A folder without any recording is an error, and nothing is sent.</summary>
+    [Test]
+    public async Task A_folder_without_recordings_is_an_error()
+    {
+        File.WriteAllBytes(_folder.File("notes.wav"), [0]);
 
         var exitCode = await CreateCommand().RunAsync(_folder.Path);
 
@@ -110,6 +129,6 @@ public class TranscribeCommandTests
         await CreateCommand(openWhenDone: true).RunAsync(video);
 
         _desktop.Verify(d => d.OpenFolder(transcriptFolder), Times.Once);
-        _desktop.Verify(d => d.OpenFile(Path.Combine(transcriptFolder, "transcript.txt")), Times.Once);
+        _desktop.Verify(d => d.OpenFile(It.Is<string>(p => p.StartsWith(transcriptFolder) && p.EndsWith(".md"))), Times.Once);
     }
 }

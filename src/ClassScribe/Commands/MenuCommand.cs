@@ -15,12 +15,13 @@ public sealed class MenuCommand(
     ClassFolders folders,
     ILoopbackCaptureProvider devices,
     SourceChoice choice,
+    RecordingNamePrompt prompt,
     IDesktop desktop,
     TimeProvider time,
     ILogger<MenuCommand> logger)
 {
-    /// <summary>How many recent classes choice 3 offers, so that one digit picks one.</summary>
-    private const int RecentClasses = 9;
+    /// <summary>How many recent recordings choice 3 offers, so that one digit picks one.</summary>
+    private const int RecentRecordings = 9;
 
     /// <summary>
     /// The console log is written on a background thread. Waiting this long before showing the menu
@@ -41,13 +42,13 @@ public sealed class MenuCommand(
                 case null:
                     return 0;
                 case '1':
-                    await RunChoiceAsync(() => commands.RecordAsync(transcribe: false));
+                    await RecordAsync(transcribe: false);
                     break;
                 case '2':
-                    await RunChoiceAsync(() => commands.RecordAsync(transcribe: true));
+                    await RecordAsync(transcribe: true);
                     break;
                 case '3':
-                    await TranscribeRecentClassAsync();
+                    await TranscribeRecentRecordingAsync();
                     break;
                 case '4':
                     await TranscribeFileAsync();
@@ -72,7 +73,7 @@ public sealed class MenuCommand(
         ui.WriteLine();
         ui.WriteLine("  1  Record only");
         ui.WriteLine("  2  Record and transcribe");
-        ui.WriteLine("  3  Transcribe a recent class");
+        ui.WriteLine("  3  Transcribe a recent recording");
         ui.WriteLine("  4  Transcribe a file");
         ui.WriteLine("  5  Open the recordings folder");
         ui.WriteLine("  6  Choose what to record: a device or an app");
@@ -177,35 +178,43 @@ public sealed class MenuCommand(
         }
     }
 
-    /// <summary>Choice 3: lists the recent classes and transcribes the one picked.</summary>
-    private async Task TranscribeRecentClassAsync()
+    /// <summary>Choices 1 and 2: ask for the recording's name, then record, and transcribe when asked to.</summary>
+    private async Task RecordAsync(bool transcribe)
     {
-        var classes = folders.ListRecent(RecentClasses);
-        if (classes.Count == 0)
+        if (await prompt.AskAsync() is not { } name) return;
+
+        await RunChoiceAsync(() => commands.RecordAsync(name, transcribe));
+    }
+
+    /// <summary>Choice 3: lists the recent recordings and transcribes the one picked.</summary>
+    private async Task TranscribeRecentRecordingAsync()
+    {
+        var recordings = folders.ListRecent(RecentRecordings);
+        if (recordings.Count == 0)
         {
-            ui.WriteLine($"No recorded classes in {folders.Root} yet.");
+            ui.WriteLine($"No recordings in {folders.Root} yet.");
             return;
         }
 
-        ui.WriteLine("Recent classes, newest first:");
-        for (var i = 0; i < classes.Count; i++)
+        ui.WriteLine("Recent recordings, newest first:");
+        for (var i = 0; i < recordings.Count; i++)
         {
-            var recorded = classes[i];
+            var recorded = recordings[i];
             var length = recorded.Length.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
-            ui.WriteLine($"  {i + 1}  {recorded.Name}  {length}  {(recorded.HasTranscript ? "transcript ready" : "no transcript yet")}");
+            ui.WriteLine($"  {i + 1}  {recorded.Files.BaseName}  {length}  {(recorded.HasTranscript ? "transcript ready" : "no transcript yet")}");
         }
 
-        ui.WriteLine("Press a class's number to transcribe it, or Esc to go back.");
-        if (await ReadNumberAsync(classes.Count) is not { } index) return;
+        ui.WriteLine("Press a recording's number to transcribe it, or Esc to go back.");
+        if (await ReadNumberAsync(recordings.Count) is not { } index) return;
 
-        var chosen = classes[index];
+        var chosen = recordings[index];
         if (chosen.HasTranscript)
         {
-            ui.WriteLine("This class already has a transcript, and transcribing it again is billed again. Press Y to go ahead, any other key to go back.");
+            ui.WriteLine("This recording already has a transcript, and transcribing it again is billed again. Press Y to go ahead, any other key to go back.");
             if (await ui.ReadKeyAsync(CancellationToken.None) is not { Key: ConsoleKey.Y }) return;
         }
 
-        await RunChoiceAsync(() => commands.TranscribeAsync(chosen.Folder));
+        await RunChoiceAsync(() => commands.TranscribeAsync(chosen.Files.Segment(1)));
     }
 
     /// <summary>Waits for a digit from 1 to <paramref name="count"/> and returns its index; null for Esc, Q or Ctrl+C.</summary>
@@ -222,10 +231,11 @@ public sealed class MenuCommand(
     /// <summary>Choice 4: asks for a file, dragged into the window or typed, and transcribes it.</summary>
     private async Task TranscribeFileAsync()
     {
-        ui.WriteLine("Drag a file into this window, or type its path, then press Enter. Press Enter alone to go back.");
+        ui.WriteLine("Drag a file into this window, or type its path, then press Enter. Esc, or Enter alone, goes back.");
+        ui.Write("> ");
 
         // Windows puts quotes around a dragged path that contains spaces.
-        var path = ui.ReadLine()?.Trim().Trim('"').Trim();
+        var path = (await ui.ReadLineAsync(CancellationToken.None))?.Trim().Trim('"').Trim();
         if (string.IsNullOrEmpty(path)) return;
 
         if (!File.Exists(path) && !Directory.Exists(path))

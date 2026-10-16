@@ -1,5 +1,6 @@
 using ClassScribe.Audio;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Tests;
@@ -16,12 +17,14 @@ public class RecordingSessionTests
     private FakeCaptureProvider _provider = null!;
     private ManualTimeProvider _time = null!;
     private RecordingLogger<RecordingSession> _log = null!;
+    private RecordingFiles _files = null!;
 
-    /// <summary>Creates a temporary folder, the simulated devices, a clock moved by hand and a log to inspect.</summary>
+    /// <summary>Creates a temporary folder, a recording in it, the simulated devices, a clock moved by hand and a log to inspect.</summary>
     [SetUp]
     public void SetUp()
     {
         _folder = new TempFolder();
+        _files = new RecordingFiles(_folder.Path, "Class_2026-10-11_14-00-00Z");
         _provider = new FakeCaptureProvider();
         _time = new ManualTimeProvider(new DateTimeOffset(2026, 10, 11, 14, 0, 0, TimeSpan.Zero));
         _log = new RecordingLogger<RecordingSession>();
@@ -64,14 +67,14 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Float48KStereo));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Floats(0.25f, 0.25f, -0.25f, -0.25f));
         var result = session.Stop();
 
         Assert.That(capture.Started, Is.True);
         Assert.That(capture.Disposed, Is.True);
         Assert.That(result.SegmentPaths, Has.Count.EqualTo(1));
-        Assert.That(Path.GetFileName(result.SegmentPaths[0]), Is.EqualTo("recording-001.wav"));
+        Assert.That(Path.GetFileName(result.SegmentPaths[0]), Is.EqualTo(Path.GetFileName(_files.Segment(1))));
 
         var wav = TestAudio.ReadWav(result.SegmentPaths[0]);
         Assert.That(wav.SampleRate, Is.EqualTo(48000));
@@ -85,7 +88,7 @@ public class RecordingSessionTests
         _provider.Enqueue(new FakeAudioCapture(Float48KStereo));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         var result = session.Stop();
 
         Assert.That(result.SegmentPaths, Is.Empty);
@@ -98,7 +101,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono) { FinalAudio = TestAudio.Shorts(3, 4) });
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1, 2));
         var result = session.Stop();
 
@@ -112,7 +115,7 @@ public class RecordingSessionTests
         var speakers = _provider.Enqueue(new FakeAudioCapture(Float48KStereo, "Speakers") { FinalAudio = TestAudio.Floats(0.125f, 0.125f) });
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         speakers.Deliver(TestAudio.Floats(0.25f, 0.25f));
         var headphones = _provider.SwitchDefaultDevice(new FakeAudioCapture(Float44KStereo, "Headphones"), level: 0.2f);
         await TickUntilAsync(() => headphones.Started);
@@ -140,7 +143,7 @@ public class RecordingSessionTests
         var speakers = _provider.Enqueue(new FakeAudioCapture(Float48KStereo, "Speakers"));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         var headphones = _provider.Enqueue(new FakeAudioCapture(Float44KStereo, "Headphones"), level: 0.2f);   // not the default: nothing is announced
         await TickUntilAsync(() => headphones.Started);
         headphones.Deliver(TestAudio.Floats(-0.25f, -0.25f));
@@ -159,7 +162,7 @@ public class RecordingSessionTests
         var headphones = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         _provider.SetLevel("Headphones", 0.9f);              // something loud starts on the headphones
         for (var second = 0; second < 5; second++)
         {
@@ -183,7 +186,7 @@ public class RecordingSessionTests
         var headphones = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         _provider.SetLevel("Headphones", 0.5f);              // a notification sounds on the headphones
         await TickAsync();                                   // it is seen once
         await Task.Delay(50);
@@ -207,7 +210,7 @@ public class RecordingSessionTests
         var headphones = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"));
         using var session = CreateSession(new RecordingOptions { Device = "headphones" });
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         headphones.Deliver(TestAudio.Shorts(1, 2));
         var result = session.Stop();
 
@@ -223,7 +226,7 @@ public class RecordingSessionTests
         var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
         using var session = CreateSession(new RecordingOptions { Device = "Pixel Buds" });
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         var waiting = session.GetStatus();
         var buds = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones (Pixel Buds Pro 2)"));
         await Wait.UntilAsync(() => buds.Started, timeoutSeconds: 15);   // found by the next try, a couple of seconds on
@@ -245,7 +248,7 @@ public class RecordingSessionTests
         var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.5f);
         using var session = CreateSession(new RecordingOptions { App = "chrome" });
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         var waiting = session.GetStatus();
         var chrome = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, new FakeAudioCapture(Pcm16KMono, "chrome", "process:4242"))!;
         await Wait.UntilAsync(() => chrome.Started, timeoutSeconds: 15);
@@ -266,7 +269,7 @@ public class RecordingSessionTests
         var first = _provider.AddApp(1, "chrome", "Speakers", level: 0, new FakeAudioCapture(Pcm16KMono, "chrome", "process:1"))!;
         using var session = CreateSession(new RecordingOptions { App = "chrome" });
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         first.Deliver(TestAudio.Shorts(1));
         _provider.RemoveApp(1);
         var second = _provider.AddApp(2, "chrome", "Speakers", level: 0.2f, new FakeAudioCapture(Pcm16KMono, "chrome", "process:2"))!;
@@ -287,7 +290,7 @@ public class RecordingSessionTests
         var spare = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1, 2));
         _provider.RaiseDevicesChanged();
         await Wait.UntilAsync(() => _provider.DeviceQueries > 0);
@@ -306,7 +309,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1, 2));
         _provider.RemoveDevices();
         await Wait.UntilAsync(() => _provider.DeviceQueries > 0);
@@ -324,7 +327,7 @@ public class RecordingSessionTests
         var speakers = _provider.Enqueue(new FakeAudioCapture(Float48KStereo, "Speakers"));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         speakers.Deliver(TestAudio.Floats(0.25f, 0.25f));
         var headphones = _provider.SwitchDefaultDevice(new FakeAudioCapture(Float44KStereo, "Headphones"));
         var spare = _provider.Enqueue(new FakeAudioCapture(Float44KStereo, "Headphones"));
@@ -349,7 +352,7 @@ public class RecordingSessionTests
         var second = _provider.Enqueue(new FakeAudioCapture(Float48KStereo));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         first.Deliver(TestAudio.Floats(0.25f, 0.25f));
         first.Fail(new IOException("The device was unplugged."));
         await Wait.UntilAsync(() => second.Started);
@@ -368,7 +371,7 @@ public class RecordingSessionTests
         var first = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         first.Deliver(TestAudio.Shorts(1));
         first.Fail(new IOException("The device was unplugged."));
         await Wait.UntilAsync(() => _provider.FailedCreations > 0);      // no output device at all right now
@@ -389,7 +392,7 @@ public class RecordingSessionTests
         var third = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         first.Fail(new IOException("Driver trouble."));
         await Wait.UntilAsync(() => second.Started);                     // the first failure is answered at once
         second.Fail(new IOException("Driver trouble."));
@@ -407,7 +410,7 @@ public class RecordingSessionTests
         using var session = CreateSession(new RecordingOptions { MaxSegmentMegabytes = 1 });
         var chunk = TestAudio.Shorts(Enumerable.Repeat((short)1000, 300_000).ToArray());   // 600 KB
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(chunk);
         capture.Deliver(chunk);   // crosses 1 MB, so the next chunk belongs to a new file
         capture.Deliver(chunk);
@@ -425,13 +428,13 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession(new RecordingOptions { FlushSeconds = 5 });
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1, 2));
         _time.Advance(TimeSpan.FromSeconds(6));
         capture.Deliver(TestAudio.Shorts(3));
 
         // Read the file as a crash would leave it: the session is still running.
-        var onDisk = TestAudio.ReadWav(_folder.File("recording-001.wav"));
+        var onDisk = TestAudio.ReadWav(_files.Segment(1));
 
         Assert.That(onDisk.Samples, Is.EqualTo(new short[] { 1, 2, 3 }));
     }
@@ -443,7 +446,7 @@ public class RecordingSessionTests
         var classFolder = Path.Combine(_folder.Path, "class");
         using var session = CreateSession();
 
-        session.Start(classFolder);
+        session.Start(new RecordingFiles(classFolder, "Class_2026-10-11_14-00-00Z"));
         Directory.Delete(classFolder);                  // the drive goes away
         capture.Deliver(TestAudio.Shorts(1, 2));        // cannot be written: reported in the log, not thrown at the device
         Directory.CreateDirectory(classFolder);         // the drive is back
@@ -463,7 +466,7 @@ public class RecordingSessionTests
         var classFolder = Path.Combine(_folder.Path, "class");
         using var session = CreateSession();
 
-        session.Start(classFolder);
+        session.Start(new RecordingFiles(classFolder, "Class_2026-10-11_14-00-00Z"));
         Directory.Delete(classFolder);
         capture.Deliver(TestAudio.Shorts(1));           // first failure: tried again at once
         capture.Deliver(TestAudio.Shorts(2));           // second failure in a row: now it waits
@@ -483,7 +486,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono) { DisposeFailure = new InvalidOperationException("Driver trouble.") });
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1, 2, 3));
         var result = session.Stop();
 
@@ -495,16 +498,16 @@ public class RecordingSessionTests
     [Test]
     public void A_file_that_is_already_there_is_left_alone()
     {
-        File.WriteAllText(_folder.File("recording-001.wav"), "precious");
+        File.WriteAllText(_files.Segment(1), "precious");
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1, 2));
         var result = session.Stop();
 
-        Assert.That(Path.GetFileName(result.SegmentPaths.Single()), Is.EqualTo("recording-002.wav"));
-        Assert.That(File.ReadAllText(_folder.File("recording-001.wav")), Is.EqualTo("precious"));
+        Assert.That(Path.GetFileName(result.SegmentPaths.Single()), Is.EqualTo(Path.GetFileName(_files.Segment(2))));
+        Assert.That(File.ReadAllText(_files.Segment(1)), Is.EqualTo("precious"));
     }
 
     [Test]
@@ -513,7 +516,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(0, 0, 0));
         _time.Advance(TimeSpan.FromSeconds(90));
         var whileSilent = session.GetStatus();
@@ -531,7 +534,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(new AudioFormat(8000, 1, 8, false)));
         using var session = CreateSession();
 
-        Assert.Throws<NotSupportedException>(() => session.Start(_folder.Path));
+        Assert.Throws<NotSupportedException>(() => session.Start(_files));
         Assert.That(capture.Disposed, Is.True);
         Assert.That(Directory.GetFiles(_folder.Path), Is.Empty);
     }
@@ -542,7 +545,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1));
         var first = session.Stop();
         var second = session.Stop();
@@ -557,7 +560,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1, 2));
         session.Pause();
         var paused = session.GetStatus();
@@ -579,7 +582,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(1, 2));   // the clock has not moved, so no save has been due yet
         var path = Directory.GetFiles(_folder.Path).Single();
         var before = TestAudio.ReadWav(path).Samples;
@@ -597,7 +600,7 @@ public class RecordingSessionTests
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         using var session = CreateSession();
 
-        session.Start(_folder.Path);
+        session.Start(_files);
         capture.Deliver(TestAudio.Shorts(0, 5000));
         session.Pause();
         _time.Advance(TimeSpan.FromMinutes(15));

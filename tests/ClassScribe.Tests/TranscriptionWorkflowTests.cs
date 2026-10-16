@@ -12,17 +12,23 @@ namespace ClassScribe.Tests;
 [TestFixture]
 public class TranscriptionWorkflowTests
 {
+    private static readonly DateTimeOffset Started = new(2026, 10, 15, 20, 55, 27, TimeSpan.Zero);
+    private static readonly string Blank = Environment.NewLine + Environment.NewLine;
+
     private TempFolder _folder = null!;
     private string _recordings = null!;
+    private RecordingFiles _files = null!;
     private Mock<IAudioPreparer> _preparer = null!;
     private Mock<ITranscriptionClient> _client = null!;
 
-    /// <summary>Creates a temporary folder, a recordings folder inside it, and the mocks.</summary>
+    /// <summary>Creates a temporary folder, a recordings folder with one recording's folder inside it, and the mocks.</summary>
     [SetUp]
     public void SetUp()
     {
         _folder = new TempFolder();
         _recordings = _folder.File("Recordings");
+        _files = RecordingFiles.ForNew(Path.Combine(_recordings, "Kalam"), "Kalam", Started);
+        Directory.CreateDirectory(_files.Folder);
         _preparer = Mocks.AudioPreparer();
         _client = Mocks.TranscriptionClient();
     }
@@ -40,49 +46,65 @@ public class TranscriptionWorkflowTests
             _client.Object,
             new KeytermLoader(NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(Options.Create(new TranscriptOptions())),
-            new ClassFolders(recording, TimeProvider.System),
+            new ClassFolders(recording, new ManualTimeProvider(Started)),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             Options.Create(new ElevenLabsOptions { ApiKey = "test-key", KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") }),
             recording,
             NullLogger<TranscriptionWorkflow>.Instance);
     }
 
-    /// <summary>A recording's segments are prepared into one upload, and its transcript is saved in its own folder.</summary>
+    /// <summary>The one transcript in the folder a transcribed file got.</summary>
+    private static string OnlyTranscript(string folder) => Directory.GetFiles(folder, "*.md").Single();
+
+    /// <summary>A recording's segments are prepared into one upload, and its transcript is saved beside them under the recording's name.</summary>
     [Test]
-    public async Task A_recording_is_prepared_uploaded_and_saved_in_its_folder()
+    public async Task A_recording_is_prepared_uploaded_and_saved_under_its_name()
     {
-        string[] segments = [_folder.File("recording-001.wav"), _folder.File("recording-002.wav")];
-        var upload = _folder.File("upload.wav");
+        string[] segments = [_files.Segment(1), _files.Segment(2)];
 
-        var files = await CreateWorkflow().TranscribeSegmentsAsync(segments, _folder.Path, CancellationToken.None);
+        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, segments, CancellationToken.None);
 
-        _preparer.Verify(p => p.Prepare(segments, upload), Times.Once);
-        _client.Verify(Calls.TranscriptionOf(upload), Times.Once);
-        Assert.That(files.TextPath, Is.EqualTo(_folder.File("transcript.txt")));
-        Assert.That(File.ReadAllText(files.TextPath), Is.EqualTo("[00:00:00] Hello world." + Environment.NewLine));
+        _preparer.Verify(p => p.Prepare(segments, _files.Upload), Times.Once);
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
+        Assert.That(files.TranscriptPath, Is.EqualTo(_files.Transcript()));
+        Assert.That(files.JsonPath, Is.EqualTo(_files.Json()));
+        Assert.That(File.ReadAllText(files.TranscriptPath), Is.EqualTo($"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC.{Blank}[00:00:00] Hello world.{Environment.NewLine}"));
         Assert.That(File.ReadAllText(files.JsonPath), Is.EqualTo(Mocks.Transcript.RawJson));
-        Assert.That(File.Exists(upload), Is.False, "the upload copy is removed after success");
+        Assert.That(File.Exists(_files.Upload), Is.False, "the upload copy is removed after success");
     }
 
-    /// <summary>The marks set while recording appear in the class's transcript.</summary>
+    /// <summary>The marks set while recording appear in the recording's transcript.</summary>
     [Test]
-    public async Task The_marks_of_a_class_appear_in_its_transcript()
+    public async Task The_marks_of_a_recording_appear_in_its_transcript()
     {
-        File.WriteAllLines(_folder.File(ClassMarks.FileName), ["00:00:00.450"]);
+        File.WriteAllLines(_files.Marks, ["00:00:00.450"]);
 
-        var files = await CreateWorkflow().TranscribeSegmentsAsync([_folder.File("recording-001.wav")], _folder.Path, CancellationToken.None);
+        var files = await CreateWorkflow().TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
 
-        var blank = Environment.NewLine + Environment.NewLine;
-        Assert.That(File.ReadAllText(files.TextPath), Is.EqualTo($"[00:00:00] Hello{blank}[00:00:00] *** Mark 1 ***{blank}[00:00:00] world.{Environment.NewLine}"));
+        Assert.That(File.ReadAllText(files.TranscriptPath), Does.Contain($"[00:00:00] Hello{Blank}## [00:00:00] Mark 1{Blank}[00:00:00] world."));
+    }
+
+    /// <summary>Transcribing a recording again keeps the earlier transcript and writes a second one.</summary>
+    [Test]
+    public async Task Transcribing_a_recording_again_keeps_the_earlier_transcript()
+    {
+        var workflow = CreateWorkflow();
+
+        var first = await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+        var second = await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
+
+        Assert.That(second.TranscriptPath, Is.EqualTo(_files.Transcript(2)));
+        Assert.That(second.JsonPath, Is.EqualTo(_files.Json(2)));
+        Assert.That(File.Exists(first.TranscriptPath) && File.Exists(second.TranscriptPath), Is.True);
     }
 
     /// <summary>With KeepUploadFile the 16 kHz copy stays after success.</summary>
     [Test]
     public async Task The_upload_copy_can_be_kept()
     {
-        await CreateWorkflow(keepUploadFile: true).TranscribeSegmentsAsync([_folder.File("recording-001.wav")], _folder.Path, CancellationToken.None);
+        await CreateWorkflow(keepUploadFile: true).TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
 
-        Assert.That(File.Exists(_folder.File("upload.wav")), Is.True);
+        Assert.That(File.Exists(_files.Upload), Is.True);
     }
 
     /// <summary>The glossary file's terms go with the audio.</summary>
@@ -92,12 +114,12 @@ public class TranscriptionWorkflowTests
         var glossary = _folder.File("keyterms.txt");
         File.WriteAllLines(glossary, ["# terms", "kalām", "Ashʿarī"]);
 
-        await CreateWorkflow(keytermsFile: glossary).TranscribeSegmentsAsync([_folder.File("recording-001.wav")], _folder.Path, CancellationToken.None);
+        await CreateWorkflow(keytermsFile: glossary).TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None);
 
         _client.Verify(c => c.TranscribeAsync(It.IsAny<string>(), new[] { "kalām", "Ashʿarī" }, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    /// <summary>A video goes up as it is, and its transcript gets a folder of its own in the recordings folder.</summary>
+    /// <summary>A video goes up as it is, and its transcript gets a folder of its own in the recordings folder, named after it and stamped.</summary>
     [Test]
     public async Task A_video_file_is_uploaded_as_it_is_and_its_transcript_goes_to_the_recordings_folder()
     {
@@ -108,15 +130,15 @@ public class TranscriptionWorkflowTests
 
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
         _client.Verify(Calls.TranscriptionOf(video), Times.Once);
-        Assert.That(files.TextPath, Is.EqualTo(Path.Combine(_recordings, "class", "transcript.txt")));
-        Assert.That(files.JsonPath, Is.EqualTo(Path.Combine(_recordings, "class", "transcript.json")));
-        Assert.That(File.Exists(files.TextPath), Is.True);
+        Assert.That(files.TranscriptPath, Is.EqualTo(Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.md")));
+        Assert.That(files.JsonPath, Is.EqualTo(Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.json")));
+        Assert.That(File.ReadAllText(files.TranscriptPath), Does.StartWith($"# class{Blank}[00:00:00] Hello world."), "a file has no recording time");
         Assert.That(File.Exists(video), Is.True);
     }
 
-    /// <summary>Transcribing the same file again gives a second folder; the first transcript is kept.</summary>
+    /// <summary>Transcribing the same file again gives a second transcript; the first is kept.</summary>
     [Test]
-    public async Task The_same_file_transcribed_twice_gets_a_second_folder()
+    public async Task The_same_file_transcribed_twice_gets_a_second_transcript()
     {
         var video = _folder.File("class.mp4");
         File.WriteAllBytes(video, [1, 2, 3]);
@@ -125,8 +147,8 @@ public class TranscriptionWorkflowTests
         var first = await workflow.TranscribeFileAsync(video, CancellationToken.None);
         var second = await workflow.TranscribeFileAsync(video, CancellationToken.None);
 
-        Assert.That(second.TextPath, Is.EqualTo(Path.Combine(_recordings, "class_2", "transcript.txt")));
-        Assert.That(File.Exists(first.TextPath), Is.True);
+        Assert.That(second.TranscriptPath, Is.Not.EqualTo(first.TranscriptPath));
+        Assert.That(File.Exists(first.TranscriptPath) && File.Exists(second.TranscriptPath), Is.True);
     }
 
     /// <summary>A WAV file is reduced to a 16 kHz copy in the transcript's folder, which goes after success.</summary>
@@ -134,7 +156,7 @@ public class TranscriptionWorkflowTests
     public async Task A_wav_file_is_reduced_before_upload()
     {
         var wav = _folder.File("class.wav");
-        var upload = Path.Combine(_recordings, "class", "upload.wav");
+        var upload = Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.upload.wav");
         File.WriteAllBytes(wav, [1, 2, 3]);
 
         await CreateWorkflow().TranscribeFileAsync(wav, CancellationToken.None);
@@ -179,9 +201,9 @@ public class TranscriptionWorkflowTests
         var workflow = CreateWorkflow();
 
         Assert.ThrowsAsync<TranscriptionException>(async () =>
-            await workflow.TranscribeSegmentsAsync([_folder.File("recording-001.wav")], _folder.Path, CancellationToken.None));
+            await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
 
-        Assert.That(File.Exists(_folder.File("upload.wav")), Is.True, "kept so the upload can be retried");
-        Assert.That(File.Exists(_folder.File("transcript.txt")), Is.False);
+        Assert.That(File.Exists(_files.Upload), Is.True, "kept so the upload can be retried");
+        Assert.That(File.Exists(_files.Transcript()), Is.False);
     }
 }

@@ -6,7 +6,10 @@ using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Commands;
 
-/// <summary>Transcribes audio that already exists: a class folder, or any audio or video file.</summary>
+/// <summary>
+/// Transcribes audio that already exists: a recording, named by its folder or by one of its segment
+/// files, or any other audio or video file.
+/// </summary>
 public sealed class TranscribeCommand(
     TranscriptionWorkflow workflow,
     IUserSignals signals,
@@ -15,7 +18,10 @@ public sealed class TranscribeCommand(
     IOptions<ElevenLabsOptions> elevenLabs,
     ILogger<TranscribeCommand> logger)
 {
-    /// <summary>Transcribes the file or folder at <paramref name="path"/>. Returns the process exit code.</summary>
+    /// <summary>
+    /// Transcribes what <paramref name="path"/> names: a folder means the recording started last in it, a
+    /// segment file means its whole recording, and any other file is sent on its own. Returns the process exit code.
+    /// </summary>
     public async Task<int> RunAsync(string path)
     {
         // Nothing is recording here, so the first Ctrl+C should already cancel the upload.
@@ -28,21 +34,22 @@ public sealed class TranscribeCommand(
         }
 
         var fullPath = Path.GetFullPath(path);
-        TranscriptFiles files;
+        TranscriptFiles saved;
         if (Directory.Exists(fullPath))
         {
-            var segments = ClassFolders.FindSegments(fullPath);
-            if (segments.Count == 0)
+            if (ClassFolders.FindNewest(fullPath) is not { } newest)
             {
-                logger.LogError("There are no recording-001.wav style files in {Folder}", fullPath);
+                logger.LogError("There is no ClassScribe recording in {Folder}", fullPath);
                 return 1;
             }
 
-            files = await workflow.TranscribeSegmentsAsync(segments, fullPath, signals.Cancellation);
+            saved = await TranscribeRecordingAsync(newest);
         }
         else if (File.Exists(fullPath))
         {
-            files = await workflow.TranscribeFileAsync(fullPath, signals.Cancellation);
+            saved = RecordingFiles.TryParse(fullPath) is { } recorded && recorded.FindSegments().Count > 0
+                ? await TranscribeRecordingAsync(recorded)
+                : await workflow.TranscribeFileAsync(fullPath, signals.Cancellation);
         }
         else
         {
@@ -50,8 +57,15 @@ public sealed class TranscribeCommand(
             return 1;
         }
 
-        logger.LogInformation("Transcript saved to {Path}", files.TextPath);
-        desktop.ShowTranscript(recording.Value, files);
+        logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
+        desktop.ShowTranscript(recording.Value, saved);
         return 0;
+    }
+
+    /// <summary>Transcribes a recording from all its segments, with its marks.</summary>
+    private Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files)
+    {
+        logger.LogInformation("Transcribing the recording {Recording}", files.BaseName);
+        return workflow.TranscribeRecordingAsync(files, files.FindSegments(), signals.Cancellation);
     }
 }

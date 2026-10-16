@@ -7,8 +7,8 @@ using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Transcription;
 
-/// <summary>Where a transcript was saved.</summary>
-public sealed record TranscriptFiles(string TextPath, string JsonPath);
+/// <summary>Where a transcript was saved: the Markdown document and ElevenLabs' answer next to it.</summary>
+public sealed record TranscriptFiles(string TranscriptPath, string JsonPath);
 
 /// <summary>Takes recorded audio through preparation, upload and saving the transcript.</summary>
 public sealed class TranscriptionWorkflow(
@@ -22,38 +22,34 @@ public sealed class TranscriptionWorkflow(
     IOptions<RecordingOptions> recording,
     ILogger<TranscriptionWorkflow> logger)
 {
-    private const string UploadFileName = "upload.wav";
-    private const string TranscriptBaseName = "transcript";
-
-    private static readonly UTF8Encoding Utf8WithBom = new(encoderShouldEmitUTF8Identifier: true);
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     /// <summary>
-    /// Transcribes the segments of one recording and saves transcript.txt and transcript.json in its
-    /// folder. The marks set while recording are placed in the transcript.
+    /// Transcribes a recording from its segments and saves the transcript under the recording's name,
+    /// next to the audio. The marks set while recording are placed in the transcript. A recording
+    /// transcribed before keeps its earlier transcript and gets a second one.
     /// </summary>
-    public async Task<TranscriptFiles> TranscribeSegmentsAsync(IReadOnlyList<string> segmentPaths, string folder, CancellationToken cancellationToken)
+    public async Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, IReadOnlyList<string> segmentPaths, CancellationToken cancellationToken)
     {
         try
         {
-            var uploadPath = Path.Combine(folder, UploadFileName);
-            File.Delete(uploadPath);
+            File.Delete(files.Upload);
             logger.LogInformation("Preparing the recording for upload ({Segments} segment(s)); this takes a moment for a long class", segmentPaths.Count);
-            preparer.Prepare(segmentPaths, uploadPath);
+            preparer.Prepare(segmentPaths, files.Upload);
 
-            var files = await UploadAndSaveAsync(uploadPath, folder, marks.Read(folder), cancellationToken);
-            if (!recording.Value.KeepUploadFile) File.Delete(uploadPath);
-            return files;
+            var saved = await UploadAndSaveAsync(files.Upload, files, files.Name, files.StartedUtc, marks.Read(files), cancellationToken);
+            if (!recording.Value.KeepUploadFile) File.Delete(files.Upload);
+            return saved;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError("Could not transcribe the recording in {Folder}", folder);
+            logger.LogError("Could not transcribe the recording {Recording}", files.BaseName);
             throw;
         }
     }
 
     /// <summary>
-    /// Transcribes one audio or video file into a new folder of its own in the recordings folder; the
+    /// Transcribes one audio or video file into a folder named after it in the recordings folder; the
     /// file itself stays where it is. A WAV file is first reduced to 16 kHz mono; anything else is
     /// uploaded as it is.
     /// </summary>
@@ -61,16 +57,15 @@ public sealed class TranscriptionWorkflow(
     {
         try
         {
-            var folder = folders.CreateForFile(path);
-            logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), folder);
+            var files = folders.CreateForFile(path);
+            logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), files.Folder);
 
-            var uploadPath = Path.Combine(folder, UploadFileName);
-            if (!TryPrepare(path, uploadPath))
-                return await UploadAndSaveAsync(path, folder, [], cancellationToken);
+            if (!TryPrepare(path, files.Upload))
+                return await UploadAndSaveAsync(path, files, files.Name, recordedUtc: null, [], cancellationToken);
 
-            var files = await UploadAndSaveAsync(uploadPath, folder, [], cancellationToken);
-            if (!recording.Value.KeepUploadFile) File.Delete(uploadPath);
-            return files;
+            var saved = await UploadAndSaveAsync(files.Upload, files, files.Name, recordedUtc: null, [], cancellationToken);
+            if (!recording.Value.KeepUploadFile) File.Delete(files.Upload);
+            return saved;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -98,16 +93,21 @@ public sealed class TranscriptionWorkflow(
         }
     }
 
-    /// <summary>Uploads the audio and writes the raw JSON and the formatted text, with the marks in place.</summary>
-    private async Task<TranscriptFiles> UploadAndSaveAsync(string audioPath, string folder, IReadOnlyList<ClassMark> classMarks, CancellationToken cancellationToken)
+    /// <summary>Uploads the audio and writes the raw JSON and the Markdown transcript, as the next free copy of the recording's transcript.</summary>
+    private async Task<TranscriptFiles> UploadAndSaveAsync(
+        string audioPath, RecordingFiles files, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks, CancellationToken cancellationToken)
     {
         var keyterms = keytermLoader.Load(ResolveKeytermsPath());
         var result = await client.TranscribeAsync(audioPath, keyterms, cancellationToken);
 
-        var files = new TranscriptFiles(Path.Combine(folder, $"{TranscriptBaseName}.txt"), Path.Combine(folder, $"{TranscriptBaseName}.json"));
-        await File.WriteAllTextAsync(files.JsonPath, result.RawJson, Utf8NoBom, cancellationToken);
-        await File.WriteAllTextAsync(files.TextPath, formatter.Format(result, classMarks), Utf8WithBom, cancellationToken);
-        return files;
+        // An earlier transcript, perhaps corrected by hand, is never overwritten.
+        var copy = 1;
+        while (File.Exists(files.Transcript(copy)) || File.Exists(files.Json(copy))) copy++;
+
+        var saved = new TranscriptFiles(files.Transcript(copy), files.Json(copy));
+        await File.WriteAllTextAsync(saved.JsonPath, result.RawJson, Utf8NoBom, cancellationToken);
+        await File.WriteAllTextAsync(saved.TranscriptPath, formatter.Format(result, title, recordedUtc, classMarks), Utf8NoBom, cancellationToken);
+        return saved;
     }
 
     /// <summary>Finds the glossary file, looking next to the executable for a relative path.</summary>

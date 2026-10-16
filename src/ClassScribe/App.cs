@@ -4,18 +4,20 @@ using Microsoft.Extensions.Logging;
 namespace ClassScribe;
 
 /// <summary>Reads the command line and runs the matching command, or the menu when there is none.</summary>
-public sealed class App(ICommandRunner commands, MenuCommand menu, IConsoleUi ui, ILogger<App> logger)
+public sealed class App(ICommandRunner commands, MenuCommand menu, RecordingNamePrompt prompt, IConsoleUi ui, ILogger<App> logger)
 {
     /// <summary>Help text shown on request and for an unknown command.</summary>
     public const string Usage = """
         ClassScribe records the sound your computer plays and gets a transcript from ElevenLabs.
 
-          ClassScribe                      Show the menu.
-          ClassScribe record               Record now. Q stops and transcribes.
-          ClassScribe record-only          Record now. Q stops; transcribe later from the menu.
-          ClassScribe transcribe <path>    Transcribe a class folder, or any audio or video file.
-          ClassScribe <path>               The same. Dropping a file on ClassScribe.exe does this.
+          ClassScribe                          Show the menu.
+          ClassScribe record "<name>"          Record now under that name. Q stops and transcribes.
+          ClassScribe record-only "<name>"     Record now. Q stops; transcribe later from the menu.
+          ClassScribe transcribe <path>        Transcribe a recording (its folder or one of its files),
+                                               or any audio or video file.
+          ClassScribe <path>                   The same. Dropping a file on ClassScribe.exe does this.
 
+        Without a name, record and record-only ask for one.
         While recording, P pauses or resumes and M marks a moment.
         The API key is read from the ELEVENLABS_API_KEY environment variable.
         """;
@@ -30,11 +32,18 @@ public sealed class App(ICommandRunner commands, MenuCommand menu, IConsoleUi ui
                 case [] when ui.IsInteractive:
                     return await menu.RunAsync();
 
-                case ["record"]:
-                    return await commands.RecordAsync(transcribe: true);
+                case ["record" or "record-only"] when !ui.IsInteractive:
+                    ui.WriteLine(Usage);
+                    return 2;
 
-                case ["record-only"]:
-                    return await commands.RecordAsync(transcribe: false);
+                case ["record" or "record-only"]:
+                    return await prompt.AskAsync() is { } asked ? await commands.RecordAsync(asked, transcribe: args[0] == "record") : 0;
+
+                case ["record", var given]:
+                    return await commands.RecordAsync(given, transcribe: true);
+
+                case ["record-only", var given]:
+                    return await commands.RecordAsync(given, transcribe: false);
 
                 case ["transcribe", var path]:
                     return await commands.TranscribeAsync(path);

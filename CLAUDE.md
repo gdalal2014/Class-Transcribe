@@ -48,19 +48,21 @@ history are in `docs/HANDOFF.md` (kept out of git); read it before larger change
 dotnet build
 dotnet test
 dotnet run --project src/ClassScribe                                   # the menu
-dotnet run --project src/ClassScribe -- record                         # record; Q stops and transcribes
-dotnet run --project src/ClassScribe -- record-only                    # record only
+dotnet run --project src/ClassScribe -- record "Kalam"                 # record; Q stops and transcribes
+dotnet run --project src/ClassScribe -- record-only "Kalam"            # record only
 dotnet run --project src/ClassScribe -- transcribe "C:\path\to\folder-or-file"
 dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
-- While recording: Q or Ctrl+C stops, P pauses or resumes, M writes a mark to `marks.txt`.
+- While recording: Q or Ctrl+C stops, P pauses or resumes, M writes a mark to the recording's `.marks.txt`.
 - What is recorded (`CaptureChooser`): by default the output device with sound, found with Windows'
   level meters once a second; `Recording:Device` pins a device; `Recording:App` records one app's
   process tree through Windows process loopback (`ProcessLoopback`). Menu choice 6 changes it per run.
 - Exit codes: 0 success; 1 failure; 2 unknown command; 130 cancelled.
-- Recordings go to `Recording:OutputFolder` (`%USERPROFILE%\ClassScribe`), one folder per class
-  (`<yyyy-MM-dd_HH-mm-ss>`) and one per transcribed file.
+- Recordings go to `Recording:OutputFolder` (`%USERPROFILE%\ClassScribe`): a folder per recording
+  name, and files named `<name>_<yyyy-MM-dd_HH-mm-ss>Z` (UTC start) with `.wav`, `_partN.wav`,
+  `.marks.txt`, `.md` (the Markdown transcript), `.json` (ElevenLabs' answer). `RecordingFiles`
+  owns the naming; a transcript is never overwritten (`(2).md`, `(3).md`).
 - Settings are in `src/ClassScribe/appsettings.json`, read from the exe's folder; environment
   overrides such as `ElevenLabs__BaseUrl` work.
 

@@ -58,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<RecordCommand>();
         services.AddTransient<TranscribeCommand>();
         services.AddSingleton<ICommandRunner, CommandRunner>();
+        services.AddSingleton<RecordingNamePrompt>();
         services.AddTransient<MenuCommand>();
         services.AddTransient<App>();
         return services;

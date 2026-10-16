@@ -28,17 +28,18 @@ ClassScribe starts with a menu. Press the number of what you want:
 ```
   1  Record only
   2  Record and transcribe
-  3  Transcribe a recent class
+  3  Transcribe a recent recording
   4  Transcribe a file
   5  Open the recordings folder
   6  Choose what to record: a device or an app
   Q  Quit
 ```
 
-- **1 Record only** records until you press Q and keeps the recording, to transcribe later.
-- **2 Record and transcribe** records until you press Q, then sends the recording to ElevenLabs.
-- **3 Transcribe a recent class** lists the last nine classes, newest first; press a class's number.
-  A class that already has a transcript is only done again after you press Y, because it is billed again.
+- **1 Record only** asks for a name for the recording, such as `Kalam`, then records until you press
+  Q and keeps the recording, to transcribe later. Esc at the name goes back to the menu.
+- **2 Record and transcribe** does the same, then sends the recording to ElevenLabs.
+- **3 Transcribe a recent recording** lists the last nine recordings, newest first; press one's number.
+  A recording that already has a transcript is only done again after you press Y, because it is billed again.
 - **4 Transcribe a file** asks for a file: drag it into the window, or type its path, and press Enter.
 - **5 Open the recordings folder** shows it in Explorer.
 - **6 Choose what to record** lists the output devices and the apps with sound; see below.
@@ -74,31 +75,38 @@ These keys work in the ClassScribe window:
 | --- | --- |
 | Q, or Ctrl+C | Stops. With choice 2 the transcript follows; a second Ctrl+C cancels the upload. |
 | P | Pauses, for a break. Nothing is recorded until you press P again. |
-| M | Marks the moment. The mark shows in the transcript at that point, as `*** Mark 1 ***`. |
+| M | Marks the moment. The mark shows in the transcript at that point, as a heading `## [00:42:13] Mark 1`. |
 
-Marks are kept in `marks.txt` in the class folder, one per line. You can type a label after a mark's
-time, such as `00:42:13.250 Definition of jawhar`; the next transcript of that class then shows
-`*** Mark 1: Definition of jawhar ***`.
+Marks are kept in the recording's `.marks.txt` file, one per line. You can type a label after a
+mark's time, such as `00:42:13.250 Definition of jawhar`; the next transcript of that recording then
+shows `## [00:42:13] Mark 1: Definition of jawhar`.
 
 ### Where things go
 
 Recordings and transcripts go to the folder set as `Recording:OutputFolder` in `appsettings.json`,
-which is `%USERPROFILE%\ClassScribe` unless you change it:
+which is `%USERPROFILE%\ClassScribe` unless you change it. Each name gets a folder, and every file of
+a recording carries the name and the time the recording started, in UTC (the `Z`):
 
 ```
 %USERPROFILE%\ClassScribe\
-    2026-10-14_19-30-00\        one folder per class
-        recording-001.wav       the audio as captured (kept)
-        marks.txt               the marks set with M, if any
-        transcript.txt          paragraphs with [hh:mm:ss] positions
-        transcript.json         the full ElevenLabs response, with word timings
-    Lecture 5\                  one folder per transcribed file; the file itself stays where it is
-        transcript.txt
-        transcript.json
+    Kalam\                                      one folder per name, shared by its recordings
+        Kalam_2026-10-14_19-30-00Z.wav          the audio as captured (kept)
+        Kalam_2026-10-14_19-30-00Z_part2.wav    only after a device switch, a failure or 1500 MB
+        Kalam_2026-10-14_19-30-00Z.marks.txt    the marks set with M, if any
+        Kalam_2026-10-14_19-30-00Z.md           the transcript
+        Kalam_2026-10-14_19-30-00Z.json         the full ElevenLabs response, with word timings
+    Lecture 5\                                  a transcribed file; the file itself stays where it is
+        Lecture 5_2026-10-15_09-00-00Z.md
+        Lecture 5_2026-10-15_09-00-00Z.json
 ```
 
-When a transcript is ready, its folder and the transcript open by themselves. Transcribing a class
-again replaces its transcript; transcribing a file again gives it a new folder (`Lecture 5_2`).
+The transcript is a Markdown file: the name as its title, when it was recorded, then paragraphs
+that start with their `[hh:mm:ss]` position, and the marks as headings, so they show in the outline
+of any Markdown viewer (VS Code, Obsidian). It is plain text underneath, so Notepad opens it too.
+ElevenLabs itself answers with JSON (the text and every word's timing); that is kept as the `.json`.
+
+When a transcript is ready, its folder and the transcript open by themselves. A transcript is never
+overwritten: transcribing a recording again adds `Kalam_2026-10-14_19-30-00Z (2).md`.
 
 The positions are positions in the recording. While nothing at all is playing (a paused video,
 for instance) Windows usually hands over no audio, so a pause can be shorter in the recording
@@ -107,18 +115,21 @@ than it was in the room. Time paused with P is left out too.
 ### Without the menu
 
 ```powershell
-dotnet run --project src/ClassScribe -- record           # record, then transcribe
-dotnet run --project src/ClassScribe -- record-only      # record only
-dotnet run --project src/ClassScribe -- transcribe "C:\path\to\class folder or file"
+dotnet run --project src/ClassScribe -- record "Kalam"          # record, then transcribe
+dotnet run --project src/ClassScribe -- record-only "Kalam"     # record only
+dotnet run --project src/ClassScribe -- transcribe "C:\path\to\recording folder or file"
 ```
+
+Without a name, `record` and `record-only` ask for one. `transcribe` on a recording's folder takes
+the recording started last in it; on one of its `.wav` files, that whole recording.
 
 ## Dry run before the first real class
 
 Take two minutes to check the whole path on your machine:
 
-1. Start ClassScribe and press 2.
+1. Start ClassScribe, press 2 and type a name, such as `Dry run`.
 2. Play any video with speech for 30 seconds.
-3. Press Q and read `transcript.txt` when it opens.
+3. Press Q and read the transcript when it opens.
 
 ## How the recording is protected
 
@@ -147,7 +158,7 @@ It ships with a starter list for an Ashʿarī kalām class in IJMES transliterat
 - lines starting with `#` are comments
 - if a term keeps coming out wrong, try a plainer spelling of it
 
-After changing the glossary you can transcribe an old class again (menu choice 3).
+After changing the glossary you can transcribe an old recording again (menu choice 3).
 That is billed as a new transcription.
 
 ## Settings
@@ -156,7 +167,7 @@ That is billed as a new transcription.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where class folders and transcripts go. Environment variables work. |
+| `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where recordings and transcripts go, one folder per name. Environment variables work. |
 | `Recording:Device` | empty | Part of the name of the output device to record, such as `Pixel Buds`. Empty means the device the class plays on. |
 | `Recording:App` | empty | The app whose sound to record, by its process name, such as `chrome`. Overrides `Recording:Device`. |
 | `Recording:SilenceWarningSeconds` | 60 | Warn after this much silence. |
@@ -197,8 +208,8 @@ or Native AOT, because NAudio reaches Windows audio through COM interop.
 | `Could not write the recording`, `Still cannot write the recording` | The disk is full or went away. Free some space; the recording continues by itself in a new file. |
 | `Storing the captured audio took ...` | The disk was too slow for a moment, and the recording has a gap there. Record to an internal drive. |
 | `ElevenLabs rejected the API key` | Check `ELEVENLABS_API_KEY` in a new terminal, and that the key may use Speech to Text. |
-| The upload fails or times out | The audio is safe. Transcribe the class again with menu choice 3. |
-| The window was closed mid-class | The audio up to that moment is in the class folder. Transcribe it with menu choice 3. |
+| The upload fails or times out | The audio is safe. Transcribe the recording again with menu choice 3. |
+| The window was closed mid-class | The audio up to that moment is in the recording's folder. Transcribe it with menu choice 3. |
 
 ## Layout
 
@@ -207,7 +218,7 @@ src/ClassScribe/
     Audio/            capture, WAV writing, resampling
     Audio/Windows/    the only Windows-specific code (WASAPI loopback through NAudio)
     Transcription/    ElevenLabs client (Refit), glossary, transcript layout
-    Storage/          class folders and marks
+    Storage/          recording folders, file names and marks
     Commands/         the menu, record and transcribe
 tests/ClassScribe.Tests/    NUnit and Moq
 ```

@@ -48,7 +48,7 @@ public static class DesktopExtensions
     /// <summary>Opens the transcript's folder and then the transcript itself, each when its setting is on.</summary>
     public static void ShowTranscript(this IDesktop desktop, RecordingOptions settings, TranscriptFiles files)
     {
-        if (settings.OpenFolderWhenDone) desktop.OpenFolder(Path.GetDirectoryName(files.TextPath)!);
-        if (settings.OpenTranscriptWhenDone) desktop.OpenFile(files.TextPath);
+        if (settings.OpenFolderWhenDone) desktop.OpenFolder(Path.GetDirectoryName(files.TranscriptPath)!);
+        if (settings.OpenTranscriptWhenDone) desktop.OpenFile(files.TranscriptPath);
     }
 }

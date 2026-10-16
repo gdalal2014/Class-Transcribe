@@ -1,4 +1,5 @@
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -55,6 +56,7 @@ public sealed class RecordingSession(
     private WavSegmentWriter? _writer;
     private RecordingResult? _result;
     private byte[] _convertBuffer = [];
+    private RecordingFiles? _files;
     private string _folder = "";
     private string _deviceName = "";
     private TimeSpan _closedDuration;
@@ -74,8 +76,8 @@ public sealed class RecordingSession(
 
     private TimeSpan FlushInterval => TimeSpan.FromSeconds(Math.Max(1, _options.FlushSeconds));
 
-    /// <summary>Starts capturing the output device to record into <paramref name="folder"/>.</summary>
-    public void Start(string folder)
+    /// <summary>Starts capturing into the segment files of <paramref name="files"/>.</summary>
+    public void Start(RecordingFiles files)
     {
         _lifecycle.Wait();
         try
@@ -84,8 +86,9 @@ public sealed class RecordingSession(
                 throw new InvalidOperationException("This recording session has already been started.");
 
             _started = true;
-            _folder = folder;
-            Directory.CreateDirectory(folder);
+            _files = files;
+            _folder = files.Folder;
+            Directory.CreateDirectory(files.Folder);
             _lastSound = time.GetUtcNow();
             provider.DevicesChanged += OnDevicesChanged;
             try
@@ -496,7 +499,7 @@ public sealed class RecordingSession(
         // The next number is normally free. A file that is already there is never overwritten, so its number is skipped.
         var number = _segments.Count + 1;
         string path;
-        while (File.Exists(path = Path.Combine(_folder, $"recording-{number:000}.wav"))) number++;
+        while (File.Exists(path = _files!.Segment(number))) number++;
 
         var writer = new WavSegmentWriter(path, sampleRate);
         _writer = writer;

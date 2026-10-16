@@ -26,15 +26,15 @@ public sealed class RecordCommand(
     TimeProvider time,
     ILogger<RecordCommand> logger)
 {
-    /// <summary>Runs the whole class: record, stop and, when <paramref name="transcribe"/> is true, transcribe. Returns the process exit code.</summary>
-    public async Task<int> RunAsync(bool transcribe)
+    /// <summary>Runs the whole class under <paramref name="name"/>: record, stop and, when <paramref name="transcribe"/> is true, transcribe. Returns the process exit code.</summary>
+    public async Task<int> RunAsync(string name, bool transcribe)
     {
-        var folder = folders.CreateForClass();
+        var files = folders.CreateRecording(name);
         var hasKey = !string.IsNullOrWhiteSpace(elevenLabs.Value.ApiKey);
         if (transcribe && !hasKey)
             logger.LogWarning("No ElevenLabs API key found in {Variable}. The class will still be recorded, and you can transcribe it later", ElevenLabsOptions.ApiKeyVariable);
 
-        session.Start(folder);
+        session.Start(files);
 
         // Closing the window (SIGHUP), shutting Windows down (SIGTERM) or a crash anywhere in the process
         // ends it within seconds, so the header is written right away. The audio captured up to that
@@ -47,11 +47,11 @@ public sealed class RecordCommand(
         RecordingResult result;
         try
         {
-            logger.LogInformation("Recording to {Folder}", folder);
+            logger.LogInformation("Recording \"{Name}\" to {Folder}", files.Name, files.Folder);
             logger.LogInformation(transcribe
                 ? "Press Q (or Ctrl+C) to stop and transcribe, P to pause or resume, M to mark a moment. If the window is closed instead, the audio is kept"
                 : "Press Q (or Ctrl+C) to stop, P to pause or resume, M to mark a moment. If the window is closed instead, the audio is kept");
-            await WaitForStopAsync(folder);
+            await WaitForStopAsync(files);
         }
         finally
         {
@@ -68,27 +68,27 @@ public sealed class RecordCommand(
         logger.LogInformation("Recorded {Duration} of audio", result.Duration.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture));
         if (!transcribe)
         {
-            logger.LogInformation("The recording is in {Folder}. To transcribe it later, choose 3 in the menu, or run: ClassScribe transcribe \"{SameFolder}\"", folder, folder);
-            if (recording.Value.OpenFolderWhenDone) desktop.OpenFolder(folder);
+            logger.LogInformation("The recording is in {Folder}. To transcribe it later, choose 3 in the menu, or run: ClassScribe transcribe \"{Segment}\"", files.Folder, files.Segment(1));
+            if (recording.Value.OpenFolderWhenDone) desktop.OpenFolder(files.Folder);
             return 0;
         }
 
         if (!hasKey)
         {
-            logger.LogWarning("Set {Variable}, then run: ClassScribe transcribe \"{Folder}\"", ElevenLabsOptions.ApiKeyVariable, folder);
+            logger.LogWarning("Set {Variable}, then run: ClassScribe transcribe \"{Segment}\"", ElevenLabsOptions.ApiKeyVariable, files.Segment(1));
             return 1;
         }
 
         try
         {
-            var files = await workflow.TranscribeSegmentsAsync(result.SegmentPaths, folder, signals.Cancellation);
-            logger.LogInformation("Transcript saved to {Path}", files.TextPath);
-            desktop.ShowTranscript(recording.Value, files);
+            var saved = await workflow.TranscribeRecordingAsync(files, result.SegmentPaths, signals.Cancellation);
+            logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
+            desktop.ShowTranscript(recording.Value, saved);
             return 0;
         }
         catch (Exception)
         {
-            logger.LogWarning("The audio is safe in {Folder}. To try the transcript again, run: ClassScribe transcribe \"{SameFolder}\"", folder, folder);
+            logger.LogWarning("The audio is safe in {Folder}. To try the transcript again, choose 3 in the menu, or run: ClassScribe transcribe \"{Segment}\"", files.Folder, files.Segment(1));
             throw;
         }
     }
@@ -110,9 +110,9 @@ public sealed class RecordCommand(
 
     /// <summary>
     /// Waits for the stop signal. Meanwhile it acts on the recording keys, logs progress, and warns when
-    /// nothing audible is arriving, unless the recording is paused.
+    /// nothing audible is arriving, unless the recording is paused or nothing can be recorded yet.
     /// </summary>
-    private async Task WaitForStopAsync(string folder)
+    private async Task WaitForStopAsync(RecordingFiles files)
     {
         var statusEvery = TimeSpan.FromSeconds(Math.Max(1, recording.Value.StatusIntervalSeconds));
         var silenceAfter = TimeSpan.FromSeconds(Math.Max(1, recording.Value.SilenceWarningSeconds));
@@ -136,7 +136,7 @@ public sealed class RecordCommand(
                 {
                     var key = await nextKey;
                     nextKey = null;
-                    if (key is { } pressed) HandleKey(pressed, folder);
+                    if (key is { } pressed) HandleKey(pressed, files);
                 }
 
                 if (signals.StopRequested.IsCompleted) break;
@@ -171,7 +171,7 @@ public sealed class RecordCommand(
     }
 
     /// <summary>Acts on a key pressed while recording: Q stops, P pauses or resumes, M marks the moment. Other keys do nothing.</summary>
-    private void HandleKey(ConsoleKeyInfo key, string folder)
+    private void HandleKey(ConsoleKeyInfo key, RecordingFiles files)
     {
         switch (key.Key)
         {
@@ -187,19 +187,19 @@ public sealed class RecordCommand(
                 logger.LogInformation("Paused. Nothing is recorded until you press P again");
                 break;
             case ConsoleKey.M:
-                Mark(folder);
+                Mark(files);
                 break;
         }
     }
 
-    /// <summary>Writes the current position in the recording to marks.txt, so it shows in the transcript.</summary>
-    private void Mark(string folder)
+    /// <summary>Writes the current position in the recording to its marks file, so it shows in the transcript.</summary>
+    private void Mark(RecordingFiles files)
     {
         var position = session.GetStatus().Captured;
         var shown = position.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
         try
         {
-            var number = marks.Add(folder, position);
+            var number = marks.Add(files, position);
             logger.LogInformation("Mark {Number} at {Position}", number, shown);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

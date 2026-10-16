@@ -1,8 +1,9 @@
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace ClassScribe.Commands;
 
-/// <summary>The keyboard and screen of the console window, for the menu and the keys used while recording.</summary>
+/// <summary>The keyboard and screen of the console window, for the menu, its prompts and the keys used while recording.</summary>
 public interface IConsoleUi
 {
     /// <summary>True when a person can type into this console: its input is not redirected.</summary>
@@ -15,8 +16,15 @@ public interface IConsoleUi
     /// </summary>
     Task<ConsoleKeyInfo?> ReadKeyAsync(CancellationToken cancellationToken);
 
-    /// <summary>Reads a line of text, such as a path dragged into the window. Null when there is none to read.</summary>
-    string? ReadLine();
+    /// <summary>
+    /// Reads a line of text, such as a name or a path dragged into the window, showing it as it is
+    /// typed. Returns null when Esc or Ctrl+C is pressed instead, when the read is cancelled, or when
+    /// nobody can type.
+    /// </summary>
+    Task<string?> ReadLineAsync(CancellationToken cancellationToken);
+
+    /// <summary>Shows text without ending the line, such as a prompt.</summary>
+    void Write(string text);
 
     /// <summary>Shows a line of text, such as a line of the menu.</summary>
     void WriteLine(string text = "");
@@ -63,7 +71,46 @@ public sealed class ConsoleUi : IConsoleUi, IDisposable
     }
 
     /// <inheritdoc />
-    public string? ReadLine() => Console.ReadLine();
+    public async Task<string?> ReadLineAsync(CancellationToken cancellationToken)
+    {
+        // Read key by key rather than with Console.ReadLine, so that Esc can mean "go back".
+        var text = new StringBuilder();
+        while (true)
+        {
+            var key = await ReadKeyAsync(cancellationToken);
+            if (key is not { } pressed || pressed.Key == ConsoleKey.Escape || (pressed.Key == ConsoleKey.C && pressed.Modifiers.HasFlag(ConsoleModifiers.Control)))
+            {
+                Console.WriteLine();
+                return null;
+            }
+
+            switch (pressed.Key)
+            {
+                case ConsoleKey.Enter:
+                    Console.WriteLine();
+                    return text.ToString();
+                case ConsoleKey.Backspace:
+                    if (text.Length > 0)
+                    {
+                        text.Length--;
+                        Console.Write("\b \b");
+                    }
+
+                    break;
+                default:
+                    if (pressed.KeyChar != '\0' && !char.IsControl(pressed.KeyChar))
+                    {
+                        text.Append(pressed.KeyChar);
+                        Console.Write(pressed.KeyChar);
+                    }
+
+                    break;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public void Write(string text) => Console.Write(text);
 
     /// <inheritdoc />
     public void WriteLine(string text = "") => Console.WriteLine(text);

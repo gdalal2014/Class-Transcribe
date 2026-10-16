@@ -1,34 +1,43 @@
-using System.Globalization;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Tests;
 
-/// <summary>Where recordings and transcripts go, and how the menu finds recorded classes.</summary>
+/// <summary>Where recordings and transcripts go, and how the menu finds recent recordings.</summary>
 [TestFixture]
 public class ClassFoldersTests
 {
-    private TempFolder _folder = null!;
+    private static readonly DateTimeOffset Now = new(2026, 10, 14, 18, 30, 0, TimeSpan.Zero);
 
-    /// <summary>Creates a temporary folder to hold the class folders.</summary>
+    private TempFolder _folder = null!;
+    private ManualTimeProvider _time = null!;
+
+    /// <summary>Creates a temporary folder to hold the recording folders, and a clock moved by hand.</summary>
     [SetUp]
-    public void SetUp() => _folder = new TempFolder();
+    public void SetUp()
+    {
+        _folder = new TempFolder();
+        _time = new ManualTimeProvider(Now);
+    }
 
     /// <summary>Deletes the temporary folder.</summary>
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
     /// <summary>Creates the folders under test, rooted in the temporary folder unless another root is given.</summary>
-    private ClassFolders Folders(string? outputFolder = null, TimeProvider? time = null) =>
-        new(Options.Create(new RecordingOptions { OutputFolder = outputFolder ?? _folder.Path }), time ?? TimeProvider.System);
+    private ClassFolders Folders(string? outputFolder = null) =>
+        new(Options.Create(new RecordingOptions { OutputFolder = outputFolder ?? _folder.Path }), _time);
 
-    /// <summary>Writes a recording segment of the given length, last written at the given time.</summary>
-    private static void WriteSegment(string path, double seconds, DateTime writtenUtc)
+    /// <summary>Writes a recording of the given length into its folder, last written at the given time.</summary>
+    private RecordingFiles WriteRecording(string name, DateTimeOffset started, double seconds = 0.1, bool withTranscript = false)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        TestAudio.WriteWav(path, 16000, new short[(int)(16000 * seconds)]);
-        File.SetLastWriteTimeUtc(path, writtenUtc);
+        var files = RecordingFiles.ForNew(_folder.File(name), name, started);
+        Directory.CreateDirectory(files.Folder);
+        TestAudio.WriteWav(files.Segment(1), 16000, new short[(int)(16000 * seconds)]);
+        File.SetLastWriteTimeUtc(files.Segment(1), started.UtcDateTime);
+        if (withTranscript) File.WriteAllText(files.Transcript(), "# Kalam");
+        return files;
     }
 
     /// <summary>An empty setting keeps the old default, a ClassScribe folder in the user profile.</summary>
@@ -55,82 +64,100 @@ public class ClassFoldersTests
         }
     }
 
-    /// <summary>A class folder is named after the local date and time, and an existing one is never reused.</summary>
-    [Test, SetCulture("ar-SA")]   // a region whose own calendar would give a Hijri year
-    public void A_class_folder_is_named_after_the_time_and_never_reused()
-    {
-        var time = new ManualTimeProvider(new DateTimeOffset(2026, 10, 14, 18, 30, 0, TimeSpan.Zero));
-        var folders = Folders(time: time);
-        var name = time.GetLocalNow().ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
-
-        var first = folders.CreateForClass();
-        var second = folders.CreateForClass();
-
-        Assert.That(first, Is.EqualTo(Path.Combine(_folder.Path, name)));
-        Assert.That(second, Is.EqualTo(Path.Combine(_folder.Path, name + "_2")));
-        Assert.That(Directory.Exists(first) && Directory.Exists(second), Is.True);
-    }
-
-    /// <summary>A file's transcript gets a folder named after the file, and an existing one is never reused.</summary>
+    /// <summary>A recording's folder is its name; its files carry the name and the UTC start time. The folder is shared by later recordings of the same name.</summary>
     [Test]
-    public void A_file_folder_is_named_after_the_file_and_never_reused()
+    public void A_recording_gets_its_name_as_folder_and_its_start_time_in_its_files()
     {
         var folders = Folders();
 
-        var first = folders.CreateForFile(@"D:\Downloads\Lecture 5.mp4");
-        var second = folders.CreateForFile(@"E:\Other\Lecture 5.mp3");
+        var first = folders.CreateRecording("Kalam");
+        TestAudio.WriteWav(first.Segment(1), 16000, [1]);
+        var second = folders.CreateRecording("Kalam");
 
-        Assert.That(first, Is.EqualTo(_folder.File("Lecture 5")));
-        Assert.That(second, Is.EqualTo(_folder.File("Lecture 5_2")));
+        Assert.That(first.Folder, Is.EqualTo(_folder.File("Kalam")));
+        Assert.That(Directory.Exists(first.Folder), Is.True);
+        Assert.That(first.BaseName, Is.EqualTo("Kalam_2026-10-14_18-30-00Z"));
+        Assert.That(second.Folder, Is.EqualTo(first.Folder), "recordings of one class share its folder");
+        Assert.That(second.BaseName, Is.EqualTo("Kalam_2026-10-14_18-30-01Z"), "a recording started within the same second gets the next one, so nothing is overwritten");
     }
 
-    /// <summary>Only the recorder's own segment files count, in the order they were recorded.</summary>
-    [Test]
-    public void Segments_are_found_in_recording_order()
+    /// <summary>The start time is UTC whatever the machine's time zone and calendar.</summary>
+    [Test, SetCulture("ar-SA")]
+    public void The_start_time_is_utc_under_any_regional_settings()
     {
-        foreach (var name in new[] { "recording-010.wav", "recording-002.wav", "recording-001.wav", "recording-001.upload.wav", "upload.wav", "notes.txt" })
-            File.WriteAllBytes(_folder.File(name), [0]);
+        var files = Folders().CreateRecording("Kalam");
 
-        var segments = ClassFolders.FindSegments(_folder.Path);
-
-        Assert.That(segments, Is.EqualTo(new[] { _folder.File("recording-001.wav"), _folder.File("recording-002.wav"), _folder.File("recording-010.wav") }));
+        Assert.That(files.BaseName, Is.EqualTo("Kalam_2026-10-14_18-30-00Z"));
+        Assert.That(files.StartedUtc, Is.EqualTo(Now));
     }
 
-    /// <summary>The menu's list: folders with a recording, newest first, with their length and whether a transcript exists.</summary>
+    /// <summary>A name is cleaned for use as a folder and file name; one with nothing left is empty.</summary>
     [Test]
-    public void Recent_classes_are_listed_newest_first()
+    public void A_recording_name_is_made_safe_for_a_file_name()
     {
-        var older = _folder.File("2026-10-11_14-05-00");
-        var newer = _folder.File("2026-10-14_19-30-00");
-        WriteSegment(Path.Combine(older, "recording-001.wav"), 2.0, new DateTime(2026, 10, 11, 16, 0, 0, DateTimeKind.Utc));
-        File.WriteAllText(Path.Combine(older, "transcript.txt"), "[00:00:00] Hello.");
-        WriteSegment(Path.Combine(newer, "recording-001.wav"), 1.0, new DateTime(2026, 10, 14, 20, 0, 0, DateTimeKind.Utc));
-        WriteSegment(Path.Combine(newer, "recording-002.wav"), 0.5, new DateTime(2026, 10, 14, 21, 0, 0, DateTimeKind.Utc));
+        Assert.That(ClassFolders.SafeName("  Kalam: lesson  <12>?  "), Is.EqualTo("Kalam lesson 12"));
+        Assert.That(ClassFolders.SafeName("Uṣūl al-dīn, part 1"), Is.EqualTo("Uṣūl al-dīn, part 1"), "letters outside ASCII and commas are fine");
+        Assert.That(ClassFolders.SafeName(" ... "), Is.Empty, "a name of only dots would not be a valid folder");
+        Assert.That(ClassFolders.SafeName(""), Is.Empty);
+    }
+
+    /// <summary>A transcribed file gets a folder named after the file, and files stamped with the transcription time.</summary>
+    [Test]
+    public void A_file_gets_a_folder_named_after_it()
+    {
+        var files = Folders().CreateForFile(@"D:\Downloads\Lecture 5.mp4");
+
+        Assert.That(files.Folder, Is.EqualTo(_folder.File("Lecture 5")));
+        Assert.That(files.BaseName, Is.EqualTo("Lecture 5_2026-10-14_18-30-00Z"));
+        Assert.That(Directory.Exists(files.Folder), Is.True);
+    }
+
+    /// <summary>The menu's list: every recording under the root, newest first, with its length and whether a transcript exists.</summary>
+    [Test]
+    public void Recent_recordings_are_listed_newest_first()
+    {
+        var older = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 11, 14, 5, 0, TimeSpan.Zero), seconds: 2.0, withTranscript: true);
+        var newer = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), seconds: 1.0);
+        TestAudio.WriteWav(newer.Segment(2), 16000, new short[8000]);
+        File.SetLastWriteTimeUtc(newer.Segment(2), new DateTime(2026, 10, 14, 21, 0, 0, DateTimeKind.Utc));
+        var other = WriteRecording("Fiqh", new DateTimeOffset(2026, 10, 12, 10, 0, 0, TimeSpan.Zero));
         Directory.CreateDirectory(_folder.File("Lecture 5"));   // a transcribed file: nothing recorded in it
 
-        var classes = Folders().ListRecent(9);
+        var recordings = Folders().ListRecent(9);
 
-        Assert.That(classes.Select(c => c.Name), Is.EqualTo(new[] { "2026-10-14_19-30-00", "2026-10-11_14-05-00" }));
-        Assert.That(classes[0].Length.TotalSeconds, Is.EqualTo(1.5).Within(0.001));
-        Assert.That(classes[0].HasTranscript, Is.False);
-        Assert.That(classes[1].Length.TotalSeconds, Is.EqualTo(2.0).Within(0.001));
-        Assert.That(classes[1].HasTranscript, Is.True);
+        Assert.That(recordings.Select(r => r.Files), Is.EqualTo(new[] { newer, other, older }));
+        Assert.That(recordings[0].Length.TotalSeconds, Is.EqualTo(1.5).Within(0.001));
+        Assert.That(recordings[0].HasTranscript, Is.False);
+        Assert.That(recordings[2].Length.TotalSeconds, Is.EqualTo(2.0).Within(0.001));
+        Assert.That(recordings[2].HasTranscript, Is.True);
     }
 
     /// <summary>The list stops at the number asked for, keeping the newest.</summary>
     [Test]
-    public void At_most_the_requested_number_of_classes_is_listed()
+    public void At_most_the_requested_number_of_recordings_is_listed()
     {
         for (var day = 1; day <= 3; day++)
-            WriteSegment(_folder.File($"2026-10-0{day}_10-00-00/recording-001.wav"), 0.1, new DateTime(2026, 10, day, 12, 0, 0, DateTimeKind.Utc));
+            WriteRecording("Kalam", new DateTimeOffset(2026, 10, day, 10, 0, 0, TimeSpan.Zero));
 
-        var classes = Folders().ListRecent(2);
+        var recordings = Folders().ListRecent(2);
 
-        Assert.That(classes.Select(c => c.Name), Is.EqualTo(new[] { "2026-10-03_10-00-00", "2026-10-02_10-00-00" }));
+        Assert.That(recordings.Select(r => r.Files.BaseName), Is.EqualTo(new[] { "Kalam_2026-10-03_10-00-00Z", "Kalam_2026-10-02_10-00-00Z" }));
     }
 
-    /// <summary>A recordings folder that does not exist yet simply has no classes.</summary>
+    /// <summary>A recordings folder that does not exist yet simply has no recordings.</summary>
     [Test]
-    public void A_missing_recordings_folder_has_no_classes() =>
+    public void A_missing_recordings_folder_has_no_recordings() =>
         Assert.That(Folders(outputFolder: _folder.File("not-there")).ListRecent(9), Is.Empty);
+
+    /// <summary>Given a folder, the recording started last in it is the one meant.</summary>
+    [Test]
+    public void The_newest_recording_in_a_folder_is_found()
+    {
+        WriteRecording("Kalam", new DateTimeOffset(2026, 10, 11, 14, 5, 0, TimeSpan.Zero));
+        var newest = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        File.WriteAllBytes(_folder.File("Kalam/notes.wav"), [0]);
+
+        Assert.That(ClassFolders.FindNewest(_folder.File("Kalam")), Is.EqualTo(newest));
+        Assert.That(ClassFolders.FindNewest(_folder.Path), Is.Null, "the root holds folders, not recordings");
+    }
 }

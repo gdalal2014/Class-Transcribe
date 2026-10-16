@@ -400,7 +400,7 @@ public sealed class FakeConsoleUi : IConsoleUi
         }
     }
 
-    /// <summary>Queues a line, as typed or dragged in and followed by Enter.</summary>
+    /// <summary>Queues a line, as typed or dragged in and followed by Enter. Null stands for Esc.</summary>
     public void TypeLine(string? line)
     {
         lock (_gate) _lines.Enqueue(line);
@@ -430,10 +430,13 @@ public sealed class FakeConsoleUi : IConsoleUi
     }
 
     /// <inheritdoc />
-    public string? ReadLine()
+    public Task<string?> ReadLineAsync(CancellationToken cancellationToken)
     {
-        lock (_gate) return _lines.TryDequeue(out var line) ? line : null;
+        lock (_gate) return Task.FromResult(_lines.TryDequeue(out var line) ? line : null);
     }
+
+    /// <inheritdoc />
+    public void Write(string text) => _output.Enqueue(text);
 
     /// <inheritdoc />
     public void WriteLine(string text = "") => _output.Enqueue(text);

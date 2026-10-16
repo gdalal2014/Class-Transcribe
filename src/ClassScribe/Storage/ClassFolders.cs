@@ -1,29 +1,24 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Storage;
 
-/// <summary>A recorded class, as the menu lists it.</summary>
-/// <param name="Folder">Full path of the class folder.</param>
-/// <param name="Name">Name of the class folder, normally the date and time the recording started.</param>
-/// <param name="LastRecordedUtc">When audio was last written to the class.</param>
+/// <summary>A recording, as the menu lists it.</summary>
+/// <param name="Files">The recording's files.</param>
+/// <param name="LastRecordedUtc">When audio was last written to it.</param>
 /// <param name="Length">Length of the recording.</param>
-/// <param name="HasTranscript">True when the class folder already holds a transcript.</param>
-public sealed record RecordedClass(string Folder, string Name, DateTime LastRecordedUtc, TimeSpan Length, bool HasTranscript);
+/// <param name="HasTranscript">True when it has been transcribed at least once.</param>
+public sealed record RecordedClass(RecordingFiles Files, DateTime LastRecordedUtc, TimeSpan Length, bool HasTranscript);
 
 /// <summary>
-/// Where recordings and transcripts go: one folder per class, and one per transcribed file, all under
-/// Recording:OutputFolder. A folder is never reused, so nothing in an existing one is overwritten.
+/// Where recordings and transcripts go: a folder per name under Recording:OutputFolder, holding the
+/// files of every recording of that name, each stamped with its UTC start time (see
+/// <see cref="RecordingFiles"/>). Nothing is ever overwritten.
 /// </summary>
-public sealed partial class ClassFolders(IOptions<RecordingOptions> options, TimeProvider time)
+public sealed class ClassFolders(IOptions<RecordingOptions> options, TimeProvider time)
 {
-    /// <summary>File name of the transcript in a class folder.</summary>
-    public const string TranscriptFileName = "transcript.txt";
-
-    /// <summary>The folder that holds every class folder, with environment variables such as %USERPROFILE% expanded.</summary>
+    /// <summary>The folder that holds every recording folder, with environment variables such as %USERPROFILE% expanded.</summary>
     public string Root
     {
         get
@@ -35,65 +30,82 @@ public sealed partial class ClassFolders(IOptions<RecordingOptions> options, Tim
         }
     }
 
-    /// <summary>Creates the folder for a class recorded now, named after the local date and time.</summary>
-    public string CreateForClass() =>
-        // Invariant, so the name is a Gregorian date that sorts by time whatever calendar the machine is set to.
-        CreateNew(time.GetLocalNow().ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture));
+    /// <summary>
+    /// The files for a recording named <paramref name="name"/> starting now: a folder of that name under
+    /// the root, created if needed and shared with earlier recordings of the name, and files stamped
+    /// with the UTC time. A recording started within the same second as another takes the next second.
+    /// </summary>
+    public RecordingFiles CreateRecording(string name)
+    {
+        var safe = SafeName(name);
+        if (safe.Length == 0) throw new ArgumentException("A name is needed.", nameof(name));
 
-    /// <summary>Creates the folder for the transcript of a file, named after the file.</summary>
-    public string CreateForFile(string sourcePath) => CreateNew(Path.GetFileNameWithoutExtension(sourcePath));
+        var folder = Path.Combine(Root, safe);
+        Directory.CreateDirectory(folder);
+        var started = time.GetUtcNow();
+        var files = RecordingFiles.ForNew(folder, safe, started);
+        while (File.Exists(files.Segment(1)))
+            files = RecordingFiles.ForNew(folder, safe, started = started.AddSeconds(1));
 
-    /// <summary>Lists the class folders that hold a recording, the most recently recorded first.</summary>
+        return files;
+    }
+
+    /// <summary>The files for the transcript of <paramref name="sourcePath"/>: a folder named after the file, and files stamped with the time now.</summary>
+    public RecordingFiles CreateForFile(string sourcePath) => CreateRecording(Path.GetFileNameWithoutExtension(sourcePath));
+
+    /// <summary>Lists the recordings under the root, the most recently recorded first.</summary>
     public IReadOnlyList<RecordedClass> ListRecent(int count)
     {
         var root = Root;
         if (!Directory.Exists(root)) return [];
 
         return Directory.EnumerateDirectories(root)
+            .SelectMany(FindRecordings)
             .Select(Describe)
-            .OfType<RecordedClass>()
             .OrderByDescending(recorded => recorded.LastRecordedUtc)
             .Take(count)
             .ToList();
     }
 
-    /// <summary>Lists the recorder's segment files in a folder, in the order they were recorded.</summary>
-    public static IReadOnlyList<string> FindSegments(string folder) =>
-        Directory.EnumerateFiles(folder, "recording-*.wav")
-            .Select(file => (FullPath: file, Name: SegmentName().Match(Path.GetFileName(file))))
-            .Where(file => file.Name.Success)
-            .OrderBy(file => int.Parse(file.Name.Groups["number"].Value, CultureInfo.InvariantCulture))
-            .Select(file => file.FullPath)
-            .ToList();
+    /// <summary>The recording started last in a folder, or null when the folder holds none.</summary>
+    public static RecordingFiles? FindNewest(string folder) =>
+        FindRecordings(folder)
+            .OrderByDescending(files => files.StartedUtc ?? DateTimeOffset.MinValue)
+            .ThenByDescending(files => files.BaseName, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
 
-    /// <summary>Creates a folder with the given name under <see cref="Root"/>, adding _2, _3 and so on when the name is taken.</summary>
-    private string CreateNew(string name)
+    /// <summary>
+    /// Cleans a name for use as a folder and file name: the characters Windows forbids go, runs of
+    /// spaces become one, and trailing dots go. The result is empty when nothing usable is left.
+    /// </summary>
+    public static string SafeName(string name)
     {
-        var root = Root;
-        var folder = Path.Combine(root, name);
-        for (var suffix = 2; Directory.Exists(folder); suffix++)
-            folder = Path.Combine(root, $"{name}_{suffix}");
-
-        Directory.CreateDirectory(folder);
-        return folder;
+        var invalid = Path.GetInvalidFileNameChars();
+        var kept = new string([.. name.Where(c => !invalid.Contains(c))]);
+        var tidy = string.Join(' ', kept.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return tidy.TrimEnd('.', ' ');
     }
 
-    /// <summary>Describes a class folder, or returns null when it holds no recording.</summary>
-    private static RecordedClass? Describe(string folder)
-    {
-        var segments = FindSegments(folder);
-        if (segments.Count == 0) return null;
+    /// <summary>The recordings in a folder: one per distinct base name among its segment files.</summary>
+    private static IEnumerable<RecordingFiles> FindRecordings(string folder) =>
+        Directory.EnumerateFiles(folder, "*.wav")
+            .Select(RecordingFiles.TryParse)
+            .OfType<RecordingFiles>()
+            .Distinct();
 
+    /// <summary>Describes a recording from its segment files.</summary>
+    private static RecordedClass Describe(RecordingFiles files)
+    {
         var length = TimeSpan.Zero;
         var lastRecorded = DateTime.MinValue;
-        foreach (var segment in segments)
+        foreach (var segment in files.FindSegments())
         {
             length += SegmentLength(segment);
             var written = File.GetLastWriteTimeUtc(segment);
             if (written > lastRecorded) lastRecorded = written;
         }
 
-        return new RecordedClass(folder, Path.GetFileName(folder), lastRecorded, length, File.Exists(Path.Combine(folder, TranscriptFileName)));
+        return new RecordedClass(files, lastRecorded, length, files.HasTranscript);
     }
 
     /// <summary>
@@ -109,8 +121,4 @@ public sealed partial class ClassFolders(IOptions<RecordingOptions> options, Tim
 
         return TimeSpan.FromSeconds((file.Length - WavSegmentWriter.HeaderSize) / 2.0 / sampleRate);
     }
-
-    /// <summary>The recorder's segment files, and nothing else that happens to end in .wav.</summary>
-    [GeneratedRegex(@"^recording-(?<number>[0-9]{1,9})\.wav$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex SegmentName();
 }
