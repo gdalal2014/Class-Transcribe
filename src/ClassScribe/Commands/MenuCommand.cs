@@ -4,6 +4,7 @@ using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Commands;
 
@@ -24,6 +25,7 @@ public sealed class MenuCommand(
     IConsoleUi ui,
     RunGate gate,
     SettingsFile settings,
+    IOptionsMonitor<ElevenLabsOptions> elevenLabs,
     ClassFolders folders,
     ILoopbackCaptureProvider devices,
     SourceChoice choice,
@@ -54,9 +56,9 @@ public sealed class MenuCommand(
     /// A menu without the report at the start, for the callers that do not pass one yet: it reports nothing and never
     /// finds a recording in progress (see <see cref="NoStartupReport"/>). The container uses the other constructor.
     /// </summary>
-    internal MenuCommand(ICommandRunner commands, IConsoleUi ui, RunGate gate, SettingsFile settings, ClassFolders folders, ILoopbackCaptureProvider devices,
-        SourceChoice choice, RecordingNamePrompt prompt, IDesktop desktop, TimeProvider time, ILogger<MenuCommand> logger)
-        : this(commands, new NoStartupReport(), ui, gate, settings, folders, devices, choice, prompt, desktop, time, logger)
+    internal MenuCommand(ICommandRunner commands, IConsoleUi ui, RunGate gate, SettingsFile settings, IOptionsMonitor<ElevenLabsOptions> elevenLabs, ClassFolders folders,
+        ILoopbackCaptureProvider devices, SourceChoice choice, RecordingNamePrompt prompt, IDesktop desktop, TimeProvider time, ILogger<MenuCommand> logger)
+        : this(commands, new NoStartupReport(), ui, gate, settings, elevenLabs, folders, devices, choice, prompt, desktop, time, logger)
     {
     }
 
@@ -196,19 +198,20 @@ public sealed class MenuCommand(
     }
 
     /// <summary>
-    /// Lists the choices, the settings file read, where the files go, what is recorded, the microphone included, and the
-    /// runs going on now.
+    /// Lists the choices under a header: the build (see <see cref="BuildInfo"/>), the settings file read, where the files
+    /// go, what is recorded, the microphone included, and the runs going on now.
     /// Under the file's name it points out a copy of the settings that a build has not brought up to date, and settings
     /// that could not be used when they were last read, at start or for the last choice: each problem, and that no choice
-    /// runs until the file is fixed, so the folder and the source shown below are not taken for the file's. A recordings
-    /// folder that cannot be used, such as one on a drive that is not there, is pointed out right under its own, before
-    /// anything is recorded. The report's lines about the runs now follow what is recorded, and A is offered while a
-    /// recording is in progress in the background.
+    /// runs until the file is fixed, so the folder and the source shown below are not taken for the file's. Then, when
+    /// no ElevenLabs key is set, that recording works and transcribing will not, before a class rather than at its end;
+    /// the record and transcribe commands say it again when it matters. A recordings folder that cannot be used, such as
+    /// one on a drive that is not there, is pointed out right under its own, before anything is recorded. The report's
+    /// lines about the runs now follow what is recorded, and A is offered while a recording is in progress in the background.
     /// </summary>
     private void ShowMenu()
     {
         ui.WriteLine();
-        ui.WriteLine("ClassScribe");
+        ui.WriteLine($"ClassScribe {BuildInfo.Describe()}");
         ui.WriteLine($"Settings: {settings.Path}");
         _staleCopyShown = settings.DescribeStaleCopy();
         if (_staleCopyShown is { } stale) ui.WriteLine($"WARNING  {stale}.");
@@ -217,6 +220,9 @@ public sealed class MenuCommand(
             foreach (var settingsProblem in settingsProblems) ui.WriteLine($"ERROR  {settingsProblem}");
             ui.WriteLine("ERROR  No choice runs until the file is fixed. Until then ClassScribe keeps its last usable settings, or the defaults.");
         }
+
+        if (string.IsNullOrWhiteSpace(elevenLabs.CurrentValue.ApiKey))
+            ui.WriteLine($"WARNING  ElevenLabs key: not set ({ElevenLabsOptions.ApiKeyVariable}); recording works, transcribing will not.");
 
         ui.WriteLine($"Recordings and transcripts: {folders.Root}");
         if (folders.DescribeRootProblem() is { } problem) ui.WriteLine($"WARNING  {problem}.");

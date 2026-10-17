@@ -1171,9 +1171,40 @@ public class CommandLineTreeTests
         Assert.That(help, Does.Contain("Examples:").And.Contain("ELEVENLABS_API_KEY"));
     }
 
+    /// <summary>The help of the app as a whole opens with the build, the version and the commit, before the usage.</summary>
+    [Test]
+    public async Task The_help_of_the_app_starts_with_the_build()
+    {
+        Assert.That(await RunAsync("--help"), Is.EqualTo(0));
+
+        var help = Regex.Replace(_line.Output.ToString(), @"\s+", " ");
+        var build = help.IndexOf($"ClassScribe {BuildInfo.Describe()} records the sound your computer plays during a class", StringComparison.Ordinal);
+        Assert.That(build, Is.GreaterThanOrEqualTo(0), "the first line names the build");
+        Assert.That(build, Is.LessThan(help.IndexOf("Usage:", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// --version, in any case, writes the informational version as the project stamped it (the version, a plus sign and
+    /// the commit) on one line with exit code 0. Nothing runs and nothing is asked, so it needs no keyboard either.
+    /// </summary>
+    [TestCase("--version", true)]
+    [TestCase("--Version", true)]
+    [TestCase("--version", false)]
+    public async Task Version_prints_the_informational_version(string ask, bool interactive)
+    {
+        CreateLine(interactive);
+
+        Assert.That(await RunAsync(ask), Is.EqualTo(0));
+
+        Assert.That(_line.Output.ToString(), Is.EqualTo(BuildInfo.InformationalVersion + Environment.NewLine));
+        Assert.That(_line.Mistakes, Is.Empty);
+        Assert.That(_ui.Screen, Is.Empty, "no menu, nothing asked");
+        _commands.VerifyNoOtherCalls();
+    }
+
     // ---- What the app does around a command ----
 
-    /// <summary>App opens the settings gate and prints the report at the start only for commands; help, the menu and attach need neither.</summary>
+    /// <summary>App opens the settings gate and prints the report at the start only for commands; help, the version, the menu and attach need neither.</summary>
     [Test]
     public void Each_command_line_says_what_it_needs()
     {
@@ -1181,6 +1212,7 @@ public class CommandLineTreeTests
 
         Assert.That(_line.KindOf("--help"), Is.EqualTo(CommandKind.Help));
         Assert.That(_line.KindOf("record", "--help"), Is.EqualTo(CommandKind.Help));
+        Assert.That(_line.KindOf("--version"), Is.EqualTo(CommandKind.Version));
         Assert.That(_line.KindOf(), Is.EqualTo(CommandKind.Menu));
         Assert.That(_line.KindOf("attach"), Is.EqualTo(CommandKind.Attach));
         Assert.That(_line.KindOf("attach", "--alert", "20261015-230002Z-1f3a9c07"), Is.EqualTo(CommandKind.Attach));

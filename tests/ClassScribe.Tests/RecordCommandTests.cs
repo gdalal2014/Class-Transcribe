@@ -721,7 +721,8 @@ public partial class RecordCommandTests
         Assert.That(whileRecording.State, Is.EqualTo(RunState.Recording));
         Assert.That((whileRecording.RunId, whileRecording.Home, whileRecording.Pipe, whileRecording.BaseName, whileRecording.Folder),
             Is.EqualTo((request.RunId, RunHome.InWindow, (string?)null, files.BaseName, files.Folder)));
-        Assert.That((whileRecording.ProcessId, whileRecording.Protocol, whileRecording.Request), Is.EqualTo((Environment.ProcessId, LinkProtocol.Version, request)));
+        Assert.That((whileRecording.ProcessId, whileRecording.Protocol, whileRecording.Build, whileRecording.Request),
+            Is.EqualTo((Environment.ProcessId, LinkProtocol.Version, BuildInfo.Build, request)));
         Assert.That(stateDuringUpload, Is.EqualTo(RunState.Transcribing));
 
         var finished = RunFile();

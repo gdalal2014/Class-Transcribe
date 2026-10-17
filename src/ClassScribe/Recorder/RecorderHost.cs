@@ -121,7 +121,7 @@ public sealed class RecorderHost
             return UnreadableRequestExitCode;
         }
 
-        logger.LogInformation("ClassScribe's recorder started for run {RunId}, as process {ProcessId} of build {Build}, in {Folder}", runId, Environment.ProcessId, LinkProtocol.Build, Folder.Root);
+        logger.LogInformation("ClassScribe's recorder started for run {RunId}, as process {ProcessId} of build {Build}, in {Folder}", runId, Environment.ProcessId, BuildInfo.Build, Folder.Root);
         var journal = new RunJournal(Folder, Liveness(bootstrap), Time, bootstrap.CreateLogger<RunJournal>());
 
         // 1. The request, taken once.
@@ -367,7 +367,7 @@ public sealed class RecorderHost
         var now = Time.GetUtcNow();
         using var process = Process.GetCurrentProcess();
         return new RunRecord(RunRecord.CurrentVersion, runId, process.Id, new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero),
-            Environment.ProcessPath ?? AppContext.BaseDirectory, LinkProtocol.Build, LinkProtocol.Version, pipe, RunHome.Separate, request, BaseName: null, Folder: null,
+            Environment.ProcessPath ?? AppContext.BaseDirectory, BuildInfo.Build, LinkProtocol.Version, pipe, RunHome.Separate, request, BaseName: null, Folder: null,
             RunState.Starting, now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
     }
 

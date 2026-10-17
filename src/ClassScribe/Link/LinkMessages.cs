@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
 using System.Text.Json;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
@@ -31,10 +30,11 @@ public static class LinkProtocol
 
     /// <summary>
     /// Which build of ClassScribe this is, as a hello and a welcome name it: the version the project gives, with the commit
-    /// it was built from when the build knew it, such as 1.0.0+27697afd. A window that finds a recorder of another build
-    /// with the same protocol shows the run all the same, and may say so.
+    /// it was built from when the build knew it, such as 0.4.0 (f5f2fb0), the same string the run files carry (see
+    /// <see cref="BuildInfo.Build"/>). A window that finds a recorder of another build with the same protocol shows the run
+    /// all the same, and may say so.
     /// </summary>
-    public static string Build { get; } = BuildOf(typeof(LinkProtocol).Assembly);
+    public static string Build => BuildInfo.Build;
 
     /// <summary>
     /// The name of the pipe of run <paramref name="runId"/>, such as ClassScribe-20261015-230002Z-1f3a9c07. Throws an
@@ -54,12 +54,6 @@ public static class LinkProtocol
     /// </summary>
     public static bool IsPipeName([NotNullWhen(true)] string? name) =>
         name is not null && name.StartsWith(PipePrefix, StringComparison.Ordinal) && RunIds.IsWellFormed(name[PipePrefix.Length..]);
-
-    /// <summary>The build of <paramref name="assembly"/>: its informational version, else its version, else "unknown".</summary>
-    internal static string BuildOf(Assembly assembly) =>
-        assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? assembly.GetName().Version?.ToString()
-        ?? "unknown";
 }
 
 /// <summary>The type of each message, as the "type" of its line names it.</summary>

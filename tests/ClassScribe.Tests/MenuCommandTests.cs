@@ -34,13 +34,18 @@ public class MenuCommandTests
     private Mock<ICommandRunner> _commands = null!;
     private Mock<IStartupReport> _report = null!;
     private Mock<IDesktop> _desktop = null!;
+    private TestOptions<ElevenLabsOptions> _elevenLabs = null!;
     private RecordingLogger<MenuCommand> _log = null!;
     private RecordingLogger<ClassFolders> _foldersLog = null!;
     private RecordingLogger<RunGate> _gateLog = null!;
 
+    /// <summary>The first line of the menu's header: the build, as <see cref="BuildInfo"/> describes it.</summary>
+    private static string HeaderLine => $"ClassScribe {BuildInfo.Describe()}";
+
     /// <summary>
     /// Creates a temporary recordings folder, settings that can be used, the scripted keyboard, the simulated devices, the
-    /// mocks and the logs to inspect. The report at the start has nothing to report, and no recording is in progress.
+    /// mocks and the logs to inspect. The report at the start has nothing to report, no recording is in progress, and an
+    /// ElevenLabs key is set, as it is on the laptop.
     /// </summary>
     [SetUp]
     public void SetUp()
@@ -48,6 +53,7 @@ public class MenuCommandTests
         _folder = new TempFolder();
         _settingsFolder = new TempFolder();
         _settings = new TestSettings(_settingsFolder.Path);
+        _elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = "test-key" });
         _ui = new FakeConsoleUi();
         _devices = new FakeCaptureProvider();
         _choice = new SourceChoice(TestOptions.Create(new RecordingOptions()));
@@ -82,7 +88,7 @@ public class MenuCommandTests
     /// </summary>
     private Task<int> RunMenuAsync(string? recordings = null, ILoopbackCaptureProvider? devices = null, TimeProvider? time = null)
     {
-        var menu = new MenuCommand(_commands.Object, _report.Object, _ui, _settings.Gate(_gateLog), _settings.File, Folders(recordings), devices ?? _devices, _choice,
+        var menu = new MenuCommand(_commands.Object, _report.Object, _ui, _settings.Gate(_gateLog), _settings.File, _elevenLabs, Folders(recordings), devices ?? _devices, _choice,
             new RecordingNamePrompt(_ui), _desktop.Object, time ?? TimeProvider.System, _log);
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
@@ -212,7 +218,7 @@ public class MenuCommandTests
 
         _report.Verify(r => r.ShowAsync(true), Times.Once);
         _report.Verify(r => r.ShowAsync(false), Times.Never);
-        Assert.That(Array.IndexOf(Lines(), "(the report)"), Is.LessThan(Array.IndexOf(Lines(), "ClassScribe")), "the report comes before the menu");
+        Assert.That(Array.IndexOf(Lines(), "(the report)"), Is.LessThan(Array.IndexOf(Lines(), HeaderLine)), "the report comes before the menu");
         _commands.VerifyNoOtherCalls();
     }
 
@@ -264,7 +270,7 @@ public class MenuCommandTests
         _commands.VerifyNoOtherCalls();
         var lines = Lines();
         Assert.That(Array.IndexOf(lines, "(the report)"), Is.LessThan(Array.IndexOf(lines, "(the recording)")), "the report comes first");
-        Assert.That(Array.IndexOf(lines, "(the recording)"), Is.LessThan(Array.IndexOf(lines, "ClassScribe")), "the recording is shown before the menu");
+        Assert.That(Array.IndexOf(lines, "(the recording)"), Is.LessThan(Array.IndexOf(lines, HeaderLine)), "the recording is shown before the menu");
         Assert.That(lines, Has.Member("  A  Show the recording in progress"));
     }
 
@@ -443,7 +449,47 @@ public class MenuCommandTests
         }));
         _desktop.Verify(d => d.OpenFolder(_folder.Path), Times.Once, "the fixed file let the choice run");
         var lines = Lines();
-        Assert.That(lines[Array.LastIndexOf(lines, "ClassScribe")..], Has.None.StartsWith("ERROR"), "the menu shown after it has nothing to say about the settings");
+        Assert.That(lines[Array.LastIndexOf(lines, HeaderLine)..], Has.None.StartsWith("ERROR"), "the menu shown after it has nothing to say about the settings");
+    }
+
+    /// <summary>
+    /// The header's first line names the build: the version from the project and the commit it was built from, the same
+    /// string the run files and the link carry, so that a window and a recorder of different builds can be told apart.
+    /// </summary>
+    [Test]
+    public async Task The_header_starts_with_the_build()
+    {
+        _ui.Type('q');
+
+        await RunMenuAsync();
+
+        var lines = Lines();
+        var settingsLine = Array.IndexOf(lines, $"Settings: {_settings.File.Path}");
+        Assert.That(settingsLine, Is.GreaterThan(0), "the menu names the file it reads");
+        Assert.That(lines[settingsLine - 1], Is.EqualTo(HeaderLine));
+        Assert.That(HeaderLine, Does.StartWith($"ClassScribe {BuildInfo.Version}"));
+    }
+
+    /// <summary>
+    /// Without an ElevenLabs key the header says so, right under the settings file's name, before a class rather than at
+    /// its end: recording works, transcribing will not. With a key the header says nothing about it.
+    /// </summary>
+    [Test]
+    public async Task The_header_says_when_the_key_is_not_set()
+    {
+        _elevenLabs.Set(new ElevenLabsOptions { ApiKey = "" });
+        _ui.Type('q');
+        await RunMenuAsync();
+        var lines = Lines();
+        var settingsLine = Array.IndexOf(lines, $"Settings: {_settings.File.Path}");
+        Assert.That(lines[settingsLine + 1], Is.EqualTo("WARNING  ElevenLabs key: not set (ELEVENLABS_API_KEY); recording works, transcribing will not."));
+        Assert.That(lines[settingsLine + 2], Is.EqualTo($"Recordings and transcripts: {_folder.Path}"));
+
+        _ui = new FakeConsoleUi();
+        _elevenLabs.Set(new ElevenLabsOptions { ApiKey = "test-key" });
+        _ui.Type('q');
+        await RunMenuAsync();
+        Assert.That(_ui.Screen, Does.Not.Contain("ElevenLabs key"));
     }
 
     /// <summary>Once the file is fixed, the next choice runs: nothing has to be restarted.</summary>
@@ -1588,7 +1634,7 @@ public class CommandRunnerTests
             .AddScoped<IRecordStarter>(provider => Noted(provider, new FakeRecordStarter(_played, provider,
                 scope => scope.GetRequiredService<IOptionsSnapshot<RecordingOptions>>().Value.OutputFolder))));
         var monitor = _container!.GetRequiredService<IOptionsMonitor<RecordingOptions>>();
-        var menu = new MenuCommand(runner, new NoStartupReport(), _ui, settings.Gate(), settings.File,
+        var menu = new MenuCommand(runner, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions { ApiKey = "test-key" }),
             new ClassFolders(monitor, TimeProvider.System, NullLogger<ClassFolders>.Instance), _devices, new SourceChoice(monitor), new RecordingNamePrompt(_ui),
             _desktop.Object, TimeProvider.System, NullLogger<MenuCommand>.Instance);
         _ui.TypeLine("Kalam");
