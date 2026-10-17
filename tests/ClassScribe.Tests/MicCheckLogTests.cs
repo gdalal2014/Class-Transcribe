@@ -111,7 +111,7 @@ public class MicCheckLogTests
         var lines = MicCheckLog.HeaderLines(Started, 1234, path, TimeSpan.FromMilliseconds(250), stopAfter: null);
         var timed = MicCheckLog.HeaderLines(Started, 1234, path, TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(60));
 
-        Assert.That(lines[0], Does.StartWith("ClassScribe microphone check"));
+        Assert.That(lines[0], Is.EqualTo($"ClassScribe microphone check (build {BuildInfo.Build}): watches what the apps on this computer do with the microphone."));
         Assert.That(lines[1], Is.EqualTo($"Started 2026-10-17 19:00:12 local time (UTC-04:00), Windows {Environment.OSVersion.Version}, ClassScribe's own process id 1234."));
         Assert.That(lines[2], Is.EqualTo("It only reads Windows' lists of microphones and their sessions, and Windows' microphone usage record. It never opens a microphone, records no sound and sends nothing anywhere."));
         Assert.That(lines[3], Is.EqualTo("It checks every 250 ms and writes a line only when something changes; the first lines show how things are at the start."));

@@ -124,8 +124,8 @@ public class AppTests
     }
 
     /// <summary>
-    /// A mistake on the command line is reported first, with exit code 2, before the settings are read; help needs no
-    /// settings at all. Neither runs the report at the start.
+    /// A mistake on the command line is reported first, with exit code 2, before the settings are read; help and the
+    /// version need no settings at all. None of them runs the report at the start.
     /// </summary>
     [TestCase(2, "frobnicate")]
     [TestCase(2, "record")]
@@ -134,6 +134,7 @@ public class AppTests
     [TestCase(0, "--help")]
     [TestCase(0, "help")]
     [TestCase(0, "record", "--help")]
+    [TestCase(0, "--version")]
     public async Task Mistakes_and_help_come_before_the_settings(int exitCode, params string[] args)
     {
         BreakTheSettings();

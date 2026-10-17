@@ -75,6 +75,7 @@ public class SettingsReloadTests
             ui,
             gate ?? app.Services.GetRequiredService<RunGate>(),
             app.Services.GetRequiredService<SettingsFile>(),
+            app.Services.GetRequiredService<IOptionsMonitor<ElevenLabsOptions>>(),
             app.Services.GetRequiredService<ClassFolders>(),
             new FakeCaptureProvider(),
             app.Services.GetRequiredService<SourceChoice>(),
@@ -773,7 +774,7 @@ public class SettingsReloadTests
     {
         var lines = screen.Split(Environment.NewLine);
         var end = Array.LastIndexOf(lines, "  Q  Quit");
-        var start = Array.LastIndexOf(lines, "ClassScribe", end);
+        var start = Array.LastIndexOf(lines, $"ClassScribe {BuildInfo.Describe()}", end);
         return (lines[start..(end + 1)], lines[(end + 1)..]);
     }
 

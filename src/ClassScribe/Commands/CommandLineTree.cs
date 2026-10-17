@@ -22,6 +22,9 @@ public enum CommandKind
     /// <summary>Help, which needs no settings.</summary>
     Help,
 
+    /// <summary>The version, which needs no settings either.</summary>
+    Version,
+
     /// <summary>The menu, which reads the settings before each choice and shows the report at the start itself.</summary>
     Menu,
 
@@ -48,6 +51,7 @@ public enum CommandKind
 /// ClassScribe devices
 /// ClassScribe mic-check [--seconds &lt;n&gt;] [--log-folder "&lt;folder&gt;"]
 /// ClassScribe &lt;command&gt; --help                    also -h, -?, /? and help &lt;command&gt;
+/// ClassScribe --version                           the version and the commit, as the build was stamped
 /// hidden: ClassScribe attach [--alert &lt;run id&gt;]
 /// </code>
 /// A mistake is never asked about: every one is written to standard error, all of them in one run, then that command's
@@ -185,11 +189,12 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         return new(parsed, null);
     }
 
-    /// <summary>What <paramref name="parsed"/> asks for: help, the menu, showing a recording in progress, or any other command.</summary>
+    /// <summary>What <paramref name="parsed"/> asks for: help, the version, the menu, showing a recording in progress, or any other command.</summary>
     public CommandKind KindOf(ParseResult parsed)
     {
         var tree = Tree;
         if (parsed.Action is HelpWithExamples) return CommandKind.Help;
+        if (parsed.Action is VersionLine) return CommandKind.Version;
         if (parsed.CommandResult.Command == tree.Root) return parsed.GetValue(tree.LonePath) is null ? CommandKind.Menu : CommandKind.Command;
 
         return parsed.CommandResult.Command.Name == AttachName ? CommandKind.Attach : CommandKind.Command;
@@ -204,9 +209,10 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         var optionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var examples = new Dictionary<Command, string>();
 
-        var root = new RootCommand("ClassScribe records the sound your computer plays during a class and gets a transcript from ElevenLabs.");
+        var root = new RootCommand($"ClassScribe {BuildInfo.Describe()} records the sound your computer plays during a class and gets a transcript from ElevenLabs.");
         root.Directives.Clear();
-        foreach (var version in root.Options.OfType<VersionOption>().ToList()) root.Options.Remove(version);
+        var versionOption = root.Options.OfType<VersionOption>().Single();
+        versionOption.Action = new VersionLine();
 
         var lonePath = new Argument<string?>("path")
         {
@@ -238,7 +244,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         var helpOption = root.Options.OfType<HelpOption>().Single();
         helpOption.Action = help;
 
-        foreach (var option in root.Subcommands.SelectMany(command => command.Options).Append(helpOption))
+        foreach (var option in root.Subcommands.SelectMany(command => command.Options).Append(helpOption).Append(versionOption))
         {
             optionNames.Add(option.Name);
             optionNames.UnionWith(option.Aliases);
@@ -807,6 +813,21 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             }
 
             if (examples.TryGetValue(command, out var text)) parseResult.InvocationConfiguration.Output.WriteLine(text);
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// --version: the informational version as the project stamped it, such as 0.4.0+f5f2fb04b43e65a58888ecd217914f200705cb9d
+    /// (see <see cref="BuildInfo.InformationalVersion"/>), on one line of standard output, with exit code 0. System.CommandLine's
+    /// own action would name the program that started the process, which under the tests is the test host.
+    /// </summary>
+    private sealed class VersionLine : SynchronousCommandLineAction
+    {
+        /// <inheritdoc />
+        public override int Invoke(ParseResult parseResult)
+        {
+            parseResult.InvocationConfiguration.Output.WriteLine(BuildInfo.InformationalVersion);
             return 0;
         }
     }

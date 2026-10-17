@@ -7,6 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ClassScribe</RootNamespace>
     <AssemblyName>ClassScribe</AssemblyName>
+    <!-- The version the menu's header, the help, the version option and Settings > Apps show (see BuildInfo). Inside a git
+         repository the SDK stamps the commit after it; the install script passes git describe as SourceRevisionId instead. -->
+    <Version>0.4.0</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- The compiler then reports a public type or member without an XML summary (CS1591). -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

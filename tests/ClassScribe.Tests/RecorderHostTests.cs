@@ -283,8 +283,8 @@ public class RecorderHostTests
 
         Assert.That(File.Exists(_runtime.Journal.RequestFile(request.RunId)), Is.False, "taken once");
         var whileRecording = RunFile(request.RunId);
-        Assert.That((whileRecording.State, whileRecording.Home, whileRecording.Pipe, whileRecording.ProcessId, whileRecording.Request),
-            Is.EqualTo((RunState.Recording, RunHome.Separate, LinkProtocol.PipeNameFor(request.RunId), Environment.ProcessId, request)));
+        Assert.That((whileRecording.State, whileRecording.Home, whileRecording.Pipe, whileRecording.ProcessId, whileRecording.Build, whileRecording.Request),
+            Is.EqualTo((RunState.Recording, RunHome.Separate, LinkProtocol.PipeNameFor(request.RunId), Environment.ProcessId, BuildInfo.Build, request)));
         Assert.That(_server!.Windows, Is.Zero, "nobody is attached");
         Assert.That(recording.Files!.Folder, Is.EqualTo(Path.Combine(_folder.Path, "Kalam")), "the request's folder, from the settings handed over");
 
