@@ -61,4 +61,24 @@ public sealed class ElevenLabsOptions
 
     /// <summary>Base pause between attempts. The pause grows with each attempt.</summary>
     public int RetryDelaySeconds { get; init; } = 5;
+
+    /// <summary>
+    /// What ElevenLabs charges for an hour of audio through the API, in US dollars, for the estimate logged after each
+    /// transcript: Scribe v2 is listed at 0.22 (https://elevenlabs.io/pricing/api). It is used for the estimate alone; the
+    /// account's own numbers come from <see cref="ReadAccountUsage"/>. 0 logs the audio's length without a price. From 0 to 100.
+    /// </summary>
+    public double PricePerHourUsd { get; init; } = 0.22;
+
+    /// <summary>
+    /// What keyterm prompting adds for an hour of audio, in US dollars, counted in the estimate when a glossary is sent:
+    /// 0.05 on the API price list (the API reference says 20% of the base price, 0.044). From 0 to 100.
+    /// </summary>
+    public double KeytermsPricePerHourUsd { get; init; } = 0.05;
+
+    /// <summary>
+    /// Read the account's credits from ElevenLabs before and after each transcript (GET /v1/user/subscription), when the
+    /// key is allowed to (the User permission), and log what the transcript cost in credits. false asks nothing; the
+    /// estimate from the price is logged either way.
+    /// </summary>
+    public bool ReadAccountUsage { get; init; } = true;
 }

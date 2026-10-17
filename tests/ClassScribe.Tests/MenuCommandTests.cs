@@ -1363,10 +1363,11 @@ public class CommandRunnerTests
         var recording = TestOptions.Create(new RecordingOptions { OutputFolder = _recordings.Path, OpenFolderWhenDone = false, OpenTranscriptWhenDone = false });
         var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = "", KeytermsFile = _recordings.File("no-glossary.txt") });
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance);
+        var usage = new UsageReport(new FakeElevenLabsAccount(), TimeProvider.System, NullLogger<UsageReport>.Instance);
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, new KeytermLoader(NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), folders, new ClassMarks(NullLogger<ClassMarks>.Instance), elevenLabs, recording,
-            new TranscriptionProgress(), NullLogger<TranscriptionWorkflow>.Instance);
-        return new TranscribeCommand(workflow, folders, new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), recording, elevenLabs,
+            new TranscriptionProgress(), usage, NullLogger<TranscriptionWorkflow>.Instance);
+        return new TranscribeCommand(workflow, usage, folders, new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), recording, elevenLabs,
             ZonedTimeProvider.EasternSummer, _transcribeLog);
     }
 

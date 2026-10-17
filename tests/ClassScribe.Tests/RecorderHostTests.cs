@@ -41,6 +41,7 @@ public class RecorderHostTests
     private FakePowerRequests _power = null!;
     private Mock<IDesktop> _desktop = null!;
     private Mock<ITranscriptionClient> _client = null!;
+    private FakeElevenLabsAccount _account = null!;
     private RecorderServer? _server;
     private RecorderLog? _log;
     private List<TestWindow> _windows = null!;
@@ -59,6 +60,7 @@ public class RecorderHostTests
         _power = new FakePowerRequests();
         _desktop = new Mock<IDesktop>();
         _client = Mocks.TranscriptionClient();
+        _account = new FakeElevenLabsAccount();
         _server = null;
         _log = null;
         _windows = [];
@@ -77,7 +79,8 @@ public class RecorderHostTests
 
     /// <summary>
     /// The recorder's host over the test's folders and clock, with the stand-ins in place of the recording, the processes,
-    /// the power, the session, ElevenLabs and the desktop; its server, made over its log, is kept for the windows the test
+    /// the power, the session, ElevenLabs (the service and the account's reader, which answers that the read is off unless
+    /// a test queues readings) and the desktop; its server, made over its log, is kept for the windows the test
     /// attaches, and its log for the lines the test looks at. The server's pipe is the real one, and making its first
     /// instance notes whether the run file existed already: it must not, since a run file that says starting tells the
     /// window that the pipe is up.
@@ -96,6 +99,7 @@ public class RecorderHostTests
             services.Replace(ServiceDescriptor.Singleton<ISystemTimes>(new FakeSystemTimes(_time)));
             services.Replace(ServiceDescriptor.Scoped<ISessionEvents>(_ => new FakeSessionEvents()));
             services.Replace(ServiceDescriptor.Transient<ITranscriptionClient>(_ => _client.Object));
+            services.Replace(ServiceDescriptor.Transient<IElevenLabsAccount>(_ => _account));
             services.Replace(ServiceDescriptor.Singleton(Mocks.AudioPreparer().Object));
             services.Replace(ServiceDescriptor.Singleton(_desktop.Object));
             services.Replace(ServiceDescriptor.Singleton(provider => _server = new RecorderServer(
@@ -513,6 +517,7 @@ public class RecorderHostTests
         _desktop.Verify(desktop => desktop.OpenFolder(recording.Files!.Folder), Times.Exactly(opened));
         _desktop.VerifyNoOtherCalls();
         Assert.That(LoggedLines().Count(line => line.Contains(OpensTheResultsItself)), Is.EqualTo(opened));
+        Assert.That(_account.Reads, Is.Zero, "without a transcript there is no cost to report");
     }
 
     /// <summary>What the recorder logs when it opens the results because no window will.</summary>
@@ -536,6 +541,7 @@ public class RecorderHostTests
         Assert.That(_starter.AlertWindows.Select(launch => launch.RunId), Is.EqualTo(new[] { request.RunId }));
         _desktop.VerifyNoOtherCalls();
         Assert.That(LoggedLines(), Has.None.Contains(OpensTheResultsItself), "there is nothing to open for a failure");
+        Assert.That(_account.Reads, Is.Zero, "a transcript that failed has no cost to report");
     }
 
     /// <summary>
@@ -570,5 +576,43 @@ public class RecorderHostTests
         Assert.That(await EndedAsync(run), Is.EqualTo(0));
         Assert.That((end.Outcome.Kind, end.Open), Is.EqualTo((OutcomeKind.Transcribed, true)));
         Assert.That(File.Exists(end.Outcome.TranscriptPath), Is.True);
+    }
+
+    /// <summary>
+    /// What the transcript cost the account comes last of all, once the end has gone to the windows, which open the results:
+    /// the owner window has the end, and has left, before the account is read again, so that the read never holds the end
+    /// up. The line then goes into the recorder's log after the saved transcript, where the recording's own log takes it too.
+    /// </summary>
+    [Test]
+    public async Task The_account_is_read_again_only_once_the_end_has_gone_to_the_windows()
+    {
+        _account.Answer(FakeElevenLabsAccount.Read(0), FakeElevenLabsAccount.Read(500));
+        var endSeen = new TaskCompletionSource();
+        bool? endSeenAtTheSecondRead = null;
+        _account.OnRead = number =>
+        {
+            if (number == 2) endSeenAtTheSecondRead = endSeen.Task.IsCompleted;
+        };
+        var request = WriteRequest(transcribe: true);
+        var run = Host().RunAsync(request.RunId, "dummy-key-for-a-local-test");
+        var recording = await StartedAsync(run);
+        TestAudio.WriteWav(recording.Files!.Segment(1), 16000, TestAudio.Tone(16000, seconds: 0.5, frequency: 440, amplitude: 0.5));
+        var window = await AttachAsync(owner: true);
+
+        await window.SendKeyAsync(LinkKeys.Q);
+        await window.SendKeyAsync(LinkKeys.Q);
+        var (_, end) = await window.UntilEndAsync();
+        endSeen.SetResult();
+        await CloseAsync(window);
+
+        Assert.That(await EndedAsync(run), Is.EqualTo(0));
+        Assert.That((end.Outcome.Kind, end.Open), Is.EqualTo((OutcomeKind.Transcribed, true)));
+        Assert.That(endSeenAtTheSecondRead, Is.True, "the window had the end, and had left, before the account was read again");
+        var lines = LoggedLines().ToList();
+        var saved = lines.FindIndex(line => line.Contains("Transcript saved to", StringComparison.Ordinal));
+        var charged = lines.FindIndex(line => line.Contains("ElevenLabs charged 500 credits for this transcript; 99,500 of 100,000 credits are left", StringComparison.Ordinal));
+        Assert.That(saved, Is.GreaterThanOrEqualTo(0), "the saved line is in the recorder's log");
+        Assert.That(charged, Is.GreaterThan(saved), "the credits charged come last");
+        Assert.That(_account.Reads, Is.EqualTo(2));
     }
 }

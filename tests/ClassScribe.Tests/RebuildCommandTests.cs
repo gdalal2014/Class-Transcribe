@@ -22,6 +22,7 @@ public class RebuildCommandTests
     private string _class = null!;
     private Mock<IAudioPreparer> _preparer = null!;
     private Mock<ITranscriptionClient> _client = null!;
+    private FakeElevenLabsAccount _account = null!;
     private Mock<IDesktop> _desktop = null!;
     private RecordingLogger<RebuildCommand> _log = null!;
 
@@ -35,6 +36,7 @@ public class RebuildCommandTests
         Directory.CreateDirectory(_class);
         _preparer = Mocks.AudioPreparer();
         _client = Mocks.TranscriptionClient();
+        _account = new FakeElevenLabsAccount();
         _desktop = new Mock<IDesktop>();
         _log = new RecordingLogger<RebuildCommand>();
     }
@@ -70,9 +72,27 @@ public class RebuildCommandTests
             TestOptions.Create(new ElevenLabsOptions { ApiKey = "" }),
             recording,
             new TranscriptionProgress(),
+            new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
             NullLogger<TranscriptionWorkflow>.Instance);
 
         return new RebuildCommand(workflow, folders, _desktop.Object, recording, _log);
+    }
+
+    /// <summary>Where a transcription's last line says what it cost, a rebuild's says that nothing was sent and nothing charged; the account is never read.</summary>
+    [Test]
+    public async Task A_rebuild_says_that_nothing_was_charged_and_reads_no_account()
+    {
+        var recording = WriteRecording(new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        SaveAnswer(recording, "An answer.");
+
+        var exitCode = await CreateCommand().RunAsync(recording.Segment(1), open: false);
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        var saved = _log.Messages.ToList().FindIndex(message => message.StartsWith("Transcript saved to", StringComparison.Ordinal));
+        var cost = _log.Messages.ToList().IndexOf(RebuildCommand.NothingCharged);
+        Assert.That((saved, cost), Is.EqualTo((saved, saved + 1)), "the cost line follows the saved line");
+        Assert.That(RebuildCommand.NothingCharged, Is.EqualTo("Nothing was sent to ElevenLabs, so nothing was charged"));
+        Assert.That(_account.Reads, Is.EqualTo(0));
     }
 
     /// <summary>Writes a recording's first segment into the class folder, started at <paramref name="started"/>.</summary>

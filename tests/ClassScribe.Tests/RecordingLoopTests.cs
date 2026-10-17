@@ -111,7 +111,8 @@ public class RecordingLoopTests
     private RecordingLoop CreateLoop(TestOptions<RecordingOptions> settings, IUserSignals signals) =>
         new(_ui, signals, new ClassMarks(NullLogger<ClassMarks>.Instance),
             new RecordingMonitor(new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance), _space, settings,
-                new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _provider, _time),
+                new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _provider,
+                new BluetoothMicrophoneWatch(new FakeMicrophoneSessions(), new FakeMicrophoneProvider(), new FakeOwnProcesses(), _time, NullLogger<BluetoothMicrophoneWatch>.Instance), _time),
             _status, _time, _log);
 
     /// <summary>

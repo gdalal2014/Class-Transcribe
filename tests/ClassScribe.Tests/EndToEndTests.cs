@@ -292,13 +292,16 @@ public class EndToEndTests
     /// Menu choice 2, from the key press to the saved transcript: the recorder starts in the background and this window
     /// shows it as the window that started it; Esc leaves the view and the recording goes on, with A offered in the menu;
     /// A shows it again, with the log so far replayed; Q twice stops it; the recording is sent to ElevenLabs with the
-    /// dummy key and the transcript saved; the window shown the end opens the folder and the transcript, the recorder
-    /// opens nothing; the run file says the run finished, transcribed, and has been seen; and the menu comes back.
+    /// dummy key and the transcript saved; the window shown the end opens the folder and the transcript, the recorder opens
+    /// nothing; the key, restricted to Speech to Text as the stub plays it, may not read the account, which the recorder
+    /// says once, after the end has gone to the window, so the line is in the recording's log; the run file says the run
+    /// finished, transcribed, and has been seen; and the menu comes back.
     /// </summary>
     [Test]
     public async Task Menu_choice_2_records_in_the_background_from_the_key_press_to_the_saved_transcript()
     {
         _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
+        _elevenLabs.EnqueueFor(StubHttpHandler.SubscriptionPath, HttpStatusCode.Unauthorized, """{"detail":{"status":"missing_permissions"}}""");
         using var app = BuildWindow();
         _ui.TypeLine("Kalam");
         _ui.Type('2');
@@ -326,16 +329,24 @@ public class EndToEndTests
         Assert.That(await menu.WaitAsync(EndPatience), Is.EqualTo(0));
 
         var run = TheRun();
-        var transcript = Directory.GetFiles(Path.Combine(_recordings.Path, "Kalam"), "*.md").Single();
+        var folder = Path.Combine(_recordings.Path, "Kalam");
+        var transcript = Directory.GetFiles(folder, "*.md").Single();
+        var log = File.ReadAllLines(Directory.GetFiles(folder, "*.log").Single());
+        var saved = System.Array.FindIndex(log, line => line.Contains("Transcript saved to", StringComparison.Ordinal));
+        var refused = System.Array.FindIndex(log, line => line.Contains("ElevenLabs would not show the account's credits to this key (HTTP 401, missing_permissions)", StringComparison.Ordinal));
         using (Assert.EnterMultipleScope())
         {
             Assert.That(File.ReadAllText(transcript), Does.Contain("Hello world."));
+            Assert.That(refused, Is.GreaterThan(saved), "the refusal is in the recording's log, after the saved transcript");
+            Assert.That(log.Count(line => line.Contains("ElevenLabs would not show the account's credits", StringComparison.Ordinal)), Is.EqualTo(1), "said once");
             Assert.That((run.State, run.Outcome?.Kind, run.Outcome?.TranscriptPath, run.Seen, run.Home),
                 Is.EqualTo((RunState.Finished, OutcomeKind.Transcribed, transcript, true, RunHome.Separate)));
             Assert.That(run.Request, Is.EqualTo(new RecordRequest(run.RunId, "Kalam", Transcribe: true, new SourcePlan(RecordingMode.Class, new ClassSource.Automatic(), null),
                 _recordings.Path, ContinueChoice.New, ContinueBaseName: null, Minutes: null, Open: true)), "the request the menu made, with the starter's decision not to continue");
             Assert.That(File.Exists(_runtime.Journal.RequestFile(run.RunId)), Is.False, "the recorder took its request");
-            Assert.That(_elevenLabs.Requests.Select(request => request.ApiKey), Is.EqualTo(new[] { Key }), "one upload, with the dummy key");
+            Assert.That(_elevenLabs.Requests.Where(request => request.Method == HttpMethod.Post).Select(request => request.ApiKey), Is.EqualTo(new[] { Key }), "one upload, with the dummy key");
+            Assert.That(_elevenLabs.Requests.Where(request => request.Method == HttpMethod.Get).Select(request => request.ApiKey), Is.EqualTo(new[] { Key }),
+                "the account read once, with the dummy key, and not again after the refusal");
             Assert.That(_pipesOpened, Is.EqualTo(new[] { run.Pipe, run.Pipe }), "the two views opened the run's pipe");
             Assert.That(_starts.Recorders.Select(launch => launch.RunId), Is.EqualTo(new[] { run.RunId }));
             Assert.That(_recorderStarts.Launches, Is.Empty, "no window was brought back");
@@ -434,13 +445,17 @@ public class EndToEndTests
     /// title says MIC MUTED and nothing from the microphone goes into the recording, and when chrome listens again your
     /// voice is written again; at the stop the class and the microphone are mixed by the real preparer into one upload for ElevenLabs,
     /// sent with the dummy key, the transcript is saved, both tracks stay on disk, the summary says how long you were
-    /// heard, and the request the recorder got carries the whole plan.
+    /// heard, and the request the recorder got carries the whole plan. The stub plays a key allowed to read the account,
+    /// so the recording's .log ends with the estimate, the saved transcript and the credits charged, in that order: the
+    /// recorder reads the account again only once the end has gone to the window.
     /// </summary>
     [Test]
     public async Task With_the_class_the_microphone_follows_chrome_and_both_are_mixed_for_the_upload()
     {
         _mixForUpload = true;
         _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
+        _elevenLabs.EnqueueFor(StubHttpHandler.SubscriptionPath, HttpStatusCode.OK, """{"character_count":1000,"character_limit":100000}""");
+        _elevenLabs.EnqueueFor(StubHttpHandler.SubscriptionPath, HttpStatusCode.OK, """{"character_count":1500,"character_limit":100000}""");
         var chrome = new FakeAudioCapture(Pcm16KMono, "chrome", $"process:{ChromePid}") { DeliversContinuously = true };
         _devices.AddApp(ChromePid, "chrome", "Fake Speakers", level: 0.5f, capture: chrome);
         _sessions.SetSessions(Array.Id, Laptop.Session(Array.Id, Laptop.ChromeUtility));   // chrome is listening on the array
@@ -475,6 +490,10 @@ public class EndToEndTests
         var folder = Path.Combine(_recordings.Path, "Kalam");
         var microphoneFile = Directory.GetFiles(folder, "*.mic.wav").Single();
         var voice = TestAudio.ReadWav(microphoneFile).Samples;
+        var log = File.ReadAllLines(Directory.GetFiles(folder, "*.log").Single());
+        var estimate = System.Array.FindIndex(log, line => line.Contains("ElevenLabs transcribed 1 second of audio (00:00:01): less than a cent at the API price, $0.22 an hour", StringComparison.Ordinal));
+        var saved = System.Array.FindIndex(log, line => line.Contains("Transcript saved to", StringComparison.Ordinal));
+        var charged = System.Array.FindIndex(log, line => line.Contains("ElevenLabs charged 500 credits for this transcript; 98,500 of 100,000 credits are left", StringComparison.Ordinal));
         using (Assert.EnterMultipleScope())
         {
             Assert.That(Directory.GetFiles(folder, "*.wav"), Has.Length.EqualTo(2), "the class's file and the microphone's");
@@ -485,7 +504,11 @@ public class EndToEndTests
             Assert.That(_window.Titles, Has.Some.Contains("MIC MUTED"));
             Assert.That(run.Request.Source, Is.EqualTo(new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.App("chrome"), new MicrophoneChoice(null, new FollowRule.Named("chrome")))));
             Assert.That((run.State, run.Outcome?.Kind), Is.EqualTo((RunState.Finished, OutcomeKind.Transcribed)));
-            Assert.That(_elevenLabs.Requests.Select(request => request.ApiKey), Is.EqualTo(new[] { Key }), "one upload, with the dummy key");
+            Assert.That(_elevenLabs.Requests.Where(request => request.Method == HttpMethod.Post).Select(request => request.ApiKey), Is.EqualTo(new[] { Key }), "one upload, with the dummy key");
+            Assert.That(_elevenLabs.Requests.Count(request => request.Method == HttpMethod.Get), Is.EqualTo(2), "the account read before the upload and after the transcript");
+            Assert.That(estimate, Is.GreaterThanOrEqualTo(0), "the estimate is in the recording's log");
+            Assert.That(saved, Is.GreaterThan(estimate), "the saved line follows the estimate");
+            Assert.That(charged, Is.GreaterThan(saved), "the credits charged come last");
             Assert.That(_microphones.Opened.Select(opened => opened.Id), Is.EqualTo(new[] { Array.Id }));
             Assert.That(chrome.Disposed, Is.True);
             Assert.That(microphone.Disposed, Is.True);

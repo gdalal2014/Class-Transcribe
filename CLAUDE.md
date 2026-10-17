@@ -14,8 +14,9 @@ recording. `README.md` is the user guide. The full background, design decisions 
 date with the review fix round, with increment 1 (settings read before each run, rebuild and the
 transcribe guards, the growing upload limit, the arrival watch, keep-awake, the device check's COM
 fix), with increment 2 (the process split, the command line, the alerts, continue and the report at
-the start) or with increment 3 (the microphone, the QPC timeline, the microphone check) yet,
-section 6.4 above all, so where it disagrees with the code or with this file, the code wins.
+the start), with increment 3 (the microphone, the QPC timeline, the microphone check) or with the
+cost line and the Bluetooth warning yet, section 6.4 above all, so where it disagrees with the code
+or with this file, the code wins.
 
 ## Ground rules
 
@@ -42,8 +43,10 @@ section 6.4 above all, so where it disagrees with the code or with this file, th
   cannot open one; the fake endpoints fail a test that asks for one. Keep it that way: the menu, the
   `devices` command, the microphone check and the watch on the class app all rest on it.
 - Tests never read or write the real `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` or
-  `%USERPROFILE%\ClassScribe`: temporary folders only (`TestRuntime`, `TempFolder`). After a full run,
-  check that `%LOCALAPPDATA%\ClassScribe` is still empty or absent; a test that wrote there is a bug.
+  `%USERPROFILE%\ClassScribe`: temporary folders only (`TestRuntime`, `TempFolder`). The real
+  `%LOCALAPPDATA%\ClassScribe` holds the run files and logs of real classes now, so list its files
+  (names, sizes and times) before and after a full run and compare the lists, rather than expecting
+  it empty; a test that wrote there is a bug.
 
 ## Conventions
 
@@ -88,8 +91,8 @@ section 6.4 above all, so where it disagrees with the code or with this file, th
 - Settings in code: singletons read `IOptionsMonitor<T>.CurrentValue` each time they use it
   (`ClassFolders`, `TranscriptFormatter`, `SourceChoice`, the Refit client's `ConfigureHttpClient`);
   per-run services, scoped or transient (the commands, `TranscriptionWorkflow`, `ElevenLabsClient`,
-  `RecordingSession`, `TrackSetFactory`, `MicrophoneAdvice`, `MicrophoneMenu`, `RecordingMonitor`),
-  take `IOptionsSnapshot<T>`, read once in the run's scope. Never `IOptions<T>`
+  `RecordingSession`, `TrackSetFactory`, `MicrophoneAdvice`, `MicrophoneMenu`, `RecordingMonitor`,
+  `ElevenLabsAccount`), take `IOptionsSnapshot<T>`, read once in the run's scope. Never `IOptions<T>`
   for ClassScribe's sections: it keeps the first value for the life of the process, so an edit
   would never reach that part (`No_part_keeps_the_settings_it_read_first_for_the_whole_session`
   fails on one).
@@ -193,7 +196,10 @@ section 6.4 above all, so where it disagrees with the code or with this file, th
   and gate on `ManualTimeProvider`: twelve simulated minutes run with the suite, and the four-hour
   case is `Explicit` (it writes about a gigabyte of audio to a temporary folder and takes minutes).
 - Keep `README.md` in step when behaviour changes, including its troubleshooting rows when a log
-  message is added or changed.
+  message is added or changed. The lines the README quotes for the cost and the Bluetooth warning are
+  worded in `TranscriptionCost.Describe`, `UsageReport` (`RefusedAdvice` is a public const),
+  `RebuildCommand.NothingCharged` and `RecordingMonitor.BluetoothText`; reword them and the README's
+  rows (Transcribing, Making a transcript again, While recording) together.
 
 ## Working with Gulzar
 
@@ -320,7 +326,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `EndToEndTests` also covers in person from the command line, the class with the microphone
   following chrome through a cycle of listening and not (mixed by the real preparer), and
   `mic-check --seconds 1`. Nothing is played or recorded. The suite had 887 tests at the end of
-  increment 1, 2,134 at the end of increment 2 and 2,822 at the end of increment 3.
+  increment 1, 2,134 at the end of increment 2, 2,822 at the end of increment 3 and 2,893 after the
+  cost line and the Bluetooth warning, with the review's fixes.
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes well under a
@@ -378,6 +385,21 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   10 s while nothing arrived, at most every 30 s, and the loop calls `IRecording.Reopen(track,
   reason)`, which replaces that track's open capture at the next look, in a new part, and logs the
   reason at Debug; the microphone's stall is a Notice, the class's an Alert.
+- The class app on a Bluetooth microphone (`BluetoothMicrophoneWatch`, scoped, `Audio/Microphone`):
+  in the modes that record the class, at the first look and every 10 s after
+  (`ClassMicrophoneWatch.AllMicrophonesInterval`), it joins `IMicrophoneProvider.GetMicrophones()`
+  (which microphones are Bluetooth, and the array's name for the advice; this first look makes the
+  real `WasapiMicrophoneProvider` behind `LazyMicrophoneProvider` in every recording of the class,
+  not only those with the microphone) with `IMicrophoneSessions.ReadAll()` (which apps hold an
+  Active session on them), leaving out ClassScribe's own processes and Windows' sounds; the apps
+  that count are the recorded app in app mode and the followed app when one is named, else any app
+  (`RecordingMonitor.WatchedApps`). The monitor warns once per new (app, microphone) pair, naming
+  the app, the microphone and the fix, worded for a headset or earbuds alike (`that puts the headset
+  or earbuds into call mode`), says when the app lets go, and keeps a Notice (`chrome on a Bluetooth
+  microphone`) while it lasts; lists that cannot be read keep the last uses and are noted at Debug
+  once per stretch. A Bluetooth headset or earbuds used as a microphone go into call mode, and
+  Bluetooth then carries the class past Windows' loopback, which is how a class recorded silence for
+  8 minutes.
 - Keep-awake: `IPowerRequests.Hold(StayAwake.RecordingReason, ...)` from the start of capture until
   the transcript is saved (`record-only`: until the files are closed), and
   `StayAwake.TranscribingReason` while `transcribe` prepares and uploads. `StayAwake.Needs` asks for
@@ -436,6 +458,27 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   sent on its own. `TranscriptionWorkflow.RebuildAsync` lays the newest saved answer (never an
   `.unread.json` unless it is named) out again with the current marks and `Transcript` settings, as
   the next free copy, with no key and no request.
+- What a transcript cost: right after `Transcript received`, `ElevenLabsClient` logs the estimate
+  (`TranscriptionCost`: the answer's `audio_duration_secs`, or else the upload WAV's length from
+  `UploadTimeLimit.AudioLength`, at `ElevenLabs:PricePerHourUsd` plus `ElevenLabs:KeytermsPricePerHourUsd`
+  when keyterms were sent; dollars are never turned into credits), guarded so that it can never fail
+  the paid transcript. Then `UsageReport` (scoped, one per run): `TranscriptionWorkflow` calls `Begin`
+  as the upload starts (the read runs alongside, never awaited there), and `ReportAsync` is the run's
+  last step, after `Transcript saved to` and the results are open, so nothing anyone waits for is
+  delayed: in this window `RecordCommand` (when `RunBookkeeping.Home` is `InWindow`) and
+  `TranscribeCommand` call it; in a recorder `RecordCommand` leaves it to `RecorderHost.RecordAsync`,
+  which calls it after `server.EndAsync` has sent the end to the windows (which open the results),
+  and only for a `Transcribed` outcome, while the run's scope is still open, so the line lands in the
+  recording's `.log` and `recorder.log` after the window has left (`RecorderHostTests` pins the
+  order on the manual clock; the EndToEnd runs check the `.log`). The reads go through `IElevenLabsAccount`
+  (`ElevenLabsAccount`, transient: `GET /v1/user/subscription` on the Refit interface, one request, a 10-second
+  limit of its own, the key never logged; 401 and 403 are a refusal said once at Information with the
+  User permission named, everything else is unavailable, and nothing is ever thrown but the caller's
+  own cancel). `ElevenLabs:ReadAccountUsage` false asks nothing; the estimate still comes. `rebuild`
+  logs `RebuildCommand.NothingCharged`. In tests, `StubHttpHandler` answers the subscription path only
+  from `EnqueueFor(StubHttpHandler.SubscriptionPath, ...)` (a subscription request never takes an
+  upload's answer, so the read beside an upload cannot steal it), and `FakeElevenLabsAccount` stands in
+  for the reader where the client is mocked.
 - Settings are in `src/ClassScribe/appsettings.json`, read from the exe's folder (under `dotnet run`,
   the copy in `bin\Debug\net10.0`; the menu names it and warns when the project's file is newer).
   `RunGate` reads the file again before each menu choice and each command (`SettingsReloader`): a
@@ -455,6 +498,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `Default`), `Recording:MicrophoneFollows` (refused when empty or when it names ClassScribe; not
   read in app mode) and `Recording:ClassAppMute` (`Visible`, `Invisible`, `Unknown`; a fact about
   the class app, so no command-line option), plus `Transcript:ShowGapsLongerThanSeconds` (0 or more).
+  The cost line's settings are `ElevenLabs:PricePerHourUsd` (0.22) and
+  `ElevenLabs:KeytermsPricePerHourUsd` (0.05), each from 0 to 100 dollars an hour, and
+  `ElevenLabs:ReadAccountUsage` (true).
 - The microphone check (`MicCheckCommand`, menu choice 8 and `mic-check`, resolved through
   `IMicCheckRun` in a scope of its own): MicWatch inside ClassScribe. Every 250 ms it reads
   `IMicrophoneSessions.ReadAll()` and `IMicrophoneUsageRecord.Read()`, hands them to the pure
@@ -529,9 +575,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `MicrophoneListings`, `MicrophoneSessionListing`, `CaptureSession`, `IMicrophoneUsageRecord`,
   `UsageRecordListing`, `UsageEntry`), `MicrophoneGate.cs` (`MicrophoneGate`, `IPacketGate`,
   `GateVerdict`, `GateSummary`), `MicrophoneChangeTracker.cs` (the check's lines, `MicCheckLine`)
-  and `MicrophoneServices.cs` (`AddMicrophone`, called from `AddClassScribe`: the capture factory
-  `MicrophoneActivation`, the provider behind `LazyMicrophoneProvider`, the sessions reader, and the
-  `Lazy<>`s for `devices`).
+  `BluetoothMicrophoneWatch.cs` (the class app on a Bluetooth microphone, registered scoped in
+  `AudioServices` beside the advice) and `MicrophoneServices.cs` (`AddMicrophone`, called from
+  `AddClassScribe`: the capture factory `MicrophoneActivation`, the provider behind
+  `LazyMicrophoneProvider`, the sessions reader, and the `Lazy<>`s for `devices`).
 - `src/ClassScribe/Audio/Windows`: `CoreAudioInterop.cs` holds ClassScribe's own Core Audio
   declarations (the property store and its readers, `PropertyKeys`, `EndpointFormFactor`, the
   endpoint volume and session interfaces) and `CoreAudio` (`CreateEnumerator`, `OpenPropertyStore`,
@@ -548,10 +595,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ProcessLoopback.cs` and `CaptureGapWatch.cs` as before.
 - `src/ClassScribe/Transcription`: ElevenLabs client (a Refit interface plus `ElevenLabsClient`
   around it), the shared answer parser (`ElevenLabsAnswer`), the upload's time limit
-  (`UploadTimeLimit`), glossary loader, transcript formatter, workflow (rebuild included), and
+  (`UploadTimeLimit`), glossary loader, transcript formatter, workflow (rebuild included),
   `TranscriptionProgress` (scoped: the workflow and the client report preparing, uploading at a
   percent and waiting; `RecordCommand` shows it as UPLOADING 40% and writes it into the run file's
-  heartbeat, which the menu header and `list` read).
+  heartbeat, which the menu header and `list` read), and what a transcript cost: `TranscriptionCost`
+  (the estimate), `ElevenLabsAccount.cs` (`IElevenLabsAccount`, `AccountReading`, the reader of
+  `GET /v1/user/subscription`) and `UsageReport` (scoped: the read before the upload and the line after).
 - `src/ClassScribe/Storage`: class folders under the output folder, recording file names (both
   tracks), numbered transcript copies (`TranscriptCopies`, never overwritten), marks, and the
   microphone check's log file (`MicCheckLog`: the header, the cost line, flushed per line).
@@ -616,8 +665,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `TestDoubles.MicrophoneGate.cs` (the `Laptop` fixture, `FakeMicrophoneSessions`,
   `FakeMicrophoneUsageRecord`, `FakeProcessNames`, `FakeOwnProcesses`, `ScriptedLooks`, and the
   COM-level fakes of the capture endpoints), `TestDoubles.MicrophoneRun.cs`
-  (`FakeMicrophoneRecording`, `FakeMicrophoneRecordingFactory`) and `TestDoubles.TrackSet.cs`
-  (`TestLoggerFactory`). The microphone's tests: `TrackSetTests`, `RecordingSessionTimelineTests`,
+  (`FakeMicrophoneRecording`, `FakeMicrophoneRecordingFactory`), `TestDoubles.TrackSet.cs`
+  (`TestLoggerFactory`) and `TestDoubles.Account.cs` (`FakeElevenLabsAccount`). The cost line's
+  tests are `TranscriptionCostTests`, `ElevenLabsAccountTests` (on `StubHttpHandler`),
+  `UsageReportTests`, and the order checks in `TranscriptionWorkflowTests`, `RecordCommandTests`,
+  `TranscribeCommandTests` and `EndToEndTests`; the Bluetooth watch's are
+  `BluetoothMicrophoneWatchTests` and the monitor's in `RecordingMonitorTests`. The microphone's tests: `TrackSetTests`, `RecordingSessionTimelineTests`,
   `MicrophoneGateTests`, `ClassMicrophoneWatchTests`, `MicrophoneChooserTests`, `MicrophoneAdviceTests`,
   `MicrophoneSourceTests`, `MicrophoneActivationTests`, `MicrophoneMenuTests`, `MicCheckCommandTests`,
   `MicrophoneChangeTrackerTests`, `MicCheckLogTests`, `UploadMixTests`, `MediaTimeTests`,

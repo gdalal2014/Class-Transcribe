@@ -4,6 +4,7 @@ using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -27,9 +28,11 @@ public class TranscribeCommandTests
     private FakeUserSignals _signals = null!;
     private FakePowerRequests _power = null!;
     private FakePowerSource _powerSource = null!;
+    private FakeElevenLabsAccount _account = null!;
+    private RecordingLogger<UsageReport> _usageLog = null!;
     private RecordingLogger<TranscribeCommand> _log = null!;
 
-    /// <summary>Creates a temporary folder, the mocks, and the stand-ins for keeping the laptop awake.</summary>
+    /// <summary>Creates a temporary folder, the mocks, the fake reader of the account, and the stand-ins for keeping the laptop awake.</summary>
     [SetUp]
     public void SetUp()
     {
@@ -40,6 +43,8 @@ public class TranscribeCommandTests
         _signals = new FakeUserSignals();
         _power = new FakePowerRequests();
         _powerSource = new FakePowerSource();
+        _account = new FakeElevenLabsAccount();
+        _usageLog = new RecordingLogger<UsageReport>();
         _log = new RecordingLogger<TranscribeCommand>();
     }
 
@@ -62,6 +67,7 @@ public class TranscribeCommandTests
         });
         var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = _folder.File("no-glossary.txt") });
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance);
+        var usage = new UsageReport(_account, ZonedTimeProvider.EasternSummer, _usageLog);
         var workflow = new TranscriptionWorkflow(
             _preparer.Object,
             _client.Object,
@@ -72,10 +78,56 @@ public class TranscribeCommandTests
             elevenLabs,
             recording,
             new TranscriptionProgress(),
+            usage,
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new TranscribeCommand(workflow, folders, _signals, _desktop.Object, _power, _powerSource, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
+        return new TranscribeCommand(workflow, usage, folders, _signals, _desktop.Object, _power, _powerSource, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
     }
+
+    /// <summary>
+    /// What the transcript cost the account is the command's last line: read once the transcript is saved and opened, from
+    /// the read made as the upload began, for a recording and for a file alike.
+    /// </summary>
+    [Test]
+    public async Task The_accounts_credits_are_reported_after_the_transcript_is_saved_and_opened()
+    {
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        var video = _folder.File("class.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+        _account.Answer(FakeElevenLabsAccount.Read(0), FakeElevenLabsAccount.Read(500), FakeElevenLabsAccount.Read(500), FakeElevenLabsAccount.Read(1200));
+        List<(int Read, int Saved, int Opened)> atEachRead = [];
+        _account.OnRead = number => atEachRead.Add((number, _log.Messages.Count(message => message.StartsWith("Transcript saved to", StringComparison.Ordinal)), _desktop.Invocations.Count));
+        var command = CreateCommand(openWhenDone: true);
+
+        var first = await command.RunAsync(new TranscribeRequest(recording.Segment(1)));
+        var second = await command.RunAsync(new TranscribeRequest(video));
+
+        Assert.That((first, second), Is.EqualTo((0, 0)));
+        Assert.That(atEachRead.Select(read => read.Read), Is.EqualTo([1, 2, 3, 4]));
+        Assert.That(atEachRead[1].Saved, Is.EqualTo(1), "the recording's transcript was saved before its second read");
+        Assert.That(atEachRead[1].Opened, Is.GreaterThan(0), "and opened");
+        Assert.That(atEachRead[3].Saved, Is.EqualTo(2), "the file's transcript was saved before its second read");
+        Assert.That(UsageLines(), Is.EqualTo([
+            "ElevenLabs charged 500 credits for this transcript; 99,500 of 100,000 credits are left",
+            "ElevenLabs charged 700 credits for this transcript; 98,800 of 100,000 credits are left"]));
+    }
+
+    /// <summary>A reader that fails does not change the exit code: the transcript is saved, and the line says the credits could not be read.</summary>
+    [Test]
+    public async Task A_failed_read_of_the_account_does_not_change_the_exit_code()
+    {
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        _account.Failure = new InvalidOperationException("boom");
+
+        var exitCode = await CreateCommand().RunAsync(new TranscribeRequest(recording.Segment(1)));
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(File.Exists(recording.Transcript()), Is.True);
+        Assert.That(UsageLines(), Is.EqualTo(["The account's credits could not be read (the request failed: boom); the transcript is not affected"]));
+    }
+
+    /// <summary>What the account's report said at Information, which the window shows; its Debug notes are left out.</summary>
+    private IReadOnlyList<string> UsageLines() => [.. _usageLog.Entries.Where(entry => entry.Level == LogLevel.Information).Select(entry => entry.Message)];
 
     /// <summary>Writes a recording's segment files into the temporary folder and returns the recording.</summary>
     private RecordingFiles WriteRecording(string name, DateTimeOffset started, int segments = 1)

@@ -37,6 +37,7 @@ public class TranscriptionWorkflowTests
     private RecordingFiles _files = null!;
     private Mock<IAudioPreparer> _preparer = null!;
     private Mock<ITranscriptionClient> _client = null!;
+    private FakeElevenLabsAccount _account = null!;
 
     /// <summary>What the mocked preparer was given to mix, one entry per request with both tracks and the token, in order.</summary>
     private List<(UploadTracks Tracks, string OutputPath, CancellationToken Token)> _trackPreparations = null!;
@@ -64,13 +65,14 @@ public class TranscriptionWorkflowTests
                 upload.Write([1, 2, 3]);
             });
         _client = Mocks.TranscriptionClient();
+        _account = new FakeElevenLabsAccount();
     }
 
     /// <summary>Deletes the temporary folder. That fails if a test left a file open, which is the point.</summary>
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Creates the workflow under test around the mocks, or around the preparer, settings, progress and loggers given.</summary>
+    /// <summary>Creates the workflow under test around the mocks, or around the preparer, settings, progress and loggers given; the account's report runs over the fake reader.</summary>
     private TranscriptionWorkflow CreateWorkflow(
         bool keepUploadFile = false,
         string? keytermsFile = null,
@@ -92,7 +94,42 @@ public class TranscriptionWorkflowTests
             TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") }),
             recording,
             progress ?? new TranscriptionProgress(),
+            new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
             logger ?? NullLogger<TranscriptionWorkflow>.Instance);
+    }
+
+    /// <summary>
+    /// The account's credits are read before the upload, so that the difference afterwards is this transcript's, and the
+    /// read never holds the upload up: here it answers only once the transcript is saved, and the upload went ahead.
+    /// </summary>
+    [Test]
+    public async Task The_account_is_read_as_the_upload_begins_and_never_holds_it_up()
+    {
+        _account.Hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readsWhenUploading = -1;
+        _client.Setup(Calls.AnyTranscription).Callback(() => readsWhenUploading = _account.Reads).ReturnsAsync(Mocks.Transcript);
+
+        var saved = await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
+        _account.Hold.SetResult();
+
+        Assert.That(File.Exists(saved.TranscriptPath), Is.True);
+        Assert.That(readsWhenUploading, Is.EqualTo(1), "begun before the service was called");
+        Assert.That(_account.Reads, Is.EqualTo(1), "the workflow reports nothing itself; the command does, once the results are open");
+    }
+
+    /// <summary>A failed upload has begun the read all the same, which nobody reports; a rebuild, which sends nothing, reads nothing.</summary>
+    [Test]
+    public async Task A_failed_upload_began_the_read_and_a_rebuild_reads_nothing()
+    {
+        _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
+        File.WriteAllText(_files.Json(), Answer);
+        var workflow = CreateWorkflow();
+
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
+        var afterTheFailure = _account.Reads;
+        await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That((afterTheFailure, _account.Reads), Is.EqualTo((1, 1)));
     }
 
     /// <summary>

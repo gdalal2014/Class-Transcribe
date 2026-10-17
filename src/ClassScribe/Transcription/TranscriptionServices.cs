@@ -6,7 +6,7 @@ using Refit;
 
 namespace ClassScribe.Transcription;
 
-/// <summary>Registers the ElevenLabs client, the glossary, the transcript layout and the workflow that joins them.</summary>
+/// <summary>Registers the ElevenLabs client, the glossary, the transcript layout, the workflow that joins them, and the report of what a transcript cost.</summary>
 public static class TranscriptionServices
 {
     /// <summary>Adds the transcription services.</summary>
@@ -29,6 +29,11 @@ public static class TranscriptionServices
         services.AddSingleton<TranscriptFormatter>();
         services.AddTransient<TranscriptionWorkflow>();
         services.AddScoped<TranscriptionProgress>();
+
+        // The account's credits, read before and after a transcript: the reader is one per use, over the same Refit
+        // client; the report is one per run, since the workflow begins it and the command ends it.
+        services.AddTransient<IElevenLabsAccount, ElevenLabsAccount>();
+        services.AddScoped<UsageReport>();
         return services;
     }
 

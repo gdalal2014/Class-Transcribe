@@ -289,7 +289,7 @@ public class SettingsReloadTests
         string Settings(bool edited) => Json(new
         {
             Recording = new { OutputFolder = recordings, OpenFolderWhenDone = false, OpenTranscriptWhenDone = edited, KeepUploadFile = edited },
-            ElevenLabs = new { BaseUrl = "http://localhost:5001/", ModelId = edited ? "scribe_v2" : "scribe_v1", KeytermsFile = edited ? secondGlossary : firstGlossary, MaxAttempts = 1 }
+            ElevenLabs = new { BaseUrl = "http://localhost:5001/", ModelId = edited ? "scribe_v2" : "scribe_v1", KeytermsFile = edited ? secondGlossary : firstGlossary, MaxAttempts = 1, ReadAccountUsage = false }
         });
         var handler = new StubHttpHandler();
         handler.Enqueue(HttpStatusCode.OK, Answer);

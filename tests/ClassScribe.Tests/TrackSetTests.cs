@@ -627,7 +627,8 @@ public sealed class TrackSetTests
             .Set(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue, 3);
         var options = new RecordingOptions { ClassAppMute = ClassAppMute.Unknown, StatusIntervalSeconds = 3600 };
         using var recording = WithClass(appMute: ClassAppMute.Unknown);
-        var monitor = new RecordingMonitor(_freezes, new FakeFreeSpace(), TestOptions.Create(options), new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _class, _time);
+        var monitor = new RecordingMonitor(_freezes, new FakeFreeSpace(), TestOptions.Create(options), new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _class,
+            new BluetoothMicrophoneWatch(new FakeMicrophoneSessions(), new FakeMicrophoneProvider(), new FakeOwnProcesses(), _time, NullLogger<BluetoothMicrophoneWatch>.Instance), _time);
         var request = TestRuns.Request(TestRuns.Id()) with { Source = ClassAndMicrophone() };
         var context = new MonitorContext(request, _folder.Path, _time.GetUtcNow(), _time.GetTimestamp(), TimeSpan.Zero, recording);
 

@@ -36,6 +36,8 @@ public class SettingsCheckTests
     [TestCase("Recording:FlushSeconds", "5s", "a whole number")]
     [TestCase("ElevenLabs:TimeoutMinutes", "", "a whole number")]
     [TestCase("ElevenLabs:SlowestUploadMbps", "1,5", "a number written with a dot")]
+    [TestCase("ElevenLabs:PricePerHourUsd", "0,22", "a number written with a dot")]
+    [TestCase("ElevenLabs:ReadAccountUsage", "maybe", "true or false")]
     [TestCase("Recording:KeepScreenOn", "Sometimes", "OnBattery, Always or Never")]
     [TestCase("Recording:KeepScreenOn", "", "OnBattery, Always or Never")]
     [TestCase("Recording:SeparateProcess", "yes", "true or false")]
@@ -326,6 +328,10 @@ public class SettingsCheckTests
     [TestCase("ElevenLabs:SlowestUploadMbps", "-1")]
     [TestCase("ElevenLabs:SlowestUploadMbps", "NaN")]
     [TestCase("ElevenLabs:SlowestUploadMbps", "100000")]
+    [TestCase("ElevenLabs:PricePerHourUsd", "-0.01")]
+    [TestCase("ElevenLabs:PricePerHourUsd", "101")]
+    [TestCase("ElevenLabs:KeytermsPricePerHourUsd", "NaN")]
+    [TestCase("ElevenLabs:KeytermsPricePerHourUsd", "-1")]
     [TestCase("Transcript:ShowGapsLongerThanSeconds", "-1")]
     [TestCase("Recording:MicrophoneFollows", "")]
     public void A_value_out_of_range_is_reported_by_its_setting(string setting, string value)
@@ -345,6 +351,19 @@ public class SettingsCheckTests
         var problems = Problems(new() { ["ElevenLabs:SlowestUploadMbps"] = value });
 
         Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo($"ElevenLabs:SlowestUploadMbps is {value}; it must be from 0.1 to 1000 (megabits per second), such as 1."));
+    }
+
+    /// <summary>The prices behind the cost estimate are from 0 to 100 dollars an hour, 0 turning the price off; the message says so, with the price list's example.</summary>
+    [TestCase("ElevenLabs:PricePerHourUsd", "0", true, "0.22")]
+    [TestCase("ElevenLabs:PricePerHourUsd", "100", true, "0.22")]
+    [TestCase("ElevenLabs:PricePerHourUsd", "-1", false, "0.22")]
+    [TestCase("ElevenLabs:KeytermsPricePerHourUsd", "0", true, "0.05")]
+    [TestCase("ElevenLabs:KeytermsPricePerHourUsd", "250", false, "0.05")]
+    public void The_prices_behind_the_estimate_are_from_0_to_100_dollars_an_hour(string setting, string value, bool usable, string example)
+    {
+        var problems = Problems(new() { [setting] = value });
+
+        Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo($"{setting} is {value}; it must be from 0 to 100 (dollars an hour), such as {example}."));
     }
 
     /// <summary>0 in a paragraph setting turns that kind of paragraph break off, as the transcript's layout reads it, so it is no problem.</summary>

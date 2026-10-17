@@ -99,6 +99,11 @@ public sealed class SettingsCheck
         // a gigabit line is faster than any upload needs to be allowed for.
         CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.SlowestUploadMbps)), elevenLabs.SlowestUploadMbps, 0.1, 1000, "megabits per second", "1");
 
+        // The prices behind the cost estimate: 0 turns the estimate off, and a hundred dollars an hour is far above any
+        // price ElevenLabs lists; a negative price or NaN is a slip.
+        CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.PricePerHourUsd)), elevenLabs.PricePerHourUsd, 0, 100, "dollars an hour", "0.22");
+        CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.KeytermsPricePerHourUsd)), elevenLabs.KeytermsPricePerHourUsd, 0, 100, "dollars an hour", "0.05");
+
         const string transcriptSection = TranscriptOptions.SectionName;
         var transcript = Bind<TranscriptOptions>(configuration, transcriptSection, problems);
 

@@ -67,8 +67,12 @@ public sealed partial class RebuildCommand(
         var rebuilt = await workflow.RebuildAsync(files, answer, CancellationToken.None);
         logger.LogInformation("Transcript saved to {Path}", rebuilt);
         if (open) desktop.ShowTranscript(recording.Value, new TranscriptFiles(rebuilt, answer));
+        logger.LogInformation("{Cost}", NothingCharged);
         return 0;
     }
+
+    /// <summary>The cost line of a rebuild, where a transcription's says what it cost: nothing went to ElevenLabs.</summary>
+    public const string NothingCharged = "Nothing was sent to ElevenLabs, so nothing was charged";
 
     /// <summary>
     /// The recording a folder stands for: the one started last among those with a saved answer, or, when none has one, the

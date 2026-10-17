@@ -1029,12 +1029,22 @@ public static class Mocks
 /// <summary>What the stub handler saw of one request. <see cref="ContentLength"/> is null when the length was not known before sending.</summary>
 public sealed record CapturedRequest(HttpMethod Method, Uri? Uri, string? ApiKey, string? ContentType, long? ContentLength, string Body);
 
-/// <summary>An HTTP handler that answers from a queue and records each request, body included.</summary>
+/// <summary>
+/// An HTTP handler that answers from a queue and records each request, body included. Answers queued for a path
+/// (<see cref="EnqueueFor"/>) go to the requests of that path alone, and a request to the account's subscription, which the
+/// app makes beside an upload, never takes an answer queued for the upload: with none queued for it, it fails, which the app
+/// reports as the account being unavailable. Requests may arrive from several threads at once.
+/// </summary>
 public sealed class StubHttpHandler : HttpMessageHandler
 {
-    private readonly Queue<Func<HttpResponseMessage>> _answers = new();
+    /// <summary>The path of ElevenLabs' subscription endpoint, whose requests take only the answers queued for it.</summary>
+    public const string SubscriptionPath = "/v1/user/subscription";
 
-    /// <summary>Requests received so far.</summary>
+    private readonly Lock _gate = new();
+    private readonly Queue<Func<HttpResponseMessage>> _answers = new();
+    private readonly Dictionary<string, Queue<Func<HttpResponseMessage>>> _routed = new(StringComparer.Ordinal);
+
+    /// <summary>Requests received so far, in the order they arrived.</summary>
     public List<CapturedRequest> Requests { get; } = [];
 
     /// <summary>Runs as each request reaches the handler, before its body is read, so a test can look at what had happened by then.</summary>
@@ -1054,6 +1064,30 @@ public sealed class StubHttpHandler : HttpMessageHandler
     /// <summary>Queues a failure that is only made when the request arrives, for failures that depend on that moment.</summary>
     public void EnqueueFailure(Func<Exception> failure) => _answers.Enqueue(() => throw failure());
 
+    /// <summary>Queues a response for the requests whose path ends with <paramref name="pathSuffix"/>, such as <see cref="SubscriptionPath"/>.</summary>
+    public void EnqueueFor(string pathSuffix, HttpStatusCode status, string body) =>
+        Route(pathSuffix).Enqueue(() => new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+
+    /// <summary>Queues a failure for the requests whose path ends with <paramref name="pathSuffix"/>.</summary>
+    public void EnqueueFailureFor(string pathSuffix, Exception failure) => Route(pathSuffix).Enqueue(() => throw failure);
+
+    /// <summary>Queues, for the requests whose path ends with <paramref name="pathSuffix"/>, a failure that is only made when the request arrives.</summary>
+    public void EnqueueFailureFor(string pathSuffix, Func<Exception> failure) => Route(pathSuffix).Enqueue(() => throw failure());
+
+    /// <summary>Queues, for the requests whose path ends with <paramref name="pathSuffix"/>, a response whose headers arrive but whose body never does.</summary>
+    public void EnqueueStalledBodyFor(string pathSuffix, HttpStatusCode status) =>
+        Route(pathSuffix).Enqueue(() => new HttpResponseMessage(status) { Content = new StreamContent(new StalledStream()) });
+
+    /// <summary>The queue of answers for a path, made when first asked for.</summary>
+    private Queue<Func<HttpResponseMessage>> Route(string pathSuffix)
+    {
+        lock (_gate)
+        {
+            if (!_routed.TryGetValue(pathSuffix, out var queue)) _routed[pathSuffix] = queue = new Queue<Func<HttpResponseMessage>>();
+            return queue;
+        }
+    }
+
     /// <inheritdoc />
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -1063,8 +1097,21 @@ public sealed class StubHttpHandler : HttpMessageHandler
         var contentLength = request.Content?.Headers.ContentLength;
         var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
         var apiKey = request.Headers.TryGetValues("xi-api-key", out var values) ? values.Single() : null;
-        Requests.Add(new CapturedRequest(request.Method, request.RequestUri, apiKey, request.Content?.Headers.ContentType?.ToString(), contentLength, body));
-        return _answers.Dequeue()();
+        var path = request.RequestUri?.AbsolutePath ?? "";
+        Func<HttpResponseMessage> answer;
+        lock (_gate)
+        {
+            Requests.Add(new CapturedRequest(request.Method, request.RequestUri, apiKey, request.Content?.Headers.ContentType?.ToString(), contentLength, body));
+            var routed = _routed.FirstOrDefault(route => path.EndsWith(route.Key, StringComparison.Ordinal)).Value;
+            if (routed is { Count: > 0 })
+                answer = routed.Dequeue();
+            else if (path.EndsWith(SubscriptionPath, StringComparison.Ordinal))
+                throw new InvalidOperationException($"No answer is queued for {request.Method} {path}.");
+            else
+                answer = _answers.Dequeue();
+        }
+
+        return answer();
     }
 
     /// <summary>A response body that never arrives, as from a server that stalls after sending the headers.</summary>

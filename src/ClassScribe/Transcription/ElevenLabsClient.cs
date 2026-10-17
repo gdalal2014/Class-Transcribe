@@ -78,8 +78,36 @@ public sealed class ElevenLabsClient(
         else
             logger.LogInformation("Transcript received: {Characters} characters, language {Language}, transcription ID {TranscriptionId}", result.Text.Length, language, result.TranscriptionId);
 
+        LogTheEstimate(audioPath, keyterms.Count, result, settings);
         return result;
     }
+
+    /// <summary>
+    /// Logs what the transcript is estimated to have cost (see <see cref="TranscriptionCost"/>), right after its arrival:
+    /// from the audio ElevenLabs says it counted, or else the upload file's length, at the price the settings give. The
+    /// transcript has arrived and been paid for by now, so nothing here may fail it: a file whose length cannot be read any
+    /// more only loses the estimate.
+    /// </summary>
+    private void LogTheEstimate(string audioPath, int keyterms, TranscriptionResult result, ElevenLabsOptions settings)
+    {
+        try
+        {
+            var counted = result.AudioDurationSecs is { } seconds && double.IsFinite(seconds) && seconds >= 0 && seconds < LongestCountedSeconds
+                ? TimeSpan.FromSeconds(seconds)
+                : (TimeSpan?)null;
+            var estimate = TranscriptionCost.Estimate(counted, UploadTimeLimit.AudioLength(audioPath), keyterms, settings);
+            logger.LogInformation("{Estimate}", TranscriptionCost.Describe(estimate));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: the transcript is in hand and has been paid for; the estimate is a courtesy, and a
+            // file whose length cannot be read now only loses it.
+            logger.LogDebug(ex, "Could not read the length of {File} for the cost estimate", Path.GetFileName(audioPath));
+        }
+    }
+
+    /// <summary>The most seconds an answer's audio_duration_secs is believed: a hundred days, far beyond the 10 hours ElevenLabs takes in one file.</summary>
+    private const double LongestCountedSeconds = 100 * 24 * 3600;
 
     /// <summary>
     /// Sends the request and reads the whole answer within <paramref name="limit"/>. Refit hands the response

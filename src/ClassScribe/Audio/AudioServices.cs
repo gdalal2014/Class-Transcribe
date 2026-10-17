@@ -34,8 +34,10 @@ public static class AudioServices
         services.AddTransient<IRecordingFactory>(provider => provider.GetRequiredService<TrackSetFactory>());
 
         // The advice about the microphone, one per run: it remembers Vantage's mode from the start, so that the run can
-        // say when the mode changes.
+        // say when the mode changes. The watch for the class app on a Bluetooth microphone is one per run too: it
+        // remembers what it last found, so that each use is warned about once.
         services.AddScoped<MicrophoneAdvice>();
+        services.AddScoped<BluetoothMicrophoneWatch>();
 
         services.AddSingleton<IAudioPreparer, AudioPreparer>();
         return services;

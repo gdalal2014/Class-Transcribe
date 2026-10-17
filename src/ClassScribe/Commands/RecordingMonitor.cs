@@ -115,7 +115,8 @@ public static class MicrophoneWords
 /// minutes or more; a time ClassScribe did not run, for 5 minutes after it; then the microphone's: its sessions
 /// unreadable for 10 seconds, and in person only exact zeros from it, which the recording reports after 2 minutes of
 /// them. Each of these is an Alert. A silence as
-/// long as Recording:SilenceWarningSeconds is a Notice, and so are the microphone's lesser troubles and the warnings
+/// long as Recording:SilenceWarningSeconds is a Notice, and so are the class app taking sound from a Bluetooth microphone,
+/// while it lasts (see <see cref="BluetoothMicrophoneWatch"/>), the microphone's lesser troubles and the warnings
 /// about it. The title shows the most pressing one.</para>
 /// <para>The count in the attention grows by one for each new event that is at least as pressing as what the title shows,
 /// so that a window flashes once for each new Alert, and a Notice that begins under an Alert is not counted. A condition
@@ -123,7 +124,7 @@ public static class MicrophoneWords
 /// the end of a time ClassScribe did not run.</para>
 /// </remarks>
 public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOptionsSnapshot<RecordingOptions> recording, MicrophoneAdvice advice,
-    ILoopbackCaptureProvider outputs, TimeProvider time)
+    ILoopbackCaptureProvider outputs, BluetoothMicrophoneWatch bluetooth, TimeProvider time)
 {
     /// <summary>How long nothing may be recorded, other than while paused, before it is an Alert. A device being replaced takes less.</summary>
     public static readonly TimeSpan NotRecordingAlertAfter = TimeSpan.FromSeconds(15);
@@ -172,6 +173,9 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
 
     /// <summary>The watch that audio keeps arriving on the microphone track, beside the class.</summary>
     private readonly ArrivalWatch _microphoneArrival = new(time);
+
+    /// <summary>The apps taking sound from a Bluetooth microphone, as the last look that read found them, each with the warning given for it.</summary>
+    private readonly List<(BluetoothMicrophoneUse Use, string Text)> _bluetoothUses = [];
 
     /// <summary>True once the first look has taken its bearings from the run's context.</summary>
     private bool _begun;
@@ -239,10 +243,11 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
 
     /// <summary>
     /// One look at the recording, once a second: a time ClassScribe did not run; the microphone's lines (the advice at the
-    /// start, and its checks since); nothing recorded; the silence warning; audio that stops arriving; a pause left on;
-    /// the free space, at the first look and then every 5 minutes; --minutes and the safety stop; the status line at its
-    /// interval, which says when the recording stops by itself and, with the class and your microphone, how the microphone
-    /// is doing; and from all of that, what needs attention. The first look takes its bearings from <paramref name="context"/>.
+    /// start, and its checks since); the class app on a Bluetooth microphone, every 10 seconds from the start; nothing
+    /// recorded; the silence warning; audio that stops arriving; a pause left on; the free space, at the first look and then
+    /// every 5 minutes; --minutes and the safety stop; the status line at its interval, which says when the recording stops
+    /// by itself and, with the class and your microphone, how the microphone is doing; and from all of that, what needs
+    /// attention. The first look takes its bearings from <paramref name="context"/>.
     /// </summary>
     public MonitorTick Tick(RecordingSnapshot snapshot, MonitorContext context)
     {
@@ -276,6 +281,10 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         // The microphone's lines first, so that at the first look the advice about it leads.
         List<Condition> microphoneConditions = [];
         _microphone.Tick(snapshot, context, options, now, began, lines, microphoneConditions);
+
+        // Then the class app on a Bluetooth microphone, which can take the class's sound where it cannot be recorded.
+        List<Condition> bluetoothConditions = [];
+        WatchBluetoothMicrophones(context, now, lines, bluetoothConditions);
 
         // Nothing recorded, other than while paused, which is a choice; a track switched off with V records nothing by choice too.
         if (snapshot.Paused || main.Capturing || main.Off)
@@ -343,6 +352,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
             conditions.Add((string.Create(CultureInfo.InvariantCulture, $"Freeze{frozen.Number}"), AttentionLevel.Alert, frozen.Short, frozen.Text));
         if (silent)
             conditions.Add(("NoSound", AttentionLevel.Notice, string.Create(CultureInfo.InvariantCulture, $"no sound {Math.Max(1, (int)silence.TotalMinutes)} min"), silenceText));
+        conditions.AddRange(bluetoothConditions);
         if (_microphoneArrival.Stalled) conditions.Add(("MicrophoneNoAudio", AttentionLevel.Notice, "no audio from the microphone", _microphoneArrival.Stall.Text));
         conditions.AddRange(microphoneConditions);
 
@@ -350,6 +360,66 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
 
         // The class's conditions come before the microphone's at each level; an Alert of the microphone's still outranks a Notice.
         return new MonitorTick(lines, notes, Attend([.. conditions.OrderByDescending(condition => condition.Level)]), stopBecause, reopen, stopsAt);
+    }
+
+    /// <summary>
+    /// The class app on a Bluetooth microphone, in the modes that record the class (see <see cref="BluetoothMicrophoneWatch"/>):
+    /// at the first look and every 10 seconds after, a warning for each app newly found taking sound from a Bluetooth
+    /// microphone (a headset's or earbuds'), which names the app, the microphone and what to change in the app, a line when it lets go, and a Notice
+    /// for each while it lasts. The apps that count are the app recorded in app mode and the app the microphone follows
+    /// when one is named; in device mode with no app followed, any app, since any could be the class's (see <see cref="WatchedApps"/>).
+    /// In person there is no class to lose, so nothing is watched.
+    /// </summary>
+    private void WatchBluetoothMicrophones(MonitorContext context, long now, List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
+    {
+        if (context.Request.Source.Mode == RecordingMode.Microphone) return;
+
+        if (bluetooth.Look(WatchedApps(context), now) is { Problem: null } look)
+        {
+            foreach (var ended in look.Ended)
+            {
+                _bluetoothUses.RemoveAll(entry => entry.Use == ended);
+                lines.Add((LogLevel.Information, $"{ended.App} has let go of the Bluetooth microphone \"{ended.Microphone}\""));
+            }
+
+            foreach (var began in look.Began)
+            {
+                var text = BluetoothText(began, look.BuiltInMicrophone);
+                _bluetoothUses.Add((began, text));
+                lines.Add((LogLevel.Warning, text));
+            }
+        }
+
+        foreach (var (use, text) in _bluetoothUses)
+            conditions.Add(($"BluetoothMicrophone {use.App} {use.Microphone}", AttentionLevel.Notice, $"{use.App} on a Bluetooth microphone", text));
+    }
+
+    /// <summary>
+    /// The apps whose sessions on a Bluetooth microphone matter to the class: the app recorded in app mode, and the app the
+    /// microphone follows when one is named; empty, which means any app, in device mode with no app followed.
+    /// </summary>
+    private static IReadOnlyList<FollowRule.Named> WatchedApps(MonitorContext context)
+    {
+        List<FollowRule.Named> apps = [];
+        if (context.Request.Source.Class is ClassSource.App recorded) apps.Add(new FollowRule.Named(recorded.ProcessName));
+
+        var follows = context.Microphone?.Follows ?? context.Request.Source.Microphone?.Follows;
+        if (follows is FollowRule.Named followed && !apps.Any(app => app.NamePart.Equals(followed.NamePart, StringComparison.OrdinalIgnoreCase)))
+            apps.Add(followed);
+
+        return apps;
+    }
+
+    /// <summary>
+    /// The warning for an app taking sound from a Bluetooth microphone: what it does to the class's sound, and the fix,
+    /// naming the laptop's own microphone array when one is connected. Worded for a headset or earbuds alike, since the
+    /// watch counts every Bluetooth microphone.
+    /// </summary>
+    private static string BluetoothText(BluetoothMicrophoneUse use, string? builtInMicrophone)
+    {
+        var builtIn = builtInMicrophone is null ? "the laptop's built-in microphone" : $"the laptop's built-in microphone (\"{builtInMicrophone}\")";
+        return $"{use.App} is taking sound from the Bluetooth microphone \"{use.Microphone}\": that puts the headset or earbuds into call mode, and the class's sound may be going to them " +
+            $"in a way Windows cannot record, so this recording may be silent. In {use.App}, set the microphone to {builtIn}, or to another that is not Bluetooth";
     }
 
     /// <summary>

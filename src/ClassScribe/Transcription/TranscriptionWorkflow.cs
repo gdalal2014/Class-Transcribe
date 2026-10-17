@@ -34,6 +34,7 @@ public sealed class TranscriptionWorkflow(
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     IOptionsSnapshot<RecordingOptions> recording,
     TranscriptionProgress progress,
+    UsageReport usage,
     ILogger<TranscriptionWorkflow> logger)
 {
     /// <summary>
@@ -259,10 +260,12 @@ public sealed class TranscriptionWorkflow(
 
     /// <summary>
     /// Uploads the audio, with the glossary that ElevenLabs:KeytermsFile names, and saves ElevenLabs' answer and the
-    /// Markdown transcript, as the next free copy of the recording's transcript. An answer that has arrived has been
-    /// paid for: one that cannot be read is kept for later rather than lost, and the error is marked as following a
-    /// charged answer (see <see cref="ChargedAnswer"/>), so that whoever reports it can say a new try is charged again.
-    /// No transcription ID can be read from such an answer, so the mark carries none.
+    /// Markdown transcript, as the next free copy of the recording's transcript. The account's credits are read as the
+    /// upload begins, without holding it up, so that the command can say afterwards what the transcript cost (see
+    /// <see cref="UsageReport"/>). An answer that has arrived has been paid for: one that cannot be read is kept for later
+    /// rather than lost, and the error is marked as following a charged answer (see <see cref="ChargedAnswer"/>), so that
+    /// whoever reports it can say a new try is charged again. No transcription ID can be read from such an answer, so the
+    /// mark carries none.
     /// </summary>
     private async Task<TranscriptFiles> UploadAndSaveAsync(
         string audioPath, RecordingFiles files, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks, CancellationToken cancellationToken)
@@ -274,8 +277,9 @@ public sealed class TranscriptionWorkflow(
         TranscriptionResult result;
         try
         {
-            // The upload begins; the client says how far it gets.
+            // The upload begins; the client says how far it gets. The account is read alongside, never waited for here.
             progress.Report(TranscriptionStep.Uploading);
+            usage.Begin(cancellationToken);
             result = await client.TranscribeAsync(audioPath, keyterms, cancellationToken);
         }
         catch (TranscriptionException ex) when (ex.ResponseBody is { } answer && IsSuccess(ex.StatusCode))

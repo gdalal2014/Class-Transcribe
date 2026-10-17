@@ -133,6 +133,37 @@ public class ElevenLabsClientTests
         Assert.That(log.Messages, Has.Some.StartsWith("Transcript received").And.EndsWith("transcription ID abc123"));
     }
 
+    /// <summary>
+    /// The cost estimate follows the received transcript, from the audio the answer says ElevenLabs counted, and the client
+    /// itself still makes one request: the account is read elsewhere.
+    /// </summary>
+    [Test]
+    public async Task The_estimate_follows_the_received_transcript_from_the_answers_count()
+    {
+        var log = new RecordingLogger<ElevenLabsClient>();
+        _handler.Enqueue(HttpStatusCode.OK, Answer);
+
+        await CreateClient(logger: log).TranscribeAsync(_audioPath, ["kalām"], CancellationToken.None);
+
+        var received = log.Messages.ToList().FindIndex(message => message.StartsWith("Transcript received", StringComparison.Ordinal));
+        Assert.That(log.Messages[received + 1], Is.EqualTo("ElevenLabs transcribed 1 second of audio (00:00:01): less than a cent at the API price, $0.22 an hour plus $0.05 an hour for the 1 keyterm"));
+        Assert.That(_handler.Requests, Has.Count.EqualTo(1), "the client reads no account");
+    }
+
+    /// <summary>Without a count in the answer, the upload file's length stands in: two hours of audio, written at ten samples a second, at $0.22 an hour.</summary>
+    [Test]
+    public async Task Without_a_count_in_the_answer_the_upload_files_length_stands_in()
+    {
+        var log = new RecordingLogger<ElevenLabsClient>();
+        File.Delete(_audioPath);
+        using (var writer = new WavSegmentWriter(_audioPath, 10)) writer.Write(new byte[2 * 3600 * 10 * 2]);
+        _handler.Enqueue(HttpStatusCode.OK, """{"text":"Hello.","words":[]}""");
+
+        await CreateClient(logger: log).TranscribeAsync(_audioPath, [], CancellationToken.None);
+
+        Assert.That(log.Messages, Has.Some.EqualTo("ElevenLabs transcribed 120 minutes of audio (02:00:00): about $0.44 at the API price, $0.22 an hour"));
+    }
+
     /// <summary>An answer that carries no transcription ID is logged as received all the same, without one.</summary>
     [Test]
     public async Task An_answer_without_a_transcription_id_is_logged_without_one()

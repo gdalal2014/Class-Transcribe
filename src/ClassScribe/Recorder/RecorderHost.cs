@@ -4,6 +4,7 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Link;
+using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -25,9 +26,10 @@ public sealed record RecorderStart(string RunId, RecordRequest Request, IReadOnl
 /// tells the window the pipe is up; then records at once, with or without a window, through the same run as the window
 /// would (see <see cref="IRecordRun"/>), stopping for the keys the windows pass on and for the stop asked for from another
 /// window (see <see cref="StopSignal"/>). At the end it sends every window how the run ended and waits a little for them to
-/// take it; opens the results itself when no window will; and ends with the recorder's own exit codes: 0 done, 1 failed,
-/// 3 refused because another recording held the lock, 4 for a request it could not take, 130 cancelled. It never touches
-/// the console, and never waits for Enter: nobody could press it.
+/// take it; opens the results itself when no window will; after a transcript, says what it cost the account, last of all
+/// (see <see cref="UsageReport"/>); and ends with the recorder's own exit codes: 0 done, 1 failed, 3 refused because
+/// another recording held the lock, 4 for a request it could not take, 130 cancelled. It never touches the console, and
+/// never waits for Enter: nobody could press it.
 /// </summary>
 public sealed class RecorderHost
 {
@@ -165,7 +167,7 @@ public sealed class RecorderHost
         }
     }
 
-    /// <summary>Steps 3 to 6: the server, the run file, the run in its scope, and the end, with the host built.</summary>
+    /// <summary>Steps 3 to 7: the server, the run file, the run in its scope, the end and the transcript's cost, with the host built.</summary>
     private async Task<int> RunWithAsync(IHost host, string runId, RecordRequest request, RecorderLog log)
     {
         var services = host.Services;
@@ -218,8 +220,11 @@ public sealed class RecorderHost
     }
 
     /// <summary>
-    /// Steps 5 and 6: the run in a scope of its own, with the keys and Ctrl+C from the windows and the stop from another
-    /// window wired to it; then the end to every window, and the results opened here when no window will.
+    /// Steps 5 to 7: the run in a scope of its own, with the keys and Ctrl+C from the windows and the stop from another
+    /// window wired to it; then the end to every window, and the results opened here when no window will; then, after a
+    /// transcript, what it cost the account, which the run leaves to this step so that no read of the account holds the
+    /// end up (see <see cref="UsageReport"/>). The scope is still open, so the line goes into the recording's log and
+    /// recorder.log; the window that was shown the end has left by then.
     /// </summary>
     private static async Task<int> RecordAsync(IServiceProvider services, string runId, RecordRequest request, string pipe, RunHandle handle, RecorderServer server, ILogger logger)
     {
@@ -262,6 +267,9 @@ public sealed class RecorderHost
         var outcome = handle.Current.Outcome ?? OutcomeWithout(handle, exitCode, error);
         var taken = await server.EndAsync(outcome, request.Open, EndPatience);
         if (!taken) run.GetRequiredService<RecorderResultShower>().OpenResults();
+
+        // 7. What the transcript cost, last of all: only a transcript was paid for, and the windows have the end.
+        if (outcome.Kind == OutcomeKind.Transcribed) await run.GetRequiredService<UsageReport>().ReportAsync(signals.Cancellation);
         logger.LogDebug("The recorder ends with exit code {ExitCode}", exitCode);
         return exitCode;
     }

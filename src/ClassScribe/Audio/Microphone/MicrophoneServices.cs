@@ -24,9 +24,11 @@ public static class MicrophoneServices
             : throw new PlatformNotSupportedException("Recording a microphone needs Windows."));
 
         // The real provider makes NAudio's enumerator and registers for device notifications as it is made, so it is made
-        // only when a recording with the microphone starts, the microphones are listed, or the microphone menu asks for
-        // them: the menu and the command line take the provider as a part of the app, and transcribe, rebuild and list
-        // must never touch Windows audio.
+        // only when something first asks for the microphones: a recording with the microphone starting, the devices
+        // command or the microphone menu listing them, or the Bluetooth watch at its first look in any recording of the
+        // class, with or without the microphone (see BluetoothMicrophoneWatch), which a class recording, already on
+        // Windows audio, can bear. The menu and the command line take the provider as a part of the app, and transcribe,
+        // rebuild and list must never touch Windows audio.
         services.AddSingleton<IMicrophoneProvider>(provider => new LazyMicrophoneProvider(() => OperatingSystem.IsWindows()
             ? new WasapiMicrophoneProvider(provider.GetRequiredService<IMicrophoneCaptureFactory>(), provider.GetRequiredService<ILogger<WasapiMicrophoneProvider>>())
             : throw new PlatformNotSupportedException("Recording a microphone needs Windows.")));
@@ -46,10 +48,10 @@ public static class MicrophoneServices
 }
 
 /// <summary>
-/// The microphone provider as the app holds it: the real one is made the first time anything lists the microphones,
-/// opens a capture of one, asks about its mute, or listens for the microphones to change, and not before, so that the
-/// parts of the app that only take the provider along, such as the menu, never touch Windows audio. Made once, it is
-/// kept and disposed with this.
+/// The microphone provider as the app holds it: the real one is made the first time anything lists the microphones (the
+/// Bluetooth watch does at the first look of every recording of the class), opens a capture of one, asks about its mute,
+/// or listens for the microphones to change, and not before, so that the parts of the app that only take the provider
+/// along, such as the menu, never touch Windows audio. Made once, it is kept and disposed with this.
 /// </summary>
 /// <param name="make">Makes the real provider.</param>
 internal sealed class LazyMicrophoneProvider(Func<IMicrophoneProvider> make) : IMicrophoneProvider

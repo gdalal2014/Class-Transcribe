@@ -33,12 +33,15 @@ public class RecordingMonitorTests
     private FakeFreeSpace _space = null!;
     private FakeRegistryValues _registry = null!;
     private FakeCaptureProvider _outputs = null!;
+    private FakeMicrophoneSessions _sessions = null!;
+    private FakeMicrophoneProvider _microphones = null!;
     private RecordingMonitor _monitor = null!;
     private MonitorContext _context = null!;
 
     /// <summary>
     /// The clock at the tests' class, the computer's clocks read from it, room for any class on the disk, a registry with
-    /// Vantage off and ducking set to Do nothing, and the output devices: the speakers, heard in the room, and headphones.
+    /// Vantage off and ducking set to Do nothing, the output devices (the speakers, heard in the room, and headphones), and
+    /// the microphones (the laptop's array and the Pixel Buds), with no app on any of them.
     /// </summary>
     [SetUp]
     public void SetUp()
@@ -52,6 +55,8 @@ public class RecordingMonitorTests
         _outputs = new FakeCaptureProvider();
         _outputs.ConnectDevice(Speakers, heardInTheRoom: true);
         _outputs.ConnectDevice(Headphones);
+        _sessions = new FakeMicrophoneSessions();
+        _microphones = new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array, LaptopMicrophones.PixelBuds);
     }
 
     /// <summary>
@@ -61,9 +66,106 @@ public class RecordingMonitorTests
     /// </summary>
     private void Begin(RecordingOptions? options = null, RecordRequest? request = null, IMicrophoneRecording? microphone = null)
     {
+        var bluetooth = new BluetoothMicrophoneWatch(_sessions, _microphones, new FakeOwnProcesses(Laptop.OwnProcess), _time, NullLogger<BluetoothMicrophoneWatch>.Instance);
         _monitor = new RecordingMonitor(new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance), _space, TestOptions.Create(options ?? new RecordingOptions()),
-            new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _outputs, _time);
+            new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _outputs, bluetooth, _time);
         _context = new MonitorContext(request ?? TestRuns.Request(TestRuns.Id()), Folder, _time.GetUtcNow(), _time.GetTimestamp(), TimeSpan.Zero, microphone);
+    }
+
+    // ------------------------------------------------------------------ the class app on a Bluetooth microphone
+
+    /// <summary>The warning for chrome on the Pixel Buds, with the laptop's array named as the fix; worded for any Bluetooth headset or earbuds, since the watch counts them all.</summary>
+    private static readonly string ChromeOnBuds =
+        $"chrome is taking sound from the Bluetooth microphone \"{LaptopMicrophones.PixelBuds.Name}\": that puts the headset or earbuds into call mode, and the class's sound may be going to them " +
+        $"in a way Windows cannot record, so this recording may be silent. In chrome, set the microphone to the laptop's built-in microphone (\"{LaptopMicrophones.Array.Name}\"), or to another that is not Bluetooth";
+
+    /// <summary>Puts chrome's capture session on the Pixel Buds, taking sound.</summary>
+    private void ChromeListensOnTheBuds() => _sessions.SetSessions(LaptopMicrophones.PixelBuds.Id, Laptop.Session(LaptopMicrophones.PixelBuds.Id, Laptop.ChromeUtility));
+
+    /// <summary>
+    /// With the class recorded from a device and no app followed, any app taking sound from a Bluetooth microphone is warned
+    /// about at the first look, naming the app, the earbuds and the fix, and is a Notice while it lasts; the warning is not
+    /// repeated while nothing changes, and when the app lets go, the next look (every 10 seconds) says so and the Notice ends.
+    /// </summary>
+    [Test]
+    public void The_class_app_on_a_Bluetooth_microphone_is_warned_about_once_and_until_it_lets_go()
+    {
+        ChromeListensOnTheBuds();
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600 });
+
+        var first = Look(Recording());
+        var meanwhile = Run(9, _ => Recording());
+        _sessions.SetSessions(LaptopMicrophones.PixelBuds.Id);
+        var tenth = Tick(Recording());
+
+        Assert.That(first.Lines, Is.EqualTo([(LogLevel.Warning, ChromeOnBuds)]));
+        Assert.That((first.Attention.Level, first.Attention.Short, first.Attention.Text, first.Attention.Count), Is.EqualTo((AttentionLevel.Notice, "chrome on a Bluetooth microphone", ChromeOnBuds, 1)));
+        Assert.That(Texts(meanwhile), Is.Empty, "said once");
+        Assert.That(meanwhile.Select(tick => tick.Attention.Level), Has.All.EqualTo(AttentionLevel.Notice), "a Notice while it lasts");
+        Assert.That(tenth.Lines, Is.EqualTo([(LogLevel.Information, $"chrome has let go of the Bluetooth microphone \"{LaptopMicrophones.PixelBuds.Name}\"")]));
+        Assert.That(tenth.Attention.Level, Is.EqualTo(AttentionLevel.None));
+    }
+
+    /// <summary>An app that takes a Bluetooth microphone mid-class is warned about at the look that finds it, within 10 seconds.</summary>
+    [Test]
+    public void An_app_that_takes_a_Bluetooth_microphone_mid_class_is_warned_about_within_10_seconds()
+    {
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600 });
+        var start = Look(Recording());
+        ChromeListensOnTheBuds();
+
+        var ticks = Run(10, _ => Recording());
+
+        Assert.That(start.Lines, Is.Empty);
+        Assert.That(Texts(ticks), Is.EqualTo([ChromeOnBuds]));
+        Assert.That(ticks[^1].Attention.Short, Is.EqualTo("chrome on a Bluetooth microphone"));
+    }
+
+    /// <summary>In app mode the app recorded is the one that counts: another app on the earbuds is nothing, the recorded app is warned about.</summary>
+    [Test]
+    public void In_app_mode_the_app_recorded_is_the_one_watched()
+    {
+        _sessions.SetSessions(LaptopMicrophones.PixelBuds.Id, Laptop.Session(LaptopMicrophones.PixelBuds.Id, Laptop.Vibe));
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600 }, RequestFor(new ClassSource.App("chrome")));
+        var vibe = Look(App(0));
+        ChromeListensOnTheBuds();
+        var chrome = Run(10, _ => App(0));
+
+        Assert.That(vibe.Lines, Is.Empty);
+        Assert.That(Texts(chrome), Is.EqualTo([ChromeOnBuds]));
+    }
+
+    /// <summary>With the class from a device and the microphone following chrome, chrome is the app watched, by the request's plan.</summary>
+    [Test]
+    public void With_the_microphone_following_an_app_that_app_is_the_one_watched()
+    {
+        _sessions.SetSessions(LaptopMicrophones.PixelBuds.Id, Laptop.Session(LaptopMicrophones.PixelBuds.Id, Laptop.Vibe));
+        var request = TestRuns.Request(TestRuns.Id()) with
+        {
+            Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null, new FollowRule.Named("chrome")))
+        };
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600 }, request);
+
+        var vibe = Look(Recording());
+        ChromeListensOnTheBuds();
+        var chrome = Run(10, _ => Recording());
+
+        Assert.That(Texts(vibe), Has.None.Contains("Bluetooth"));
+        Assert.That(Texts(chrome), Is.EqualTo([ChromeOnBuds]));
+    }
+
+    /// <summary>In person there is no class to lose to the earbuds, so nothing is watched or said.</summary>
+    [Test]
+    public void In_person_nothing_is_said_about_a_Bluetooth_microphone()
+    {
+        ChromeListensOnTheBuds();
+        var request = TestRuns.Request(TestRuns.Id()) with { Source = new SourcePlan(RecordingMode.Microphone, Class: null, new MicrophoneChoice(null)) };
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600 }, request);
+
+        var first = Look(Recording(FakeRecording.Track("Microphone Array", deliversContinuously: true)));
+
+        Assert.That(Texts(first), Has.None.Contains("Bluetooth"));
+        Assert.That(_sessions.ReadAlls, Is.EqualTo(0));
     }
 
     /// <summary>A look at <paramref name="snapshot"/> now, without moving the clock.</summary>

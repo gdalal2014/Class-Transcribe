@@ -40,6 +40,7 @@ public sealed record TranscribeRequest(string Path, string? OutputRoot = null, b
 /// </summary>
 public sealed class TranscribeCommand(
     TranscriptionWorkflow workflow,
+    UsageReport usage,
     ClassFolders folders,
     IUserSignals signals,
     IDesktop desktop,
@@ -110,7 +111,7 @@ public sealed class TranscribeCommand(
         logger.LogInformation("Transcribing the recording {Recording}", files.BaseName);
         TranscriptFiles saved;
         using (KeepAwake()) saved = await workflow.TranscribeRecordingAsync(files, signals.Cancellation);
-        Done(saved, request);
+        await DoneAsync(saved, request);
         return 0;
     }
 
@@ -124,7 +125,7 @@ public sealed class TranscribeCommand(
 
         TranscriptFiles saved;
         using (KeepAwake()) saved = await workflow.TranscribeFileAsync(path, request.OutputRoot, signals.Cancellation);
-        Done(saved, request);
+        await DoneAsync(saved, request);
         return 0;
     }
 
@@ -189,11 +190,15 @@ public sealed class TranscribeCommand(
         return false;
     }
 
-    /// <summary>Says where the transcript was saved, and opens it as the settings ask, unless the request says to open nothing.</summary>
-    private void Done(TranscriptFiles saved, TranscribeRequest request)
+    /// <summary>
+    /// Says where the transcript was saved, opens it as the settings ask, unless the request says to open nothing, and
+    /// then, as the last step, says what the transcript cost the account (see <see cref="UsageReport"/>).
+    /// </summary>
+    private async Task DoneAsync(TranscriptFiles saved, TranscribeRequest request)
     {
         logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
         if (request.Open) desktop.ShowTranscript(recording.Value, saved);
+        await usage.ReportAsync(signals.Cancellation);
     }
 
     /// <summary>

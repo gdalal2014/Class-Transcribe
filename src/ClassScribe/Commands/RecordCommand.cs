@@ -23,6 +23,7 @@ public sealed class RecordCommand(
     RecordingLoop loop,
     TranscriptionWorkflow workflow,
     TranscriptionProgress progress,
+    UsageReport usage,
     IUserSignals signals,
     ClassFolders folders,
     ClassMarks marks,
@@ -245,7 +246,11 @@ public sealed class RecordCommand(
     /// <summary>
     /// Transcribes the whole recording from disk, every part of it, while the laptop is still kept awake, showing how far it
     /// gets (see <see cref="Follow"/>). Every end writes its outcome, with the command that tries again where trying again
-    /// can help, before a failure or a cancel goes on to the caller.
+    /// can help, before a failure or a cancel goes on to the caller. Once the transcript is saved and the run has ended,
+    /// with its results opened, the last line says what the transcript cost the account (see <see cref="UsageReport"/>),
+    /// so that nothing anyone waits for is held up by it: in this window the run says it, since the end has opened the
+    /// results already; in a recorder the end has still to go to the windows once the run returns, so the recorder's host
+    /// says it after that (see <see cref="RecorderHost"/>).
     /// </summary>
     private async Task<int> TranscribeAsync(RecordRequest request, RecordingFiles files, RecorderState stopping, string source, string command)
     {
@@ -260,6 +265,10 @@ public sealed class RecordCommand(
             logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
             End(request, stopping, RecorderPhase.Done,
                 new RunOutcome(OutcomeKind.Transcribed, 0, $"Transcript saved to {saved.TranscriptPath}", saved.TranscriptPath, files.Folder, RetryCommand: null));
+
+            // In a recorder the end goes to the windows, which open the results, only once this run has returned: the
+            // host reports then, so that no read of the account holds the end up.
+            if (bookkeeping.Home == RunHome.InWindow) await usage.ReportAsync(signals.Cancellation);
             return 0;
         }
         catch (OperationCanceledException)

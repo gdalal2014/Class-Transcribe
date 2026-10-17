@@ -46,6 +46,8 @@ public class RecordCommandTests
     private FakeConsoleUi _ui = null!;
     private Mock<ITranscriptionClient> _client = null!;
     private TranscriptionProgress _progress = null!;
+    private FakeElevenLabsAccount _account = null!;
+    private RecordingLogger<UsageReport> _usageLog = null!;
     private Mock<IDesktop> _desktop = null!;
     private Mock<IExitWarnings> _exitWarnings = null!;
     private Action? _processEnding;
@@ -86,6 +88,8 @@ public class RecordCommandTests
         _ui = new FakeConsoleUi();
         _client = Mocks.TranscriptionClient();
         _progress = new TranscriptionProgress();
+        _account = new FakeElevenLabsAccount();
+        _usageLog = new RecordingLogger<UsageReport>();
         _desktop = new Mock<IDesktop>();
         _processEnding = null;
         _crashes = new FakeCrashWarnings();
@@ -152,6 +156,7 @@ public class RecordCommandTests
         var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = _folder.File("no-glossary.txt") });
         var folders = new ClassFolders(recording, time, NullLogger<ClassFolders>.Instance);
         var marks = new ClassMarks(NullLogger<ClassMarks>.Instance);
+        var usage = new UsageReport(_account, time, _usageLog);
         var workflow = new TranscriptionWorkflow(
             new AudioPreparer(NullLogger<AudioPreparer>.Instance),
             _client.Object,
@@ -162,6 +167,7 @@ public class RecordCommandTests
             elevenLabs,
             recording,
             _progress,
+            usage,
             NullLogger<TranscriptionWorkflow>.Instance);
 
         _times = new FakeSystemTimes(time);
@@ -169,8 +175,9 @@ public class RecordCommandTests
         var registry = new FakeRegistryValues()
             .Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "0")
             .Set(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue, 3);
+        var bluetooth = new BluetoothMicrophoneWatch(new FakeMicrophoneSessions(), new FakeMicrophoneProvider(), new FakeOwnProcesses(), time, NullLogger<BluetoothMicrophoneWatch>.Instance);
         var monitor = new RecordingMonitor(new FreezeWatch(_times, time, NullLogger<FreezeWatch>.Instance), new FakeFreeSpace(), recording,
-            new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _provider, time);
+            new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _provider, bluetooth, time);
         var loop = new RecordingLoop(_ui, _signals, marks, monitor, status, time, _loopLog);
 
         var ownFolder = runtimeFolder ?? _runtime.Folder;
@@ -187,7 +194,72 @@ public class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance),
-            loop, workflow, _progress, _signals, folders, marks, _bookkeeping, _results, status, _choice, recording, elevenLabs, time, logger ?? _log);
+            loop, workflow, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, recording, elevenLabs, time, logger ?? _log);
+    }
+
+    /// <summary>
+    /// What the transcript cost the account is the run's last line: read after the transcript is saved and the results are
+    /// open, so that nothing anyone waits for is held up by it, from the read made as the upload began.
+    /// </summary>
+    [Test]
+    public async Task The_accounts_credits_are_reported_after_the_transcript_is_saved_and_the_results_opened()
+    {
+        _account.Answer(FakeElevenLabsAccount.Read(0), FakeElevenLabsAccount.Read(500));
+        (bool Saved, bool Opened)? atTheSecondRead = null;
+        _account.OnRead = number =>
+        {
+            if (number == 2)
+                atTheSecondRead = (_log.Messages.Any(message => message.StartsWith("Transcript saved to", StringComparison.Ordinal)), _desktop.Invocations.Count > 0);
+        };
+        var run = CreateCommand(openWhenDone: true).RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(atTheSecondRead, Is.EqualTo((true, true)), "saved and opened before the second read");
+        Assert.That(UsageLines(), Is.EqualTo(["ElevenLabs charged 500 credits for this transcript; 99,500 of 100,000 credits are left"]));
+        Assert.That(RunFile().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+    }
+
+    /// <summary>A reader that fails changes neither the exit code nor the outcome: the line says the credits could not be read, and that is all.</summary>
+    [Test]
+    public async Task A_failed_read_of_the_account_changes_neither_the_exit_code_nor_the_outcome()
+    {
+        _account.Failure = new InvalidOperationException("boom");
+        var run = CreateCommand().RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(RunFile().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+        Assert.That(UsageLines(), Is.EqualTo(["The account's credits could not be read (the request failed: boom); the transcript is not affected"]));
+        Assert.That(_usageLog.Problems, Is.Empty);
+    }
+
+    /// <summary>
+    /// In a recorder the end has still to go to the windows, which open the results, once the run has returned: so the run
+    /// leaves the account's report to its host, which makes it after that (see <see cref="RecorderHost"/>). The run itself
+    /// makes the read before the upload alone, and says nothing of the account.
+    /// </summary>
+    [Test]
+    public async Task In_a_recorder_the_accounts_report_is_left_to_the_host()
+    {
+        _account.Answer(FakeElevenLabsAccount.Read(0), FakeElevenLabsAccount.Read(500));
+        var command = CreateCommand();
+        var request = Request();
+        BeginAsTheRecordersHost(request);
+
+        var run = command.RunAsync(request);
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(_account.Reads, Is.EqualTo(1), "the read before the upload alone");
+        Assert.That(UsageLines(), Is.Empty, "the host reports, once the end has gone to the windows");
+        Assert.That((RunFile().Outcome?.Kind, _results.Last?.Kind), Is.EqualTo((OutcomeKind.Transcribed, OutcomeKind.Transcribed)));
     }
 
     /// <summary>
@@ -235,6 +307,9 @@ public class RecordCommandTests
 
     /// <summary>The one run file in ClassScribe's own folder, as it is now.</summary>
     private RunRecord RunFile() => _journal.List().Single().Record;
+
+    /// <summary>What the account's report said at Information, which the window and the recording's log show; its Debug notes are left out.</summary>
+    private IReadOnlyList<string> UsageLines() => [.. _usageLog.Entries.Where(entry => entry.Level == LogLevel.Information).Select(entry => entry.Message)];
 
     /// <summary>A lock over ClassScribe's own folder that stands for another recording's, or looks at it.</summary>
     private RecordingLock OtherLock() => new(_runtime.Folder, NullLogger<RecordingLock>.Instance, _ => { });

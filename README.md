@@ -11,7 +11,10 @@ in the transcript too; or your microphone alone, for a class held in a room. See
 1. Check the .NET 10 SDK: `dotnet --version` should print `10.x`.
    If it does not: `winget install Microsoft.DotNet.SDK.10`
 2. Store your ElevenLabs API key in an environment variable.
-   A key that is restricted to Speech to Text is all the app needs.
+   A key that is restricted to Speech to Text is all the app needs. To see the account's credits in
+   the log after each transcript, also allow User (read) on it; without that, ClassScribe logs an
+   estimate from the price list and says once that the key may not read the account (see
+   [Cost and privacy](#cost-and-privacy)).
    ```powershell
    setx ELEVENLABS_API_KEY "your-key"
    ```
@@ -49,6 +52,15 @@ in the transcript too; or your microphone alone, for a class held in a room. See
    while a microphone is open, which makes the class quieter, in the recording too. Bitdefender's
    Microphone Monitor may tell you that `ClassScribe.exe` is using the microphone; that is the
    recording, and nothing to act on.
+7. If you wear Bluetooth earbuds or a headset in class, keep the class page off their microphone. In
+   Chrome, click the microphone icon at the right end of the address bar, shown while the page uses
+   the microphone, and choose the laptop's built-in `Microphone Array`; the same choice is under
+   Settings > Privacy and security > Site settings > Microphone, and the class page's own microphone
+   setting, where it has one, does the same. Used as a microphone, Bluetooth earbuds switch to call
+   mode (sound in one ear only, at call quality), and Bluetooth then carries the class's sound to
+   them in a way Windows cannot record, so ClassScribe records silence. ClassScribe warns when it
+   sees this, at the start of a recording and whenever it begins (see
+   [While recording](#while-recording)).
 
 ## Use it
 
@@ -87,7 +99,8 @@ A to show it again. Above the choices, the header names what runs in the backgro
   says `Recording in the background: closing this window does not stop it. Esc leaves this view;
   start ClassScribe again to see it.` Only one recording runs at a time; while one runs, 1 and 2 say
   so, and A shows it.
-- **2 Record and transcribe** does the same, then sends the recording to ElevenLabs.
+- **2 Record and transcribe** does the same, then sends the recording to ElevenLabs and, once the
+  transcript is saved, says what it cost (see [Cost and privacy](#cost-and-privacy)).
 - **3 Transcribe a recent recording** lists the last nine recordings, newest first, each with its
   length, `2 parts` when it was continued after an interruption, and `transcript ready`,
   `answer kept`, `RECORDING NOW` or `no transcript yet`; press one's number. A recording that has a transcript, or an answer ElevenLabs was paid for (see
@@ -410,6 +423,24 @@ ClassScribe says so and reopens the capture in a new segment file, at most once 
 For a device the line says `although Windows shows sound playing there` instead. An app is watched
 during a pause as well; the line then says the capture is reopened so that the recording can go on
 when you press P again.
+
+Every 10 seconds, from the start, ClassScribe also looks whether the class app is taking sound from
+a Bluetooth microphone, a headset's or earbuds'. Used as a microphone, a Bluetooth headset or earbuds
+switch to call mode (you hear it: sound in one ear only, or at call quality), and Bluetooth then
+carries the class's sound straight to them, past the loopback Windows offers, so the recording is
+silent while it lasts. The warning names the app, the microphone and the fix:
+`chrome is taking sound from the Bluetooth microphone "Headset (2- Pixel Buds Pro 2)": that puts the
+headset or earbuds into call mode, and the class's sound may be going to them in a way Windows cannot
+record, so this recording may be silent. In chrome, set the microphone to the laptop's built-in
+microphone ("Microphone Array (...)"), or to another that is not Bluetooth`, with `chrome on a
+Bluetooth microphone` in the title until the app lets go (`chrome has let go of the Bluetooth
+microphone ...`). In Chrome, the quickest fix is the microphone icon at the right end of the address
+bar, shown while the page uses the microphone: choose the laptop's `Microphone Array` there, or under
+Settings > Privacy and security > Site settings > Microphone; the class page's own microphone
+setting, where it has one, does the same. The earbuds then leave call mode and the recording picks
+the class up again. With a device recorded and no app followed, any app counts, since any could be the class's;
+with an app recorded, or your microphone following one, that app alone. In person nothing is
+watched. Nothing is opened: the look reads Windows' own lists, as the `devices` command does.
 
 ### The background recorder
 
@@ -813,8 +844,9 @@ dotnet run --project src/ClassScribe -- rebuild "C:\path\to\recording folder or 
 has been deleted; a newer recording it passes over is named, with the reason), any file of a
 recording (`.wav`, `.marks.txt`, `.md`), or an answer saved as `.json`. It lays out the recording's
 newest saved answer, or the `.json` given, needs no API key, uploads nothing, and says so:
-`Rebuilt from Kalam_2026-10-14_19-30-00Z.json into Kalam_2026-10-14_19-30-00Z (3).md; nothing was uploaded`.
-The new transcript goes beside the old ones as the next free copy, with the marks (labels typed in
+`Rebuilt from Kalam_2026-10-14_19-30-00Z.json into Kalam_2026-10-14_19-30-00Z (3).md; nothing was uploaded`,
+ending with `Nothing was sent to ElevenLabs, so nothing was charged` where a transcription's last
+line says what it cost. The new transcript goes beside the old ones as the next free copy, with the marks (labels typed in
 since included) and the `Transcript` settings as they are now; nothing is ever overwritten. A
 recording that was never transcribed has nothing to lay out yet:
 `... has no saved answer from ElevenLabs yet; transcribe it first`.
@@ -1049,6 +1081,9 @@ The ones you are most likely to change:
 | `ElevenLabs:KeytermsFile` | `keyterms.txt` | The glossary. A relative path is taken from the app's folder; environment variables work, and quotes are ignored. Empty sends no glossary. |
 | `ElevenLabs:TimeoutMinutes` | 60 | The least time one try is given: the upload, the transcription and the whole answer. A longer recording gets more; see [How long an upload may take](#how-long-an-upload-may-take). From 1 to 1440. |
 | `ElevenLabs:SlowestUploadMbps` | 1 | The slowest upload speed, in megabits per second, that the time limit allows for. If your line uploads more slowly, set it a little below that speed. From 0.1 to 1000. |
+| `ElevenLabs:PricePerHourUsd` | 0.22 | The API price of an hour of audio, in US dollars, for the estimate logged after each transcript: Scribe v2 on [ElevenLabs' API price list](https://elevenlabs.io/pricing/api). 0 logs the audio's length without a price. From 0 to 100. See [Cost and privacy](#cost-and-privacy). |
+| `ElevenLabs:KeytermsPricePerHourUsd` | 0.05 | What keyterm prompting adds an hour, in US dollars, counted in the estimate when a glossary is sent. From 0 to 100. |
+| `ElevenLabs:ReadAccountUsage` | true | Read the account's credits before and after each transcript and log what it cost in credits. It needs the key's User permission; a key restricted to Speech to Text is told so once, and the transcript is not affected. `false` asks nothing. |
 | `Transcript:IncludeTimestamps` | true | Start paragraphs with `[hh:mm:ss]`. |
 | `Transcript:ParagraphPauseSeconds` | 2.0 | A pause between words this long, in seconds, starts a new paragraph. 0 or more; 0 turns these breaks off. |
 | `Transcript:MaxParagraphCharacters` | 900 | A longer paragraph is split at the next sentence end. 0 or more; 0 turns this off. |
@@ -1073,10 +1108,15 @@ cannot be shared by mistake.
 Each try of an upload has a time limit, for the upload, the transcription and the whole answer. It
 is at least `ElevenLabs:TimeoutMinutes`, and grows with the recording: 10 minutes, plus the upload at
 `ElevenLabs:SlowestUploadMbps`, plus a quarter of the audio's length, rounded to the minute. At the
-defaults an hour of class keeps its 60 minutes, while two hours (an upload of 230.4 MB) get 71, four
-hours 131 and six hours 192. The `Uploading ...` line gives the size, in MB of a million bytes, and
-the limit, such as
+defaults an hour of class keeps its 60 minutes, while two hours (an upload of 230.4 MB) get 71, a
+class of 2 hours 11 minutes (252.3 MB) 76, four hours 131 and six hours 192. The `Uploading ...` line
+gives the size, in MB of a million bytes, and the limit, such as
 `Uploading Kalam_2026-10-14_19-30-00Z.upload.wav (230.4 MB) with ... keyterms; time limit 71 minutes`.
+It is a limit, not a prediction: how long ClassScribe would wait before giving up on that try. The
+76, for instance, is 10 minutes, plus 33.6 for 252.3 MB at 1 Mbps, plus 32.9 for a quarter of
+2 hours 11 minutes, rounded. The exchange itself usually takes a small fraction of it (a two-hour
+class: well under two minutes to upload on a normal line, and a minute or so for ElevenLabs to
+answer).
 
 A recording longer than 9 and a half hours is not sent at all, because ElevenLabs takes at most 10
 hours per file: nothing is prepared or uploaded, and the message says how to send it in pieces.
@@ -1114,12 +1154,42 @@ Windows audio through COM interop.
 
 ## Cost and privacy
 
-- ElevenLabs lists Scribe v2 at $0.22 per audio hour through the API, plus a surcharge of about 20% when keyterms are sent.
-  A two-hour class is roughly 50 cents. Check your usage page after the first run.
+- ElevenLabs lists Scribe v2 at $0.22 per audio hour through the API, plus $0.05 an hour (about 20%)
+  when keyterms are sent. A two-hour class with the glossary is about 54 cents, and one of 2 hours
+  11 minutes about 59 cents. After every transcript the log says what it cost, right after
+  `Transcript received`, from the audio ElevenLabs counted at that price
+  (`ElevenLabs:PricePerHourUsd` and `ElevenLabs:KeytermsPricePerHourUsd`):
+  `ElevenLabs transcribed 131 minutes of audio (02:11:24): about $0.59 at the API price, $0.22 an hour plus $0.05 an hour for the 61 keyterms`.
+  ElevenLabs bills per audio minute, so the sum is approximate; when ElevenLabs' count and the file's
+  length differ by more than a minute, the line says whose number it used. The estimate never turns
+  dollars into credits, because the in-app credit rate and the API's dollar rate cannot be reconciled
+  from ElevenLabs' pages.
+- When the key may read the account, the run's last line, after the transcript is saved and opened,
+  gives the credits themselves: `ElevenLabs charged 43,362 credits for this transcript; 56,638 of
+  100,000 credits are left until 1 November`. The credits are read before the upload and again after
+  the transcript, so the difference counts anything else the account did in between; when the first
+  read did not succeed, the line gives the account's standing instead (`ElevenLabs account: ...
+  credits used this period`), and when the credits did not change, it says so, since API usage on a
+  plan may be billed in dollars and then shows on the usage page alone. A key restricted to Speech to
+  Text is all the app needs; to see the credits here, also allow User (read) on the key under
+  Developers > API Keys on elevenlabs.io. Until then the estimate is the only cost line, and the run
+  says once `ElevenLabs would not show the account's credits to this key (HTTP 401,
+  missing_permissions): most likely it is restricted to Speech to Text, which is all the transcript
+  needs. To see the credits here, allow User (read) on the key under Developers > API Keys on
+  elevenlabs.io, or set ElevenLabs:ReadAccountUsage to false to stop asking` (ElevenLabs may answer
+  `HTTP 403` instead; both are read the same way); `ElevenLabs:ReadAccountUsage` set to `false`
+  stops it asking. Nothing about this read can delay or fail a transcript; it has 10 seconds and is
+  never tried again. Where the line lands
+  depends on where the class was recorded: in this window, and after `transcribe`, it is the last line
+  on the screen; in a background recording, the usual way, the recorder reads the account only once
+  the window has been shown the end and has opened the transcript, so the line is in the recording's
+  `.log` beside the recording (and in `recorder.log`), not in the window. The estimate line above
+  comes before the end, so the window shows it either way.
 - Every transcript ElevenLabs sends back is charged, even one ClassScribe could not save; that one
   is kept (see [Where things go](#where-things-go)).
 - Making a transcript again from ElevenLabs' saved answer (R in the menu, or `rebuild`) is free:
-  nothing is sent (see [A transcript again, for free](#a-transcript-again-for-free)).
+  nothing is sent, and the log says `Nothing was sent to ElevenLabs, so nothing was charged` (see
+  [A transcript again, for free](#a-transcript-again-for-free)).
 - The audio is uploaded to ElevenLabs. Keep transcripts for your own study, in line with what your teacher allows.
 - Your microphone, when recorded, is uploaded with the class, mixed into one track at the same
   price. Only what the class app was listening to is recorded from it, unless
@@ -1164,7 +1234,7 @@ words you see.
 
 | What you see | What to do |
 | --- | --- |
-| `No sound for 60 seconds` | Check that the class is playing through the device named in the message and that Windows is not muted. |
+| `No sound for 60 seconds` | Check that the class is playing through the device named in the message and that Windows is not muted. With Bluetooth earbuds that play in one ear only, see the earbuds row below. |
 | `Could not start capturing system audio yet` | Windows is still setting up the device, one just plugged in, say. ClassScribe tries again every second by itself. |
 | `uses an audio format this app cannot read`, `uses the unsupported encoding` | The device sends sound in a form ClassScribe cannot record, so the recording did not start. Choose another device with menu choice 6. |
 | `Cannot capture an output device right now` | Windows has no usable output device at that moment, or its audio service is restarting. ClassScribe tries again every second and says so every 30 seconds; plug in or switch on a device. |
@@ -1174,6 +1244,8 @@ words you see.
 | `The laptop slept from ... to ...; nothing was recorded then` | The lid was closed, the power button pressed or Start > Sleep chosen, or Windows put the laptop to sleep by itself. The recording went on after the gap. During a class keep the lid open and the laptop plugged in. |
 | `ClassScribe was held up from ... to ... (Windows paused it)` | Windows paused ClassScribe while the laptop stayed awake, as it may with programs to save power on battery. Nothing was recorded then. Plug the laptop in, and on battery keep `Recording:KeepScreenOn` at `OnBattery` or `Always`. |
 | `No audio has arrived from "..." for ...` | The capture stopped handing over audio although it should, and ClassScribe reopened it in a new segment file. If it keeps coming back, restart the class app, or choose another device or app with menu choice 6. |
+| `chrome is taking sound from the Bluetooth microphone "Headset (...)": that puts the headset or earbuds into call mode, and the class's sound may be going to them in a way Windows cannot record, so this recording may be silent. In chrome, set the microphone to the laptop's built-in microphone ("Microphone Array (...)"), or to another that is not Bluetooth` (`chrome on a Bluetooth microphone` in the title) | The class page uses a Bluetooth headset's or earbuds' microphone, which puts them into call mode: Bluetooth then carries the class to them past Windows' loopback, and ClassScribe records silence. In Chrome, click the microphone icon at the right end of the address bar and choose the laptop's `Microphone Array`, or any microphone that is not Bluetooth (also under Settings > Privacy and security > Site settings > Microphone, or in the class page's own microphone setting); `chrome has let go of the Bluetooth microphone ...` follows within 10 seconds. The look is made every 10 seconds in every recording of the class: with a device recorded and no app followed, any app counts; with an app recorded or followed, that app alone. |
+| Only one earbud plays, or the sound has dropped to call quality, and the recording is silent (`No sound for 60 seconds`, `no sound 2 min` in the title) | The earbuds are in call mode because an app is using their microphone, most likely the class page, and Bluetooth carries the class's sound to them past Windows' loopback, so nothing reaches the recording. Switch the class page's microphone to the laptop's `Microphone Array`, as in the row above; the earbuds leave call mode and the recording picks the class up again. The silent stretch stays silent in the recording. ClassScribe gives the warning above when it sees the class app on a Bluetooth microphone; if no warning came, the app holding the earbuds' microphone is not the one it watches (with an app recorded or followed, that app alone counts): the microphone check (menu choice 8) shows which app has it. |
 | `Windows did not accept the request to keep the laptop awake`, `... to keep the screen on` | ClassScribe records or uploads all the same, but the laptop may go to sleep if it is left alone. Keep it plugged in, with sleep set to Never in Settings > System > Power & battery. |
 | `Windows has not finished changing the audio device for 20 seconds` | A sound driver stopped answering as you stopped. ClassScribe stopped without it, and everything recorded so far is kept. If it happens again, restart Windows. |
 | `No audio was captured`, `Nothing audible was captured from "..."` | The recording holds no sound, or only digital silence. Nothing was sent to ElevenLabs or charged, and transcribing it again would find the same silence; `record-only` ends with exit code 1 too, and the silent file is kept. Before the next class, check what is recorded (menu choice 6, `Recording:Device` or `Recording:App`) and that Windows is not muted. |
@@ -1301,6 +1373,11 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `ElevenLabs' answer is kept in ...`, `The transcript could not be made, but ElevenLabs' answer is saved in ...` | ElevenLabs answered, and charged, but no transcript was made from it. Open that file: its `"text"` is the transcript's text. Transcribing again is charged again. |
 | `ElevenLabs' answer could not be kept anywhere` | It was paid for, but no file could take it. Free some disk space. ElevenLabs keeps the transcript under the transcription ID in the message (see [Where things go](#where-things-go)). Transcribing again is charged again. |
 | `ElevenLabs heard no speech in ...` | The transcript was saved, but it is empty, and it was charged. Check what was recorded before the next class. |
+| `ElevenLabs transcribed ... of audio (...): about $... at the API price, ...` | The cost estimate, from the audio ElevenLabs counted at `ElevenLabs:PricePerHourUsd`, plus `ElevenLabs:KeytermsPricePerHourUsd` when keyterms were sent (see [Cost and privacy](#cost-and-privacy)). Approximate: ElevenLabs bills per audio minute. `(..., counted by ElevenLabs; the file holds ...)` means ElevenLabs counted more or less than the file holds, by over a minute. `no price is estimated` means the price is set to 0. |
+| `ElevenLabs did not say how much audio it counted, and the file's length is not known here, so the cost is not estimated` | A file uploaded as it was (not a WAV ClassScribe wrote) and an answer without a count: the usage page on elevenlabs.io has the cost. |
+| `ElevenLabs charged ... credits for this transcript; ... are left until ...`, `ElevenLabs account: ... credits used this period`, `ElevenLabs shows no change in the account's credits for this transcript` | The account's credits read after the transcript: the difference from before the upload; the standing alone when the first read did not succeed; or no change, which on usage-based API billing means the charge is on the usage page instead. `usage-based billing so far this period: $...` follows when the account has an overage. After a background recording the line is in the recording's `.log`, written after the window was shown the end (see [Cost and privacy](#cost-and-privacy)). |
+| `ElevenLabs would not show the account's credits to this key (HTTP 401, missing_permissions)` (or `HTTP 403`) | Harmless, once per transcript: the key is restricted to Speech to Text, which is all the transcript needs. To see the account's credits in the log, allow User (read) on the key under Developers > API Keys on elevenlabs.io; to stop asking, set `ElevenLabs:ReadAccountUsage` to `false`. After a background recording the line is in the recording's `.log`. |
+| `The account's credits could not be read (...); the transcript is not affected` | ElevenLabs did not answer the account read within 10 seconds, the connection failed, or it answered with an error or in another shape; the transcript is saved all the same. Nothing to do. |
 | `The transcript is saved, but the upload copy ... could not be removed` | Another program holds the copy open. The transcript is fine; delete the copy later. |
 | `The upload copy ... could not be removed` | The same after a failed or cancelled try: another program holds the copy open. Delete it later; a new try replaces it once nothing holds it any more. |
 | `Copy ... of the transcript of ... was taken at that moment; saving the next one instead` | Another ClassScribe window saved a transcript of the same recording at the same moment. Each is kept, under its own number; nothing to do. |
@@ -1312,7 +1389,7 @@ the recording's `.log`; the ones about the link show in the window alone.
 
 | What you see | What to do |
 | --- | --- |
-| `Rebuilt from ... into ...; nothing was uploaded` | Done, for free. |
+| `Rebuilt from ... into ...; nothing was uploaded`, then `Nothing was sent to ElevenLabs, so nothing was charged` | Done, for free. |
 | `... has no saved answer from ElevenLabs yet; transcribe it first` | There is no answer to lay out yet: transcribe the recording first. |
 | `... has a transcript, but its saved answer from ElevenLabs is no longer there` | The `.json` beside the transcript was deleted, so only a new transcription, billed again, can make another. |
 | `... has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try ... is kept in ...` | Run the `rebuild` command the next line gives: it lays that kept answer out. |
@@ -1338,7 +1415,8 @@ src/ClassScribe/
     Audio/            capture, the recording as one or two tracks on one clock, WAV writing, the
                       upload copy (the two tracks mixed)
     Audio/Microphone/ choosing the microphone, the advice about it, the watch on the class app's
-                      microphone use and the gate that follows it, the microphone check's lines
+                      microphone use and the gate that follows it, the watch for the class app on a
+                      Bluetooth microphone, the microphone check's lines
     Audio/Timeline/   the recording clock and where each packet goes on a track
     Audio/Windows/    WASAPI loopback through NAudio, the once-a-second device check, the
                       microphone listing and capture, and the reader of the apps' microphone sessions
@@ -1349,7 +1427,8 @@ src/ClassScribe/
     Recorder/         the background recorder: its host, run files, lock, logs, the watch for times
                       when ClassScribe did not run, and the window it brings back by itself
     Link/             the named pipe between the recorder and the windows that show its run
-    Transcription/    ElevenLabs client (Refit), glossary, transcript layout, the upload's time limit
+    Transcription/    ElevenLabs client (Refit), glossary, transcript layout, the upload's time limit,
+                      the cost estimate and the account's credits after a transcript
     Storage/          recording folders, file names, numbered transcript copies, marks, and the
                       microphone check's log
     Commands/         the menu, the microphone menu, the command line (record, transcribe, rebuild,
