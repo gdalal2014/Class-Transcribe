@@ -46,14 +46,15 @@ public class ElevenLabsClientTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Creates the client under test: the Refit interface on top of the stub transport, with the system clock unless another is given.</summary>
-    private ElevenLabsClient CreateClient(ElevenLabsOptions? options = null, TimeProvider? time = null, ILogger<ElevenLabsClient>? logger = null)
+    /// <summary>Creates the client under test: the Refit interface on top of the stub transport, with the system clock unless another is given, reporting its progress to <paramref name="progress"/> when given.</summary>
+    private ElevenLabsClient CreateClient(ElevenLabsOptions? options = null, TimeProvider? time = null, ILogger<ElevenLabsClient>? logger = null, TranscriptionProgress? progress = null)
     {
         var http = new HttpClient(_handler) { BaseAddress = new Uri("https://api.elevenlabs.io/") };
         var api = RestService.ForGenerated<IElevenLabsApi>(http, ElevenLabsJson.Default, ElevenLabsApiSettings.Create());
         return new ElevenLabsClient(
             api,
             TestOptions.Create(options ?? new ElevenLabsOptions { ApiKey = "test-key", RetryDelaySeconds = 0 }),
+            progress ?? new TranscriptionProgress(),
             time ?? TimeProvider.System,
             logger ?? NullLogger<ElevenLabsClient>.Instance);
     }
@@ -328,6 +329,33 @@ public class ElevenLabsClientTests
         Assert.That(loggedBeforeSending, Has.None.StartWith("Uploaded "), "no audio had been read yet");
         Assert.That(loggedBeforeSending, Has.None.StartWith("Upload finished"), "no audio had been read yet");
         Assert.That(log.Messages, Has.Some.StartWith("Upload finished"), "the audio was read as it was sent");
+    }
+
+    /// <summary>
+    /// The run that follows the upload is told how far it is: that the upload begins, at nought, each percent as the audio
+    /// is read, never going back, and, once all of it has gone, that the transcript is waited for, at 100. A second try
+    /// begins at nought again.
+    /// </summary>
+    [Test]
+    public async Task The_upload_s_progress_is_reported_by_the_percent()
+    {
+        File.WriteAllBytes(_audioPath, new byte[300_000]);
+        var progress = new TranscriptionProgress();
+        List<(TranscriptionStep Step, int? Percent)> reported = [];
+        progress.Changed += (step, percent) => reported.Add((step, percent));
+        _handler.Enqueue(HttpStatusCode.InternalServerError, "try again");
+        _handler.Enqueue(HttpStatusCode.OK, Answer);
+
+        await CreateClient(new ElevenLabsOptions { ApiKey = "test-key", MaxAttempts = 2, RetryDelaySeconds = 0 }, progress: progress).TranscribeAsync(_audioPath, [], CancellationToken.None);
+
+        var secondTry = reported.LastIndexOf((TranscriptionStep.Uploading, (int?)0));
+        Assert.That(reported[0], Is.EqualTo((TranscriptionStep.Uploading, (int?)0)), "the first try begins at nought");
+        Assert.That(secondTry, Is.GreaterThan(0), "the second try begins at nought again");
+        Assert.That(reported[^1], Is.EqualTo((TranscriptionStep.WaitingForTranscript, (int?)100)));
+        var percents = reported.Skip(secondTry).Select(report => report.Percent!.Value).ToList();
+        Assert.That(percents, Is.Ordered, "never going back");
+        Assert.That(percents.Distinct().Count(), Is.EqualTo(percents.Count), "each percent once");
+        Assert.That(reported.Skip(secondTry).SkipLast(1).Select(report => report.Step), Has.All.EqualTo(TranscriptionStep.Uploading));
     }
 
     /// <summary>

@@ -18,17 +18,19 @@ namespace ClassScribe.Tests;
 public class RebuildCommandTests
 {
     private TempFolder _folder = null!;
+    private TestRuntime _runtime = null!;
     private string _class = null!;
     private Mock<IAudioPreparer> _preparer = null!;
     private Mock<ITranscriptionClient> _client = null!;
     private Mock<IDesktop> _desktop = null!;
     private RecordingLogger<RebuildCommand> _log = null!;
 
-    /// <summary>Creates a temporary recordings folder with a class folder in it, the mocks and the log to inspect.</summary>
+    /// <summary>Creates a temporary recordings folder with a class folder in it, ClassScribe's own folder in another, the mocks and the log to inspect.</summary>
     [SetUp]
     public void SetUp()
     {
         _folder = new TempFolder();
+        _runtime = new TestRuntime();
         _class = _folder.File("Kalam");
         Directory.CreateDirectory(_class);
         _preparer = Mocks.AudioPreparer();
@@ -37,7 +39,7 @@ public class RebuildCommandTests
         _log = new RecordingLogger<RebuildCommand>();
     }
 
-    /// <summary>Checks that nothing was prepared or sent, as no rebuild ever does, then deletes the temporary folder.</summary>
+    /// <summary>Checks that nothing was prepared or sent, as no rebuild ever does, then deletes the temporary folders.</summary>
     [TearDown]
     public void TearDown()
     {
@@ -48,6 +50,7 @@ public class RebuildCommandTests
         }
         finally
         {
+            _runtime.Dispose();
             _folder.Dispose();
         }
     }
@@ -66,6 +69,7 @@ public class RebuildCommandTests
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             TestOptions.Create(new ElevenLabsOptions { ApiKey = "" }),
             recording,
+            new TranscriptionProgress(),
             NullLogger<TranscriptionWorkflow>.Instance);
 
         return new RebuildCommand(workflow, folders, _desktop.Object, recording, _log);
@@ -413,7 +417,8 @@ public class RebuildCommandTests
 
     /// <summary>
     /// "rebuild" runs through the app as Program puts it together, without a key: the command line is read, the settings
-    /// pass the gate, the command is registered and runs in a scope of its own, and the transcript is written.
+    /// pass the gate, the report at the start looks at the run files (in the test's own folder, never the real one, where a
+    /// class may have left a report), the command is registered and runs in a scope of its own, and the transcript is written.
     /// </summary>
     [Test]
     public async Task Rebuild_runs_through_the_app_without_a_key()
@@ -422,7 +427,7 @@ public class RebuildCommandTests
         SaveAnswer(recording, "Through the app.");
         using var settings = new TempFolder();
         File.WriteAllText(settings.File("appsettings.json"), JsonSerializer.Serialize(new { Recording = new { OutputFolder = _folder.Path } }));
-        using var app = AppHost.Build(settings.Path, apiKey: null);
+        using var app = AppHost.Build(settings.Path, apiKey: null, services => services.AddSingleton(_runtime.Folder));
 
         var exitCode = await app.Services.GetRequiredService<App>().RunAsync(["rebuild", _class, "--no-open"]);
 

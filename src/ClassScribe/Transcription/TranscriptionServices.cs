@@ -28,6 +28,7 @@ public static class TranscriptionServices
         services.AddSingleton<KeytermLoader>();
         services.AddSingleton<TranscriptFormatter>();
         services.AddTransient<TranscriptionWorkflow>();
+        services.AddScoped<TranscriptionProgress>();
         return services;
     }
 

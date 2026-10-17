@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Windows;
+using ClassScribe.Commands;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -23,9 +24,10 @@ public class RecordingSessionTests
     private FakeCaptureProvider _provider = null!;
     private ManualTimeProvider _time = null!;
     private RecordingLogger<RecordingSession> _log = null!;
+    private RecordingLogger<CaptureChooser> _chooserLog = null!;
     private RecordingFiles _files = null!;
 
-    /// <summary>Creates a temporary folder, a recording in it, the simulated devices, a clock moved by hand and a log to inspect.</summary>
+    /// <summary>Creates a temporary folder, a recording in it, the simulated devices, a clock moved by hand and logs to inspect.</summary>
     [SetUp]
     public void SetUp()
     {
@@ -34,18 +36,24 @@ public class RecordingSessionTests
         _provider = new FakeCaptureProvider();
         _time = new ManualTimeProvider(new DateTimeOffset(2026, 10, 11, 14, 0, 0, TimeSpan.Zero));
         _log = new RecordingLogger<RecordingSession>();
+        _chooserLog = new RecordingLogger<CaptureChooser>();
     }
 
     /// <summary>Deletes the temporary folder. That fails if a test left a file open, which is the point.</summary>
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Creates the session under test, on the test's manual clock unless <paramref name="time"/> gives another.</summary>
+    /// <summary>
+    /// Creates the session under test, on the test's manual clock unless <paramref name="time"/> gives another. It records
+    /// through a loopback source of the simulated devices, what the settings name, as a run's request takes it from the
+    /// menu's choice: Recording:App, Recording:Device, or else the device the class plays on.
+    /// </summary>
     private RecordingSession CreateSession(RecordingOptions? options = null, TimeProvider? time = null)
     {
         var settings = TestOptions.Create(options ?? new RecordingOptions());
         time ??= _time;
-        return new RecordingSession(_provider, new CaptureChooser(time, new SourceChoice(settings)), settings, time, _log);
+        var source = new SourceChoice(settings).Current.Class!;
+        return new RecordingSession(new LoopbackSource(_provider, new CaptureChooser(time, source, _chooserLog)), settings, time, _log);
     }
 
     /// <summary>Moves the clock on a second and waits for the device check that this sets off to begin.</summary>
@@ -469,6 +477,61 @@ public class RecordingSessionTests
         Assert.That(first.Disposed, Is.True);
         Assert.That(result.SegmentPaths, Has.Count.EqualTo(2));
         Assert.That(TestAudio.ReadWav(result.SegmentPaths[1]).Samples, Is.EqualTo(new short[] { 2 }));
+    }
+
+    /// <summary>
+    /// When the recorded app closes, its capture stays open and records silence, as Windows' capture of an app does. That
+    /// is said once, not at every look, and the capture is not replaced. When the app plays again from a new process, the
+    /// recording follows it.
+    /// </summary>
+    [Test]
+    public async Task An_app_that_closes_is_said_once_and_followed_when_it_plays_again()
+    {
+        var chrome = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_files);
+        chrome.Deliver(TestAudio.Shorts(1, 2));
+        _provider.RemoveApp(4242);                           // the app closes
+        for (var look = 0; look < 3; look++)
+        {
+            await TickAsync();
+            await Task.Delay(50);                            // the look ends before the next one
+        }
+
+        var afterItClosed = session.GetStatus();
+        var again = _provider.AddApp(4343, "chrome", "Speakers", level: 0.3f, AppCapture(4343))!;
+        await TickUntilAsync(() => again.Started);
+        again.Deliver(TestAudio.Shorts(3, 4));
+        var result = session.Stop();
+
+        Assert.That(_chooserLog.Problems.Where(problem => problem == "\"chrome\" has closed; recording silence until it plays again"), Has.Exactly(1).Items);
+        Assert.That(afterItClosed.WaitingFor, Is.Null, "its capture is still open");
+        Assert.That(chrome.Disposed, Is.True, "and is let go once the app plays again");
+        Assert.That(result.SegmentPaths, Has.Count.EqualTo(2));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[1]).Samples, Is.EqualTo(new short[] { 3, 4 }));
+    }
+
+    /// <summary>
+    /// In app mode the messages name the app rather than an output device: when its sound cannot be captured at the start,
+    /// and when it cannot be captured again after its capture failed.
+    /// </summary>
+    [Test]
+    public async Task In_app_mode_the_messages_name_the_app()
+    {
+        _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f);              // playing, but its sound cannot be captured yet
+        using var session = CreateSession(new RecordingOptions { App = "chrome" });
+
+        session.Start(_files);
+        var first = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;   // a moment later it can
+        await TickUntilAsync(() => first.Started);
+        first.Fail(new IOException("The app's sound went away."));           // and then it cannot again
+        await Wait.UntilAsync(() => _log.Problems.Any(problem => problem.StartsWith("Cannot capture", StringComparison.Ordinal)));
+        session.Stop();
+
+        Assert.That(_log.Problems, Has.Some.EqualTo("Could not start capturing the sound of \"chrome\" yet; trying again every second"));
+        Assert.That(_log.Problems, Has.Some.EqualTo("Cannot capture the app \"chrome\" right now; trying again every second"));
+        Assert.That(_log.Problems, Has.None.Contains("output device"));
     }
 
     /// <summary>Windows sends device notifications that change nothing for the recording; they cost nothing.</summary>
@@ -1057,7 +1120,8 @@ public class RecordingSessionTests
 
     /// <summary>
     /// When the save at a pause fails, all the audio handed to Windows before it is counted, as it is on disk, so
-    /// marks set later still point at the right moment; after the break the recording goes on in a new file.
+    /// marks set later still point at the right moment; after the break the recording goes on in a new file. The status
+    /// says that writing fails from the failed save on, through the pause, until the first write after the break works.
     /// </summary>
     [Test, Platform("Win")]
     [SupportedOSPlatform("windows")]
@@ -1076,12 +1140,15 @@ public class RecordingSessionTests
             session.Pause();                                // so the save for the pause fails
         }
 
-        var paused = session.GetStatus().Captured;
+        var paused = session.GetStatus();
         session.Resume();
         capture.Deliver(Samples(1600, 400));                // a tenth of a second after the break
+        var writing = session.GetStatus();
         var result = session.Stop();
 
-        Assert.That(paused, Is.EqualTo(TimeSpan.FromSeconds(1.5)), "all of it reached Windows, so all of it counts");
+        Assert.That(paused.Captured, Is.EqualTo(TimeSpan.FromSeconds(1.5)), "all of it reached Windows, so all of it counts");
+        Assert.That(paused.WriteFailing, Is.True, "the failed save shows at once, not only after the break");
+        Assert.That(writing.WriteFailing, Is.False, "the first write after the break works");
         Assert.That(_log.Problems, Has.Some.Contains("for the pause"));
         Assert.That(result.SegmentPaths, Has.Count.EqualTo(2));
         Assert.That(new FileInfo(result.SegmentPaths[0]).Length, Is.EqualTo(WavSegmentWriter.HeaderSize + 48_000L));
@@ -1264,6 +1331,351 @@ public class RecordingSessionTests
         session.Resume();
 
         Assert.That(session.GetStatus().SinceLastSound, Is.EqualTo(TimeSpan.Zero));
+    }
+
+    /// <summary>
+    /// Sound that arrives while paused is measured, though not written: the status says that sound keeps arriving, as from
+    /// a class that plays on during the pause, and a short quiet, such as between two sentences, does not end that. Silence
+    /// alone is no such sign, and once recording again there is nothing to say.
+    /// </summary>
+    [Test]
+    public void Sound_that_arrives_while_paused_is_measured_but_not_written()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateSession();
+
+        session.Start(_files);
+        capture.Deliver(TestAudio.Shorts(1, 2));
+        var recording = session.GetStatus();
+        session.Pause();
+        capture.Deliver(Samples(1600, 0));                   // silence while paused
+        var silent = session.GetStatus();
+        capture.Deliver(Samples(1600, 5000));                // sound while paused
+        var sound = session.GetStatus();
+        _time.Advance(TimeSpan.FromSeconds(4));              // a quiet moment between two sentences
+        var quietMoment = session.GetStatus();
+        _time.Advance(TimeSpan.FromSeconds(2));              // and then nothing more
+        var over = session.GetStatus();
+        capture.Deliver(Samples(1600, 5000));
+        session.Resume();
+        var resumed = session.GetStatus();
+        capture.Deliver(TestAudio.Shorts(3, 4));
+        var result = session.Stop();
+
+        Assert.That(recording.SoundWhilePaused, Is.False);
+        Assert.That(silent.SoundWhilePaused, Is.False, "silence is no sign of the class");
+        Assert.That(sound.SoundWhilePaused, Is.True);
+        Assert.That(quietMoment.SoundWhilePaused, Is.True, "a short quiet does not end it");
+        Assert.That(over.SoundWhilePaused, Is.False);
+        Assert.That(resumed.SoundWhilePaused, Is.False, "recording again, nothing plays unrecorded");
+        Assert.That(sound.Captured, Is.EqualTo(recording.Captured), "nothing heard during the pause counts as recorded");
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths.Single()).Samples, Is.EqualTo(new short[] { 1, 2, 3, 4 }), "and none of it was written");
+    }
+
+    /// <summary>
+    /// Each pause starts with no sound heard: sound heard during the pause before, however recent, does not carry over into
+    /// the next one, which measures its own.
+    /// </summary>
+    [Test]
+    public void Each_pause_starts_with_no_sound_heard()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateSession();
+
+        session.Start(_files);
+        session.Pause();
+        capture.Deliver(Samples(1600, 5000));                // sound during the first pause
+        var firstPause = session.GetStatus();
+        session.Resume();
+        session.Pause();                                     // a second pause at once, with the clock where it was
+        var secondPause = session.GetStatus();
+        capture.Deliver(Samples(1600, 5000));                // and sound during it
+        var soundAgain = session.GetStatus();
+        session.Stop();
+
+        Assert.That(firstPause.SoundWhilePaused, Is.True);
+        Assert.That(secondPause.SoundWhilePaused, Is.False, "the sound of the first pause is not carried over");
+        Assert.That(soundAgain.SoundWhilePaused, Is.True, "the second pause measures its own");
+    }
+
+    /// <summary>
+    /// A move of the sound to another device is followed while paused too, so that the recording goes on from the device
+    /// the class plays on once the pause ends. Nothing heard during the pause is written, from either device.
+    /// </summary>
+    [Test]
+    public async Task Sound_moving_to_another_device_is_followed_while_paused()
+    {
+        var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
+        using var session = CreateSession();
+
+        session.Start(_files);
+        speakers.Deliver(TestAudio.Shorts(1, 2));
+        session.Pause();
+        var headphones = _provider.SwitchDefaultDevice(new FakeAudioCapture(Pcm16KMono, "Headphones"), level: 0.2f);
+        await TickUntilAsync(() => headphones.Started);
+        headphones.Deliver(Samples(1600, 5000));            // heard during the pause: measured, not written
+        var paused = session.GetStatus();
+        session.Resume();
+        headphones.Deliver(TestAudio.Shorts(3, 4));
+        var result = session.Stop();
+
+        Assert.That(speakers.Disposed, Is.True);
+        Assert.That(paused.Paused, Is.True);
+        Assert.That(paused.DeviceName, Is.EqualTo("Headphones"));
+        Assert.That(paused.SoundWhilePaused, Is.True, "the sound on the new device is measured");
+        Assert.That(result.SegmentPaths, Has.Count.EqualTo(2));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { 1, 2 }));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[1]).Samples, Is.EqualTo(new short[] { 3, 4 }));
+        Assert.That(_log.Messages, Has.Some.Contains("Sound is playing on \"Headphones\"; recording it instead of \"Speakers\""));
+    }
+
+    /// <summary>
+    /// A device that keeps playing during a pause is kept, however loud another one is: its sound is measured while none
+    /// of it is written, so a class that plays on through the break holds the recording where it is.
+    /// </summary>
+    [Test]
+    public async Task A_device_that_keeps_playing_during_a_pause_is_kept()
+    {
+        var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.3f);
+        var headphones = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"));
+        using var session = CreateSession();
+
+        session.Start(_files);
+        session.Pause();
+        _provider.SetLevel("Headphones", 0.9f);              // something loud starts on the headphones
+        for (var second = 0; second < 5; second++)
+        {
+            speakers.Deliver(TestAudio.Shorts(0, 5000));   // while the class plays on through the break
+            await TickAsync();
+            await Task.Delay(50);
+        }
+
+        var result = session.Stop();
+
+        Assert.That(headphones.Started, Is.False);
+        Assert.That(session.GetStatus().DeviceName, Is.EqualTo("Speakers"));
+        Assert.That(result.SegmentPaths, Is.Empty, "nothing was written during the pause");
+    }
+
+    /// <summary>
+    /// When Windows no longer lists the recorded device, though its capture has not ended, the next look takes another
+    /// device, here the default one since nothing plays, and the recording moves there into a new part. It does so while
+    /// paused as at any other time, so that the recording goes on from a device that is there once the pause ends; nothing
+    /// heard during the pause is written.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task A_device_windows_no_longer_lists_is_left_for_the_default_one(bool paused)
+    {
+        var speakers = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"));
+        using var session = CreateSession();
+
+        session.Start(_files);
+        speakers.Deliver(TestAudio.Shorts(1, 2));
+        if (paused) session.Pause();
+        _provider.RemoveDevices();                           // Windows lists the speakers no more, though their capture goes on
+        var headphones = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Headphones"));   // and the headphones are the default device now
+        await TickUntilAsync(() => headphones.Started);
+        headphones.Deliver(TestAudio.Shorts(9, 9));          // kept unless paused
+        if (paused) session.Resume();
+        headphones.Deliver(TestAudio.Shorts(3, 4));
+        var result = session.Stop();
+
+        Assert.That(speakers.Disposed, Is.True, "the capture of the device that has gone is let go");
+        Assert.That(result.SegmentPaths, Has.Count.EqualTo(2));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[0]).Samples, Is.EqualTo(new short[] { 1, 2 }));
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths[1]).Samples, Is.EqualTo(paused ? new short[] { 3, 4 } : new short[] { 9, 9, 3, 4 }));
+    }
+
+    /// <summary>
+    /// The result says whether any sound reached the files: not when only silence was written, nor when sound came only
+    /// during a pause; yes once a moment of sound was written.
+    /// </summary>
+    [Test]
+    public void The_result_says_whether_any_sound_was_recorded()
+    {
+        RecordingResult Record(string folder, Action<FakeAudioCapture, RecordingSession> play)
+        {
+            var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+            using var session = CreateSession();
+            session.Start(new RecordingFiles(Path.Combine(_folder.Path, folder), "Class_2026-10-11_14-00-00Z"));
+            play(capture, session);
+            return session.Stop();
+        }
+
+        var silence = Record("silence", (capture, _) => capture.Deliver(Samples(1600, 0)));
+        var onlyWhilePaused = Record("paused", (capture, session) =>
+        {
+            capture.Deliver(Samples(1600, 0));
+            session.Pause();
+            capture.Deliver(Samples(1600, 5000));
+            session.Resume();
+            capture.Deliver(Samples(1600, 0));
+        });
+        var sound = Record("sound", (capture, _) =>
+        {
+            capture.Deliver(Samples(1600, 0));
+            capture.Deliver(TestAudio.Shorts(0, 5000, 0));
+        });
+
+        Assert.That(silence.SegmentPaths, Has.Count.EqualTo(1), "silence is written, as it arrives");
+        Assert.That(silence.HeardSound, Is.False);
+        Assert.That(onlyWhilePaused.HeardSound, Is.False);
+        Assert.That(sound.HeardSound, Is.True);
+    }
+
+    /// <summary>
+    /// A recording that stops without waiting for a device change Windows holds up still says that sound was recorded
+    /// before it, so its transcript is not given up for nothing heard.
+    /// </summary>
+    [Test]
+    public async Task A_stop_that_cannot_wait_still_says_that_sound_was_recorded()
+    {
+        using var windows = new ManualResetEventSlim();
+        var first = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateSession();
+        try
+        {
+            session.Start(_files);
+            first.Deliver(TestAudio.Shorts(0, 5000, 0));
+            _provider.HoldNextCreation(windows);                        // Windows holds up opening the replacement
+            first.Fail(new IOException("The device was unplugged."));
+            await Wait.UntilAsync(() => _provider.CreationHeld);
+            var result = await StopWhileWindowsHoldsUpAsync(session);
+
+            Assert.That(_log.Problems, Has.Some.Contains("stops without waiting"));
+            Assert.That(result.HeardSound, Is.True);
+        }
+        finally
+        {
+            windows.Set();
+        }
+    }
+
+    /// <summary>
+    /// The status says while writing fails, as on a full disk or a drive that has gone: from the first write that fails,
+    /// through the pause given to a disk that keeps failing, until a write works again.
+    /// </summary>
+    [Test]
+    public void The_status_says_while_writing_fails()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        var classFolder = Path.Combine(_folder.Path, "class");
+        using var session = CreateSession();
+
+        session.Start(new RecordingFiles(classFolder, "Class_2026-10-11_14-00-00Z"));
+        var atStart = session.GetStatus();
+        Directory.Delete(classFolder);                       // the drive goes away
+        capture.Deliver(TestAudio.Shorts(1, 2));            // cannot be written
+        var failed = session.GetStatus();
+        capture.Deliver(TestAudio.Shorts(3, 4));            // nor this: the disk keeps failing, so it is given a pause
+        var stillFailing = session.GetStatus();
+        Directory.CreateDirectory(classFolder);              // the drive is back
+        _time.Advance(TimeSpan.FromSeconds(31));             // and the pause is over
+        capture.Deliver(TestAudio.Shorts(5, 6));
+        var writing = session.GetStatus();
+        var result = session.Stop();
+
+        Assert.That(atStart.WriteFailing, Is.False);
+        Assert.That(failed.WriteFailing, Is.True);
+        Assert.That(stillFailing.WriteFailing, Is.True);
+        Assert.That(writing.WriteFailing, Is.False, "a write that works ends it");
+        Assert.That(TestAudio.ReadWav(result.SegmentPaths.Single()).Samples, Is.EqualTo(new short[] { 5, 6 }));
+    }
+
+    /// <summary>
+    /// The session looks as often as its source asks, not once a second whatever the source, and its messages say how
+    /// often it tries again. A source that looks every ten seconds, as one for a microphone will, stands in here.
+    /// </summary>
+    [Test]
+    public async Task The_session_looks_as_often_as_its_source_asks()
+    {
+        _provider.ConnectDevice("Speakers");                 // connected, but it cannot be opened
+        var settings = TestOptions.Create(new RecordingOptions());
+        var source = new PacedSource(new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog)), TimeSpan.FromSeconds(10));
+        using var session = new RecordingSession(source, settings, _time, _log);
+
+        session.Start(_files);
+        var atStart = _provider.DeviceQueries;
+        _time.Advance(TimeSpan.FromSeconds(9));
+        await Task.Delay(100);                               // a look set off too early would show up meanwhile
+        var beforeTenSeconds = _provider.DeviceQueries;
+        _time.Advance(TimeSpan.FromSeconds(1));
+        await Wait.UntilAsync(() => _provider.DeviceQueries == atStart + 1);
+        await Wait.UntilAsync(() => _provider.FailedCreations == 2);
+        session.Stop();
+
+        Assert.That(beforeTenSeconds, Is.EqualTo(atStart), "no look before ten seconds");
+        Assert.That(_log.Problems, Has.Some.EqualTo("Could not start capturing system audio yet; trying again every 10 seconds"));
+    }
+
+    /// <summary>
+    /// The session owns its source and lets go of it when it is disposed, after stopping, whether it was started or not;
+    /// stopping alone keeps it.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void A_session_lets_go_of_its_source_when_it_is_disposed(bool started)
+    {
+        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        var source = new PacedSource(new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog)), TimeSpan.FromSeconds(1));
+        var session = new RecordingSession(source, TestOptions.Create(new RecordingOptions()), _time, _log);
+
+        if (started)
+        {
+            session.Start(_files);
+            session.Stop();
+        }
+
+        var beforeDisposing = source.Disposed;
+        session.Dispose();
+
+        Assert.That(beforeDisposing, Is.False);
+        Assert.That(source.Disposed, Is.True);
+        Assert.That(_provider.HasListeners, Is.False);
+    }
+
+    /// <summary>A capture source that looks as often as it is told, notes whether it was disposed, and otherwise is the source it wraps.</summary>
+    private sealed class PacedSource(ICaptureSource inner, TimeSpan checkInterval) : ICaptureSource
+    {
+        /// <summary>True once the source was disposed.</summary>
+        public bool Disposed { get; private set; }
+
+        /// <inheritdoc />
+        public event EventHandler? Changed
+        {
+            add => inner.Changed += value;
+            remove => inner.Changed -= value;
+        }
+
+        /// <inheritdoc />
+        public SourceWording Wording => inner.Wording;
+
+        /// <summary>As often as the test said.</summary>
+        public TimeSpan CheckInterval => checkInterval;
+
+        /// <inheritdoc />
+        public string WaitingFor => inner.WaitingFor;
+
+        /// <inheritdoc />
+        public float? RecordedLevel => inner.RecordedLevel;
+
+        /// <inheritdoc />
+        public CaptureTarget? Choose(string? recordedId, TimeSpan? sinceRecordedSound) => inner.Choose(recordedId, sinceRecordedSound);
+
+        /// <inheritdoc />
+        public IAudioCapture Open(CaptureTarget target) => inner.Open(target);
+
+        /// <inheritdoc />
+        public string DescribeMove(CaptureTarget chosen, string from) => inner.DescribeMove(chosen, from);
+
+        /// <summary>Notes that the source was disposed, and disposes the one it wraps.</summary>
+        public void Dispose()
+        {
+            Disposed = true;
+            inner.Dispose();
+        }
     }
 
     /// <summary>
@@ -1473,27 +1885,26 @@ public class RecordingSessionTests
     }
 
     /// <summary>
-    /// The looks made while paused leave the devices alone, so they read no level either: the status then gives none,
-    /// rather than one from before the pause, which could be sound that has long stopped. After the pause the next
-    /// look reads it again.
+    /// The looks made while paused still look at the devices, as they follow the sound to another device during a break
+    /// (see <see cref="Sound_moving_to_another_device_is_followed_while_paused"/>), so the level Windows' meter shows for
+    /// the recorded device is read at each of them too, and given in the status as at any other time.
     /// </summary>
     [Test]
-    public async Task While_paused_no_level_is_given()
+    public async Task While_paused_the_level_is_still_read_at_each_look()
     {
         _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers"), level: 0.25f);
         using var session = CreateSession();
 
         session.Start(_files);
-        var before = session.GetStatus().RecordedLevel;
         session.Pause();
-        _time.Advance(TimeSpan.FromSeconds(1));              // a look while paused
-        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel is null);
-        session.Resume();
-        await TickAsync();
-        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel == 0.25f);
+        _provider.SetLevel("Speakers", 0.5f);
+        await TickAsync();                                   // a look while paused
+        await Wait.UntilAsync(() => session.GetStatus().RecordedLevel == 0.5f);
+        var paused = session.GetStatus();
         session.Stop();
 
-        Assert.That(before, Is.EqualTo(0.25f));
+        Assert.That(paused.Paused, Is.True);
+        Assert.That(paused.RecordedLevel, Is.EqualTo(0.5f));
     }
 
     /// <summary>

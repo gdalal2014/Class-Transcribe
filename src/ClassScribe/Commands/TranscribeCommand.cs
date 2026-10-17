@@ -9,7 +9,15 @@ using Microsoft.Extensions.Options;
 namespace ClassScribe.Commands;
 
 /// <summary>What to transcribe, and how.</summary>
-/// <param name="Path">A recording's folder (its newest recording is meant), one of a recording's segment files, or any other audio or video file.</param>
+/// <param name="Path">
+/// A recording's folder (its newest recording is meant), any file of a recording that still has its audio (a segment, its
+/// transcript, its answer, its marks, its log or its upload copy), or any other audio or video file.
+/// </param>
+/// <param name="OutputRoot">
+/// The folder given with --output, as a full path: the transcript of a file that is not a recording's goes into a folder
+/// named after the file inside it. Null for Recording:OutputFolder. A recording's transcript goes beside the recording
+/// either way.
+/// </param>
 /// <param name="Open">False to open nothing when the transcript is ready (--no-open); otherwise the settings decide.</param>
 /// <param name="Again">
 /// True to transcribe a recording again on the command line (--again), although it already has a transcript, or an
@@ -20,11 +28,11 @@ namespace ClassScribe.Commands;
 /// that would be billed again then needs <paramref name="Again"/>. Menu choices 3 and 4 ask before they send such a
 /// recording, so their requests pass.
 /// </param>
-public sealed record TranscribeRequest(string Path, bool Open = true, bool Again = false, bool FromCommandLine = false);
+public sealed record TranscribeRequest(string Path, string? OutputRoot = null, bool Open = true, bool Again = false, bool FromCommandLine = false);
 
 /// <summary>
-/// Transcribes audio that already exists: a recording, named by its folder or by one of its segment files, or any other
-/// audio or video file. A recording still being recorded is refused, and so, on the command line without --again, is one
+/// Transcribes audio that already exists: a recording, named by its folder or by one of its files, or any other audio or
+/// video file. A recording still being recorded is refused, and so, on the command line without --again, is one
 /// that would be billed a second time. Given a folder, it names the folder's other recordings that have no transcript.
 /// The laptop is kept awake while the audio is prepared and uploaded and the answer awaited. The settings are those of
 /// the run's own scope.
@@ -42,8 +50,9 @@ public sealed class TranscribeCommand(
     ILogger<TranscribeCommand> logger)
 {
     /// <summary>
-    /// Transcribes what the request's path names: a folder means the recording started last in it, a segment file means
-    /// its whole recording, and any other file is sent on its own. Returns the process exit code.
+    /// Transcribes what the request's path names: a folder means the recording started last in it, any file of a
+    /// recording that still has its audio means that whole recording, and any other file is sent on its own, its
+    /// transcript going under the request's output folder when it gives one. Returns the process exit code.
     /// </summary>
     public async Task<int> RunAsync(TranscribeRequest request)
     {
@@ -86,12 +95,16 @@ public sealed class TranscribeCommand(
 
     /// <summary>
     /// Transcribes a recording from all its segments on disk, with its marks, unless it is refused (see
-    /// <see cref="Refuses"/>) or there is no key. The laptop is kept awake meanwhile (see <see cref="KeepAwake"/>).
+    /// <see cref="Refuses"/>) or there is no key. The laptop is kept awake meanwhile (see <see cref="KeepAwake"/>). The
+    /// transcript goes beside the recording, with its audio, marks and earlier transcripts, so an output folder the
+    /// request gives is not used, and that is said.
     /// </summary>
     private async Task<int> TranscribeRecordingAsync(RecordingFiles files, TranscribeRequest request)
     {
         if (Refuses(files, request) || !HasKey()) return 1;
 
+        if (request.OutputRoot is not null)
+            logger.LogInformation("--output is not used for a recording: its transcript goes beside it, in {Folder}", files.Folder);
         logger.LogInformation("Transcribing the recording {Recording}", files.BaseName);
         TranscriptFiles saved;
         using (KeepAwake()) saved = await workflow.TranscribeRecordingAsync(files, signals.Cancellation);
@@ -99,13 +112,16 @@ public sealed class TranscribeCommand(
         return 0;
     }
 
-    /// <summary>Transcribes a file that is not a recording's, on its own, when there is a key, keeping the laptop awake meanwhile.</summary>
+    /// <summary>
+    /// Transcribes a file that is not a recording's, on its own, when there is a key, keeping the laptop awake meanwhile.
+    /// Its transcript goes into a folder named after it under the request's output folder, or under Recording:OutputFolder.
+    /// </summary>
     private async Task<int> TranscribeFileAsync(string path, TranscribeRequest request)
     {
         if (!HasKey()) return 1;
 
         TranscriptFiles saved;
-        using (KeepAwake()) saved = await workflow.TranscribeFileAsync(path, signals.Cancellation);
+        using (KeepAwake()) saved = await workflow.TranscribeFileAsync(path, request.OutputRoot, signals.Cancellation);
         Done(saved, request);
         return 0;
     }

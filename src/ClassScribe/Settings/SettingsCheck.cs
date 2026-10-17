@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using ClassScribe.Storage;
+using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
@@ -22,6 +23,9 @@ public sealed class SettingsCheck
     /// <summary>The section that holds the log's settings.</summary>
     private const string LoggingSection = "Logging";
 
+    /// <summary>The most Recording:ContinueWithinMinutes may be: a day.</summary>
+    private const int LongestContinueWithinMinutes = 1440;
+
     /// <summary>The environment variables in which Windows names the OneDrive folders.</summary>
     private static readonly string[] OneDriveVariables = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"];
 
@@ -39,6 +43,21 @@ public sealed class SettingsCheck
 
         // A WAV file cannot describe more than 4 GB of audio, and tiny segments would scatter a class over hundreds of files.
         CheckRange(problems, Name(recordingSection, nameof(RecordingOptions.MaxSegmentMegabytes)), recording.MaxSegmentMegabytes, 10, 4000);
+
+        // A class cut short by a crash or a restart is continued within minutes or hours. A recording that stopped more
+        // than a day ago belongs to another class, and continuing it would join the two into one recording. 0 never offers.
+        var continueWithin = recording.ContinueWithinMinutes;
+        if (continueWithin is < 0 or > LongestContinueWithinMinutes)
+            problems.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{Name(recordingSection, nameof(RecordingOptions.ContinueWithinMinutes))} is {continueWithin}; it must be from 0 to {LongestContinueWithinMinutes} (a day), such as 60. 0 never offers to continue a recording."));
+
+        // ElevenLabs takes at most 10 hours of audio in one file, and ClassScribe sends at most the longest recording the
+        // workflow allows: a later safety stop would let a recording grow too long to transcribe. 0 turns the stop off.
+        var stopAfter = recording.StopAfterHours;
+        var latestStop = TranscriptionWorkflow.LongestRecording.TotalHours;
+        if (!double.IsFinite(stopAfter) || stopAfter < 0 || stopAfter > latestStop)
+            problems.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{Name(recordingSection, nameof(RecordingOptions.StopAfterHours))} is {stopAfter}; it must be from 0 to {latestStop} (hours), such as 9. ElevenLabs takes at most 10 hours of audio in one file; 0 turns the safety stop off."));
 
         const string elevenLabsSection = ElevenLabsOptions.SectionName;
         var elevenLabs = Bind<ElevenLabsOptions>(configuration, elevenLabsSection, problems);

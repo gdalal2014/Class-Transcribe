@@ -7,11 +7,13 @@ using Microsoft.Extensions.Options;
 namespace ClassScribe.Transcription;
 
 /// <summary>
-/// Lays a transcript out as a Markdown document: a title, the recording time when known, and readable
-/// paragraphs. A new paragraph starts after a long pause, or at a sentence end once the paragraph has
-/// grown long. Marks set while recording become headings at their position, so they show in an
-/// outline. Each paragraph can carry its position in the recording. It lives as long as the app, and
-/// lays each transcript out with the Transcript settings as they are when that transcript is made.
+/// Lays a transcript out as a Markdown document: a title, the recording time when known, with the number of parts
+/// when the recording was taken up again after it stopped, and readable paragraphs. A new paragraph starts after a
+/// long pause, or at a sentence end once the paragraph has grown long. Marks set while recording, and the notes
+/// ClassScribe made in the recording, such as where it was taken up again or where the laptop slept, become headings
+/// at their position, so they show in an outline: a mark with its number, a note in its own words. Each paragraph can
+/// carry its position in the recording. It lives as long as the app, and lays each transcript out with the Transcript
+/// settings as they are when that transcript is made.
 /// </summary>
 public sealed class TranscriptFormatter(IOptionsMonitor<TranscriptOptions> options)
 {
@@ -22,18 +24,25 @@ public sealed class TranscriptFormatter(IOptionsMonitor<TranscriptOptions> optio
 
     private static readonly string Blank = Environment.NewLine + Environment.NewLine;
 
-    /// <summary>Formats the transcript as Markdown, with the recording's marks, if any, at their positions.</summary>
-    public string Format(TranscriptionResult result, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark>? marks = null)
+    /// <summary>
+    /// Formats the transcript as Markdown, with the recording's marks and notes, if any, at their positions. When the time
+    /// the recording started is known, the line under the title gives it, and says in how many parts the recording was
+    /// made when there were <paramref name="parts"/> of them, two or more (see <see cref="ClassMarks.PartsIn"/>).
+    /// </summary>
+    public string Format(TranscriptionResult result, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark>? marks = null, int parts = 1)
     {
         var settings = options.CurrentValue;
         var pending = new Queue<ClassMark>((marks ?? []).OrderBy(mark => mark.Position));
         var blocks = new List<string> { $"# {title}" };
         if (recordedUtc is { } recorded)
-            blocks.Add($"Recorded {recorded.UtcDateTime.ToString("d MMMM yyyy, HH:mm", CultureInfo.InvariantCulture)} UTC.");
+        {
+            var inParts = parts > 1 ? string.Create(CultureInfo.InvariantCulture, $", in {parts} parts") : "";
+            blocks.Add($"Recorded {recorded.UtcDateTime.ToString("d MMMM yyyy, HH:mm", CultureInfo.InvariantCulture)} UTC{inParts}.");
+        }
 
         if (!result.Words.Any(w => w.Type != SpacingType && w.Start is not null))
         {
-            // Without word timings a mark cannot be placed, so the marks follow the text.
+            // Without word timings a mark or a note cannot be placed, so the marks and notes follow the text.
             var text = result.Text.Trim();
             if (text.Length > 0) blocks.Add(text);
             blocks.AddRange(pending.Select(mark => Heading(mark, settings)));
@@ -114,13 +123,18 @@ public sealed class TranscriptFormatter(IOptionsMonitor<TranscriptOptions> optio
         c is '"' or '\''
         || CharUnicodeInfo.GetUnicodeCategory(c) is UnicodeCategory.ClosePunctuation or UnicodeCategory.FinalQuotePunctuation or UnicodeCategory.InitialQuotePunctuation;
 
-    /// <summary>A paragraph that holds only a mark.</summary>
+    /// <summary>A paragraph that holds only a mark or a note.</summary>
     private static Paragraph MarkParagraph(ClassMark mark) => new(mark.Position.TotalSeconds, new StringBuilder(), mark);
 
-    /// <summary>A mark's heading: its number and, when one was typed, its label, after its position when positions are on.</summary>
+    /// <summary>
+    /// A mark's heading, its number and, when one was typed, its label; or a note's, its words alone, without a number.
+    /// Either comes after its position when positions are on.
+    /// </summary>
     private static string Heading(ClassMark mark, TranscriptOptions settings)
     {
-        var text = mark.Label is { Length: > 0 } label ? $"Mark {mark.Number}: {label}" : $"Mark {mark.Number}";
+        var text = mark.IsNote ? mark.Label ?? ""
+            : mark.Label is { Length: > 0 } label ? $"Mark {mark.Number}: {label}"
+            : $"Mark {mark.Number}";
         return settings.IncludeTimestamps ? $"## [{FormatTime(mark.Position.TotalSeconds)}] {text}" : $"## {text}";
     }
 

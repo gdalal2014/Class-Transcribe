@@ -233,4 +233,76 @@ public class TranscriptFormatterTests
 
         Assert.That(text, Is.EqualTo($"{Title}Just the text.{Blank}## [00:01:15] Mark 1{Environment.NewLine}"));
     }
+
+    /// <summary>
+    /// A note becomes a heading at its position in its own words, without a number, so that a sleep and the place where
+    /// the recording was taken up again show in the outline beside the marks, which keep their numbers.
+    /// </summary>
+    [Test]
+    public void Notes_become_headings_in_their_own_words_without_a_number()
+    {
+        var transcript = Transcript("One. Two. Three.",
+            Word("One.", 0.0, 0.5), Space(0.5, 2530.0), Word("Two.", 2530.0, 2530.5), Space(2530.5, 2830.0), Word("Three.", 2830.0, 2830.5));
+        ClassMark[] marks =
+        [
+            new(0, new TimeSpan(0, 42, 10), "Not recorded: the laptop slept from 19:42 to 19:50", IsNote: true),
+            new(1, TimeSpan.FromSeconds(2600), null),
+            new(0, new TimeSpan(0, 47, 10), "Resumed at 23:51 UTC, about 4 minutes not recorded", IsNote: true)
+        ];
+
+        var text = Formatter().Format(transcript, "Kalam", null, marks);
+
+        Assert.That(text, Is.EqualTo(
+            $"{Title}[00:00:00] One.{Blank}## [00:42:10] Not recorded: the laptop slept from 19:42 to 19:50{Blank}[00:42:10] Two.{Blank}" +
+            $"## [00:43:20] Mark 1{Blank}## [00:47:10] Resumed at 23:51 UTC, about 4 minutes not recorded{Blank}[00:47:10] Three.{Environment.NewLine}"));
+    }
+
+    /// <summary>Without positions a note's heading is its words alone.</summary>
+    [Test]
+    public void Without_positions_a_note_is_its_words_alone()
+    {
+        var transcript = Transcript("Hello world.", Word("Hello", 0.0, 0.4), Space(0.4, 0.5), Word("world.", 0.5, 1.0));
+
+        var text = Formatter(new TranscriptOptions { IncludeTimestamps = false })
+            .Format(transcript, "Kalam", null, [new ClassMark(0, TimeSpan.FromSeconds(0.45), "Resumed at 23:51 UTC, less than a minute not recorded", IsNote: true)]);
+
+        Assert.That(text, Is.EqualTo($"{Title}Hello{Blank}## Resumed at 23:51 UTC, less than a minute not recorded{Blank}world.{Environment.NewLine}"));
+    }
+
+    /// <summary>Without word timings notes follow the text, as marks do, in the order of their positions.</summary>
+    [Test]
+    public void Without_word_timings_notes_follow_the_text_in_order()
+    {
+        var text = Formatter().Format(Transcript("Just the text."), "Kalam", null,
+            [new ClassMark(1, TimeSpan.FromSeconds(75), null), new ClassMark(0, TimeSpan.FromSeconds(30), "Resumed at 23:51 UTC, about 4 minutes not recorded", IsNote: true)]);
+
+        Assert.That(text, Is.EqualTo($"{Title}Just the text.{Blank}## [00:00:30] Resumed at 23:51 UTC, about 4 minutes not recorded{Blank}## [00:01:15] Mark 1{Environment.NewLine}"));
+    }
+
+    /// <summary>A recording made in more than one part says so under the title, after the time it started.</summary>
+    [Test]
+    public void A_recording_made_in_parts_says_so_under_the_title()
+    {
+        var transcript = Transcript("Hello world.", Word("Hello", 0.0, 0.4), Space(0.4, 0.5), Word("world.", 0.5, 1.0));
+
+        var text = Formatter().Format(transcript, "Kalam", new DateTimeOffset(2026, 10, 15, 23, 0, 2, TimeSpan.Zero), parts: 2);
+
+        Assert.That(text, Is.EqualTo($"{Title}Recorded 15 October 2026, 23:00 UTC, in 2 parts.{Blank}[00:00:00] Hello world.{Environment.NewLine}"));
+    }
+
+    /// <summary>
+    /// One part goes unmentioned, and so do parts when the time the recording started is not known, as for a file
+    /// transcribed on its own, which has no line under its title.
+    /// </summary>
+    [Test]
+    public void Parts_are_mentioned_only_with_the_recording_time_and_only_when_there_are_several()
+    {
+        var transcript = Transcript("Hello world.", Word("Hello", 0.0, 0.4), Space(0.4, 0.5), Word("world.", 0.5, 1.0));
+
+        var onePart = Formatter().Format(transcript, "Kalam", new DateTimeOffset(2026, 10, 15, 23, 0, 2, TimeSpan.Zero), parts: 1);
+        var noTime = Formatter().Format(transcript, "Kalam", null, parts: 3);
+
+        Assert.That(onePart, Is.EqualTo($"{Title}Recorded 15 October 2026, 23:00 UTC.{Blank}[00:00:00] Hello world.{Environment.NewLine}"));
+        Assert.That(noTime, Is.EqualTo($"{Title}[00:00:00] Hello world.{Environment.NewLine}"));
+    }
 }

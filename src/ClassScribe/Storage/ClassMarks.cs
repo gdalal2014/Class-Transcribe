@@ -5,57 +5,161 @@ using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Storage;
 
-/// <summary>A moment marked with M while recording.</summary>
-/// <param name="Number">The mark's number, counting from 1 in the order the marks were set.</param>
-/// <param name="Position">Where the mark falls in the recording, and so in the transcript.</param>
-/// <param name="Label">Text typed after the time in marks.txt by hand, if any.</param>
-public sealed record ClassMark(int Number, TimeSpan Position, string? Label);
+/// <summary>A moment marked with M while recording, or a note ClassScribe made at a moment of the recording.</summary>
+/// <param name="Number">The mark's number, counting from 1 in the order the marks were set; 0 for a note, which has none.</param>
+/// <param name="Position">Where the mark or note falls in the recording, and so in the transcript.</param>
+/// <param name="Label">For a mark, text typed after the time in marks.txt by hand, if any; for a note, its words.</param>
+/// <param name="IsNote">
+/// True for a note, such as "Resumed at 23:51 UTC, about 4 minutes not recorded": the transcript shows it as a heading in
+/// its own words, without a number, and it does not count as a mark.
+/// </param>
+public sealed partial record ClassMark(int Number, TimeSpan Position, string? Label, bool IsNote = false)
+{
+    /// <summary>
+    /// True for the note that marks where the recording was taken up again as its next part, in the words
+    /// <see cref="ClassMarks.AddResume"/> writes; each one makes the recording one part more. A note typed by hand in
+    /// other words is no resume, even one that starts the same way, such as "Resumed after the break".
+    /// </summary>
+    public bool IsResume => IsNote && Label is { } words && ResumeWords().IsMatch(words);
+
+    /// <summary>
+    /// The words of a resume note exactly as <see cref="ClassMarks.AddResume"/> writes them: "Resumed at 23:51 UTC, about
+    /// 4 minutes not recorded", with "on 16 October at" for "at" on a later day, and "less than a minute", "about 1 hour 5
+    /// minutes" or "about 2 hours" for other gaps.
+    /// </summary>
+    [GeneratedRegex(@"^Resumed (?:at|on [0-9]{1,2} [A-Z][a-z]+ at) [0-9]{2}:[0-9]{2} UTC, (?:less than a minute|about [0-9]+ (?:minutes?|hours?(?: [0-9]+ minutes?)?)) not recorded$", RegexOptions.CultureInvariant)]
+    private static partial Regex ResumeWords();
+}
 
 /// <summary>
-/// The marks of a recording, one per line in its marks file (see <see cref="RecordingFiles.Marks"/>):
-/// a position in the recording (hh:mm:ss.fff), optionally followed by a label typed in by hand. Blank
-/// lines and lines starting with # are ignored.
+/// The marks of a recording, one per line in its marks file (see <see cref="RecordingFiles.Marks"/>): a position in the
+/// recording (hh:mm:ss.fff), optionally followed by a label typed in by hand. The same file holds the notes ClassScribe
+/// adds itself, such as where the recording was taken up again: the position, a tilde, a space and the note's words,
+/// which an older ClassScribe reads as a mark with a label, without harm. Blank lines and lines starting with # are
+/// ignored.
 /// </summary>
 public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
 {
+    /// <summary>What comes between a note's position and its words, telling a note from a mark's label.</summary>
+    private const string NoteSign = "~";
+
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     /// <summary>
-    /// Adds a mark straight to the recording's marks file, so it survives a crash, and returns its number.
-    /// The file may have been edited by hand meanwhile, so the mark is written in the encoding it was saved
-    /// in, and on a line of its own even when the editor left no line break at the end.
+    /// Adds a mark straight to the recording's marks file, so it survives a crash, and returns its number, counting the
+    /// marks alone, not the notes. The file may have been edited by hand meanwhile, so the mark is written in the
+    /// encoding it was saved in, and on a line of its own even when the editor left no line break at the end.
     /// </summary>
     public int Add(RecordingFiles files, TimeSpan position)
     {
-        var line = string.Create(CultureInfo.InvariantCulture, $"{Durations.Format(position)}.{position.Milliseconds:000}");
-
-        // Appended, never rewritten, so a crash part-way through cannot take the earlier marks with it.
-        using (var file = new FileStream(files.Marks, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read))
-        {
-            var (encoding, preambleLength) = DetectEncoding(file);
-            var endsWithLineBreak = EndsWithLineBreak(file, encoding, preambleLength);
-
-            // Positioned at the end before the writer is made, so it does not write a byte order mark again.
-            file.Seek(0, SeekOrigin.End);
-            using var writer = new StreamWriter(file, encoding);
-            if (!endsWithLineBreak) writer.Write(Environment.NewLine);
-            writer.Write(line + Environment.NewLine);
-        }
-
-        return Parse(files.Marks, reportProblems: false).Count;
+        Append(files, PositionText(position));
+        return Parse(files.Marks, logger: null).Count(mark => !mark.IsNote);
     }
 
-    /// <summary>Reads the recording's marks, in the order they were set. A line that is not a mark is skipped with a warning.</summary>
-    public IReadOnlyList<ClassMark> Read(RecordingFiles files) => Parse(files.Marks, reportProblems: true);
+    /// <summary>
+    /// Adds a note at <paramref name="position"/> straight to the recording's marks file, as a mark is added, so that it
+    /// survives a crash; the transcript shows it as a heading in its own words. The note keeps to one line: line breaks
+    /// and runs of spaces in <paramref name="text"/> become single spaces.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="text"/> holds no words.</exception>
+    public void AddNote(RecordingFiles files, TimeSpan position, string text)
+    {
+        var words = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (words.Length == 0) throw new ArgumentException("A note needs words.", nameof(text));
 
-    /// <summary>Parses the marks file; a missing file holds no marks.</summary>
-    private List<ClassMark> Parse(string path, bool reportProblems)
+        Append(files, $"{PositionText(position)} {NoteSign} {words}");
+    }
+
+    /// <summary>
+    /// Adds the note that marks where the recording was taken up again as its next part, at <paramref name="position"/>,
+    /// its length on disk until then: "Resumed at 23:51 UTC, about 4 minutes not recorded". It says when, in UTC as the
+    /// time under the transcript's title is, with the day when that is not the day the recording started, and about how
+    /// long was not recorded in between. Each such note makes the recording one part more (see <see cref="PartsOf"/>),
+    /// so its words are the ones <see cref="ClassMark.IsResume"/> knows, and change only together with them.
+    /// </summary>
+    public void AddResume(RecordingFiles files, TimeSpan position, DateTimeOffset resumedUtc, TimeSpan notRecorded)
+    {
+        var resumed = resumedUtc.UtcDateTime;
+        var when = files.StartedUtc?.UtcDateTime.Date == resumed.Date
+            ? resumed.ToString("'at 'HH:mm", CultureInfo.InvariantCulture)
+            : resumed.ToString("'on 'd MMMM' at 'HH:mm", CultureInfo.InvariantCulture);
+        AddNote(files, position, $"Resumed {when} UTC, {About(notRecorded)} not recorded");
+    }
+
+    /// <summary>
+    /// Reads the recording's marks and notes, in the order they were written; the marks are numbered from 1, the notes
+    /// not at all. A line that is neither is skipped with a warning.
+    /// </summary>
+    public IReadOnlyList<ClassMark> Read(RecordingFiles files) => Parse(files.Marks, logger);
+
+    /// <summary>
+    /// How many parts the recording was made in: one, and one more for each time it was taken up again, as its resume
+    /// notes say (see <see cref="AddResume"/>). Its marks file is read without a word about lines that are no marks,
+    /// which reading it for the transcript reports; a recording without one was made in one part.
+    /// </summary>
+    public static int PartsOf(RecordingFiles files) => PartsIn(Parse(files.Marks, logger: null));
+
+    /// <summary>How many parts a recording with these marks and notes was made in: one, and one more for each resume note.</summary>
+    public static int PartsIn(IReadOnlyList<ClassMark> marks) => 1 + marks.Count(mark => mark.IsResume);
+
+    /// <summary>
+    /// A position as the marks file writes it, hh:mm:ss.fff with as many hours as there are. A position before the start,
+    /// which no recording has, is written as the start.
+    /// </summary>
+    private static string PositionText(TimeSpan position)
+    {
+        var at = position < TimeSpan.Zero ? TimeSpan.Zero : position;
+        return string.Create(CultureInfo.InvariantCulture, $"{Durations.Format(at)}.{at.Milliseconds:000}");
+    }
+
+    /// <summary>
+    /// About how long <paramref name="length"/> is, in words: "less than a minute", "about 4 minutes", "about 1 hour 5
+    /// minutes", "about 2 hours". It is rounded to the minute.
+    /// </summary>
+    private static string About(TimeSpan length)
+    {
+        if (length < TimeSpan.FromMinutes(1)) return "less than a minute";
+
+        var (hours, minutes) = Math.DivRem((long)Math.Round(length.TotalMinutes, MidpointRounding.AwayFromZero), 60);
+        var minutesText = $"{minutes} minute{(minutes == 1 ? "" : "s")}";
+        if (hours == 0) return $"about {minutesText}";
+
+        var hoursText = $"{hours} hour{(hours == 1 ? "" : "s")}";
+        return minutes == 0 ? $"about {hoursText}" : $"about {hoursText} {minutesText}";
+    }
+
+    /// <summary>
+    /// Appends <paramref name="line"/> to the recording's marks file, never rewriting it, so that a crash part-way through
+    /// cannot take the earlier lines with it. The line goes in the encoding the file was saved in, and on a line of its
+    /// own even when an editor left no line break at the end.
+    /// </summary>
+    private static void Append(RecordingFiles files, string line)
+    {
+        using var file = new FileStream(files.Marks, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        var (encoding, preambleLength) = DetectEncoding(file);
+        var endsWithLineBreak = EndsWithLineBreak(file, encoding, preambleLength);
+
+        // Positioned at the end before the writer is made, so it does not write a byte order mark again.
+        file.Seek(0, SeekOrigin.End);
+        using var writer = new StreamWriter(file, encoding);
+        if (!endsWithLineBreak) writer.Write(Environment.NewLine);
+        writer.Write(line + Environment.NewLine);
+    }
+
+    /// <summary>
+    /// Parses the marks file; a missing file holds no marks. A line that is neither a mark nor a note is skipped, with a
+    /// warning when <paramref name="logger"/> is given. The file is read while others may write to it, as a recorder
+    /// adding a mark does for a moment.
+    /// </summary>
+    private static List<ClassMark> Parse(string path, ILogger? logger)
     {
         if (!File.Exists(path)) return [];
 
         var marks = new List<ClassMark>();
+        var numbered = 0;
         var lineNumber = 0;
-        foreach (var line in File.ReadLines(path))
+        using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        while (reader.ReadLine() is { } line)
         {
             lineNumber++;
             var text = line.Trim();
@@ -64,8 +168,7 @@ public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
             var match = MarkLine().Match(text);
             if (!match.Success)
             {
-                if (reportProblems)
-                    logger.LogWarning("Skipping line {Line} of {File} ({Text}): a mark starts with its time, such as 00:42:13", lineNumber, Path.GetFileName(path), text);
+                logger?.LogWarning("Skipping line {Line} of {File} ({Text}): a mark starts with its time, such as 00:42:13", lineNumber, Path.GetFileName(path), text);
                 continue;
             }
 
@@ -76,7 +179,9 @@ public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
                 int.Parse(match.Groups["seconds"].Value, CultureInfo.InvariantCulture),
                 int.Parse(fraction, CultureInfo.InvariantCulture));
             var label = match.Groups["label"].Success ? match.Groups["label"].Value : null;
-            marks.Add(new ClassMark(marks.Count + 1, position, label));
+            marks.Add(match.Groups["note"].Success
+                ? new ClassMark(0, position, label, IsNote: true)
+                : new ClassMark(++numbered, position, label));
         }
 
         return marks;
@@ -111,7 +216,11 @@ public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
         return encoding.GetString(last) is "\n" or "\r";
     }
 
-    /// <summary>A mark's line: hours, minutes, seconds and optional milliseconds, then an optional label.</summary>
-    [GeneratedRegex(@"^(?<hours>\d{1,3}):(?<minutes>[0-5]\d):(?<seconds>[0-5]\d)(?:\.(?<fraction>\d{1,3}))?(?:\s+(?<label>.*\S))?$", RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// A line of the marks file: hours, minutes, seconds and optional milliseconds, then, for a note, a tilde and a space
+    /// ("note"), and an optional label, or the note's words. The digits are 0 to 9 only: a digit of another script would
+    /// pass \d but not the parser.
+    /// </summary>
+    [GeneratedRegex(@"^(?<hours>[0-9]{1,3}):(?<minutes>[0-5][0-9]):(?<seconds>[0-5][0-9])(?:\.(?<fraction>[0-9]{1,3}))?(?:\s+(?:(?<note>~)\s+)?(?<label>.*\S))?$", RegexOptions.CultureInvariant)]
     private static partial Regex MarkLine();
 }

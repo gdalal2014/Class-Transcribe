@@ -328,16 +328,21 @@ public class SettingsReloadTests
 
     /// <summary>
     /// An edit made between two recordings reaches the second: the record command and its recording session each take
-    /// the settings of the run's own scope. Both runs go through the app as AppHost puts it together, from a simulated
-    /// device, with the gate between them, and with stand-ins for keeping the laptop awake and for the computer's
-    /// clocks, so that no real power request is made. Each records ten megabytes and a moment more, which a limit of
-    /// ten megabytes puts into a second file.
+    /// the settings of the run's own scope. Both runs go through the app as AppHost puts it together, from the command
+    /// runner through the starter to the record command in this window (Recording:SeparateProcess is false, so no
+    /// recorder is started), from a simulated device, with the gate between them, and with stand-ins for keeping the
+    /// laptop awake and for the computer's clocks, so that no real power request is made; ClassScribe's own folder is the
+    /// test's. Each records ten megabytes and a moment more, which a limit of ten megabytes puts into a second file.
     /// </summary>
     [Test]
     public async Task An_edit_between_two_recordings_reaches_the_record_command_and_its_session()
     {
         var recordings = _data.File("Recordings");
-        string Settings(bool edited) => Json(new { Recording = new { OutputFolder = recordings, OpenFolderWhenDone = edited, MaxSegmentMegabytes = edited ? 10 : 4000 } });
+        string Settings(bool edited) => Json(new
+        {
+            Recording = new { OutputFolder = recordings, OpenFolderWhenDone = edited, MaxSegmentMegabytes = edited ? 10 : 4000, SeparateProcess = false }
+        });
+        using var runtime = new TestRuntime();
         var devices = new FakeCaptureProvider();
         var captures = new Queue<FakeAudioCapture>([devices.Enqueue(new FakeAudioCapture(Pcm16KMono)), devices.Enqueue(new FakeAudioCapture(Pcm16KMono))]);
         var signals = new List<FakeUserSignals>();
@@ -346,6 +351,7 @@ public class SettingsReloadTests
         var exitWarnings = new Mock<IExitWarnings>();
         exitWarnings.Setup(w => w.Register(It.IsAny<Action>())).Returns(Mock.Of<IDisposable>());
         using var app = BuildApp(Settings(edited: false), services => services
+            .AddSingleton(runtime.Folder)
             .AddSingleton<ILoopbackCaptureProvider>(devices)
             .AddSingleton<IConsoleUi>(new FakeConsoleUi { IsInteractive = false })
             .AddSingleton(desktop.Object)
@@ -362,11 +368,14 @@ public class SettingsReloadTests
         var gate = app.Services.GetRequiredService<RunGate>();
         var runner = app.Services.GetRequiredService<ICommandRunner>();
 
-        // Records under the name given until the audio is in, then stops, and returns the recording's files.
+        // Records under the name given, as record-only from the command line does, until the audio is in, then stops,
+        // and returns the recording's files.
         async Task<string[]> RecordAsync(string name)
         {
             var capture = captures.Dequeue();
-            var run = runner.RecordAsync(name, transcribe: false);
+            var request = new RecordRequest(RunIds.New(DateTimeOffset.UtcNow), name, Transcribe: false, new SourcePlan(RecordingMode.Class, new ClassSource.Automatic(), null),
+                recordings, ContinueChoice.New, ContinueBaseName: null, Minutes: null, Open: true);
+            var run = runner.RecordAsync(request, StartOrigin.CommandLine);
             await Wait.UntilAsync(() => capture.Started);
             capture.Deliver(new byte[10 * 1024 * 1024]);
             capture.Deliver(TestAudio.Shorts(1000, -1000));

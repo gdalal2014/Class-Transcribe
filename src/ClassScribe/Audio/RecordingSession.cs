@@ -1,3 +1,4 @@
+using System.Globalization;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -6,7 +7,14 @@ using Microsoft.Extensions.Options;
 namespace ClassScribe.Audio;
 
 /// <summary>What a finished recording produced.</summary>
-public sealed record RecordingResult(string Folder, IReadOnlyList<string> SegmentPaths, TimeSpan Duration);
+/// <param name="Folder">The folder the segment files are in.</param>
+/// <param name="SegmentPaths">The segment files this session wrote, in order.</param>
+/// <param name="Duration">How much audio they hold.</param>
+/// <param name="HeardSound">
+/// True when audible sound reached the files: false when they hold only silence, or nothing, so that there is nothing to
+/// transcribe. Sound heard only while paused is not in them, so it does not count.
+/// </param>
+public sealed record RecordingResult(string Folder, IReadOnlyList<string> SegmentPaths, TimeSpan Duration, bool HeardSound);
 
 /// <summary>A snapshot of a running recording. How long ago something happened is measured on the steady clock.</summary>
 /// <param name="Captured">How much audio the segment files hold.</param>
@@ -28,19 +36,30 @@ public sealed record RecordingResult(string Folder, IReadOnlyList<string> Segmen
 /// </param>
 /// <param name="RecordedLevel">
 /// How loud Windows' meter showed the recorded device or app at the last look, from 0 to 1. Null while no capture is
-/// open, and when the last look read no level: while paused, when the look failed, and when it did not find what is
-/// recorded among what plays, as once the recorded app has closed.
+/// open, and when the last look read no level: when the look failed, and when it did not find what is recorded among
+/// what plays, as once the recorded app has closed. The looks go on while paused, so the level is read then too.
+/// </param>
+/// <param name="SoundWhilePaused">
+/// True while paused when audible sound keeps arriving from the capture, though none of it is written: the class may be
+/// playing unrecorded. A short quiet, such as between two sentences, does not end it. Always false while recording.
+/// </param>
+/// <param name="WriteFailing">
+/// True while writing the segment files fails, as on a full disk or a drive that has gone: from a write that failed until
+/// a write works again, the pause given to a disk that keeps failing included.
 /// </param>
 public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound, string DeviceName, int SegmentCount, bool Paused, string? WaitingFor,
-    TimeSpan? SinceLastPacket = null, bool DeliversContinuously = false, float? RecordedLevel = null);
+    TimeSpan? SinceLastPacket = null, bool DeliversContinuously = false, float? RecordedLevel = null, bool SoundWhilePaused = false,
+    bool WriteFailing = false);
 
 /// <summary>
-/// Records an output device into WAV segment files: the device the class is playing through, or the
-/// one chosen by name (see <see cref="CaptureChooser"/>). The header of the open segment is
-/// rewritten every few seconds, so a crash keeps the audio. A new segment is started when the
+/// Records what its source picks into WAV segment files: for the class, the output device it plays through, the one
+/// chosen by name, or one app's sound (see <see cref="LoopbackSource"/> and <see cref="CaptureChooser"/>). The header of
+/// the open segment is rewritten every few seconds, so a crash keeps the audio. A new segment is started when the
 /// recording moves to another device, when the capture or the disk fails, or when a segment grows too large.
 /// The status also shows whether audio keeps arriving (see <see cref="GetStatus"/>), so that a capture that stays
 /// open but no longer delivers, which raises no error of its own, can be found and replaced (see <see cref="Reopen"/>).
+/// While paused nothing is written, but the session still looks at what can be recorded, follows a move to another
+/// device, and measures the sound that arrives, so that a class playing on during a pause shows in the status.
 /// </summary>
 /// <remarks>
 /// Two locks, never taken in the other order: the lifecycle semaphore allows one start, stop or
@@ -48,14 +67,34 @@ public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound,
 /// released while the gate is held, because releasing it waits for the capture thread.
 /// Every interval is measured on the steady clock (<see cref="TimeProvider.GetTimestamp"/>), so Windows
 /// setting its time of day neither stretches nor shortens one.
+/// The session looks at what can be recorded every <see cref="ICaptureSource.CheckInterval"/> by itself, and at once when
+/// the source says something has changed. Windows announces some changes; the regular look catches the rest, such as a
+/// browser sent to another device in the per-app sound settings, which no announcement covers. The same look opens a
+/// capture that could not be opened before and looks again while there is nothing to record, so it is the one way
+/// anything is tried again: no failure schedules a retry of its own. The messages say how often that is.
+/// The session owns its source, and disposes it.
 /// </remarks>
 public sealed class RecordingSession(
-    ILoopbackCaptureProvider provider,
-    CaptureChooser chooser,
+    ICaptureSource source,
     IOptionsSnapshot<RecordingOptions> options,
     TimeProvider time,
     ILogger<RecordingSession> logger) : IDisposable
 {
+    /// <summary>
+    /// A session that records what the computer plays, as <paramref name="chooser"/> picks it from what
+    /// <paramref name="provider"/> lists. Kept for the record command's tests, which still make their session this way;
+    /// to be removed once they make it from a capture source.
+    /// </summary>
+    public RecordingSession(
+        ILoopbackCaptureProvider provider,
+        CaptureChooser chooser,
+        IOptionsSnapshot<RecordingOptions> options,
+        TimeProvider time,
+        ILogger<RecordingSession> logger)
+        : this(new LoopbackSource(provider, chooser), options, time, logger)
+    {
+    }
+
     /// <summary>Samples at or above this level (out of 32767) count as audible sound.</summary>
     private const int SoundThreshold = 100;
 
@@ -66,13 +105,10 @@ public sealed class RecordingSession(
     private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// How often the session looks at the output devices by itself, to see where sound is playing.
-    /// Windows announces some changes at once; this catches the rest, such as a browser sent to another
-    /// device in the per-app sound settings, which no announcement covers. The same look opens a capture
-    /// that could not be opened before and looks again while there is nothing to record, so it is the one
-    /// way anything is tried again: no failure schedules a retry of its own. The log says "every second".
+    /// While paused, sound counts as still arriving until this long after the last audible packet, so that the short quiet
+    /// between two sentences does not end it (see <see cref="RecordingStatus.SoundWhilePaused"/>).
     /// </summary>
-    private static readonly TimeSpan DeviceCheckInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan PausedSoundGap = TimeSpan.FromSeconds(5);
 
     /// <summary>While captures keep failing, or there is still nothing to record, that is said at most this often.</summary>
     private static readonly TimeSpan ReportInterval = TimeSpan.FromSeconds(30);
@@ -123,13 +159,27 @@ public sealed class RecordingSession(
     /// <summary>How loud Windows' meter showed what is recorded at the last look, or null when that look read no level.</summary>
     private float? _recordedLevel;
 
+    /// <summary>When audible sound last arrived during the pause under way, on the steady clock; null when none has since it began.</summary>
+    private long? _pausedSound;
+
+    /// <summary>True once audible sound has been written to the segment files.</summary>
+    private bool _heardSound;
+
+    /// <summary>True from a write to the segment files that failed until one that worked.</summary>
+    private bool _writeFailing;
+
     private long MaxSegmentBytes => Math.Max(1, _options.MaxSegmentMegabytes) * 1024L * 1024L;
 
     private TimeSpan FlushInterval => TimeSpan.FromSeconds(Math.Max(1, _options.FlushSeconds));
 
+    /// <summary>How often the session tries again, in words for the log, such as "every second" or "every 10 seconds".</summary>
+    private string EveryLook => source.CheckInterval == TimeSpan.FromSeconds(1)
+        ? "every second"
+        : string.Create(CultureInfo.InvariantCulture, $"every {source.CheckInterval.TotalSeconds:0.#} seconds");
+
     /// <summary>
-    /// Starts capturing into the segment files of <paramref name="files"/>. When there is nothing to record
-    /// yet, or the capture cannot be opened yet, the recording waits and the device check keeps trying;
+    /// Starts capturing into the segment files of <paramref name="files"/>, from the next free part on. When there is
+    /// nothing to record yet, or the capture cannot be opened yet, the recording waits and the regular look keeps trying;
     /// only a device in a format this app cannot read makes the start fail.
     /// </summary>
     public void Start(RecordingFiles files)
@@ -145,7 +195,7 @@ public sealed class RecordingSession(
             _folder = files.Folder;
             Directory.CreateDirectory(files.Folder);
             _lastSound = time.GetTimestamp();
-            provider.DevicesChanged += OnDevicesChanged;
+            source.Changed += OnDevicesChanged;
             try
             {
                 if (Look(recordedId: null, sinceRecordedSound: null) is { } target)
@@ -155,28 +205,28 @@ public sealed class RecordingSession(
                 else
                 {
                     // Nothing to record yet: a chosen device not connected, a chosen app not playing, or no
-                    // device at all. The device check keeps looking and starts the capture once it is there.
+                    // device at all. The regular look keeps looking and starts the capture once it is there.
                     _lastReport = time.GetTimestamp();
-                    logger.LogWarning("Nothing to record yet; waiting for {What}", chooser.WaitingFor);
+                    logger.LogWarning("Nothing to record yet; waiting for {What}", source.WaitingFor);
                 }
             }
             catch (NotSupportedException ex)
             {
                 // A device in a format this app cannot read stays that way, so the run ends now rather than
                 // waiting for something that will not happen.
-                logger.LogError(ex, "Could not start capturing system audio");
-                provider.DevicesChanged -= OnDevicesChanged;
+                logger.LogError(ex, "Could not start capturing {What}", source.Wording.Capturing);
+                source.Changed -= OnDevicesChanged;
                 throw;
             }
             catch (Exception ex)
             {
                 // Deliberately not rethrown: Windows may still be setting up a device that was just connected.
-                // The device check tries again every second, as it does when this happens later in the class.
+                // The regular look tries again, as it does when this happens later in the class.
                 _lastReport = time.GetTimestamp();
-                logger.LogWarning(ex, "Could not start capturing system audio yet; trying again every second");
+                logger.LogWarning(ex, "Could not start capturing {What} yet; trying again {Every}", source.Wording.Capturing, EveryLook);
             }
 
-            _deviceCheck = time.CreateTimer(_ => QueueRestart(), null, DeviceCheckInterval, DeviceCheckInterval);
+            _deviceCheck = time.CreateTimer(_ => QueueRestart(), null, source.CheckInterval, source.CheckInterval);
         }
         finally
         {
@@ -208,7 +258,7 @@ public sealed class RecordingSession(
                 capture = _capture;
             }
 
-            provider.DevicesChanged -= OnDevicesChanged;
+            source.Changed -= OnDevicesChanged;
             _deviceCheck?.Dispose();
 
             try
@@ -227,7 +277,7 @@ public sealed class RecordingSession(
             {
                 _capture = null;
                 CloseSegmentLocked();
-                return _result = new RecordingResult(_folder, [.. _segments], _closedDuration);
+                return _result = new RecordingResult(_folder, [.. _segments], _closedDuration, _heardSound);
             }
         }
         finally
@@ -239,25 +289,29 @@ public sealed class RecordingSession(
     /// <summary>
     /// Reports how much has been captured, how long ago sound was last heard and, while a capture is open, whether audio
     /// keeps arriving from it: how long ago it last handed over any, whether it is a kind that hands over audio all the
-    /// time, and how loud Windows' meter showed what it records at the last look.
+    /// time, and how loud Windows' meter showed what it records at the last look. It also says whether sound keeps
+    /// arriving while paused, and whether writing the files fails.
     /// </summary>
     public RecordingStatus GetStatus()
     {
         lock (_gate)
         {
+            var now = time.GetTimestamp();
             var captured = _closedDuration + (_writer?.Duration ?? TimeSpan.Zero);
             var open = _capture is not null;
             return new RecordingStatus(
-                captured, time.GetElapsedTime(_lastSound), _deviceName, _segments.Count, _paused, open ? null : chooser.WaitingFor,
-                SinceLastPacket: open ? time.GetElapsedTime(_lastPacket) : null,
+                captured, time.GetElapsedTime(_lastSound, now), _deviceName, _segments.Count, _paused, open ? null : source.WaitingFor,
+                SinceLastPacket: open ? time.GetElapsedTime(_lastPacket, now) : null,
                 DeliversContinuously: open && _deliversContinuously,
-                RecordedLevel: open ? _recordedLevel : null);
+                RecordedLevel: open ? _recordedLevel : null,
+                SoundWhilePaused: _paused && _pausedSound is { } heard && time.GetElapsedTime(heard, now) <= PausedSoundGap,
+                WriteFailing: _writeFailing);
         }
     }
 
     /// <summary>
-    /// Has the open capture replaced at the next look, within a second, as a failed one is: released, its file closed,
-    /// and what the chooser picks then opened into a new file. This is for a capture that stays open but has stopped
+    /// Has the open capture replaced at the next look, as a failed one is: released, its file closed,
+    /// and what the source picks then opened into a new file. This is for a capture that stays open but has stopped
     /// delivering audio although it should, which raises no error of its own. <paramref name="reason"/> goes into the
     /// log. It applies to the capture open now: with none open, or once the recording has stopped, it does nothing, and
     /// a capture replaced for another reason before the next look is not replaced again for it. It works during a
@@ -279,8 +333,9 @@ public sealed class RecordingSession(
     }
 
     /// <summary>
-    /// Stops keeping captured audio until <see cref="Resume"/>. The capture itself keeps running, so a
-    /// switch of output device during the break is still followed.
+    /// Stops keeping captured audio until <see cref="Resume"/>. The capture itself keeps running and the regular look goes
+    /// on, so a move of the sound to another device during the break is still followed, and the sound that arrives is
+    /// still measured, though not written (see <see cref="RecordingStatus.SoundWhilePaused"/>).
     /// </summary>
     public void Pause()
     {
@@ -288,6 +343,7 @@ public sealed class RecordingSession(
         {
             if (_paused) return;
             _paused = true;
+            _pausedSound = null;
 
             // A break can be long, so the file on disk is brought up to date now rather than at the next save.
             try
@@ -299,6 +355,7 @@ public sealed class RecordingSession(
                 // Deliberately not rethrown: what reached the disk stays readable, and the next audio after
                 // the break goes to a new file, as after any other write failure.
                 logger.LogError(ex, "Could not bring the recording on disk up to date for the pause");
+                _writeFailing = true;
                 CloseSegmentLocked(failureReported: true);
             }
         }
@@ -311,6 +368,7 @@ public sealed class RecordingSession(
         {
             if (!_paused) return;
             _paused = false;
+            _pausedSound = null;
 
             // The silence warning counts from now: the quiet of the break itself is no cause for one.
             _lastSound = time.GetTimestamp();
@@ -340,10 +398,17 @@ public sealed class RecordingSession(
         }
     }
 
-    /// <summary>Stops the recording if it is still running.</summary>
+    /// <summary>Stops the recording if it is still running, then lets go of its source.</summary>
     public void Dispose()
     {
-        if (_started && _result is null) Stop();
+        try
+        {
+            if (_started && _result is null) Stop();
+        }
+        finally
+        {
+            source.Dispose();
+        }
     }
 
     /// <summary>
@@ -385,13 +450,13 @@ public sealed class RecordingSession(
             _leftBehind = _capture;
             _capture = null;   // whatever it still delivers is ignored from here on
             CloseSegmentLocked();
-            result = _result = new RecordingResult(_folder, [.. _segments], _closedDuration);
+            result = _result = new RecordingResult(_folder, [.. _segments], _closedDuration, _heardSound);
         }
 
         logger.LogError(
             "Windows has not finished changing the audio device for {Seconds} seconds, so the recording stops without waiting for it. Everything recorded so far is kept",
             StopWaitLimit.TotalSeconds);
-        provider.DevicesChanged -= OnDevicesChanged;
+        source.Changed -= OnDevicesChanged;
         _deviceCheck?.Dispose();
 
         // The change may have ended in the meantime, and then nobody else is left to release the capture.
@@ -407,12 +472,11 @@ public sealed class RecordingSession(
     /// <summary>Opens a capture of <paramref name="target"/>. Its segment file is created when its first audio arrives.</summary>
     private void StartCapture(CaptureTarget target)
     {
-        var capture = provider.CreateCapture(target);
+        var capture = source.Open(target);
         try
         {
             if (!PcmConverter.IsSupported(capture.Format))
-                throw new NotSupportedException(
-                    $"The output device \"{capture.DeviceName}\" uses an audio format this app cannot read ({capture.Format}).");
+                throw new NotSupportedException($"\"{capture.DeviceName}\" uses an audio format this app cannot read ({capture.Format}).");
 
             capture.DataAvailable += OnDataAvailable;
             capture.Stopped += OnCaptureStopped;
@@ -466,8 +530,9 @@ public sealed class RecordingSession(
     }
 
     /// <summary>
-    /// Notes that audio has arrived, then converts it to mono 16-bit and appends it to the open segment, unless the
-    /// recording is paused. Runs on the capture thread.
+    /// Notes that audio has arrived, converts it to mono 16-bit and measures it, then appends it to the open segment,
+    /// unless the recording is paused: audio that arrives during a pause is measured, so that sound the class plays then
+    /// shows, and so that a device that keeps playing is kept, but none of it is written. Runs on the capture thread.
     /// </summary>
     private void OnDataAvailable(object? sender, AudioDataEventArgs e)
     {
@@ -480,7 +545,6 @@ public sealed class RecordingSession(
             // Audio that is not kept still shows that the capture works.
             var now = time.GetTimestamp();
             _lastPacket = now;
-            if (_paused) return;
 
             var format = _capture.Format;
             var needed = e.ByteCount / format.BytesPerFrame * 2;
@@ -490,11 +554,17 @@ public sealed class RecordingSession(
             var mono = _convertBuffer.AsSpan(0, written);
             if (mono.IsEmpty) return;
 
-            if (PcmConverter.Peak(mono) >= SoundThreshold)
+            // The device carries sound whether it is kept or not: the look keeps a device that plays.
+            var audible = PcmConverter.Peak(mono) >= SoundThreshold;
+            if (audible) _captureSound = now;
+
+            if (_paused)
             {
-                _lastSound = now;
-                _captureSound = now;
+                if (audible) _pausedSound = now;
+                return;
             }
+
+            if (audible) _lastSound = now;
 
             // While the disk keeps failing, the audio is dropped until the next attempt is due.
             if (_writer is null && _writePauseStarted is { } pauseStarted && time.GetElapsedTime(pauseStarted, now) < WriteRetryDelay) return;
@@ -503,6 +573,8 @@ public sealed class RecordingSession(
             {
                 var writer = _writer ?? OpenSegmentLocked(format.SampleRate);
                 writer.Write(mono);
+                _writeFailing = false;
+                if (audible) _heardSound = true;
 
                 if (time.GetElapsedTime(_lastFlush, now) >= FlushInterval)
                 {
@@ -519,6 +591,7 @@ public sealed class RecordingSession(
                 // Deliberately not rethrown: the device is fine, so the capture keeps running, and what is
                 // already on disk stays usable. The recording continues in a fresh file, because a write
                 // that failed half-way can leave this one cut in the middle of a sample.
+                _writeFailing = true;
                 if (++_writeFailures == 1)
                 {
                     logger.LogError(ex, "Could not write the recording to {Folder}; a moment of audio is lost. Continuing in a new file", _folder);
@@ -567,7 +640,7 @@ public sealed class RecordingSession(
 
     /// <summary>
     /// Runs one restart check. It schedules nothing further: when the check could not finish the job, the
-    /// device check a second later tries again, so there is never more than one check waiting to run.
+    /// regular look tries again, so there is never more than one check waiting to run.
     /// </summary>
     private async Task RestartAsync()
     {
@@ -586,12 +659,12 @@ public sealed class RecordingSession(
         catch (Exception ex)
         {
             // This is a background task with nobody to rethrow to, so the failure is logged, now and then
-            // rather than at every try, and the next device check tries again. Once the recording has ended
+            // rather than at every try, and the next regular look tries again. Once the recording has ended
             // (Stop gave up waiting for this check), nothing is tried again and the failure no longer matters to it.
             if (_stopping)
                 logger.LogDebug(ex, "The device change the recording stopped without waiting for has failed");
             else if (TimeToReport(now))
-                logger.LogWarning(ex, "Cannot capture an output device right now; trying again every second");
+                logger.LogWarning(ex, "Cannot capture {What} right now; trying again {Every}", source.Wording.Thing, EveryLook);
         }
         finally
         {
@@ -604,10 +677,16 @@ public sealed class RecordingSession(
 
     /// <summary>
     /// Replaces the capture when there is none, when it has ended, when <see cref="Reopen"/> asked for it, or when the
-    /// chooser finds the sound playing on another device. Otherwise it does nothing, so several notifications about
-    /// one change cost a single restart. Each look also notes how loud what is recorded plays (see <see cref="Look"/>),
-    /// except while paused, when the devices are not looked at. <paramref name="now"/> is when the check began, on the
-    /// steady clock. Returns true when the session is settled, false when a later check has to try again.
+    /// source picks something else, as when the sound moves to another device. Otherwise it does nothing, so several
+    /// notifications about one change cost a single restart. Each look also notes how loud what is recorded plays (see
+    /// <see cref="Look"/>). All of this goes on while paused too, so that the recording is ready on the right device when
+    /// the pause ends; the sound measured during the pause keeps a device that plays on. When Windows no longer lists what
+    /// is recorded, the source picks as it does at the start, and the recording moves to its pick: for the class, the
+    /// device with sound or else the default one, another device the chosen name fits, or another process of the app.
+    /// When the source picks nothing (no device fits the chosen name, the app has closed, or Windows lists no device at
+    /// all), the capture is kept: a device's capture ends by itself once the device is really gone, and an app's records
+    /// silence until the app plays again. <paramref name="now"/> is when the check began, on the steady clock. Returns
+    /// true when the session is settled, false when a later check has to try again.
     /// </summary>
     /// <remarks>
     /// Looking at the devices and releasing a capture are calls Windows can hold up. When the recording was
@@ -619,14 +698,12 @@ public sealed class RecordingSession(
         IAudioCapture? old;
         bool ended;
         string? reopen;
-        bool paused;
         long? captureSound;
         lock (_gate)
         {
             old = _capture;
             ended = _captureEnded;
             reopen = old is not null && ReferenceEquals(_reopen, old) ? _reopenReason : null;
-            paused = _paused;
             captureSound = _captureSound;
         }
 
@@ -657,7 +734,7 @@ public sealed class RecordingSession(
             if (_stopping) return true;
             if (target is null)
             {
-                if (TimeToReport(now)) logger.LogWarning("Still nothing to record; waiting for {What}", chooser.WaitingFor);
+                if (TimeToReport(now)) logger.LogWarning("Still nothing to record; waiting for {What}", source.WaitingFor);
                 return false;
             }
 
@@ -665,25 +742,11 @@ public sealed class RecordingSession(
             return true;
         }
 
-        // Nothing is kept while paused, so there is nothing to move; and a device Windows no longer
-        // lists is left to the capture, which ends by itself once its device is really gone. Nothing
-        // is read either, so no level is known until the pause ends.
-        if (paused)
-        {
-            lock (_gate) _recordedLevel = null;
-            return true;
-        }
-
         var sinceSound = captureSound is { } heard ? time.GetElapsedTime(heard) : (TimeSpan?)null;
         var chosen = Look(old.DeviceId, sinceSound);
         if (_stopping || chosen is null || string.Equals(chosen.Id, old.DeviceId, StringComparison.OrdinalIgnoreCase)) return true;
 
-        if (chooser.IsApp)
-            logger.LogInformation("\"{App}\" now plays from another process; following it", chosen.Name);
-        else if (chooser.ChosenDevice is not null)
-            logger.LogInformation("Recording \"{Device}\", the chosen output device, instead of \"{Old}\"", chosen.Name, old.DeviceName);
-        else
-            logger.LogInformation("Sound is playing on \"{Device}\"; recording it instead of \"{Old}\"", chosen.Name, old.DeviceName);
+        logger.LogInformation("{Move}", source.DescribeMove(chosen, old.DeviceName));
 
         Replace(old);
         if (_stopping) return true;
@@ -693,8 +756,8 @@ public sealed class RecordingSession(
     }
 
     /// <summary>
-    /// Has the chooser look at what can be recorded and pick from it, and keeps how loud its pick plays for the status
-    /// (see <see cref="CaptureChooser.RecordedLevel"/>). A look that fails leaves no level, since what it would have
+    /// Has the source look at what can be recorded and pick from it, and keeps how loud its pick plays for the status
+    /// (see <see cref="ICaptureSource.RecordedLevel"/>). A look that fails leaves no level, since what it would have
     /// read is not known; the failure itself is handed on.
     /// </summary>
     private CaptureTarget? Look(string? recordedId, TimeSpan? sinceRecordedSound)
@@ -702,8 +765,8 @@ public sealed class RecordingSession(
         float? level = null;
         try
         {
-            var target = chooser.Choose(provider, recordedId, sinceRecordedSound);
-            level = chooser.RecordedLevel;
+            var target = source.Choose(recordedId, sinceRecordedSound);
+            level = source.RecordedLevel;
             return target;
         }
         finally

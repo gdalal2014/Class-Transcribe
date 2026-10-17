@@ -1,15 +1,18 @@
+using ClassScribe.Commands;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace ClassScribe.Audio;
 
 /// <summary>
-/// Decides what to record, following <see cref="SourceChoice"/>. An app chosen by name is recorded
-/// from the process that has its sound open. A device chosen by name is recorded and no other.
-/// Otherwise the device the class is playing through is found with Windows' level meters: a device
-/// that is playing is kept, and one that has gone quiet is left for another only once the sound there
-/// has lasted a moment, so a short notification sound elsewhere does not pull the recording away.
-/// Those moments are timed on the steady clock, so Windows setting its time of day does not shorten them.
-/// Each look also notes how loud its pick plays (<see cref="RecordedLevel"/>).
+/// Decides what to record, following the class source a run's request names. An app is recorded from the process that
+/// has its sound open. A device named by part of its name is recorded and no other. Otherwise the device the class is
+/// playing through is found with Windows' level meters: a device that is playing is kept, and one that has gone quiet is
+/// left for another only once the sound there has lasted a moment, so a short notification sound elsewhere does not pull
+/// the recording away. Those moments are timed on the steady clock, so Windows setting its time of day does not shorten
+/// them. Each look also notes how loud its pick plays (<see cref="RecordedLevel"/>).
 /// </summary>
-public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
+public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogger<CaptureChooser> logger)
 {
     /// <summary>A device or app playing at or above this level (out of 1) counts as having sound. It is the recorder's own threshold, about -50 dB.</summary>
     public const float SoundLevel = 100f / short.MaxValue;
@@ -23,11 +26,27 @@ public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
     private string? _candidateId;
     private long _candidateSince;
 
-    /// <summary>True when an app is recorded rather than a device.</summary>
-    public bool IsApp => choice.App is not null;
+    /// <summary>True once the recorded app's closing has been said, until the app has sound open again.</summary>
+    private bool _closedSaid;
 
-    /// <summary>The name the device was chosen by, or null when no device is chosen.</summary>
-    public string? ChosenDevice => choice.Device;
+    /// <summary>
+    /// A chooser for what <paramref name="choice"/> names at this moment, as a run's request would take it, without a log.
+    /// Kept for the record command's tests, which still make their session this way; to be removed once they make it from
+    /// a class source.
+    /// </summary>
+    public CaptureChooser(TimeProvider time, SourceChoice choice)
+        : this(time, choice.Current.Class ?? new ClassSource.Automatic(), NullLogger<CaptureChooser>.Instance)
+    {
+    }
+
+    /// <summary>What this chooser records: the device the class plays on, one device by part of its name, or one app.</summary>
+    public ClassSource Source => source;
+
+    /// <summary>True when an app is recorded rather than a device.</summary>
+    public bool IsApp => source is ClassSource.App;
+
+    /// <summary>The part of a name the device to record was chosen by, or null when no device is named.</summary>
+    public string? ChosenDevice => (source as ClassSource.Device)?.NamePart;
 
     /// <summary>
     /// How loud Windows' meter showed, at the last look (<see cref="Choose"/>), the device or app that look picked: the
@@ -38,9 +57,12 @@ public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
     public float? RecordedLevel { get; private set; }
 
     /// <summary>What the recording is waiting for while nothing can be recorded, in words for the log.</summary>
-    public string WaitingFor => choice.App is { } app ? $"\"{app}\" to play sound"
-        : choice.Device is { } device ? $"the output device \"{device}\" to connect"
-        : "an output device";
+    public string WaitingFor => source switch
+    {
+        ClassSource.App app => $"\"{app.ProcessName}\" to play sound",
+        ClassSource.Device device => $"the output device \"{device.NamePart}\" to connect",
+        _ => "an output device"
+    };
 
     /// <summary>
     /// One look: picks what to record from what the provider lists, or returns null when there is nothing to record yet,
@@ -70,7 +92,7 @@ public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
     /// </summary>
     public OutputDevice? ChooseDevice(IReadOnlyList<OutputDevice> devices, string? recordedId, TimeSpan? sinceRecordedSound)
     {
-        if (choice.Device is { } name) return devices.FirstOrDefault(device => Matches(device.Name, name));
+        if (ChosenDevice is { } name) return devices.FirstOrDefault(device => Matches(device.Name, name));
 
         var playing = devices
             .Where(device => device.Level >= SoundLevel && device.Id != recordedId)
@@ -106,14 +128,27 @@ public sealed class CaptureChooser(TimeProvider time, SourceChoice choice)
     }
 
     /// <summary>
-    /// Picks the process to record the chosen app from: the one being recorded while it still has sound
-    /// open, otherwise the one playing loudest. Null when no process of the app has sound open, or no app is chosen.
+    /// Picks the process to record the app from: the one being recorded while it still has sound open, otherwise the one
+    /// playing loudest. Null when no process of the app has sound open, or no app is to be recorded. When the app was
+    /// being recorded (<paramref name="recordedId"/> is set) and no process of it has sound open any more, it has closed:
+    /// that is said once, and again only after the app has had sound open in between. The capture already open is left
+    /// to record its silence until the app plays again.
     /// </summary>
     public PlayingApp? ChooseApp(IReadOnlyList<PlayingApp> apps, string? recordedId)
     {
-        if (choice.App is not { } name) return null;
+        if (source is not ClassSource.App { ProcessName: var name }) return null;
 
         var matching = apps.Where(app => Matches(app.Name, name)).ToList();
+        if (matching.Count > 0)
+        {
+            _closedSaid = false;
+        }
+        else if (recordedId is not null && !_closedSaid)
+        {
+            _closedSaid = true;
+            logger.LogWarning("\"{App}\" has closed; recording silence until it plays again", name);
+        }
+
         return matching.FirstOrDefault(app => CaptureTarget.ForApp(app).Id == recordedId)
             ?? matching.OrderByDescending(app => app.Level).FirstOrDefault();
     }

@@ -1,14 +1,15 @@
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
 using ClassScribe.Commands;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace ClassScribe.Tests;
 
-/// <summary>What each command line does, with the commands mocked and the settings read through the gate from a file of the test's own.</summary>
+/// <summary>
+/// What App does around the command line: a mistake, help, the menu and attach come before the settings and need none;
+/// every other command runs only once the settings, read again, pass the check, and after the report at the start is
+/// printed; a failure and a cancel have their own exit codes. The commands and the report are mocked; the settings are
+/// read through the gate from a file of the test's own.
+/// </summary>
 [TestFixture]
 public class AppTests
 {
@@ -19,10 +20,14 @@ public class AppTests
     private TempFolder _settingsFolder = null!;
     private TestSettings _settings = null!;
     private RecordingLogger<RunGate> _gateLog = null!;
+    private RecordingLogger<App> _log = null!;
     private Mock<ICommandRunner> _commands = null!;
+    private Mock<IStartupReport> _report = null!;
+    private List<string> _order = null!;
     private FakeConsoleUi _ui = null!;
+    private TestCommandLine _line = null!;
 
-    /// <summary>Creates a temporary folder, settings that can be used, and the mocked commands.</summary>
+    /// <summary>Creates a temporary folder, settings that can be used, the mocked commands and report, which note the order they run in.</summary>
     [SetUp]
     public void SetUp()
     {
@@ -30,11 +35,40 @@ public class AppTests
         _settingsFolder = new TempFolder();
         _settings = new TestSettings(_settingsFolder.Path);
         _gateLog = new RecordingLogger<RunGate>();
+        _log = new RecordingLogger<App>();
+        _order = [];
         _commands = new Mock<ICommandRunner>();
-        _commands.Setup(c => c.RecordAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
-        _commands.Setup(c => c.TranscribeAsync(It.IsAny<TranscribeRequest>())).ReturnsAsync(0);
-        _commands.Setup(c => c.RebuildAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
+        _commands.Setup(c => c.RecordAsync(It.IsAny<RecordRequest>(), It.IsAny<StartOrigin>())).Callback(() => _order.Add("record")).ReturnsAsync(0);
+        _commands.Setup(c => c.TranscribeAsync(It.IsAny<TranscribeRequest>())).Callback(() => _order.Add("transcribe")).ReturnsAsync(0);
+        _commands.Setup(c => c.RebuildAsync(It.IsAny<string>(), It.IsAny<bool>())).Callback(() => _order.Add("rebuild")).ReturnsAsync(0);
+        _commands.Setup(c => c.ListAsync(It.IsAny<string?>())).Callback(() => _order.Add("list")).ReturnsAsync(0);
+        _commands.Setup(c => c.DevicesAsync()).Callback(() => _order.Add("devices")).ReturnsAsync(0);
+        _commands.Setup(c => c.AttachAsync(It.IsAny<string?>(), It.IsAny<bool>())).Callback(() => _order.Add("attach")).ReturnsAsync(0);
+        _report = new Mock<IStartupReport>();
+        _report.Setup(r => r.ShowAsync(It.IsAny<bool>())).Callback(() => _order.Add("report")).ReturnsAsync((StartupChoice?)null);
     }
+
+    /// <summary>Deletes the temporary folders.</summary>
+    [TearDown]
+    public void TearDown()
+    {
+        _folder.Dispose();
+        _settingsFolder.Dispose();
+    }
+
+    /// <summary>Creates the app over a scripted keyboard that a person can, or cannot, type on.</summary>
+    private App CreateApp(bool interactive = true)
+    {
+        _ui = new FakeConsoleUi { IsInteractive = interactive };
+        _line = new TestCommandLine(_commands.Object, _ui, _settings, _folder.Path, gate: _settings.Gate(_gateLog));
+        return new App(_line.Tree, _line.Gate, _report.Object, _log);
+    }
+
+    /// <summary>Runs the app once over a keyboard a person can type on, failing the test rather than waiting for an answer nobody gives.</summary>
+    private Task<int> RunAsync(params string[] args) => CreateApp().RunAsync(args).WaitAsync(TimeSpan.FromSeconds(15));
+
+    /// <summary>Makes the settings file one that cannot be used: a value that is not a whole number.</summary>
+    private void BreakTheSettings() => _settings.Write("""{ "Recording": { "FlushSeconds": "five" } }""");
 
     /// <summary>What transcribing <paramref name="path"/> from the command line asks for, with the options given.</summary>
     private static TranscribeRequest FromCommandLine(string path, bool open = true, bool again = false) =>
@@ -53,47 +87,26 @@ public class AppTests
         return words[2..];
     }
 
-    /// <summary>Deletes the temporary folders.</summary>
-    [TearDown]
-    public void TearDown()
-    {
-        _folder.Dispose();
-        _settingsFolder.Dispose();
-    }
-
-    /// <summary>Creates the app with a scripted keyboard that a person can, or cannot, type on.</summary>
-    private App CreateApp(bool interactive = true)
-    {
-        _ui = new FakeConsoleUi { IsInteractive = interactive };
-        var recording = TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path });
-        var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance);
-        var prompt = new RecordingNamePrompt(_ui);
-        var gate = _settings.Gate(_gateLog);
-        var menu = new MenuCommand(_commands.Object, _ui, gate, _settings.File, folders, new FakeCaptureProvider(), new SourceChoice(recording), prompt, Mock.Of<IDesktop>(), TimeProvider.System, NullLogger<MenuCommand>.Instance);
-        return new App(_commands.Object, menu, prompt, _ui, gate, NullLogger<App>.Instance);
-    }
-
-    /// <summary>Makes the settings file one that cannot be used: a value that is not a whole number.</summary>
-    private void BreakTheSettings() => _settings.Write("""{ "Recording": { "FlushSeconds": "five" } }""");
-
     /// <summary>
-    /// The settings are read and checked before each command. While they cannot be used, the command does not run and
-    /// the exit code is 1; the log says what is wrong and that nothing was started.
+    /// The settings are read and checked before each command. While they cannot be used, the command does not run, nor
+    /// does the report at the start, and the exit code is 1; the log says what is wrong and that nothing was started.
     /// </summary>
-    [TestCase("record", "Kalam")]
-    [TestCase("record-only", "Kalam")]
+    [TestCase("record", "Kalam", "--device", "auto", "--output", @"D:\Classes")]
+    [TestCase("record-only", "Kalam", "--app", "chrome", "--output", @"D:\Classes")]
     [TestCase("transcribe", @"C:\Classes\Kalam")]
     [TestCase("transcribe", @"C:\Classes\Kalam", "--again")]
     [TestCase("rebuild", @"C:\Classes\Kalam")]
     [TestCase("rebuild", @"C:\Classes\Kalam", "--no-open")]
-    public async Task A_command_does_not_run_while_the_settings_cannot_be_used(string command, string argument, string? option = null)
+    [TestCase("list")]
+    [TestCase("devices")]
+    public async Task A_command_does_not_run_while_the_settings_cannot_be_used(params string[] args)
     {
         BreakTheSettings();
 
-        var exitCode = await CreateApp().RunAsync(option is null ? [command, argument] : [command, argument, option]);
+        Assert.That(await RunAsync(args), Is.EqualTo(1));
 
-        Assert.That(exitCode, Is.EqualTo(1));
         _commands.VerifyNoOtherCalls();
+        _report.VerifyNoOtherCalls();
         Assert.That(_gateLog.Problems[0], Does.StartWith("Recording:FlushSeconds is \"five\""));
         Assert.That(_gateLog.Problems[^1], Does.StartWith("Nothing was started.").And.EndWith("then run the command again"));
     }
@@ -106,174 +119,168 @@ public class AppTests
         File.WriteAllBytes(video, [1, 2, 3]);
         BreakTheSettings();
 
-        Assert.That(await CreateApp().RunAsync([video]), Is.EqualTo(1));
+        Assert.That(await RunAsync(video), Is.EqualTo(1));
         _commands.VerifyNoOtherCalls();
     }
 
-    /// <summary>Record without a name does not ask for one while the settings cannot be used: nothing could be recorded under it.</summary>
+    /// <summary>
+    /// A mistake on the command line is reported first, with exit code 2, before the settings are read; help needs no
+    /// settings at all. Neither runs the report at the start.
+    /// </summary>
+    [TestCase(2, "frobnicate")]
+    [TestCase(2, "record")]
+    [TestCase(2, "transcribe")]
+    [TestCase(2, "record", "Kalam", "--device", "auto", "--output", @"D:\Classes", "--minutes", "1,5")]
+    [TestCase(0, "--help")]
+    [TestCase(0, "help")]
+    [TestCase(0, "record", "--help")]
+    public async Task Mistakes_and_help_come_before_the_settings(int exitCode, params string[] args)
+    {
+        BreakTheSettings();
+
+        Assert.That(await RunAsync(args), Is.EqualTo(exitCode));
+
+        Assert.That(_gateLog.Messages, Is.Empty, "the settings were not read");
+        _commands.VerifyNoOtherCalls();
+        _report.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// Showing a recording in progress is never held up by the settings: a broken file must not keep anyone from seeing or
+    /// stopping a recording. Nor is the report printed, which is about recordings that are not in progress.
+    /// </summary>
     [Test]
-    public async Task Record_without_a_name_does_not_ask_while_the_settings_cannot_be_used()
+    public async Task Attaching_is_never_held_up_by_the_settings()
+    {
+        BreakTheSettings();
+
+        Assert.That(await RunAsync("attach", "--alert", "20261015-230002Z-1f3a9c07"), Is.EqualTo(0));
+
+        _commands.Verify(c => c.AttachAsync("20261015-230002Z-1f3a9c07", true), Times.Once);
+        Assert.That(_gateLog.Messages, Is.Empty, "the settings were not read");
+        _report.VerifyNoOtherCalls();
+    }
+
+    /// <summary>The menu reads the settings itself before each choice, and shows the report itself, so App does neither before it.</summary>
+    [Test]
+    public async Task The_menu_reads_the_settings_itself()
     {
         BreakTheSettings();
         var app = CreateApp();
-        _ui.TypeLine("Kalam");
+        _ui.Type('q');
 
-        Assert.That(await app.RunAsync(["record"]), Is.EqualTo(1));
-        Assert.That(_ui.Screen, Does.Not.Contain("Name for this recording"));
+        Assert.That(await app.RunAsync([]).WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(0));
+
+        Assert.That(_ui.Screen, Does.Contain("Record only"));
+        Assert.That(_gateLog.Messages, Is.Empty, "no choice was made, so the settings were not read");
+        _report.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// Without a keyboard a menu is useless, so the usage is shown instead, with exit code 2. Should the menu be shown after
+    /// all, it would wait for a key nobody presses, so the test fails after 15 seconds rather than hang the run.
+    /// </summary>
+    [Test]
+    public async Task Without_arguments_or_a_keyboard_the_usage_is_shown()
+    {
+        var exitCode = await CreateApp(interactive: false).RunAsync([]).WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.That(exitCode, Is.EqualTo(2));
+        Assert.That(_line.Output.ToString(), Does.Contain("transcribe"));
         _commands.VerifyNoOtherCalls();
     }
 
-    /// <summary>A mistake on the command line is reported first, with exit code 2, before the settings are read; help needs no settings at all.</summary>
-    [TestCase(false, "frobnicate", 2)]
-    [TestCase(false, "record", 2)]
-    [TestCase(true, "help", 0)]
-    public async Task Usage_and_help_come_before_the_settings(bool interactive, string argument, int expectedExitCode)
+    /// <summary>The command line never asks: record without a name names what is missing and exits 2, even with someone at the keyboard.</summary>
+    [Test]
+    public async Task Nothing_is_asked_on_the_command_line()
     {
-        BreakTheSettings();
+        var app = CreateApp();
+        _ui.TypeLine("Kalam");
 
-        var exitCode = await CreateApp(interactive).RunAsync([argument]);
+        Assert.That(await app.RunAsync(["record", "--device", "auto", "--output", @"D:\Classes"]).WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(2));
 
-        Assert.That(exitCode, Is.EqualTo(expectedExitCode));
-        Assert.That(_gateLog.Messages, Is.Empty, "the settings were not read");
+        Assert.That(_ui.Screen, Does.Not.Contain("Name for this recording"));
+        Assert.That(_line.Errors.ToString(), Does.Contain("record needs a name"));
         _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>Every command prints the report at the start, without asking anything, after the settings check and before it runs.</summary>
+    [TestCase("record", new[] { "record", "Kalam", "--device", "auto", "--output", @"D:\Classes" })]
+    [TestCase("record", new[] { "record-only", "Kalam", "--device", "auto", "--output", @"D:\Classes" })]
+    [TestCase("transcribe", new[] { "transcribe", @"C:\Classes\Kalam" })]
+    [TestCase("rebuild", new[] { "rebuild", @"C:\Classes\Kalam" })]
+    [TestCase("list", new[] { "list" })]
+    [TestCase("devices", new[] { "devices" })]
+    public async Task The_report_at_the_start_comes_before_each_command(string command, string[] args)
+    {
+        Assert.That(await RunAsync(args), Is.EqualTo(0));
+
+        Assert.That(_order, Is.EqualTo(new[] { "report", command }));
+        _report.Verify(r => r.ShowAsync(false), Times.Once);
+        Assert.That(_gateLog.Messages, Is.Empty, "the settings could be used, so the gate said nothing");
+    }
+
+    /// <summary>A file dropped on the app gets the report too, before it is transcribed.</summary>
+    [Test]
+    public async Task A_dropped_file_gets_the_report_first()
+    {
+        var video = _folder.File("Lecture 5.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+
+        await RunAsync(video);
+
+        Assert.That(_order, Is.EqualTo(new[] { "report", "transcribe" }));
+        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(video)), Times.Once);
     }
 
     /// <summary>An edit that fixes the file counts for the next command: the settings are read again each time.</summary>
     [Test]
     public async Task A_fixed_file_counts_for_the_next_command()
     {
+        string[] record = ["record", "Kalam", "--device", "auto", "--output", @"D:\Classes"];
         BreakTheSettings();
-        Assert.That(await CreateApp().RunAsync(["record", "Kalam"]), Is.EqualTo(1));
+        Assert.That(await RunAsync(record), Is.EqualTo(1));
         _settings.Write("""{ "Recording": { "FlushSeconds": 5 } }""");
 
-        Assert.That(await CreateApp().RunAsync(["record", "Kalam"]), Is.EqualTo(0));
-        _commands.Verify(c => c.RecordAsync("Kalam", true), Times.Once);
+        Assert.That(await RunAsync(record), Is.EqualTo(0));
+        _commands.Verify(c => c.RecordAsync(It.Is<RecordRequest>(request => request.Name == "Kalam" && request.Transcribe), StartOrigin.CommandLine), Times.Once);
     }
 
-    /// <summary>Started without arguments by someone at the keyboard, the app shows the menu.</summary>
+    /// <summary>A failure becomes exit code 1 with the reason logged, and a cancel exit code 130.</summary>
     [Test]
-    public async Task Without_arguments_the_menu_is_shown()
+    public async Task Failures_and_cancels_have_their_own_exit_codes()
     {
-        var app = CreateApp();
-        _ui.Type('q');
+        _commands.Setup(c => c.RecordAsync(It.Is<RecordRequest>(request => request.Transcribe), StartOrigin.CommandLine)).ThrowsAsync(new InvalidOperationException("No output device."));
+        _commands.Setup(c => c.RecordAsync(It.Is<RecordRequest>(request => !request.Transcribe), StartOrigin.CommandLine)).ThrowsAsync(new OperationCanceledException());
 
-        var exitCode = await app.RunAsync([]).WaitAsync(TimeSpan.FromSeconds(15));
-
-        Assert.That(exitCode, Is.EqualTo(0));
-        Assert.That(_ui.Screen, Does.Contain("Record only"));
-    }
-
-    /// <summary>Without a keyboard a menu is useless, so the usage is shown instead.</summary>
-    [Test]
-    public async Task Without_arguments_or_a_keyboard_the_usage_is_shown()
-    {
-        var exitCode = await CreateApp(interactive: false).RunAsync([]);
-
-        Assert.That(exitCode, Is.EqualTo(2));
-        Assert.That(_ui.Screen, Does.Contain("transcribe <path>"));
-        _commands.VerifyNoOtherCalls();
-    }
-
-    /// <summary>"record" records and transcribes; "record-only" only records; both take the recording's name.</summary>
-    [TestCase("record", true)]
-    [TestCase("record-only", false)]
-    public async Task The_record_commands_record_under_the_name_given(string command, bool transcribe)
-    {
-        var exitCode = await CreateApp().RunAsync([command, "Kalam lesson 12"]);
-
-        Assert.That(exitCode, Is.EqualTo(0));
-        _commands.Verify(c => c.RecordAsync("Kalam lesson 12", transcribe), Times.Once);
-    }
-
-    /// <summary>Without a name on the command line, someone at the keyboard is asked for one.</summary>
-    [Test]
-    public async Task Record_without_a_name_asks_for_one()
-    {
-        var app = CreateApp();
-        _ui.TypeLine("Kalam");
-
-        var exitCode = await app.RunAsync(["record"]);
-
-        Assert.That(exitCode, Is.EqualTo(0));
-        _commands.Verify(c => c.RecordAsync("Kalam", true), Times.Once);
-    }
-
-    /// <summary>Without a name and without a keyboard, there is nothing to record under, so the usage is shown.</summary>
-    [Test]
-    public async Task Record_without_a_name_or_a_keyboard_shows_the_usage()
-    {
-        var exitCode = await CreateApp(interactive: false).RunAsync(["record-only"]);
-
-        Assert.That(exitCode, Is.EqualTo(2));
-        _commands.VerifyNoOtherCalls();
-    }
-
-    /// <summary>"transcribe" takes the path that follows it, as a request from the command line, which nobody is asked about.</summary>
-    [Test]
-    public async Task The_transcribe_command_transcribes_its_path()
-    {
-        Assert.That(await CreateApp().RunAsync(["transcribe", @"C:\Classes\Kalam"]), Is.EqualTo(0));
-
-        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(@"C:\Classes\Kalam")), Times.Once);
-        _commands.VerifyNoOtherCalls();
+        Assert.That(await RunAsync("record", "Kalam", "--device", "auto", "--output", @"D:\Classes"), Is.EqualTo(1));
+        Assert.That(await RunAsync("record-only", "Kalam", "--device", "auto", "--output", @"D:\Classes"), Is.EqualTo(130));
+        Assert.That(_log.Problems, Is.EqualTo(new[] { "ClassScribe stopped because of an error", "Cancelled" }));
     }
 
     /// <summary>
-    /// "transcribe" takes --again, to transcribe a recording that already has a transcript, and --no-open, to open
-    /// nothing at the end: before or after the path, in any order and in any case.
+    /// App runs what was parsed with the command line's own invocation, the one that leaves Ctrl+C with ClassScribe: help
+    /// asked for through App is written where the command line writes, not to the console System.CommandLine would use by
+    /// itself.
     /// </summary>
-    [TestCase(new[] { "transcribe", @"C:\Classes\Kalam", "--again" }, true, true)]
-    [TestCase(new[] { "transcribe", @"C:\Classes\Kalam", "--no-open" }, false, false)]
-    [TestCase(new[] { "transcribe", @"C:\Classes\Kalam", "--no-open", "--again" }, true, false)]
-    [TestCase(new[] { "transcribe", "--AGAIN", @"C:\Classes\Kalam" }, true, true)]
-    [TestCase(new[] { "Transcribe", "--No-Open", @"C:\Classes\Kalam", "--again" }, true, false)]
-    public async Task Transcribe_takes_again_and_no_open(string[] args, bool again, bool open)
-    {
-        Assert.That(await CreateApp().RunAsync(args), Is.EqualTo(0));
-
-        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(@"C:\Classes\Kalam", open: open, again: again)), Times.Once);
-        _commands.VerifyNoOtherCalls();
-    }
-
-    /// <summary>"rebuild" rebuilds the transcript of the path that follows it, opening it at the end unless --no-open says otherwise.</summary>
-    [TestCase(new[] { "rebuild", @"C:\Classes\Kalam" }, true)]
-    [TestCase(new[] { "rebuild", @"C:\Classes\Kalam", "--no-open" }, false)]
-    [TestCase(new[] { "REBUILD", "--NO-OPEN", @"C:\Classes\Kalam" }, false)]
-    public async Task Rebuild_rebuilds_its_path(string[] args, bool open)
-    {
-        Assert.That(await CreateApp().RunAsync(args), Is.EqualTo(0));
-
-        _commands.Verify(c => c.RebuildAsync(@"C:\Classes\Kalam", open), Times.Once);
-        _commands.VerifyNoOtherCalls();
-    }
-
-    /// <summary>
-    /// A command line that transcribe or rebuild cannot take is a mistake: the usage is shown, the exit code is 2, and
-    /// nothing runs. That is a missing path, a second path, an option the command does not take, and one it does not know.
-    /// </summary>
-    [TestCase("transcribe")]
-    [TestCase("transcribe", "--again")]
-    [TestCase("transcribe", @"C:\Classes\Kalam", @"C:\Classes\Fiqh")]
-    [TestCase("transcribe", @"C:\Classes\Kalam", "--output", @"C:\Transcripts")]
-    [TestCase("rebuild")]
-    [TestCase("rebuild", "--no-open")]
-    [TestCase("rebuild", @"C:\Classes\Kalam", "--again")]
-    [TestCase("rebuild", @"C:\Classes\Kalam", @"C:\Classes\Fiqh")]
-    public async Task A_command_line_transcribe_or_rebuild_cannot_take_shows_the_usage(params string[] args)
-    {
-        Assert.That(await CreateApp().RunAsync(args), Is.EqualTo(2));
-
-        Assert.That(_ui.Screen, Does.Contain("rebuild <path>"));
-        _commands.VerifyNoOtherCalls();
-    }
-
-    /// <summary>The usage names the rebuild command and the options of transcribe and rebuild.</summary>
     [Test]
-    public async Task The_usage_names_rebuild_and_the_options()
+    public async Task App_runs_the_command_line_with_its_own_invocation()
     {
-        await CreateApp().RunAsync(["help"]);
+        Assert.That(await RunAsync("devices", "--help"), Is.EqualTo(0));
 
-        Assert.That(_ui.Screen, Does.Contain("ClassScribe rebuild <path>").And.Contain("--again").And.Contain("--no-open"));
+        Assert.That(_line.Output.ToString(), Does.Contain("Usage:").And.Contain("ClassScribe devices"));
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>A failure in the report at the start is a failure like any other: exit code 1, and the command does not run.</summary>
+    [Test]
+    public async Task A_failing_report_is_a_failure()
+    {
+        _report.Setup(r => r.ShowAsync(false)).ThrowsAsync(new IOException("The runs folder cannot be read."));
+
+        Assert.That(await RunAsync("list"), Is.EqualTo(1));
+
+        _commands.VerifyNoOtherCalls();
     }
 
     /// <summary>
@@ -287,121 +294,26 @@ public class AppTests
         const string folder = @"C:\Program Files\ClassScribe\";
         var again = FromCommandLine(recording, again: true);
 
-        await CreateApp().RunAsync(ArgumentsOf(CommandLine.Transcribe(recording, Exe, folder)));
-        await CreateApp().RunAsync(ArgumentsOf(CommandLine.Transcribe(recording, Exe, folder, again: true)));
-        await CreateApp().RunAsync(ArgumentsOf(CommandLine.Rebuild(recording, Exe, folder)));
+        await RunAsync(ArgumentsOf(CommandLine.Transcribe(recording, Exe, folder)));
+        await RunAsync(ArgumentsOf(CommandLine.Transcribe(recording, Exe, folder, again: true)));
+        await RunAsync(ArgumentsOf(CommandLine.Rebuild(recording, Exe, folder)));
 
-        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(recording)), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(recording, true, false)), Times.Once);
         _commands.Verify(c => c.TranscribeAsync(again), Times.Once);
         _commands.Verify(c => c.RebuildAsync(recording, true), Times.Once);
         _commands.VerifyNoOtherCalls();
     }
 
-    /// <summary>A file or folder dropped on the exe arrives as its only argument and is transcribed, as from the command line: nobody is asked about it.</summary>
-    [Test]
-    public async Task A_file_or_folder_dropped_on_the_app_is_transcribed()
-    {
-        var video = _folder.File("Lecture 5.mp4");
-        File.WriteAllBytes(video, [1, 2, 3]);
-
-        await CreateApp().RunAsync([video]);
-        await CreateApp().RunAsync([_folder.Path]);
-
-        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(video)), Times.Once);
-        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(_folder.Path)), Times.Once);
-    }
-
     /// <summary>
-    /// Windows PowerShell 5.1 hands a quoted folder that ends in a backslash over with a stray quote at
-    /// the end, which tab completion produces whenever the path has a space. A quote cannot be part of a
-    /// Windows path, so it is taken off, for the transcribe command and for a bare path alike.
+    /// The arguments are tidied before they are read: a command and its options in any case, and a stray quote from
+    /// Windows PowerShell 5.1 taken off a path, with the options it joined to the path counted again.
     /// </summary>
     [Test]
-    public async Task A_stray_quote_from_PowerShell_is_taken_off_the_path()
+    public async Task The_arguments_are_tidied_first()
     {
-        var withStrayQuote = _folder.Path + "\"";
-
-        await CreateApp().RunAsync(["transcribe", withStrayQuote]);
-        await CreateApp().RunAsync([withStrayQuote]);
-        await CreateApp().RunAsync(["rebuild", withStrayQuote]);
-
-        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(_folder.Path)), Times.Exactly(2));
-        _commands.Verify(c => c.RebuildAsync(_folder.Path, true), Times.Once);
-    }
-
-    /// <summary>
-    /// When an option follows such a path, the stray quote also joins the option to the path: PowerShell 5.1 passes
-    /// "C:\Classes\Uṣūl al-dīn\" --again, and Windows reads the backslash and quote as a quote inside one argument.
-    /// A quote cannot be part of a Windows path, so the argument is split there, and the option counts.
-    /// </summary>
-    [Test]
-    public async Task An_option_joined_to_a_path_by_a_stray_quote_still_counts()
-    {
-        await CreateApp().RunAsync(["transcribe", @"C:\Classes\Uṣūl al-dīn"" --again --no-open"]);
-        await CreateApp().RunAsync(["rebuild", @"C:\Classes\Uṣūl al-dīn"" --no-open"]);
+        await RunAsync("Transcribe", @"C:\Classes\Uṣūl al-dīn"" --AGAIN --no-open");
 
         _commands.Verify(c => c.TranscribeAsync(FromCommandLine(@"C:\Classes\Uṣūl al-dīn", open: false, again: true)), Times.Once);
-        _commands.Verify(c => c.RebuildAsync(@"C:\Classes\Uṣūl al-dīn", false), Times.Once);
         _commands.VerifyNoOtherCalls();
-    }
-
-    /// <summary>
-    /// Only options are taken out of an argument at a quote inside it: a recording's name with quotes in it stays one
-    /// name, as before, so that a class starts under it rather than with the usage. Its quotes are left to the name's
-    /// own tidying when the recording is made.
-    /// </summary>
-    [Test]
-    public async Task A_name_with_quotes_inside_stays_one_argument()
-    {
-        Assert.That(await CreateApp().RunAsync(["record", "Reading \"Kitāb al-Tawḥīd\""]), Is.EqualTo(0));
-
-        _commands.Verify(c => c.RecordAsync("Reading \"Kitāb al-Tawḥīd", true), Times.Once);
-        _commands.VerifyNoOtherCalls();
-    }
-
-    /// <summary>A recording's name that looks like an option keeps its case: only the options transcribe and rebuild take are tidied.</summary>
-    [Test]
-    public async Task A_name_that_looks_like_an_option_keeps_its_case()
-    {
-        await CreateApp().RunAsync(["record-only", "--Kalam"]);
-
-        _commands.Verify(c => c.RecordAsync("--Kalam", false), Times.Once);
-    }
-
-    /// <summary>Command names are taken in any case, so Transcribe, typed by habit, is not an unknown command.</summary>
-    [Test]
-    public async Task Command_names_are_taken_in_any_case()
-    {
-        await CreateApp().RunAsync(["Transcribe", @"C:\Classes\Kalam"]);
-        await CreateApp().RunAsync(["RECORD-ONLY", "Kalam"]);
-        await CreateApp().RunAsync(["Rebuild", @"C:\Classes\Kalam"]);
-
-        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(@"C:\Classes\Kalam")), Times.Once);
-        _commands.Verify(c => c.RecordAsync("Kalam", false), Times.Once);
-        _commands.Verify(c => c.RebuildAsync(@"C:\Classes\Kalam", true), Times.Once);
-    }
-
-    /// <summary>Asking for help shows the usage and succeeds; anything unknown shows it and fails.</summary>
-    [TestCase("help", 0)]
-    [TestCase("--help", 0)]
-    [TestCase("frobnicate", 2)]
-    public async Task Help_and_unknown_commands_show_the_usage(string argument, int expectedExitCode)
-    {
-        var exitCode = await CreateApp().RunAsync([argument]);
-
-        Assert.That(exitCode, Is.EqualTo(expectedExitCode));
-        Assert.That(_ui.Screen, Does.Contain("record-only").And.Contain("Q twice (or Ctrl+C) stops"));
-        _commands.VerifyNoOtherCalls();
-    }
-
-    /// <summary>A failure becomes exit code 1, and a cancel exit code 130.</summary>
-    [Test]
-    public async Task Failures_and_cancels_have_their_own_exit_codes()
-    {
-        _commands.Setup(c => c.RecordAsync("Kalam", true)).ThrowsAsync(new InvalidOperationException("No output device."));
-        _commands.Setup(c => c.RecordAsync("Kalam", false)).ThrowsAsync(new OperationCanceledException());
-
-        Assert.That(await CreateApp().RunAsync(["record", "Kalam"]), Is.EqualTo(1));
-        Assert.That(await CreateApp().RunAsync(["record-only", "Kalam"]), Is.EqualTo(130));
     }
 }

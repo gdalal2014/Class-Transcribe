@@ -1,3 +1,4 @@
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 
 namespace ClassScribe.Tests;
@@ -65,7 +66,77 @@ public class CommandLineTests
     [Test]
     public void The_short_forms_name_this_program()
     {
+        var request = Request(new ClassSource.Automatic());
+
         Assert.That(CommandLine.Rebuild(Recording), Is.EqualTo(CommandLine.Rebuild(Recording, Environment.ProcessPath, AppContext.BaseDirectory)));
         Assert.That(CommandLine.Transcribe(Recording, again: true), Is.EqualTo(CommandLine.Transcribe(Recording, Environment.ProcessPath, AppContext.BaseDirectory, again: true)));
+        Assert.That(CommandLine.Record(request), Is.EqualTo(CommandLine.Record(request, Environment.ProcessPath, AppContext.BaseDirectory)));
     }
+
+    /// <summary>
+    /// The command that continues a recording, as the report at the start prints it after an unexpected end: record with the
+    /// run's name, its source, its recordings folder and --continue, and nothing else (no --minutes), so that it runs as
+    /// printed and adds the next part to the same recording.
+    /// </summary>
+    [Test]
+    public void The_record_command_continues_the_recording_from_the_same_source_into_the_same_folder()
+    {
+        Assert.That(CommandLine.Record(Request(new ClassSource.Automatic()), Exe, ExeFolder),
+            Is.EqualTo(@"& ""C:\Program Files\ClassScribe\ClassScribe.exe"" record ""Kalam"" --device auto --output ""D:\Classes"" --continue"));
+        Assert.That(CommandLine.Record(Request(new ClassSource.Device("Pixel Buds")), Exe, ExeFolder),
+            Is.EqualTo(@"& ""C:\Program Files\ClassScribe\ClassScribe.exe"" record ""Kalam"" --device ""Pixel Buds"" --output ""D:\Classes"" --continue"));
+        Assert.That(CommandLine.Record(Request(new ClassSource.App("chrome")), Dotnet, BuildFolder),
+            Is.EqualTo(@"dotnet ""D:\Repos\Class-Transcribe\src\ClassScribe\bin\Debug\net10.0\ClassScribe.dll"" record ""Kalam"" --app ""chrome"" --output ""D:\Classes"" --continue"));
+    }
+
+    /// <summary>A run that recorded only continues as record-only, and one that was to open nothing at its end keeps --no-open.</summary>
+    [Test]
+    public void The_record_command_keeps_record_only_and_no_open()
+    {
+        var request = Request(new ClassSource.Automatic()) with { Transcribe = false, Open = false, Minutes = 90 };
+
+        Assert.That(CommandLine.Record(request, Exe, ExeFolder),
+            Is.EqualTo(@"& ""C:\Program Files\ClassScribe\ClassScribe.exe"" record-only ""Kalam"" --device auto --output ""D:\Classes"" --no-open --continue"));
+    }
+
+    /// <summary>
+    /// The microphone modes of phase 3 keep their microphone: --mic beside the class, --in-person alone, each with the
+    /// microphone's name when one was given.
+    /// </summary>
+    [Test]
+    public void The_record_command_keeps_the_microphone()
+    {
+        var withClass = Request(new ClassSource.Automatic()) with
+        {
+            Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null))
+        };
+        var inPerson = Request(new ClassSource.Automatic()) with { Source = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT")) };
+
+        Assert.That(CommandLine.Record(withClass, Exe, ExeFolder), Does.EndWith(@" record ""Kalam"" --device auto --mic --output ""D:\Classes"" --continue"));
+        Assert.That(CommandLine.Record(inPerson, Exe, ExeFolder), Does.EndWith(@" record ""Kalam"" --in-person ""OBSBOT"" --output ""D:\Classes"" --continue"));
+    }
+
+    /// <summary>
+    /// Inside PowerShell's double quotes, $ starts a variable, a backtick escapes the next character, and a double quote
+    /// ends the text: the straight one, and the typographic ones PowerShell takes for it too (“, ” and „), which a name or
+    /// a folder copied from a web page or a document may hold. Each is escaped with a backtick, so that a name or a path
+    /// holding one reaches ClassScribe as it is.
+    /// </summary>
+    [Test]
+    public void PowerShells_special_characters_are_escaped_inside_the_quotes()
+    {
+        var request = Request(new ClassSource.Device("Speakers \"Main\"")) with { Name = "Fiqh $1 `a", OutputRoot = @"D:\Cla$$es" };
+
+        Assert.That(CommandLine.Record(request, Exe, ExeFolder),
+            Is.EqualTo(@"& ""C:\Program Files\ClassScribe\ClassScribe.exe"" record ""Fiqh `$1 ``a"" --device ""Speakers `""Main`"""" --output ""D:\Cla`$`$es"" --continue"));
+        Assert.That(CommandLine.Transcribe(@"D:\Cla$$es\x.wav", Exe, ExeFolder), Does.EndWith(@" transcribe ""D:\Cla`$`$es\x.wav"""));
+        Assert.That(CommandLine.Record(request with { Name = "Kalam “intro”", OutputRoot = @"D:\„Classes“" }, Exe, ExeFolder),
+            Does.Contain(@" record ""Kalam `“intro`”"" --device ").And.EndWith(@" --output ""D:\`„Classes`“"" --continue"));
+        Assert.That(CommandLine.Rebuild(@"D:\Kalam “intro”\x.md", Exe, ExeFolder), Does.EndWith(@" rebuild ""D:\Kalam `“intro`”\x.md"""));
+    }
+
+    /// <summary>A request to record Kalam from <paramref name="source"/> into D:\Classes and transcribe it.</summary>
+    private static RecordRequest Request(ClassSource source) =>
+        new(TestRuns.Id(), "Kalam", Transcribe: true, new SourcePlan(RecordingMode.Class, source, null), @"D:\Classes", ContinueChoice.Ask, ContinueBaseName: null,
+            Minutes: null, Open: true);
 }

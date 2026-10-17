@@ -17,6 +17,23 @@ public enum KeepScreenOn
     Never
 }
 
+/// <summary>
+/// When ClassScribe brings back a window by itself while it records in the background and no window shows the recording
+/// (see <see cref="RecordingOptions.ReopenWindow"/>). The window comes back minimized, without taking the focus, and
+/// ignores every key until Enter is pressed in it.
+/// </summary>
+public enum ReopenWindow
+{
+    /// <summary>When the last window showing the recording is closed, and again whenever something needs attention.</summary>
+    OnCloseAndProblems,
+
+    /// <summary>Only when something needs attention, such as nothing being recorded, or the transcript failing.</summary>
+    OnProblems,
+
+    /// <summary>Never. The next start of ClassScribe reports what happened.</summary>
+    Never
+}
+
 /// <summary>Settings that control how the class audio is captured and stored.</summary>
 public sealed class RecordingOptions
 {
@@ -69,4 +86,38 @@ public sealed class RecordingOptions
     /// taken in any case; a number is refused.
     /// </summary>
     public KeepScreenOn KeepScreenOn { get; init; } = KeepScreenOn.OnBattery;
+
+    /// <summary>
+    /// Record in a separate ClassScribe process in the background, so that closing the window, or a key typed into it by
+    /// mistake, does not end the class. False records in the window, as before: closing it then ends the recording, and
+    /// the audio so far is kept.
+    /// </summary>
+    public bool SeparateProcess { get; init; } = true;
+
+    /// <summary>
+    /// When ClassScribe brings back a minimized window by itself while it records in the background and no window shows
+    /// the recording: <see cref="Settings.ReopenWindow.OnCloseAndProblems"/> (the default),
+    /// <see cref="Settings.ReopenWindow.OnProblems"/> or <see cref="Settings.ReopenWindow.Never"/>. The names are taken in
+    /// any case; a number is refused.
+    /// </summary>
+    public ReopenWindow ReopenWindow { get; init; } = ReopenWindow.OnCloseAndProblems;
+
+    /// <summary>
+    /// While a recording or its upload runs, a restart, shutdown or sign-out started from Windows asks first, and names
+    /// ClassScribe as the reason. A shutdown that Windows forces is not held up.
+    /// </summary>
+    public bool BlockShutdown { get; init; } = true;
+
+    /// <summary>
+    /// Offer to continue a recording of the same name as its next part when it stopped without a transcript at most this
+    /// many minutes ago, as after a crash or a restart. 0 never offers; at most 1440, a day.
+    /// </summary>
+    public int ContinueWithinMinutes { get; init; } = 60;
+
+    /// <summary>
+    /// The safety stop: a recording stops by itself after this many hours, with a warning 15 minutes before. ElevenLabs
+    /// takes at most 10 hours of audio in one file, and a recording left running by mistake must not run all night. 0
+    /// turns the stop off; at most 9.5.
+    /// </summary>
+    public double StopAfterHours { get; init; } = 9;
 }

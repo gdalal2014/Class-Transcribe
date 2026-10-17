@@ -36,6 +36,12 @@ public class SettingsCheckTests
     [TestCase("ElevenLabs:SlowestUploadMbps", "1,5", "a number written with a dot")]
     [TestCase("Recording:KeepScreenOn", "Sometimes", "OnBattery, Always or Never")]
     [TestCase("Recording:KeepScreenOn", "", "OnBattery, Always or Never")]
+    [TestCase("Recording:SeparateProcess", "yes", "true or false")]
+    [TestCase("Recording:ReopenWindow", "Sometimes", "OnCloseAndProblems, OnProblems or Never")]
+    [TestCase("Recording:BlockShutdown", "no", "true or false")]
+    [TestCase("Recording:ContinueWithinMinutes", "an hour", "a whole number")]
+    [TestCase("Recording:ContinueWithinMinutes", "60.5", "a whole number")]
+    [TestCase("Recording:StopAfterHours", "9,5", "a number written with a dot")]
     public void A_value_that_cannot_be_read_is_reported_by_its_setting(string setting, string value, string expected)
     {
         var problems = Problems(new() { [setting] = value });
@@ -58,6 +64,134 @@ public class SettingsCheckTests
         var problems = Problems(new() { ["Recording:KeepScreenOn"] = value });
 
         Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo($"Recording:KeepScreenOn is \"{value}\", which is not OnBattery, Always or Never."));
+    }
+
+    /// <summary>
+    /// The settings added for the background recorder have these defaults when the file leaves them out: record in a
+    /// separate process; reopen a minimized window when the last one is closed and whenever something needs attention;
+    /// ask before a restart or shutdown started from Windows; offer to continue a recording that stopped within the hour;
+    /// and stop by itself after 9 hours. The defaults pass the check.
+    /// </summary>
+    [Test]
+    public void The_background_recorders_settings_have_their_defaults()
+    {
+        var recording = new RecordingOptions();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(recording.SeparateProcess, Is.True);
+            Assert.That(recording.ReopenWindow, Is.EqualTo(ReopenWindow.OnCloseAndProblems));
+            Assert.That(recording.BlockShutdown, Is.True);
+            Assert.That(recording.ContinueWithinMinutes, Is.EqualTo(60));
+            Assert.That(recording.StopAfterHours, Is.EqualTo(9));
+            Assert.That(Problems([]), Is.Empty);
+        }
+    }
+
+    /// <summary>
+    /// Each setting added for the background recorder is bound from the file as written: the switches, the name of when
+    /// to reopen a window (in any case), the minutes and the hours.
+    /// </summary>
+    [Test]
+    public void The_background_recorders_settings_are_taken_from_the_file()
+    {
+        var settings = Settings(new()
+        {
+            ["Recording:SeparateProcess"] = "false",
+            ["Recording:ReopenWindow"] = "onproblems",
+            ["Recording:BlockShutdown"] = "False",
+            ["Recording:ContinueWithinMinutes"] = "0",
+            ["Recording:StopAfterHours"] = "4.5"
+        });
+
+        var recording = settings.GetSection(RecordingOptions.SectionName).Get<RecordingOptions>()!;
+
+        Assert.That(new SettingsCheck().FindProblems(settings), Is.Empty);
+        Assert.That(
+            (recording.SeparateProcess, recording.ReopenWindow, recording.BlockShutdown, recording.ContinueWithinMinutes, recording.StopAfterHours),
+            Is.EqualTo((false, ReopenWindow.OnProblems, false, 0, 4.5)));
+    }
+
+    /// <summary>
+    /// When to reopen a window takes the names of its choices, in any case. A number, or several names joined with a
+    /// comma, would be read as some choice without saying which, so they are refused, with the names that work.
+    /// </summary>
+    [TestCase("OnCloseAndProblems", true)]
+    [TestCase("onproblems", true)]
+    [TestCase(" NEVER ", true)]
+    [TestCase("OnClose", false)]
+    [TestCase("0", false)]
+    [TestCase("Never, OnProblems", false)]
+    public void When_to_reopen_a_window_takes_its_names_in_any_case_and_nothing_else(string value, bool usable)
+    {
+        var problems = Problems(new() { ["Recording:ReopenWindow"] = value });
+
+        Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo($"Recording:ReopenWindow is \"{value}\", which is not OnCloseAndProblems, OnProblems or Never."));
+    }
+
+    /// <summary>
+    /// The safety stop is from 0 to 9.5 hours. ElevenLabs takes at most 10 hours of audio in one file, and ClassScribe
+    /// sends at most 9.5, so a later stop would make a recording too long to transcribe; 0 turns the stop off. A value
+    /// outside that range is refused with the range, an example, the reason and what 0 does.
+    /// </summary>
+    [TestCase("0", true)]
+    [TestCase("0.5", true)]
+    [TestCase("9", true)]
+    [TestCase("9.5", true)]
+    [TestCase("9.6", false)]
+    [TestCase("24", false)]
+    [TestCase("-1", false)]
+    [TestCase("NaN", false)]
+    [TestCase("Infinity", false)]
+    public void The_safety_stop_is_from_0_to_9_and_a_half_hours(string value, bool usable)
+    {
+        var problems = Problems(new() { ["Recording:StopAfterHours"] = value });
+
+        Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo(
+            $"Recording:StopAfterHours is {value}; it must be from 0 to 9.5 (hours), such as 9. ElevenLabs takes at most 10 hours of audio in one file; 0 turns the safety stop off."));
+    }
+
+    /// <summary>
+    /// Continuing a recording is offered for one that stopped from 0 to 1440 minutes (a day) ago; 0 never offers it. A
+    /// negative value is refused, and so is more than a day, which would join two classes into one recording.
+    /// </summary>
+    [TestCase("0", true)]
+    [TestCase("60", true)]
+    [TestCase("1440", true)]
+    [TestCase("1441", false)]
+    [TestCase("-1", false)]
+    public void Continuing_is_offered_for_a_recording_that_stopped_up_to_a_day_ago(string value, bool usable)
+    {
+        var problems = Problems(new() { ["Recording:ContinueWithinMinutes"] = value });
+
+        Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo(
+            $"Recording:ContinueWithinMinutes is {value}; it must be from 0 to 1440 (a day), such as 60. 0 never offers to continue a recording."));
+    }
+
+    /// <summary>
+    /// The appsettings.json that ships passes the check, and holds each setting added for the background recorder at the
+    /// value the code gives it when the file leaves it out, so that the file shows every setting there is.
+    /// </summary>
+    [Test]
+    public void The_shipped_settings_pass_and_hold_the_background_recorders_settings_at_their_defaults()
+    {
+        var shipped = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false, reloadOnChange: false)
+            .AddApiKeyFromEnvironment("test-key")
+            .Build();
+        var recording = shipped.GetSection(RecordingOptions.SectionName).Get<RecordingOptions>()!;
+        var defaults = new RecordingOptions();
+        string[] added =
+        [
+            nameof(RecordingOptions.SeparateProcess), nameof(RecordingOptions.ReopenWindow), nameof(RecordingOptions.BlockShutdown),
+            nameof(RecordingOptions.ContinueWithinMinutes), nameof(RecordingOptions.StopAfterHours)
+        ];
+
+        Assert.That(new SettingsCheck().FindProblems(shipped), Is.Empty);
+        Assert.That(added.Where(setting => shipped[$"{RecordingOptions.SectionName}:{setting}"] is null), Is.Empty, "every added setting is in the file");
+        Assert.That(
+            (recording.SeparateProcess, recording.ReopenWindow, recording.BlockShutdown, recording.ContinueWithinMinutes, recording.StopAfterHours),
+            Is.EqualTo((defaults.SeparateProcess, defaults.ReopenWindow, defaults.BlockShutdown, defaults.ContinueWithinMinutes, defaults.StopAfterHours)));
     }
 
     /// <summary>A value that can be read but makes no sense, or would break something, is reported with the setting's name.</summary>

@@ -71,6 +71,7 @@ public class TranscribeCommandTests
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             elevenLabs,
             recording,
+            new TranscriptionProgress(),
             NullLogger<TranscriptionWorkflow>.Instance);
 
         return new TranscribeCommand(workflow, folders, _signals, _desktop.Object, _power, _powerSource, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
@@ -172,6 +173,46 @@ public class TranscribeCommandTests
 
         _desktop.Verify(d => d.OpenFolder(transcriptFolder), Times.Once);
         _desktop.Verify(d => d.OpenFile(It.Is<string>(p => p.StartsWith(transcriptFolder) && p.EndsWith(".md"))), Times.Once);
+    }
+
+    /// <summary>
+    /// A file that is not a recording's, given with --output, has its transcript in a folder named after it inside the
+    /// folder given, rather than under Recording:OutputFolder.
+    /// </summary>
+    [Test]
+    public async Task A_single_file_goes_into_the_output_folder_given()
+    {
+        var video = _folder.File("class.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+        var elsewhere = _folder.File("Elsewhere");
+        var transcriptFolder = Path.Combine(elsewhere, "class");
+
+        Assert.That(await CreateCommand(openWhenDone: true).RunAsync(new TranscribeRequest(video, elsewhere, FromCommandLine: true)), Is.EqualTo(0));
+
+        _client.Verify(Calls.TranscriptionOf(video), Times.Once);
+        _desktop.Verify(d => d.OpenFolder(transcriptFolder), Times.Once);
+        Assert.That(Directory.GetFiles(transcriptFolder, "*.md"), Has.Length.EqualTo(1));
+        Assert.That(Directory.Exists(_folder.File("Recordings")), Is.False, "nothing went under Recording:OutputFolder");
+        Assert.That(_log.Messages, Has.None.Contains("--output"), "the folder given was used, so there is nothing to say about it");
+    }
+
+    /// <summary>
+    /// A recording, named by its folder or one of its files, keeps its transcript beside it when --output names another
+    /// folder, since its audio, marks and earlier transcripts are there; ClassScribe says that --output was not used.
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task A_recording_keeps_its_transcript_beside_it_and_says_output_was_not_used(bool byFolder)
+    {
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        var elsewhere = _folder.File("Elsewhere");
+
+        var exitCode = await CreateCommand().RunAsync(new TranscribeRequest(byFolder ? _folder.Path : recording.Segment(1), elsewhere, FromCommandLine: true));
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(File.Exists(recording.Transcript()), Is.True);
+        Assert.That(Directory.Exists(elsewhere), Is.False);
+        Assert.That(_log.Messages, Has.Some.EqualTo($"--output is not used for a recording: its transcript goes beside it, in {_folder.Path}"));
     }
 
     /// <summary>

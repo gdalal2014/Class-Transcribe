@@ -1,7 +1,14 @@
+using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
+using ClassScribe.Desktop.Windows;
+using ClassScribe.Link;
+using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.Options;
@@ -209,5 +216,132 @@ public class AppHostTests
         Assert.That(explanation, Does.StartWith("ClassScribe could not start."));
         Assert.That(explanation, Does.Contain("The configuration of the console log failed.").And.Contain("Loud is not a level."));
         Assert.That(explanation, Does.Contain(SettingsPath));
+    }
+
+    // ------------------------------------------------------------------ the recorder's host
+
+    /// <summary>What a window hands the recorder it starts: the run, its request, and the settings given, by name.</summary>
+    private static RecorderStart Start(Dictionary<string, string?> settings)
+    {
+        var runId = TestRuns.Id();
+        return new RecorderStart(runId, TestRuns.Request(runId), settings);
+    }
+
+    /// <summary>Builds the recorder's host from <paramref name="settings"/> and <paramref name="apiKey"/>, over <paramref name="log"/> and the test's folder as ClassScribe's own.</summary>
+    private IHost BuildRecorder(Dictionary<string, string?> settings, string? apiKey = "test-key", RecorderLog? log = null, Action<IServiceCollection>? configureServices = null) =>
+        AppHost.BuildRecorder(Start(settings), apiKey, log ?? new RecorderLog(TimeProvider.System), new RuntimeFolder(_folder.Path), configureServices: configureServices);
+
+    /// <summary>
+    /// The recorder's host holds the settings handed to it and the key from its own environment, and nothing else: not the
+    /// appsettings.json beside the exe, which the window has read and checked already (here the shipped one, which names
+    /// a recordings folder the snapshot leaves out), and not the environment variables, whose overrides the snapshot
+    /// carries already.
+    /// </summary>
+    [Test]
+    public void The_recorders_host_holds_only_the_snapshot_and_the_key()
+    {
+        using var variable = new TemporaryVariable("Recording__SilenceWarningSeconds", "7");
+        Assert.That(File.Exists(Path.Combine(AppContext.BaseDirectory, SettingsFile.FileName)), Is.True, "the shipped appsettings.json is beside this test's exe");
+
+        using var host = BuildRecorder(new() { ["Recording:FlushSeconds"] = "8", ["ElevenLabs:BaseUrl"] = "http://127.0.0.1:9/" }, apiKey: "key-from-variable");
+
+        var recording = host.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue;
+        var elevenLabs = host.Services.GetRequiredService<IOptionsMonitor<ElevenLabsOptions>>().CurrentValue;
+        Assert.That(recording.FlushSeconds, Is.EqualTo(8), "from the snapshot");
+        Assert.That(recording.OutputFolder, Is.Empty, "the file beside the exe is not read");
+        Assert.That(recording.SilenceWarningSeconds, Is.EqualTo(60), "the environment is not read");
+        Assert.That(elevenLabs.BaseUrl, Is.EqualTo("http://127.0.0.1:9/"), "a stub the window was given reaches the recorder");
+        Assert.That(elevenLabs.ApiKey, Is.EqualTo("key-from-variable"));
+    }
+
+    /// <summary>Without a key in its environment, the recorder has none, whatever the snapshot could say: the snapshot never carries one.</summary>
+    [Test]
+    public void Without_a_key_in_its_environment_the_recorder_has_none()
+    {
+        using var host = BuildRecorder(new() { ["ElevenLabs:ApiKey"] = "key-in-snapshot" }, apiKey: null);
+
+        Assert.That(host.Services.GetRequiredService<IOptionsMonitor<ElevenLabsOptions>>().CurrentValue.ApiKey, Is.Empty);
+    }
+
+    /// <summary>
+    /// The recorder has no console, so its host has no console logger: every logger writes into the recorder's log, the
+    /// one given, and nowhere else, at the levels the snapshot's Logging section names.
+    /// </summary>
+    [Test]
+    public void The_recorders_host_logs_only_into_the_recorders_log()
+    {
+        using var log = new RecorderLog(TimeProvider.System);
+        using var host = BuildRecorder(new() { ["Logging:LogLevel:Default"] = "Warning" }, log: log);
+        var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ClassScribe.Tests");
+
+        logger.LogWarning("A line for the windows");
+        logger.LogInformation("A line below the level");
+
+        Assert.That(host.Services.GetServices<ILoggerProvider>().Select(provider => provider.GetType()), Is.EqualTo(new[] { typeof(RecorderLogProvider) }));
+        Assert.That(host.Services.GetRequiredService<RecorderLog>(), Is.SameAs(log));
+        Assert.That(log.Since(0).Lines.Select(line => line.Text), Has.One.Contains("A line for the windows").And.None.Contains("below the level"));
+    }
+
+    /// <summary>
+    /// The recorder's host has the recorder's own services in place of the window's: the link's console for the keys, the
+    /// link's status sink and the recorder's result shower for the run, the server, the alerts, the process starter for
+    /// the alert window, no window signals, and ClassScribe's own folder and the clock it was given; and a per-run
+    /// service cannot be taken outside a run. Resolving the run constructs what it records with, so what reaches Windows
+    /// there (the session's window, the audio capture, the power and the clocks) is replaced by stand-ins: this test is
+    /// about the registrations alone.
+    /// </summary>
+    [Test]
+    public void The_recorders_host_has_the_recorders_own_services()
+    {
+        var folder = new RuntimeFolder(_folder.Path);
+        var time = new ManualTimeProvider(TestRuns.Start);
+        using var host = AppHost.BuildRecorder(Start([]), "test-key", new RecorderLog(time), folder, time, recorder =>
+        {
+            recorder.Replace(ServiceDescriptor.Scoped<ISessionEvents>(_ => new FakeSessionEvents()));
+            recorder.Replace(ServiceDescriptor.Transient<IRecordingFactory>(_ => new FakeRecordingFactory()));
+            recorder.Replace(ServiceDescriptor.Singleton<IPowerRequests>(new FakePowerRequests()));
+            recorder.Replace(ServiceDescriptor.Singleton<IPowerSource>(new FakePowerSource()));
+            recorder.Replace(ServiceDescriptor.Singleton<ISystemTimes>(new FakeSystemTimes(time)));
+        });
+        var services = host.Services;
+        using var scope = services.CreateScope();
+        var run = scope.ServiceProvider;
+
+        Assert.That(services.GetRequiredService<IConsoleUi>(), Is.InstanceOf<LinkConsoleUi>());
+        Assert.That(services.GetRequiredService<RecorderServer>(), Is.SameAs(services.GetRequiredService<RecorderServer>()), "one server for the run");
+        Assert.That(services.GetRequiredService<UnattendedAlerts>(), Is.SameAs(services.GetRequiredService<UnattendedAlerts>()));
+        Assert.That(services.GetRequiredService<IWindowSignals>(), Is.InstanceOf<NoWindowSignals>(), "a recorder has no window");
+        Assert.That(services.GetRequiredService<RuntimeFolder>(), Is.SameAs(folder));
+        Assert.That(services.GetRequiredService<TimeProvider>(), Is.SameAs(time));
+        if (OperatingSystem.IsWindows()) Assert.That(services.GetRequiredService<IProcessStarter>(), Is.InstanceOf<ProcessStarter>());
+        Assert.That(run.GetRequiredService<IRecorderStatusSink>(), Is.InstanceOf<LinkStatusSink>());
+        Assert.That(run.GetRequiredService<IResultShower>(), Is.InstanceOf<RecorderResultShower>());
+        Assert.That(run.GetRequiredService<IResultShower>(), Is.SameAs(run.GetRequiredService<RecorderResultShower>()), "one shower per run, which the host asks at the end");
+        Assert.That(run.GetRequiredService<IRecordRun>(), Is.InstanceOf<RecordCommand>());
+        Assert.That(run.GetRequiredService<RunBookkeeping>(), Is.Not.Null);
+        Assert.That(() => services.GetRequiredService<IUserSignals>(), Throws.InvalidOperationException);
+    }
+
+    /// <summary>A test can put stand-ins in place last, as the window's host allows too.</summary>
+    [Test]
+    public void A_test_can_replace_the_recorders_services()
+    {
+        var starter = new FakeProcessStarter();
+
+        using var host = BuildRecorder([], configureServices: services => services.AddSingleton<IProcessStarter>(starter));
+
+        Assert.That(host.Services.GetRequiredService<IProcessStarter>(), Is.SameAs(starter));
+    }
+
+    /// <summary>
+    /// The settings handed over have passed the window's check, so a value that fails it here means a build mismatch: the
+    /// recorder's host refuses it, naming the setting, rather than record with a setting it cannot read.
+    /// </summary>
+    [Test]
+    public void The_recorders_host_refuses_settings_that_fail_the_check()
+    {
+        var failure = Assert.Throws<InvalidOperationException>(() => BuildRecorder(new() { ["Recording:FlushSeconds"] = "abc" }).Dispose())!;
+
+        Assert.That(failure.Message, Does.Contain("Recording:FlushSeconds is \"abc\""));
     }
 }

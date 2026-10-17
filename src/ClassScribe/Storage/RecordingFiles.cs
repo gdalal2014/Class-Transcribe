@@ -1,15 +1,18 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using ClassScribe.Audio;
 
 namespace ClassScribe.Storage;
 
 /// <summary>
 /// The files of one recording, all in its folder and named after it: the name given when it started,
 /// an underscore, and the UTC time it started, such as <c>Kalam_2026-10-15_20-55-27Z</c>. The audio
-/// is the .wav of that name, with _part2, _part3 and so on for further segments; the transcript is the
+/// is the .wav of that name, with _part2, _part3 and so on for further segments, and the microphone's
+/// track, when it was recorded with the class, the .mic.wav files beside them; the transcript is the
 /// .md of that name, with (2), (3) and so on for later transcripts of the same recording, and ElevenLabs'
 /// answer the .json beside it. An answer that was paid for but did not become a transcript is the
-/// .unread.json of that name, or a .json left without its .md (see <see cref="FindKeptAnswers"/>).
+/// .unread.json of that name, or a .json left without its .md (see <see cref="FindKeptAnswers"/>). The
+/// marks, the log and the upload copy complete the set.
 /// </summary>
 /// <param name="Folder">The folder holding the recording's files.</param>
 /// <param name="BaseName">The name and time stamp every file name starts with.</param>
@@ -34,8 +37,17 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
         }
     }
 
-    /// <summary>The marks file: one mark per line, set with M while recording.</summary>
+    /// <summary>
+    /// The marks file: one mark per line, set with M while recording, and the notes ClassScribe adds there itself, such as
+    /// where the recording was taken up again (see <see cref="ClassMarks"/>).
+    /// </summary>
     public string Marks => Path.Combine(Folder, $"{BaseName}.marks.txt");
+
+    /// <summary>
+    /// The log: everything the runs that recorded the recording logged, in the order they logged it, a run that
+    /// continues the recording appending to it. It is the record of a class after a crash, a closed window or a restart.
+    /// </summary>
+    public string Log => Path.Combine(Folder, $"{BaseName}.log");
 
     /// <summary>The 16 kHz copy that is uploaded.</summary>
     public string Upload => Path.Combine(Folder, $"{BaseName}.upload.wav");
@@ -59,14 +71,25 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     public static RecordingFiles ForNew(string folder, string name, DateTimeOffset startedUtc) =>
         new(folder, $"{name}_{startedUtc.UtcDateTime.ToString(StampFormat, CultureInfo.InvariantCulture)}");
 
-    /// <summary>The recording a segment file belongs to, or null when the file is not a segment of one.</summary>
-    public static RecordingFiles? TryParse(string wavPath)
-    {
-        var match = SegmentFileName().Match(Path.GetFileName(wavPath));
-        return match.Success ? new RecordingFiles(Path.GetDirectoryName(Path.GetFullPath(wavPath))!, match.Groups["base"].Value) : null;
-    }
+    /// <summary>
+    /// The recording any of its files belongs to, by the file's name: a segment of either track, the marks, the log, the
+    /// upload copy, or any copy of its transcript or of ElevenLabs' answer, an answer kept as unread included. Null for
+    /// any other file, such as one without a time stamp in its name. Whether the recording's audio is still there is for
+    /// the caller to look at (see <see cref="FindSegments"/>).
+    /// </summary>
+    public static RecordingFiles? TryParse(string path) => Parse(FileOfARecording(), path);
 
-    /// <summary>The audio file of segment <paramref name="number"/>: the first has the bare name, the rest a part number.</summary>
+    /// <summary>
+    /// The recording a segment of its main track belongs to, by the file's name, or null for any other file, a file of
+    /// the recording that is not such a segment included. A recording is listed by these, so that files left without
+    /// their audio, such as an upload copy, do not pass for one.
+    /// </summary>
+    internal static RecordingFiles? TryParseSegment(string path) => Parse(MainSegmentName(), path);
+
+    /// <summary>
+    /// The audio file of segment <paramref name="number"/> of the main track: the first has the bare name, the rest a part
+    /// number.
+    /// </summary>
     public string Segment(int number) => Path.Combine(Folder, number == 1 ? $"{BaseName}.wav" : $"{BaseName}_part{number}.wav");
 
     /// <summary>The transcript, a Markdown document. <paramref name="copy"/> 2 and up name later transcripts of the same recording.</summary>
@@ -108,12 +131,17 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
             .ToList();
     }
 
-    /// <summary>The segment files that exist, in recording order.</summary>
-    public IReadOnlyList<string> FindSegments()
+    /// <summary>
+    /// The segment files of <paramref name="track"/> that exist, in recording order: for the main track the .wav files of
+    /// the recording's name, and for the microphone's track the .mic.wav files beside them. Neither track takes the
+    /// other's files. Empty when there are none, or the folder is not there.
+    /// </summary>
+    public IReadOnlyList<string> FindSegments(Track track = Track.Main)
     {
         if (!Directory.Exists(Folder)) return [];
 
-        var segment = new Regex($"^{Regex.Escape(BaseName)}(?:_part(?<number>[0-9]{{1,9}}))?\\.wav$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var extension = track == Track.Microphone ? "\\.mic\\.wav" : "\\.wav";
+        var segment = new Regex($"^{Regex.Escape(BaseName)}(?:_part(?<number>[0-9]{{1,9}}))?{extension}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         return Directory.EnumerateFiles(Folder, $"{BaseName}*.wav")
             .Select(file => (Path: file, Match: segment.Match(Path.GetFileName(file))))
             .Where(file => file.Match.Success)
@@ -122,9 +150,24 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
             .ToList();
     }
 
-    /// <summary>A segment file's name: the base name with its time stamp, an optional part number, and .wav.</summary>
+    /// <summary>The recording whose base name <paramref name="fileName"/> gives the file at <paramref name="path"/>, or null when it gives none.</summary>
+    private static RecordingFiles? Parse(Regex fileName, string path)
+    {
+        var match = fileName.Match(Path.GetFileName(path));
+        return match.Success ? new RecordingFiles(Path.GetDirectoryName(Path.GetFullPath(path))!, match.Groups["base"].Value) : null;
+    }
+
+    /// <summary>A segment file's name on the main track: the base name with its time stamp, an optional part number, and .wav.</summary>
     [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:_part[0-9]{1,9})?\.wav$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex SegmentFileName();
+    private static partial Regex MainSegmentName();
+
+    /// <summary>
+    /// The name of any file of a recording: the base name with its time stamp, then a segment of either track (.wav,
+    /// _partN.wav, .mic.wav, _partN.mic.wav), the upload copy (.upload.wav), the marks (.marks.txt), the log (.log), or a
+    /// copy of the transcript or of the answer (.md, .json, .unread.json, each with " (N)" before it from the second copy).
+    /// </summary>
+    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex FileOfARecording();
 
     /// <summary>The time stamp at the end of a base name.</summary>
     [GeneratedRegex(@"_(?<stamp>[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

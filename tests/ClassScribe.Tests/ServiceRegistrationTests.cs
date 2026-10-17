@@ -1,34 +1,54 @@
+using System.Runtime.Versioning;
 using System.Text.Json.Nodes;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
+using ClassScribe.Desktop.Windows;
+using ClassScribe.Link;
+using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Refit;
 
 namespace ClassScribe.Tests;
 
-/// <summary>Dependency injection wiring and settings binding, through the app as Program puts it together.</summary>
+/// <summary>
+/// Dependency injection wiring and settings binding, through the app as Program puts it together: the window's role, with
+/// every command and what starts and shows a run in the background, and the recorder's role, through the recorder's own
+/// host. ClassScribe's own folder is a temporary one, so the real %LOCALAPPDATA%\ClassScribe, where a class may be
+/// recording, is never touched.
+/// </summary>
 [TestFixture]
 public class ServiceRegistrationTests
 {
     private TempFolder _folder = null!;
+    private TestRuntime _runtime = null!;
 
-    /// <summary>Creates the folder that holds the app's appsettings.json.</summary>
+    /// <summary>Creates the folder that holds the app's appsettings.json, and ClassScribe's own folder for the run files.</summary>
     [SetUp]
-    public void SetUp() => _folder = new TempFolder();
+    public void SetUp()
+    {
+        _folder = new TempFolder();
+        _runtime = new TestRuntime();
+    }
 
-    /// <summary>Deletes the folder.</summary>
+    /// <summary>Deletes the folders.</summary>
     [TearDown]
-    public void TearDown() => _folder.Dispose();
+    public void TearDown()
+    {
+        _runtime.Dispose();
+        _folder.Dispose();
+    }
 
     /// <summary>
     /// Writes the settings, given as setting names and values such as Recording:FlushSeconds, into an appsettings.json
-    /// and builds the app over it, the way Program builds it. The host validates scopes, so a per-run service taken from
-    /// the root fails here.
+    /// and builds the app over it, the way Program builds it, with ClassScribe's own folder in the test's temporary folder.
+    /// The host validates scopes, so a per-run service taken from the root fails here.
     /// </summary>
     private IHost BuildApp(Dictionary<string, string?> settings, string? apiKey = "test-key")
     {
@@ -43,8 +63,12 @@ public class ServiceRegistrationTests
         }
 
         File.WriteAllText(_folder.File("appsettings.json"), json.ToJsonString());
-        return AppHost.Build(_folder.Path, apiKey);
+        return AppHost.Build(_folder.Path, apiKey, services => services.AddSingleton(_runtime.Folder));
     }
+
+    /// <summary>The app's capture provider, as registered: the one made only when it is first used.</summary>
+    private static LazyLoopbackCaptureProvider CaptureProvider(IServiceProvider provider) =>
+        (LazyLoopbackCaptureProvider)provider.GetRequiredService<ILoopbackCaptureProvider>();
 
     /// <summary>
     /// Every setting section binds, and settings that are not given keep their defaults. (The API key is
@@ -60,6 +84,11 @@ public class ServiceRegistrationTests
             ["Recording:OpenTranscriptWhenDone"] = "false",
             ["Recording:Device"] = "Pixel Buds",
             ["Recording:KeepScreenOn"] = "Never",
+            ["Recording:SeparateProcess"] = "false",
+            ["Recording:ReopenWindow"] = "OnProblems",
+            ["Recording:BlockShutdown"] = "false",
+            ["Recording:ContinueWithinMinutes"] = "30",
+            ["Recording:StopAfterHours"] = "4.5",
             ["ElevenLabs:TimeoutMinutes"] = "90",
             ["ElevenLabs:SlowestUploadMbps"] = "2.5",
             ["Transcript:IncludeTimestamps"] = "false"
@@ -75,6 +104,11 @@ public class ServiceRegistrationTests
         Assert.That(recording.OpenTranscriptWhenDone, Is.False);
         Assert.That(recording.Device, Is.EqualTo("Pixel Buds"));
         Assert.That(recording.KeepScreenOn, Is.EqualTo(KeepScreenOn.Never));
+        Assert.That(recording.SeparateProcess, Is.False);
+        Assert.That(recording.ReopenWindow, Is.EqualTo(ReopenWindow.OnProblems));
+        Assert.That(recording.BlockShutdown, Is.False);
+        Assert.That(recording.ContinueWithinMinutes, Is.EqualTo(30));
+        Assert.That(recording.StopAfterHours, Is.EqualTo(4.5));
         Assert.That(provider.GetRequiredService<SourceChoice>().Device, Is.EqualTo("Pixel Buds"), "the choice starts from the setting");
         Assert.That(provider.GetRequiredService<ClassFolders>().Root, Is.EqualTo("D:\\Classes"));
         Assert.That(recording.SilenceWarningSeconds, Is.EqualTo(60), "defaults survive for settings that are not given");
@@ -85,14 +119,23 @@ public class ServiceRegistrationTests
         Assert.That(transcript.IncludeTimestamps, Is.False);
     }
 
-    /// <summary>Settings added for phase 1 have their defaults when the file leaves them out: the screen on battery only, and 1 Mbps.</summary>
+    /// <summary>
+    /// Settings added since the first release have their defaults when the file leaves them out: the screen on battery
+    /// only, and 1 Mbps; and for the recorder in the background, a separate process, the window reopened when it is closed
+    /// and when something needs attention, a restart that asks first, continuing within 60 minutes, and the safety stop
+    /// after 9 hours.
+    /// </summary>
     [Test]
     public void The_new_settings_have_their_defaults()
     {
         using var app = BuildApp([]);
+        var recording = app.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue;
 
-        Assert.That(app.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.KeepScreenOn, Is.EqualTo(KeepScreenOn.OnBattery));
+        Assert.That(recording.KeepScreenOn, Is.EqualTo(KeepScreenOn.OnBattery));
         Assert.That(app.Services.GetRequiredService<IOptionsMonitor<ElevenLabsOptions>>().CurrentValue.SlowestUploadMbps, Is.EqualTo(1));
+        Assert.That(
+            (recording.SeparateProcess, recording.ReopenWindow, recording.BlockShutdown, recording.ContinueWithinMinutes, recording.StopAfterHours),
+            Is.EqualTo((true, ReopenWindow.OnCloseAndProblems, true, 60, 9.0)));
     }
 
     /// <summary>The app, the menu, the gate and the transcribe command resolve without an audio device; commands resolve inside a run's scope.</summary>
@@ -113,6 +156,153 @@ public class ServiceRegistrationTests
         Assert.That(scope.ServiceProvider.GetRequiredService<TranscribeCommand>(), Is.Not.Null);
         Assert.That(scope.ServiceProvider.GetRequiredService<ITranscriptionClient>(), Is.InstanceOf<ElevenLabsClient>());
         Assert.That(provider.GetRequiredService<IElevenLabsApi>(), Is.Not.Null, "the Refit client is registered");
+    }
+
+    /// <summary>
+    /// The command line resolves with the app, and the report at the start is the real one, one for the process and the
+    /// only one registered, in place of the report that reports nothing.
+    /// </summary>
+    [Test]
+    public void The_command_line_and_the_report_at_the_start_resolve()
+    {
+        using var app = BuildApp([]);
+        var provider = app.Services;
+
+        Assert.That(provider.GetRequiredService<CommandLineTree>(), Is.Not.Null);
+        Assert.That(provider.GetRequiredService<IStartupReport>(), Is.InstanceOf<StartupReport>());
+        Assert.That(provider.GetRequiredService<IStartupReport>(), Is.SameAs(provider.GetRequiredService<IStartupReport>()), "one report for the process");
+        Assert.That(provider.GetServices<IStartupReport>().Select(report => report.GetType()), Is.EqualTo(new[] { typeof(StartupReport) }), "the stand-in is gone");
+    }
+
+    /// <summary>
+    /// The window's role resolves every command and what starts and shows a run in the background: in a scope of its own,
+    /// the starter, the view of runs, the attach, list, devices, transcribe and rebuild commands and the question whether
+    /// to continue a recent recording; for the process, the launcher of the recorder, the starter of processes and the
+    /// reader of the job ClassScribe runs in. The starter and the view take the settings of their run, so they cannot be
+    /// taken outside a run. The view makes its own client of the link, so none is registered.
+    /// </summary>
+    [Test]
+    public void The_window_resolves_every_command_and_what_starts_and_shows_a_run()
+    {
+        using var app = BuildApp([]);
+        var provider = app.Services;
+        using var scope = provider.CreateScope();
+        var run = scope.ServiceProvider;
+
+        Assert.That(run.GetRequiredService<IRecordStarter>(), Is.InstanceOf<RecordStarter>());
+        Assert.That(run.GetRequiredService<IRunViewer>(), Is.InstanceOf<RecorderView>());
+        Assert.That(run.GetRequiredService<AttachCommand>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<ListCommand>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<DevicesCommand>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<TranscribeCommand>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<RebuildCommand>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<ContinueQuestion>(), Is.Not.Null);
+        Assert.That(provider.GetRequiredService<RecorderLauncher>(), Is.SameAs(provider.GetRequiredService<RecorderLauncher>()), "one launcher for the process");
+        Assert.That(provider.GetRequiredService<RunJournal>(), Is.Not.Null);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.That(provider.GetRequiredService<IProcessStarter>(), Is.InstanceOf<ProcessStarter>());
+            Assert.That(provider.GetRequiredService<IJobInspector>(), Is.InstanceOf<JobInspector>());
+        }
+
+        Assert.That(() => provider.GetRequiredService<IRecordStarter>(), Throws.InvalidOperationException, "a starter belongs to a run");
+        Assert.That(() => provider.GetRequiredService<IRunViewer>(), Throws.InvalidOperationException, "a view belongs to a run");
+    }
+
+    /// <summary>
+    /// The recorder's role, through the recorder's own host, resolves the run and the recorder's own services: in a scope of
+    /// its own, the record command as the run, its bookkeeping, the link's status sink and the recorder's result shower;
+    /// for the process, the server, the alerts that bring a window back, the starter of that window and the link's
+    /// console. What the run records with and what reaches Windows are stand-ins, since resolving the run constructs them.
+    /// </summary>
+    [Test]
+    public void The_recorder_resolves_the_run_and_its_own_services()
+    {
+        var runId = TestRuns.Id();
+        var time = new ManualTimeProvider(TestRuns.Start);
+        using var log = new RecorderLog(time);
+        using var host = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, time, recorder =>
+        {
+            recorder.Replace(ServiceDescriptor.Scoped<ISessionEvents>(_ => new FakeSessionEvents()));
+            recorder.Replace(ServiceDescriptor.Transient<IRecordingFactory>(_ => new FakeRecordingFactory()));
+            recorder.Replace(ServiceDescriptor.Singleton<IPowerRequests>(new FakePowerRequests()));
+            recorder.Replace(ServiceDescriptor.Singleton<IPowerSource>(new FakePowerSource()));
+            recorder.Replace(ServiceDescriptor.Singleton<ISystemTimes>(new FakeSystemTimes(time)));
+        });
+        var services = host.Services;
+        using var scope = services.CreateScope();
+        var run = scope.ServiceProvider;
+
+        Assert.That(run.GetRequiredService<IRecordRun>(), Is.InstanceOf<RecordCommand>());
+        Assert.That(run.GetRequiredService<RunBookkeeping>(), Is.SameAs(run.GetRequiredService<RunBookkeeping>()), "one per run");
+        Assert.That(run.GetRequiredService<IRecorderStatusSink>(), Is.InstanceOf<LinkStatusSink>());
+        Assert.That(run.GetRequiredService<IResultShower>(), Is.InstanceOf<RecorderResultShower>());
+        Assert.That(services.GetRequiredService<RecorderServer>(), Is.SameAs(services.GetRequiredService<RecorderServer>()), "one server for the run");
+        Assert.That(services.GetRequiredService<UnattendedAlerts>(), Is.Not.Null);
+        Assert.That(services.GetRequiredService<IConsoleUi>(), Is.InstanceOf<LinkConsoleUi>());
+        Assert.That(services.GetRequiredService<IWindowSignals>(), Is.InstanceOf<NoWindowSignals>(), "a recorder has no window");
+        if (OperatingSystem.IsWindows()) Assert.That(services.GetRequiredService<IProcessStarter>(), Is.InstanceOf<ProcessStarter>());
+    }
+
+    /// <summary>
+    /// The audio provider is made only when something first uses it, so that transcribe, rebuild, list and the app itself
+    /// never touch Windows audio: the app, with its menu and command line, resolves; the three commands resolve and run
+    /// through the real services; and the provider has still not been made. The devices command takes the provider as
+    /// something to make when it runs.
+    /// </summary>
+    [Test]
+    public async Task Transcribe_rebuild_list_and_the_app_resolve_and_run_without_Windows_audio()
+    {
+        using var data = new TempFolder();
+        using var app = BuildApp(new() { ["Recording:OutputFolder"] = data.File("Recordings") });
+        var provider = app.Services;
+        var application = provider.GetRequiredService<App>();
+        using (var scope = provider.CreateScope())
+        {
+            Assert.That(scope.ServiceProvider.GetRequiredService<TranscribeCommand>(), Is.Not.Null);
+            Assert.That(scope.ServiceProvider.GetRequiredService<RebuildCommand>(), Is.Not.Null);
+            Assert.That(scope.ServiceProvider.GetRequiredService<ListCommand>(), Is.Not.Null);
+            Assert.That(scope.ServiceProvider.GetRequiredService<DevicesCommand>(), Is.Not.Null);
+        }
+
+        var missing = data.File("missing.wav");
+        Assert.That(await application.RunAsync(["list", "--output", data.File("Recordings")]), Is.EqualTo(0));
+        Assert.That(await application.RunAsync(["transcribe", missing]), Is.EqualTo(1));
+        Assert.That(await application.RunAsync(["rebuild", missing]), Is.EqualTo(1));
+
+        Assert.That(CaptureProvider(provider).IsMade, Is.False, "nothing has touched Windows audio");
+        Assert.That(provider.GetRequiredService<Lazy<ILoopbackCaptureProvider>>().IsValueCreated, Is.False);
+    }
+
+    /// <summary>
+    /// The devices command makes the audio provider when it runs, and only then: it lists the real output devices and the
+    /// apps with sound, which opens no device and records nothing, and ends with exit code 0.
+    /// </summary>
+    [Test, Platform("Win"), Category("WindowsAudio")]
+    [SupportedOSPlatform("windows")]
+    public async Task The_devices_command_makes_the_audio_provider_when_it_runs()
+    {
+        using var app = BuildApp([]);
+        var provider = app.Services;
+        var made = CaptureProvider(provider).IsMade;
+
+        var exitCode = await provider.GetRequiredService<App>().RunAsync(["devices"]);
+
+        Assert.That(made, Is.False, "not before the command ran");
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(CaptureProvider(provider).IsMade, Is.True);
+        Assert.That(provider.GetRequiredService<ILoopbackCaptureProvider>(), Is.SameAs(provider.GetRequiredService<Lazy<ILoopbackCaptureProvider>>().Value), "one provider, however it is reached");
+    }
+
+    /// <summary>Through the real services, help succeeds and a record command without its pieces is a mistake, with exit code 2.</summary>
+    [Test]
+    public async Task Help_and_a_mistake_have_their_exit_codes_through_the_real_services()
+    {
+        using var app = BuildApp([]);
+
+        Assert.That(await app.Services.GetRequiredService<App>().RunAsync(["--help"]), Is.EqualTo(0));
+        Assert.That(await app.Services.GetRequiredService<App>().RunAsync(["record", "--help"]), Is.EqualTo(0));
+        Assert.That(await app.Services.GetRequiredService<App>().RunAsync(["record", "Kalam"]), Is.EqualTo(2));
     }
 
     /// <summary>Each run gets signals of its own, so a Ctrl+C from one run does not leak into the next.</summary>
@@ -157,7 +347,7 @@ public class ServiceRegistrationTests
         Assert.That(settings.CaptureMethodArguments, Is.False, "captured arguments stay on the request and on any exception made from it");
     }
 
-    /// <summary>An unknown command shows the usage and fails with exit code 2.</summary>
+    /// <summary>A word that is neither a command nor a path shows the usage and fails with exit code 2.</summary>
     [Test]
     public async Task An_unknown_command_shows_the_usage_and_fails()
     {

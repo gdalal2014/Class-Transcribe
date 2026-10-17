@@ -1,6 +1,5 @@
 using System.Globalization;
 using ClassScribe.Audio;
-using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -11,427 +10,545 @@ using Microsoft.Extensions.Options;
 namespace ClassScribe.Commands;
 
 /// <summary>
-/// Records system audio until asked to stop and then, if asked to, sends the recording for a transcript.
-/// While recording, Q pressed twice stops, P pauses or resumes, and M marks the moment. The settings are
-/// those of the run's own scope, taken when it starts, so an edit made during the class counts from the next run.
-/// The laptop is kept awake from the start of capture until the transcript is saved. Once a second the recording is
-/// watched: a time when ClassScribe did not run (the laptop slept, or Windows held ClassScribe up) is reported, and so is
-/// a capture that has stopped delivering audio although it should, which is then reopened.
+/// One run: records a class until it is stopped and then, when asked to, sends the recording for a transcript, in a
+/// separate recorder or in this window alike. While it records, the recording loop acts on the keys and checks on the
+/// recording once a second (see <see cref="RecordingLoop"/>); what every run holds meanwhile, from the lock to the run file
+/// and the laptop kept awake, is the bookkeeping's (see <see cref="RunBookkeeping"/>). The settings are those of the run's
+/// own scope, taken when it starts, so an edit made during the class counts from the next run. Each run ends with an
+/// outcome, which the run file keeps and the window or the recorder shows (see <see cref="IResultShower"/>).
 /// </summary>
 public sealed class RecordCommand(
-    RecordingSession session,
+    IRecordingFactory recordings,
+    RecordingLoop loop,
     TranscriptionWorkflow workflow,
+    TranscriptionProgress progress,
     IUserSignals signals,
-    IConsoleUi ui,
     ClassFolders folders,
     ClassMarks marks,
-    IDesktop desktop,
-    IExitWarnings exitWarnings,
-    IPowerRequests power,
-    IPowerSource powerSource,
-    FreezeWatch freezes,
-    IOptionsSnapshot<RecordingOptions> recording,
+    RunBookkeeping bookkeeping,
+    IResultShower results,
+    IRecorderStatusSink status,
+    SourceChoice choice,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TimeProvider time,
-    ILogger<RecordCommand> logger)
+    ILogger<RecordCommand> logger) : IRecordRun
 {
-    /// <summary>How soon after a first Q a second one stops the recording. A single Q, typed into this window by mistake, does not.</summary>
-    private static readonly TimeSpan SecondQWithin = TimeSpan.FromSeconds(5);
-
-    /// <summary>How long a capture that hands over audio all the time, silence included, as an app's does, may hand over none at all before it counts as stalled.</summary>
-    private static readonly TimeSpan ContinuousArrivalLimit = TimeSpan.FromSeconds(5);
-
-    /// <summary>How long a device's meter may show sound while no audio arrives from its capture before the capture counts as stalled.</summary>
-    private static readonly TimeSpan MeterArrivalLimit = TimeSpan.FromSeconds(10);
-
-    /// <summary>The least time between two warnings that audio has stopped arriving, each with a reopening of the capture.</summary>
-    private static readonly TimeSpan ArrivalWarningSpacing = TimeSpan.FromSeconds(30);
-
-    /// <summary>When Q was last pressed without stopping the recording, on the steady clock (<see cref="TimeProvider.GetTimestamp"/>), or null.</summary>
-    private long? _firstQ;
+    /// <summary>
+    /// Runs the class under <paramref name="name"/> as a new recording, transcribed when <paramref name="transcribe"/> is
+    /// true: from what is chosen now (menu choice 6, or the settings) into the recordings folder of the settings, opening
+    /// the results as the settings say. It stays for the callers that pass a name alone, until they pass a whole request to
+    /// <see cref="RunAsync(RecordRequest)"/>. Returns the exit code.
+    /// </summary>
+    public Task<int> RunAsync(string name, bool transcribe) =>
+        RunAsync(new RecordRequest(RunIds.New(time.GetUtcNow()), name, transcribe, choice.Current, folders.Root, ContinueChoice.New,
+            ContinueBaseName: null, Minutes: null, Open: true));
 
     /// <summary>
-    /// Since when, on the steady clock, ClassScribe has run without a freeze: the start of the recording loop, or the tick
-    /// that handed on the last freeze. No audio arrives while ClassScribe does not run, so the arrival watch and the
-    /// silence warning count from here at most.
+    /// Runs the class as <paramref name="request"/> says:
+    /// <list type="number">
+    /// <item>takes the lock, or says which recording runs and returns at once;</item>
+    /// <item>makes the recording's files under the request's recordings folder, or opens the recording to continue, from
+    /// its length on disk;</item>
+    /// <item>begins the bookkeeping: the run file, the recording's log, the laptop kept awake, and the handlers for an end
+    /// without the usual stop;</item>
+    /// <item>starts the recording at that length, with a note where a continued recording resumes;</item>
+    /// <item>says where it records, what, the keys, and when it stops by itself with --minutes;</item>
+    /// <item>runs the loop until the stop;</item>
+    /// <item>stops the recording, lets go of the lock, so that the next class can start while this one uploads, and moves
+    /// the run file on;</item>
+    /// <item>with nothing captured, or for record-only nothing audible, says so;</item>
+    /// <item>for record-only, says where the recording is and how to transcribe it;</item>
+    /// <item>otherwise transcribes the whole recording from disk, still keeping the laptop awake.</item>
+    /// </list>
+    /// Each end writes its outcome into the run file, shows it, and publishes the run's last state. Returns the exit code:
+    /// 0 when the recording (record-only) or its transcript was saved; 1 when nothing was captured, when record-only heard
+    /// nothing audible, when there is no key, or when the start was refused in this window, which in a recorder is 3; 1 too
+    /// when Windows ended the session, which leaves the run for the next start of ClassScribe to report. A recording that
+    /// fails, a transcript that fails (digital silence, which the upload refuses, included), and a cancel (Ctrl+C) are
+    /// thrown on after their outcome is written, for the caller's exit code (130 for a cancel).
     /// </summary>
-    private long _awakeSince;
-
-    /// <summary>Since when, on the steady clock, the recorded device's meter has shown sound at every tick, or null while it does not.</summary>
-    private long? _meterSoundSince;
-
-    /// <summary>When the last warning that audio has stopped arriving was given, on the steady clock, or null.</summary>
-    private long? _lastArrivalWarning;
-
-    /// <summary>Runs the whole class under <paramref name="name"/>: record, stop and, when <paramref name="transcribe"/> is true, transcribe. Returns the process exit code.</summary>
-    public async Task<int> RunAsync(string name, bool transcribe)
+    public async Task<int> RunAsync(RecordRequest request)
     {
-        // The menu points this out as well, but a recording started from the command line never shows the
-        // menu. It stays a warning: a mistake in the settings must not cost the class.
-        if (folders.DescribeRootProblem() is { } problem)
-            logger.LogWarning("{Problem}", problem);
+        // 1. One recording at a time: the lock comes before any file is made, and goes the moment capture stops.
+        if (bookkeeping.TryTakeLock() is not { } held) return Refuse(request);
 
-        var files = folders.CreateRecording(name);
-        var hasKey = !string.IsNullOrWhiteSpace(elevenLabs.Value.ApiKey);
-        if (transcribe && !hasKey)
-            logger.LogWarning("No ElevenLabs API key found in {Variable}. The class will still be recorded, and you can transcribe it later", ElevenLabsOptions.ApiKeyVariable);
-
-        // Held from the start of capture until the transcript is saved, or with record-only until the files are closed:
-        // a laptop that sleeps when it is left alone would end the class, and the upload after it. The screen follows the
-        // run's setting, and the power source as Windows reports it every 30 seconds. A refusal is logged, not thrown.
-        var screen = recording.Value.KeepScreenOn;
-        using var awake = power.Hold(StayAwake.RecordingReason, () => StayAwake.Needs(screen, powerSource));
-
-        RecordingResult result;
-
-        // Closing the window or a crash anywhere in the process ends it within seconds, so the file on
-        // disk is brought up to date at once, and the audio captured up to that moment stays usable. A
-        // shutdown or a sign-out sends no warning that a console program can catch; see ProcessExitWarnings.
-        using (exitWarnings.Register(SaveNow))
+        IDisposable? awake = null;
+        IRecording? audio = null;
+        var windows = new SessionEnd();
+        var sofar = new WhatWasRecorded();
+        try
         {
-            session.Start(files);
+            RecordingFiles files;
+            TimeSpan offset;
+            RecordingSummary summary;
+            RecorderState stopping;
             try
             {
-                logger.LogInformation("Recording \"{Name}\" to {Folder}", files.Name, files.Folder);
-                logger.LogInformation(transcribe
-                    ? "Press Q twice (or Ctrl+C) to stop and transcribe, P to pause or resume, M to mark a moment. If the window is closed instead, the audio is kept"
-                    : "Press Q twice (or Ctrl+C) to stop, P to pause or resume, M to mark a moment. If the window is closed instead, the audio is kept");
-                logger.LogInformation("Keep the lid open and the laptop plugged in; closing the lid still puts it to sleep");
-                await WaitForStopAsync(files);
+                // 2. The recording's files: a new recording, or the one this run continues as its next part.
+                WarnAboutTheRecordingsFolder(request);
+                (files, offset, var notRecorded) = OpenFiles(request);
+                (sofar.Files, sofar.Offset) = (files, offset);
+
+                // 3. The run file, the recording's log, the laptop kept awake, and the handlers for an end without the usual stop.
+                var run = bookkeeping.Begin(request, files);
+                awake = bookkeeping.KeepAwake();
+                if (request.Transcribe && !HasKey())
+                    logger.LogWarning("No ElevenLabs API key found in {Variable}. The class will still be recorded, and you can transcribe it later", ElevenLabsOptions.ApiKeyVariable);
+
+                // 4. The recording, from where the recording on disk ends.
+                var started = audio = recordings.Create(request.Source);
+                using (bookkeeping.OnEnding(started.Flush, () => windows.EndNow(started, signals), () => started.Position))
+                {
+                    try
+                    {
+                        started.Start(files, offset);
+                        sofar.Started = true;
+                        if (notRecorded is { } gap) NoteTheResume(files, offset, gap);
+
+                        // 5. The start lines, then 6. the loop, until the stop.
+                        LogTheStart(request, files, offset);
+                        stopping = await loop.RunAsync(started, files, request, run, offset);
+                    }
+                    finally
+                    {
+                        // 7. The stop: the capture is released and the files finished.
+                        if (!windows.Ended) run?.SetState(RunState.Stopping);
+                        summary = started.Stop();
+                        sofar.Summary = summary;
+                    }
+                }
             }
-            finally
+            catch (Exception ex) when (!windows.Ended)
             {
-                result = session.Stop();
+                RecordingFailed(request, sofar, ex);
+                throw;
             }
-        }
 
-        if (result.SegmentPaths.Count == 0)
-        {
-            logger.LogWarning("No audio was captured. Was anything playing?");
-            return 1;
-        }
+            // The next class may start while this one uploads.
+            held.Dispose();
+            if (windows.Ended) return EndedByWindows(files);
 
-        logger.LogInformation("Recorded {Duration} of audio", Durations.Format(result.Duration));
-        if (!transcribe)
+            return await FinishAsync(request, files, offset, summary, stopping, audio.GetSnapshot().Main.Source);
+        }
+        finally
         {
-            logger.LogInformation("The recording is in {Folder}. To transcribe it later, choose 3 in the menu, or run: {Command}", files.Folder, CommandLine.Transcribe(files.Segment(1)));
-            if (recording.Value.OpenFolderWhenDone) desktop.OpenFolder(files.Folder);
+            audio?.Dispose();
+            awake?.Dispose();
+            held.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Steps 8 to 10, once the recording has stopped: nothing captured ends the run; record-only with nothing audible ends
+    /// it as well, and otherwise says where the recording is; with a transcript to make and a key, the whole recording is
+    /// transcribed from disk. What is sent follows the upload's own rule alone, as transcribe does: only exact zeros count as
+    /// silence there (see <see cref="AudioPreparer"/>), so a class that is merely quiet still goes up, and digital silence is
+    /// refused before anything is sent (<see cref="NoAudioException"/>). A continued recording whose new part heard nothing
+    /// still has its earlier parts, so it goes on to them.
+    /// </summary>
+    private async Task<int> FinishAsync(RecordRequest request, RecordingFiles files, TimeSpan offset, RecordingSummary summary, RecorderState stopping, string source)
+    {
+        var continued = offset > TimeSpan.Zero;
+        if (summary.MainSegments.Count == 0 && !continued)
+            return NothingRecorded(request, files, stopping, "No audio was captured. Was anything playing?");
+
+        if (continued)
+            logger.LogInformation("Recorded {Part} in this part, {Total} in all", Durations.Format(summary.Length), Durations.Format(offset + summary.Length));
+        else
+            logger.LogInformation("Recorded {Duration} of audio", Durations.Format(summary.Length));
+
+        var command = CommandLine.Transcribe(files.Segment(1));
+        if (!request.Transcribe)
+        {
+            // 8. Record only, with nothing loud enough to hear, as the warnings during the class count it: the file is kept,
+            // and the words say what to check, since there is nothing in it to transcribe.
+            if (!summary.HeardAnything)
+            {
+                if (!continued) return NothingRecorded(request, files, stopping, $"Nothing audible was captured from \"{source}\". {WhatToCheck}");
+
+                logger.LogWarning("Nothing audible was captured in this part; the earlier parts of {Recording} are kept", files.BaseName);
+            }
+
+            // 9. Record only.
+            var kept = $"The recording is in {files.Folder}. To transcribe it later, choose 3 in the menu, or run: {command}";
+            logger.LogInformation("{Message}", kept);
+            End(request, stopping, RecorderPhase.Done, new RunOutcome(OutcomeKind.Recorded, 0, kept, TranscriptPath: null, files.Folder, command));
             return 0;
         }
 
-        if (!hasKey)
+        if (!HasKey())
         {
-            logger.LogWarning("Set {Variable} and open a new terminal (in VS Code, quit every VS Code window and start it again; a new terminal inside it keeps the old settings). Then start ClassScribe and choose 3 in the menu, or run: {Command}", ElevenLabsOptions.ApiKeyVariable, CommandLine.Transcribe(files.Segment(1)));
+            var noKey =
+                $"Set {ElevenLabsOptions.ApiKeyVariable} and open a new terminal (in VS Code, quit every VS Code window and start it again; a new terminal inside it keeps the old settings). Then start ClassScribe and choose 3 in the menu, or run: {command}";
+            logger.LogWarning("{Message}", noKey);
+            End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.TranscriptFailed, 1, noKey, TranscriptPath: null, files.Folder, command));
             return 1;
         }
 
+        // 10. The transcript, from every part of the recording on disk.
+        return await TranscribeAsync(request, files, stopping, source, command);
+    }
+
+    /// <summary>What to check when nothing audible reached a recording.</summary>
+    private const string WhatToCheck =
+        "Check that the class plays through that device or app (menu choice 6 picks another) and that Windows is not muted";
+
+    /// <summary>
+    /// Transcribes the whole recording from disk, every part of it, while the laptop is still kept awake, showing how far it
+    /// gets (see <see cref="Follow"/>). Every end writes its outcome, with the command that tries again where trying again
+    /// can help, before a failure or a cancel goes on to the caller.
+    /// </summary>
+    private async Task<int> TranscribeAsync(RecordRequest request, RecordingFiles files, RecorderState stopping, string source, string command)
+    {
+        bookkeeping.Run?.SetState(RunState.Transcribing);
+        Publish(stopping with { Phase = RecorderPhase.Preparing });
+        var follow = Follow(stopping);
+        progress.Changed += follow;
         try
         {
             logger.LogInformation("Press Ctrl+C to cancel the upload. The recording is kept either way");
-            var saved = await workflow.TranscribeRecordingAsync(files, result.SegmentPaths, signals.Cancellation);
+            var saved = await workflow.TranscribeRecordingAsync(files, signals.Cancellation);
             logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
-            desktop.ShowTranscript(recording.Value, saved);
+            End(request, stopping, RecorderPhase.Done,
+                new RunOutcome(OutcomeKind.Transcribed, 0, $"Transcript saved to {saved.TranscriptPath}", saved.TranscriptPath, files.Folder, RetryCommand: null));
             return 0;
+        }
+        catch (OperationCanceledException)
+        {
+            var cancelled = $"The transcription was cancelled. The recording is in {files.Folder}. To transcribe it later, choose 3 in the menu, or run: {command}";
+            logger.LogWarning("{Message}", cancelled);
+            End(request, stopping, RecorderPhase.Cancelled, new RunOutcome(OutcomeKind.Cancelled, 130, cancelled, TranscriptPath: null, files.Folder, command));
+            throw;
         }
         catch (NoAudioException)
         {
             // No hint to try again: a new try would find the same silence.
-            logger.LogWarning(
-                "Nothing audible was captured from \"{Source}\", so nothing was sent to ElevenLabs, and trying again would find the same silence. Check that the class plays through that device or app (menu choice 6 picks another) and that Windows is not muted",
-                session.GetStatus().DeviceName);
+            var silent = $"Nothing audible was captured from \"{source}\", so nothing was sent to ElevenLabs, and trying again would find the same silence. {WhatToCheck}";
+            logger.LogWarning("{Message}", silent);
+            End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.NothingRecorded, 1, silent, TranscriptPath: null, files.Folder, RetryCommand: null));
             throw;
         }
         catch (RecordingTooLongException)
         {
-            // No hint to try again: a new try would be refused for the same length. The error itself says how to send
-            // the recording in pieces.
-            logger.LogWarning(
-                "The audio is safe in {Folder}. It is longer than ElevenLabs takes in one file, so trying again as it is would be refused the same way",
-                files.Folder);
+            // No hint to try again: a new try would be refused for the same length. The error itself says how to send the
+            // recording in pieces.
+            var tooLong = $"The audio is safe in {files.Folder}. It is longer than ElevenLabs takes in one file, so trying again as it is would be refused the same way";
+            logger.LogWarning("{Message}", tooLong);
+            End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.TranscriptFailed, 1, tooLong, TranscriptPath: null, files.Folder, RetryCommand: null));
             throw;
         }
         catch (Exception ex)
         {
-            // The workflow marks a failure that came after ElevenLabs had charged for its answer, and says where the
-            // answer is kept, if anywhere, and its transcription ID when that is known: a new try is charged again, so
-            // the hint must not pass for a free retry.
-            var command = CommandLine.Transcribe(files.Segment(1));
-            switch (ChargedAnswer.Of(ex))
-            {
-                case { KeptIn: { } answer }:
-                    // On the command line, transcribe refuses a recording whose paid answer is kept unless --again is
-                    // given, and offers the free rebuild instead (see TranscribeCommand). The commands given here are
-                    // those two, so that each runs as printed.
-                    logger.LogWarning(
-                        "The audio is safe in {Folder}. ElevenLabs' answer, which has been paid for, is kept in {Answer}: look there for the transcript's text first, because transcribing again is charged again",
-                        files.Folder, answer);
-                    logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", CommandLine.Rebuild(answer));
-                    logger.LogInformation("To transcribe it again all the same, choose 3 in the menu, or run: {Command}", CommandLine.Transcribe(files.Segment(1), again: true));
-                    break;
-                case { TranscriptionId: { } id }:
-                    logger.LogWarning(
-                        "The audio is safe in {Folder}. ElevenLabs has charged for this answer, but it could not be saved anywhere. Its transcription ID at ElevenLabs is {TranscriptionId}, with which the transcript can be fetched from ElevenLabs. Transcribing again is charged again. To do so all the same, choose 3 in the menu, or run: {Command}",
-                        files.Folder, id, command);
-                    break;
-                case not null:
-                    logger.LogWarning(
-                        "The audio is safe in {Folder}. ElevenLabs has charged for this answer, but it could not be saved anywhere, and its transcription ID at ElevenLabs is unknown. Transcribing again is charged again. To do so all the same, choose 3 in the menu, or run: {Command}",
-                        files.Folder, command);
-                    break;
-                default:
-                    logger.LogWarning("The audio is safe in {Folder}. To try the transcript again, choose 3 in the menu, or run: {Command}", files.Folder, command);
-                    break;
-            }
-
+            var (failed, retry) = DescribeFailure(ex, files, command);
+            End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.TranscriptFailed, 1, failed, TranscriptPath: null, files.Folder, retry));
             throw;
-        }
-    }
-
-    /// <summary>Brings the file on disk up to date because the process is about to end.</summary>
-    private void SaveNow()
-    {
-        try
-        {
-            session.Flush();
-        }
-        catch (Exception ex)
-        {
-            // Deliberately not rethrown: the process is already on its way out, and an exception from
-            // a shutdown handler has nowhere to go.
-            logger.LogError(ex, "Could not bring the recording on disk up to date before exiting");
-        }
-    }
-
-    /// <summary>
-    /// Waits for the stop signal. Meanwhile it acts on the recording keys, logs progress, and warns when
-    /// nothing audible is arriving, unless the recording is paused or nothing can be recorded yet. Each tick
-    /// also reports a time when ClassScribe did not run (see <see cref="FreezeWatch"/>, which also ticks on a timer
-    /// of its own meanwhile) and watches that audio keeps arriving (see <see cref="WatchArrival"/>). The loop ticks
-    /// once a second: the next second starts as soon as one ends, before that second's work, and a key pressed
-    /// meanwhile does not put it off, so neither the work nor the keys lose a second or move the next. The intervals
-    /// are measured on the steady clock (<see cref="TimeProvider.GetTimestamp"/>), so Windows setting its time of day
-    /// neither stops nor hurries the status line or the warnings.
-    /// </summary>
-    private async Task WaitForStopAsync(RecordingFiles files)
-    {
-        var statusEvery = TimeSpan.FromSeconds(Math.Max(1, recording.Value.StatusIntervalSeconds));
-        var silenceAfter = TimeSpan.FromSeconds(Math.Max(1, recording.Value.SilenceWarningSeconds));
-        var lastStatus = time.GetTimestamp();
-        long? lastSilenceWarning = null;
-
-        // Starts the freeze watch, and its timer; the arrival watch and the silence warning count from here at most.
-        using var freezeTimer = freezes.Start();
-        _awakeSince = lastStatus;
-
-        using var stopReading = new CancellationTokenSource();
-        Task<ConsoleKeyInfo?>? nextKey = null;
-        var tick = Task.Delay(FreezeWatch.TickInterval, time);
-        try
-        {
-            while (!signals.StopRequested.IsCompleted)
-            {
-                if (ui.IsInteractive) nextKey ??= ui.ReadKeyAsync(stopReading.Token);
-                if (nextKey is null)
-                    await Task.WhenAny(signals.StopRequested, tick);
-                else
-                    await Task.WhenAny(signals.StopRequested, tick, nextKey);
-
-                if (tick.IsCompleted) tick = Task.Delay(FreezeWatch.TickInterval, time);
-
-                if (nextKey is { IsCompleted: true })
-                {
-                    var key = await nextKey;
-                    nextKey = null;
-                    if (key is { } pressed) HandleKey(pressed, files);
-                }
-
-                if (signals.StopRequested.IsCompleted) break;
-
-                var now = time.GetTimestamp();
-                if (freezes.Tick() is [_, ..] found)
-                {
-                    foreach (var freeze in found) ReportFreeze(freeze);
-
-                    // No audio arrives while ClassScribe does not run, so the wait for it starts again now.
-                    _awakeSince = now;
-                }
-
-                var status = session.GetStatus();
-                WatchArrival(status, now);
-
-                // Nothing is heard while ClassScribe does not run either, so the silence counts from the end of the last
-                // freeze at most: the time asleep is no sign that the class does not reach the recording.
-                var awake = time.GetElapsedTime(_awakeSince, now);
-                var silence = status.SinceLastSound < awake ? status.SinceLastSound : awake;
-                if (status.WaitingFor is null && !status.Paused && silence >= silenceAfter
-                    && (lastSilenceWarning is not { } warned || time.GetElapsedTime(warned, now) >= silenceAfter))
-                {
-                    lastSilenceWarning = now;
-                    logger.LogWarning(
-                        "No sound for {Silence}. Check that the class is playing through \"{Device}\" and that Windows is not muted",
-                        DescribeSilence(silence), status.DeviceName);
-                }
-
-                if (time.GetElapsedTime(lastStatus, now) >= statusEvery)
-                {
-                    lastStatus = now;
-                    var captured = Durations.Format(status.Captured);
-                    if (status.WaitingFor is { } waitingFor)
-                        logger.LogInformation("Recording: {Captured} captured; waiting for {What}", captured, waitingFor);
-                    else
-                        logger.LogInformation("Recording: {Captured} captured from \"{Device}\"{Paused}", captured, status.DeviceName, status.Paused ? " (paused)" : "");
-                }
-            }
         }
         finally
         {
-            // A cancelled read answers null within moments, so this only waits for it to let go of the keyboard.
-            stopReading.Cancel();
-            if (nextKey is not null) await nextKey;
+            progress.Changed -= follow;
         }
     }
 
     /// <summary>
-    /// Reports a time when ClassScribe did not run, from the last tick before it to the first after it, in local time:
-    /// as a sleep when the laptop slept, otherwise as Windows holding ClassScribe up while the laptop stayed awake.
+    /// What shows the transcription's progress after <paramref name="stopping"/>, the state the recording stopped in: each
+    /// step and percent goes to the window's title and taskbar as the run's state (PREPARING, UPLOADING 40%, TRANSCRIBING),
+    /// and into the run file's heartbeat, so that the menu and the list can say how far a transcription in the background
+    /// is; the heartbeat at each step, at the first percent, and then at most every <see cref="RecordingLoop.HeartbeatInterval"/>
+    /// on the steady clock, since the percent changes many times a second. Runs on the upload's thread, and never throws.
     /// </summary>
-    private void ReportFreeze(Freeze freeze)
+    private Action<TranscriptionStep, int?> Follow(RecorderState stopping)
     {
-        var from = LocalTime(freeze.FromUtc);
-        var to = LocalTime(freeze.ToUtc);
-        if (freeze.Slept)
-            logger.LogWarning("The laptop slept from {From} to {To}; nothing was recorded then", from, to);
-        else
-            logger.LogWarning("ClassScribe was held up from {From} to {To} (Windows paused it); nothing was recorded then", from, to);
-    }
-
-    /// <summary>A moment as the local time of day, to the second, such as 19:42:10.</summary>
-    private string LocalTime(DateTimeOffset moment) =>
-        TimeZoneInfo.ConvertTime(moment, time.LocalTimeZone).ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-
-    /// <summary>
-    /// Warns when audio has stopped arriving from the open capture although it should, and has the capture reopened at
-    /// the session's next look. Silence is audio too: what counts is whether the capture hands over anything at all, never
-    /// how loud it is, so a quiet class is no stall. A capture that hands over audio all the time, silence included, as an
-    /// app's does, should never hand over nothing for <see cref="ContinuousArrivalLimit"/>. A device's capture hands over
-    /// audio whenever something plays on it, so it is stalled when the device's meter has shown sound at every tick for
-    /// <see cref="MeterArrivalLimit"/> while nothing arrived; a tick with the meter quiet starts that count again. At most
-    /// once per <see cref="ArrivalWarningSpacing"/>. The time before the last freeze does not count: nothing arrives while
-    /// ClassScribe does not run. <paramref name="now"/> is the tick's time on the steady clock.
-    /// </summary>
-    private void WatchArrival(RecordingStatus status, long now)
-    {
-        if (status.SinceLastPacket is not { } sinceLastPacket)
+        var gate = new Lock();
+        TranscriptionStep? lastStep = null;
+        int? lastPercent = null;
+        long lastHeartbeat = 0;
+        return (step, percent) =>
         {
-            // No capture is open: nothing is awaited from one.
-            _meterSoundSince = null;
-            return;
-        }
+            var (phase, shown) = step switch
+            {
+                TranscriptionStep.Preparing => (RecorderPhase.Preparing, (int?)null),
+                TranscriptionStep.Uploading => (RecorderPhase.Uploading, percent),
+                _ => (RecorderPhase.Transcribing, 100)
+            };
+            Publish(stopping with { Phase = phase, UploadPercent = phase == RecorderPhase.Uploading ? percent : null });
 
-        var awake = time.GetElapsedTime(_awakeSince, now);
-        var nothingArrived = sinceLastPacket < awake ? sinceLastPacket : awake;
-        TimeSpan missing;
-        if (status.DeliversContinuously)
-        {
-            _meterSoundSince = null;
-            missing = nothingArrived;
-            if (missing < ContinuousArrivalLimit) return;
-        }
-        else
-        {
-            if (status.RecordedLevel is { } level && level >= CaptureChooser.SoundLevel)
-                _meterSoundSince ??= now;
-            else
-                _meterSoundSince = null;
+            bool due;
+            lock (gate)
+            {
+                var now = time.GetTimestamp();
+                due = step != lastStep || (shown is not null) != (lastPercent is not null) || time.GetElapsedTime(lastHeartbeat, now) >= RecordingLoop.HeartbeatInterval;
+                if (due) (lastStep, lastPercent, lastHeartbeat) = (step, shown, now);
+            }
 
-            var playing = _meterSoundSince is { } since ? time.GetElapsedTime(since, now) : TimeSpan.Zero;
-            missing = nothingArrived < playing ? nothingArrived : playing;
-            if (missing < MeterArrivalLimit) return;
-        }
-
-        if (_lastArrivalWarning is { } last && time.GetElapsedTime(last, now) < ArrivalWarningSpacing) return;
-
-        _lastArrivalWarning = now;
-        var length = DescribeSilence(missing);
-        if (!status.DeliversContinuously)
-            logger.LogWarning(
-                "No audio has arrived from \"{Source}\" for {Length} although Windows shows sound playing there; the recording has fallen behind the clock. Reopening it",
-                status.DeviceName, length);
-        else if (status.Paused)
-            logger.LogWarning(
-                "No audio has arrived from \"{Source}\" for {Length} although it should. Reopening it, so that the recording can go on when you press P again",
-                status.DeviceName, length);
-        else
-            logger.LogWarning(
-                "No audio has arrived from \"{Source}\" for {Length} although it should; the recording has fallen behind the clock. Reopening it",
-                status.DeviceName, length);
-
-        session.Reopen($"no audio has arrived for {length}");
+            if (due) bookkeeping.Run?.Heartbeat(stopping.Position, shown);
+        };
     }
 
     /// <summary>
-    /// How long a silence has lasted, in words that read at a glance: in seconds up to two minutes, then in
-    /// whole minutes, and from an hour on in hours and minutes, such as "2 hours 30 minutes".
+    /// Says why the transcript failed and how to try again, and returns the words and the command that tries again. The
+    /// workflow marks a failure that came after ElevenLabs had charged for its answer, and says where the answer is kept,
+    /// if anywhere, and its transcription ID when that is known: a new try is charged again, so the hint must not pass for
+    /// a free retry. When the answer is kept, the free rebuild from it is the command to try first.
     /// </summary>
-    internal static string DescribeSilence(TimeSpan silence)
+    private (string Message, string? RetryCommand) DescribeFailure(Exception failure, RecordingFiles files, string command)
     {
-        var seconds = (long)silence.TotalSeconds;
-        if (seconds <= 120) return Count(seconds, "second");
-
-        var minutes = seconds / 60;
-        if (minutes < 60) return Count(minutes, "minute");
-
-        var hours = Count(minutes / 60, "hour");
-        return minutes % 60 == 0 ? hours : $"{hours} {Count(minutes % 60, "minute")}";
-    }
-
-    /// <summary>A number with its unit, singular for one and plural otherwise, such as "1 minute" or "30 minutes".</summary>
-    private static string Count(long number, string unit) =>
-        string.Create(CultureInfo.InvariantCulture, $"{number} {unit}{(number == 1 ? "" : "s")}");
-
-    /// <summary>
-    /// Acts on a key pressed while recording: Q stops when it follows another Q within five seconds, timed
-    /// on the steady clock, P pauses or resumes, M marks the moment. Other keys do nothing.
-    /// </summary>
-    private void HandleKey(ConsoleKeyInfo key, RecordingFiles files)
-    {
-        switch (key.Key)
+        switch (ChargedAnswer.Of(failure))
         {
-            case ConsoleKey.Q when _firstQ is { } first && time.GetElapsedTime(first) <= SecondQWithin:
-                signals.RequestStop();
-                break;
-            case ConsoleKey.Q:
-                _firstQ = time.GetTimestamp();
-                logger.LogInformation("Press Q again within {Seconds} seconds to stop", SecondQWithin.TotalSeconds);
-                break;
-            case ConsoleKey.P when session.GetStatus().Paused:
-                session.Resume();
-                logger.LogInformation("Resumed");
-                break;
-            case ConsoleKey.P:
-                session.Pause();
-                logger.LogInformation("Paused. Nothing is recorded until you press P again");
-                break;
-            case ConsoleKey.M:
-                Mark(files);
-                break;
+            case { KeptIn: { } answer }:
+            {
+                // On the command line, transcribe refuses a recording whose paid answer is kept unless --again is given, and
+                // offers the free rebuild instead (see TranscribeCommand). The commands given here are those two, so that
+                // each runs as printed.
+                var kept = $"The audio is safe in {files.Folder}. ElevenLabs' answer, which has been paid for, is kept in {answer}: look there for the transcript's text first, because transcribing again is charged again";
+                var rebuild = CommandLine.Rebuild(answer);
+                logger.LogWarning("{Message}", kept);
+                logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", rebuild);
+                logger.LogInformation("To transcribe it again all the same, choose 3 in the menu, or run: {Command}", CommandLine.Transcribe(files.Segment(1), again: true));
+                return ($"{kept}. To lay that answer out as a transcript for free, run: {rebuild}", rebuild);
+            }
+
+            case { TranscriptionId: { } id }:
+            {
+                var lost = $"The audio is safe in {files.Folder}. ElevenLabs has charged for this answer, but it could not be saved anywhere. Its transcription ID at ElevenLabs is {id}, with which the transcript can be fetched from ElevenLabs. Transcribing again is charged again. To do so all the same, choose 3 in the menu, or run: {command}";
+                logger.LogWarning("{Message}", lost);
+                return (lost, command);
+            }
+
+            case not null:
+            {
+                var lost = $"The audio is safe in {files.Folder}. ElevenLabs has charged for this answer, but it could not be saved anywhere, and its transcription ID at ElevenLabs is unknown. Transcribing again is charged again. To do so all the same, choose 3 in the menu, or run: {command}";
+                logger.LogWarning("{Message}", lost);
+                return (lost, command);
+            }
+
+            default:
+            {
+                var again = $"The audio is safe in {files.Folder}. To try the transcript again, choose 3 in the menu, or run: {command}";
+                logger.LogWarning("{Message}", again);
+                return (again, command);
+            }
         }
     }
 
-    /// <summary>Writes the current position in the recording to its marks file, so it shows in the transcript.</summary>
-    private void Mark(RecordingFiles files)
+    /// <summary>A start the lock refused: says which recording runs, writes the refusal where the run has a run file already, and returns the exit code.</summary>
+    private int Refuse(RecordRequest request)
     {
-        var position = session.GetStatus().Captured;
-        var shown = Durations.Format(position);
+        var refused = bookkeeping.Refuse(request);
+        logger.LogWarning("{Message}", refused.Message);
+        results.Show(refused, request.Open);
+        return bookkeeping.Home == RunHome.Separate ? RunBookkeeping.RefusedExitCode : refused.ExitCode;
+    }
+
+    /// <summary>Nothing to transcribe: says so in <paramref name="message"/>, ends the run with nothing recorded, and returns 1.</summary>
+    private int NothingRecorded(RecordRequest request, RecordingFiles files, RecorderState stopping, string message)
+    {
+        logger.LogWarning("{Message}", message);
+        End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.NothingRecorded, 1, message, TranscriptPath: null, files.Folder, RetryCommand: null));
+        return 1;
+    }
+
+    /// <summary>
+    /// The recording failed, before or while it recorded, as a device in a format ClassScribe cannot read makes it fail at
+    /// the start: says so, and where the audio recorded so far is kept, when there is any (this run's, or the earlier parts
+    /// of the recording it continues), or that nothing was recorded; and ends the run as failed, with the error as its
+    /// cause. The error itself goes on to the caller.
+    /// </summary>
+    private void RecordingFailed(RecordRequest request, WhatWasRecorded sofar, Exception failure)
+    {
+        var folder = sofar.HasAudio ? sofar.Files!.Folder : null;
+        var kept = folder is null ? "Nothing was recorded." : $"The audio recorded so far is kept in {folder}";
+        var message = $"The recording failed: {failure.Message.TrimEnd('.')}. {kept}";
+        logger.LogError("{Message}", message);
+        bookkeeping.Run?.SetEndedBy(RunEndCause.Error);
+        End(request, stopping: null, RecorderPhase.Failed, new RunOutcome(OutcomeKind.RecorderFailed, 1, message, TranscriptPath: null, folder, RetryCommand: null));
+    }
+
+    /// <summary>
+    /// Windows ended the session during the run: the files are finished, and the run file is left as it is, recording,
+    /// with Windows as the cause, so that the next start of ClassScribe reports it, and offers to continue it while it can
+    /// still be continued (see design 1.14). Returns 1.
+    /// </summary>
+    private int EndedByWindows(RecordingFiles files)
+    {
+        logger.LogWarning(
+            "Windows is ending the session, so the recording stopped. Its audio is kept in {Folder}. The next start of ClassScribe reports it, and offers to continue it if that is still possible",
+            files.Folder);
+        return 1;
+    }
+
+    /// <summary>The run is over: its outcome goes into the run file, the run's last state is published, and the outcome is shown.</summary>
+    private void End(RecordRequest request, RecorderState? stopping, RecorderPhase phase, RunOutcome outcome)
+    {
+        bookkeeping.End(outcome);
+        Publish((stopping ?? new RecorderState(RecorderPhase.Stopping, request.Name, TimeSpan.Zero, Source: null, WaitingFor: null, Microphone: null,
+            UploadPercent: null, StopsAtUtc: null, Attention.None, bookkeeping.Home == RunHome.InWindow)) with { Phase = phase, UploadPercent = null });
+        results.Show(outcome, request.Open);
+    }
+
+    /// <summary>Publishes the run's state, for the window's title and taskbar, or for the windows that show the run.</summary>
+    private void Publish(RecorderState state)
+    {
         try
         {
-            var number = marks.Add(files, position);
-            logger.LogInformation("Mark {Number} at {Position}", number, shown);
+            status.Publish(state);
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: the state only shows the run on a title and a taskbar button, and the log says the
+            // same in words; a run whose transcript is saved must not fail over it, nor a failure be hidden behind it.
+            logger.LogError(ex, "Could not show that the run is {Phase}", state.Phase);
+        }
+    }
+
+    /// <summary>
+    /// The files this run records into: those of the recording it continues, when the request names one and it can still
+    /// be opened, with the recording's length on disk, where this run starts, and how long ago its audio was last written;
+    /// otherwise a new recording's. A recording that cannot be continued does not cost the class: the run says why and
+    /// records a new one.
+    /// </summary>
+    private (RecordingFiles Files, TimeSpan Offset, TimeSpan? NotRecorded) OpenFiles(RecordRequest request)
+    {
+        if (request.ContinueBaseName is { } baseName)
+        {
+            try
+            {
+                var continued = folders.Open(Path.Combine(request.OutputRoot, ClassFolders.SafeName(request.Name)), baseName);
+                var length = folders.LengthOnDisk(continued);
+                var notRecorded = time.GetUtcNow() - LastWritten(continued);
+                return (continued, length, notRecorded < TimeSpan.Zero ? TimeSpan.Zero : notRecorded);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                // Deliberately not rethrown: a recording that can no longer be continued, as one whose audio was moved, must
+                // not cost the class; a new recording is made instead, and the warning says why.
+                logger.LogWarning("Could not continue {BaseName} ({Reason}); recording \"{Name}\" as a new recording instead", baseName, ex.Message, request.Name);
+            }
+        }
+
+        return (folders.CreateRecording(request.Name, request.OutputRoot), TimeSpan.Zero, null);
+    }
+
+    /// <summary>When audio was last written to the recording, on either track, in UTC.</summary>
+    private static DateTimeOffset LastWritten(RecordingFiles files) =>
+        files.FindSegments().Concat(files.FindSegments(Track.Microphone))
+            .Select(segment => new DateTimeOffset(File.GetLastWriteTimeUtc(segment), TimeSpan.Zero))
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+
+    /// <summary>
+    /// Notes in the marks file where this part of a continued recording begins, at <paramref name="offset"/>, and how long
+    /// was not recorded before it, so that the transcript shows it as a heading.
+    /// </summary>
+    private void NoteTheResume(RecordingFiles files, TimeSpan offset, TimeSpan notRecorded)
+    {
+        try
+        {
+            marks.AddResume(files, offset, time.GetUtcNow(), notRecorded);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Deliberately not rethrown: a mark that cannot be saved must not end the recording.
-            logger.LogError(ex, "Could not save the mark at {Position}", shown);
+            // Deliberately not rethrown: a note that cannot be saved must not cost the class; the transcript then lacks the
+            // heading where this part begins, and the log says so.
+            logger.LogError(ex, "Could not note in the marks file where this part of the recording begins, at {Position}", Durations.Format(offset));
+        }
+    }
+
+    /// <summary>
+    /// Warns about a problem with Recording:OutputFolder before the recording starts, when the run records there: a
+    /// recording started from the command line never shows the menu that points it out. It stays a warning: a mistake in
+    /// the settings must not cost the class. A run given a recordings folder of its own (--output) does not use the setting.
+    /// </summary>
+    private void WarnAboutTheRecordingsFolder(RecordRequest request)
+    {
+        if (!SameFolder(request.OutputRoot, folders.Root)) return;
+        if (folders.DescribeRootProblem() is { } problem) logger.LogWarning("{Problem}", problem);
+    }
+
+    /// <summary>
+    /// The start lines: where the recording goes, or which recording it continues; what it records; the keys, and what
+    /// closing the window does; the lid; and, with --minutes, when it stops by itself, by the local time of day.
+    /// </summary>
+    private void LogTheStart(RecordRequest request, RecordingFiles files, TimeSpan offset)
+    {
+        if (offset > TimeSpan.Zero)
+            logger.LogInformation("Continuing \"{Name}\" as its next part ({BaseName}, {Length} recorded so far), in {Folder}", files.Name, files.BaseName, Durations.Format(offset), files.Folder);
+        else
+            logger.LogInformation("Recording \"{Name}\" to {Folder}", files.Name, files.Folder);
+
+        logger.LogInformation("Recording from {Source}", Describe(request.Source));
+        logger.LogInformation("{Keys}. {Closing}",
+            request.Transcribe
+                ? "Press Q twice (or Ctrl+C twice) to stop and transcribe, P to pause or resume, M to mark a moment"
+                : "Press Q twice (or Ctrl+C twice) to stop, P to pause or resume, M to mark a moment",
+            bookkeeping.Home == RunHome.InWindow
+                ? "If the window is closed instead, the recording ends and the audio so far is kept"
+                : "Closing a window that shows this recording does not stop it");
+        logger.LogInformation("Keep the lid open and the laptop plugged in; closing the lid still puts it to sleep");
+        if (request.Minutes is { } minutes)
+        {
+            logger.LogInformation("This recording stops by itself at {Time} (--minutes {Minutes}); Q twice stops it sooner",
+                TimeZoneInfo.ConvertTime(time.GetUtcNow() + TimeSpan.FromMinutes(minutes), time.LocalTimeZone).ToString("HH:mm", CultureInfo.InvariantCulture),
+                minutes.ToString("0.###", CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>What a run records, in words for the start line.</summary>
+    private static string Describe(SourcePlan source) => source.Class switch
+    {
+        ClassSource.App app => $"the app \"{app.ProcessName}\"",
+        ClassSource.Device device => $"the output device \"{device.NamePart}\"",
+        _ => "the device the class plays on"
+    };
+
+    /// <summary>True when the run's settings hold an ElevenLabs API key, which only ELEVENLABS_API_KEY sets.</summary>
+    private bool HasKey() => !string.IsNullOrWhiteSpace(elevenLabs.Value.ApiKey);
+
+    /// <summary>True when two paths name the same folder, whatever their letter case or a separator at the end.</summary>
+    private static bool SameFolder(string first, string second) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What the run has recorded so far, for the words of a failure: the files, once known; where it started in them; whether
+    /// the recording started; and what it held when it stopped, once it did.
+    /// </summary>
+    private sealed class WhatWasRecorded
+    {
+        /// <summary>The recording's files, or null before they are known.</summary>
+        public RecordingFiles? Files { get; set; }
+
+        /// <summary>Where the run started in them: the length of the recording it continues, zero for a new one.</summary>
+        public TimeSpan Offset { get; set; }
+
+        /// <summary>True once the recording has started.</summary>
+        public bool Started { get; set; }
+
+        /// <summary>What the recording held when it stopped, or null before it did.</summary>
+        public RecordingSummary? Summary { get; set; }
+
+        /// <summary>
+        /// True when the recording's files hold audio: the earlier parts of a recording the run continues, or what this run
+        /// wrote. A recording that started but whose stop did not answer may have written some, so it counts as holding it.
+        /// </summary>
+        public bool HasAudio =>
+            Files is not null
+            && (Offset > TimeSpan.Zero
+                || (Summary is { } summary ? summary.MainSegments.Count > 0 || summary.MicrophoneSegments.Count > 0 : Started));
+    }
+
+    /// <summary>Whether Windows ended the session during the run, and what ending it does to the recording. Safe to use from any thread.</summary>
+    private sealed class SessionEnd
+    {
+        private int _ended;
+
+        /// <summary>True once Windows ended the session during the run.</summary>
+        public bool Ended => Volatile.Read(ref _ended) == 1;
+
+        /// <summary>Windows ends the session now: notes it, finishes the recording's files, and asks the loop to stop.</summary>
+        public void EndNow(IRecording audio, IUserSignals signals)
+        {
+            Volatile.Write(ref _ended, 1);
+            audio.Stop();
+            signals.RequestStop();
         }
     }
 }

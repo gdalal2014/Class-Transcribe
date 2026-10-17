@@ -1,3 +1,4 @@
+using ClassScribe.Audio;
 using ClassScribe.Storage;
 
 namespace ClassScribe.Tests;
@@ -27,7 +28,7 @@ public class RecordingFilesTests
         Assert.That(files.Json(2), Is.EqualTo(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z (2).json"));
     }
 
-    /// <summary>A segment file's path says which recording it belongs to; other files do not pass for one.</summary>
+    /// <summary>A segment file's path says which recording it belongs to, in any letter case, and keeps the case of its name.</summary>
     [Test]
     public void A_segment_path_is_recognised_as_its_recording()
     {
@@ -36,9 +37,68 @@ public class RecordingFilesTests
 
         Assert.That(fromPart, Is.EqualTo(new RecordingFiles(@"C:\Classes\Kalam", "Kalam_2026-10-15_20-55-27Z")));
         Assert.That(fromFirst, Is.EqualTo(new RecordingFiles(@"C:\Classes\Kalam", "kalam_2026-10-15_20-55-27z")));
-        Assert.That(RecordingFiles.TryParse(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.upload.wav"), Is.Null);
-        Assert.That(RecordingFiles.TryParse(@"C:\Downloads\Lecture 5.wav"), Is.Null);
-        Assert.That(RecordingFiles.TryParse(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.md"), Is.Null);
+    }
+
+    /// <summary>
+    /// Any file of a recording says which recording it belongs to: a segment of either track, the marks, the log, the
+    /// upload copy, and every copy of the transcript and of ElevenLabs' answer, an answer kept as unread included, in
+    /// any letter case.
+    /// </summary>
+    [TestCase("Kalam_2026-10-15_20-55-27Z.wav")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z_part12.wav")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.mic.wav")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z_part3.mic.wav")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.marks.txt")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.MARKS.TXT")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.log")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.upload.wav")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.md")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z (2).md")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.json")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z (2).json")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.unread.json")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z (3).unread.json")]
+    public void Any_file_of_a_recording_is_recognised_as_its_recording(string fileName) =>
+        Assert.That(RecordingFiles.TryParse(Path.Combine(@"C:\Classes\Kalam", fileName)), Is.EqualTo(new RecordingFiles(@"C:\Classes\Kalam", "Kalam_2026-10-15_20-55-27Z")));
+
+    /// <summary>
+    /// A file that is no recording's does not pass for one, even beside a recording and named after it: a file without a
+    /// time stamp, a note of one's own, and a file of a kind ClassScribe never writes.
+    /// </summary>
+    [TestCase(@"C:\Downloads\Lecture 5.wav")]
+    [TestCase(@"C:\Downloads\Lecture 5.md")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z notes.md")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.mp3")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.txt")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.wav.bak")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z_part2.md")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z (2).wav")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.mic.json")]
+    public void Other_files_do_not_pass_for_a_recordings(string path) =>
+        Assert.That(RecordingFiles.TryParse(path), Is.Null);
+
+    /// <summary>The log of everything the recording's runs logged is named after the recording, beside its other files.</summary>
+    [Test]
+    public void The_log_is_named_after_the_recording() =>
+        Assert.That(RecordingFiles.ForNew(@"C:\Classes\Kalam", "Kalam", Started).Log, Is.EqualTo(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.log"));
+
+    /// <summary>
+    /// The microphone's segments, whose names end in .mic.wav, are found apart from the main track's, each track in the
+    /// order of its parts, and neither track takes the other's files.
+    /// </summary>
+    [Test]
+    public void The_microphones_segments_are_found_apart_from_the_main_tracks()
+    {
+        using var folder = new TempFolder();
+        var files = RecordingFiles.ForNew(folder.Path, "Kalam", Started);
+        var micFirst = folder.File("Kalam_2026-10-15_20-55-27Z.mic.wav");
+        var micThird = folder.File("Kalam_2026-10-15_20-55-27Z_part3.mic.wav");
+        foreach (var path in new[] { micThird, files.Segment(2), micFirst, files.Segment(1), files.Upload })
+            File.WriteAllBytes(path, [0]);
+
+        Assert.That(files.FindSegments(), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
+        Assert.That(files.FindSegments(Track.Main), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
+        Assert.That(files.FindSegments(Track.Microphone), Is.EqualTo(new[] { micFirst, micThird }));
     }
 
     /// <summary>A recording without a time stamp in its name, such as one named by hand, has no start time.</summary>

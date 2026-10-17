@@ -1,8 +1,14 @@
 using System.Text;
 using System.Text.Json;
+using ClassScribe.Commands;
+using ClassScribe.Desktop;
+using ClassScribe.Desktop.Windows;
+using ClassScribe.Link;
+using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
@@ -13,7 +19,8 @@ namespace ClassScribe;
 /// Puts the app together and starts it: the settings from appsettings.json in the app's folder, once they have passed
 /// the check, with environment overrides; the API key from ELEVENLABS_API_KEY alone; the console log format; the
 /// services. The settings are read again and checked before each menu choice and each command (see
-/// <see cref="Commands.RunGate"/>).
+/// <see cref="Commands.RunGate"/>). The recorder, started by a window to record one class in the background, is put
+/// together from the settings that window handed over instead (see <see cref="BuildRecorder"/>).
 /// </summary>
 public static class AppHost
 {
@@ -81,12 +88,81 @@ public static class AppHost
     }
 
     /// <summary>
+    /// Builds the recorder's host: from the settings the window handed over in <paramref name="start"/>, which it had read
+    /// and checked, and the key in the recorder's own environment (<paramref name="apiKey"/>, the value of
+    /// ELEVENLABS_API_KEY, or null when it is not set), and nothing else: no appsettings.json, which is never read here, and
+    /// no environment variables, whose overrides the snapshot carries already. The settings are checked once more, as a
+    /// guard against a build that differs from the window's: a value the check refuses throws an
+    /// <see cref="InvalidOperationException"/> naming it. The recorder has no console, so every logger writes into
+    /// <paramref name="log"/> alone, at the levels the snapshot's Logging section names; <paramref name="folder"/> is
+    /// ClassScribe's own folder, and <paramref name="time"/> the clock, the computer's unless given. The run's services are
+    /// those of a window, with the recorder's own in place of what differs there (see <see cref="AddRecorder"/>).
+    /// <paramref name="configureServices"/>, when given, changes the services last, as a test does.
+    /// </summary>
+    public static IHost BuildRecorder(RecorderStart start, string? apiKey, RecorderLog log, RuntimeFolder folder, TimeProvider? time = null,
+        Action<IServiceCollection>? configureServices = null)
+    {
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { ContentRootPath = AppContext.BaseDirectory, DisableDefaults = true });
+        builder.Configuration.AddInMemoryCollection(start.Settings);
+        builder.Configuration.AddApiKeyFromEnvironment(apiKey);
+        builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
+
+        builder.Services.AddClassScribe(builder.Configuration).AddRecorder(log, folder, time ?? TimeProvider.System);
+        configureServices?.Invoke(builder.Services);
+
+        // The window's services that a recorder never uses, such as the settings gate, need what only the window registers,
+        // so the container is not validated as a whole here: what the run needs is resolved in its scope, and tested.
+        builder.ConfigureContainer(new DefaultServiceProviderFactory(new ServiceProviderOptions { ValidateScopes = true }));
+        var host = builder.Build();
+        try
+        {
+            if (host.Services.GetRequiredService<SettingsCheck>().FindProblems(builder.Configuration) is [_, ..] problems)
+            {
+                throw new InvalidOperationException(
+                    $"The settings handed to the recorder cannot be used: {string.Join(" ", problems)} The window that started it had checked them, so this build of ClassScribe differs from the window's.");
+            }
+
+            return host;
+        }
+        catch
+        {
+            host.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Runs the command line with the app's services and returns the exit code. The settings are read again and checked
     /// before each menu choice and each command, before anything that uses them runs, so a mistake in them stops that
     /// choice or command before it records or uploads anything.
     /// </summary>
     public static async Task<int> RunAsync(IServiceProvider services, string[] args) =>
         await services.GetRequiredService<App>().RunAsync(args);
+
+    /// <summary>
+    /// Puts the recorder's own services in place of the window's: the clock, the log every logger writes to and ClassScribe's
+    /// own folder as given; the link's console, whose keys come from the windows; no window signals, since a recorder has no
+    /// window; for each run, the link's status sink, which sends the states to the windows and the alerts, and the recorder's
+    /// result shower; and, for the process, the server, the alerts that bring a window back, and the starter of that window.
+    /// </summary>
+    private static IServiceCollection AddRecorder(this IServiceCollection services, RecorderLog log, RuntimeFolder folder, TimeProvider time)
+    {
+        services.Replace(ServiceDescriptor.Singleton(time));
+        services.Replace(ServiceDescriptor.Singleton(log));
+        services.Replace(ServiceDescriptor.Singleton(folder));
+        services.Replace(ServiceDescriptor.Singleton<IConsoleUi, LinkConsoleUi>());
+        services.Replace(ServiceDescriptor.Singleton<IWindowSignals, NoWindowSignals>());
+        services.Replace(ServiceDescriptor.Scoped<IRecorderStatusSink, LinkStatusSink>());
+        services.AddScoped<WindowResultShower>();
+        services.AddScoped<RecorderResultShower>();
+        services.Replace(ServiceDescriptor.Scoped<IResultShower>(provider => provider.GetRequiredService<RecorderResultShower>()));
+        services.AddSingleton<RecorderServer>();
+        services.AddSingleton<UnattendedAlerts>();
+        services.AddSingleton<IProcessStarter>(provider => OperatingSystem.IsWindows()
+            ? new ProcessStarter(folder.Root, provider.GetRequiredService<ILogger<ProcessStarter>>())
+            : throw new PlatformNotSupportedException("Opening a ClassScribe window from the recorder needs Windows."));
+        return services;
+    }
 
     /// <summary>
     /// Explains in plain words why the app could not be put together: one line per exception in the chain, and no stack

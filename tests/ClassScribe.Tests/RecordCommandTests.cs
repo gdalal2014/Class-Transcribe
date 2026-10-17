@@ -5,20 +5,26 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
+using ClassScribe.Link;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace ClassScribe.Tests;
 
 /// <summary>
-/// The record command from start to saved transcript: the real session, preparer and workflow,
-/// driven by a simulated audio device and keyboard, with the transcription service mocked, and
-/// stand-ins for keeping the laptop awake and for the computer's clocks.
+/// One run of the record command, in this window or in a recorder, from the lock to the saved transcript: the real session,
+/// recording loop, preparer and workflow, driven by a simulated audio device and keyboard, with the transcription service
+/// mocked. ClassScribe's own folder (the lock and the run files) is a temporary folder of the test's, and Windows' end of
+/// the session, the window's closing, an error nobody caught, the window's title and taskbar, keeping the laptop awake and
+/// opening the results are stand-ins the test plays or looks at. A few tests drive a recording described by hand instead
+/// of a session, or watch the calls made on it. What the recording loop does while the class records (the keys, the
+/// warnings, the status line) is tested with the loop itself (see <see cref="RecordingLoopTests"/>).
 /// </summary>
 [TestFixture]
 public class RecordCommandTests
@@ -28,51 +34,109 @@ public class RecordCommandTests
     /// <summary>The laptop awake and ClassScribe running, as every recording needs.</summary>
     private const PowerNeeds Awake = PowerNeeds.System | PowerNeeds.Execution;
 
+    /// <summary>The reason Windows is given for keeping the laptop awake and for asking before a restart.</summary>
+    private const string StayAwakeReason = "ClassScribe is recording a class";
+
     private TempFolder _folder = null!;
+    private TestRuntime _runtime = null!;
     private FakeCaptureProvider _provider = null!;
     private FakeAudioCapture _capture = null!;
     private FakeUserSignals _signals = null!;
     private FakeConsoleUi _ui = null!;
     private Mock<ITranscriptionClient> _client = null!;
+    private TranscriptionProgress _progress = null!;
     private Mock<IDesktop> _desktop = null!;
     private Mock<IExitWarnings> _exitWarnings = null!;
+    private Action? _processEnding;
+    private FakeCrashWarnings _crashes = null!;
+
+    /// <summary>How many crash warnings were registered when the run registered its exit warning; null before it did.</summary>
+    private int? _crashWarningsBeforeExitWarning;
+
+    private FakeWindowSignals _window = null!;
     private FakePowerRequests _power = null!;
     private FakePowerSource _powerSource = null!;
-    private FakeSystemTimes _times = null!;
-    private RecordingSession _session = null!;
+    private FakeSessionEvents _session = null!;
+    private FakeStatusSink _status = null!;
+    private FakeResultShower _results = null!;
+    private RecorderLog _recorderLog = null!;
+    private RunContextSlot _context = null!;
     private RecordingLogger<RecordCommand> _log = null!;
+    private RecordingLogger<RunBookkeeping> _bookkeepingLog = null!;
+    private RecordingLogger<RecordingLoop> _loopLog = null!;
+    private FakeSystemTimes _times = null!;
+    private RunJournal _journal = null!;
+    private SourceChoice _choice = null!;
+    private RunBookkeeping? _bookkeeping;
+    private List<RunHandle> _hostRuns = null!;
 
-    /// <summary>Creates a temporary folder, a simulated audio device and keyboard, the mocked services, and the power stand-ins.</summary>
+    /// <summary>
+    /// Creates the recordings folder, ClassScribe's own folder, a simulated audio device with a capture ready, the
+    /// keyboard and signals, the mocked services, the stand-ins for Windows, and the logs to look at.
+    /// </summary>
     [SetUp]
     public void SetUp()
     {
         _folder = new TempFolder();
+        _runtime = new TestRuntime();
         _provider = new FakeCaptureProvider();
         _capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         _signals = new FakeUserSignals();
         _ui = new FakeConsoleUi();
         _client = Mocks.TranscriptionClient();
+        _progress = new TranscriptionProgress();
         _desktop = new Mock<IDesktop>();
+        _processEnding = null;
+        _crashes = new FakeCrashWarnings();
+        _crashWarningsBeforeExitWarning = null;
         _exitWarnings = new Mock<IExitWarnings>();
-        _exitWarnings.Setup(w => w.Register(It.IsAny<Action>())).Returns(Mock.Of<IDisposable>());
+        _exitWarnings.Setup(w => w.Register(It.IsAny<Action>())).Callback((Action onExit) =>
+        {
+            _crashWarningsBeforeExitWarning = _crashes.Registered;
+            _processEnding = onExit;
+        }).Returns(Mock.Of<IDisposable>());
+        _window = new FakeWindowSignals();
         _power = new FakePowerRequests();
         _powerSource = new FakePowerSource();
+        _session = new FakeSessionEvents();
+        _status = new FakeStatusSink();
+        _recorderLog = new RecorderLog(TimeProvider.System);
+        _context = new RunContextSlot();
         _log = new RecordingLogger<RecordCommand>();
+        _bookkeepingLog = new RecordingLogger<RunBookkeeping>();
+        _loopLog = new RecordingLogger<RecordingLoop>();
+        _bookkeeping = null;
+        _hostRuns = [];
     }
 
-    /// <summary>Deletes the temporary folder. That fails if a test left a file open, which is the point.</summary>
+    /// <summary>
+    /// Ends the run's scope, lets go of the runs a test began as a recorder's host would, and deletes the folders. Deleting
+    /// fails if a test left a file open, which is the point.
+    /// </summary>
     [TearDown]
-    public void TearDown() => _folder.Dispose();
+    public void TearDown()
+    {
+        _bookkeeping?.Dispose();
+        foreach (var run in _hostRuns) run.Dispose();
+        _recorderLog.Dispose();
+        _runtime.Dispose();
+        _folder.Dispose();
+    }
 
     /// <summary>
-    /// Builds the command with the real session, preparer and workflow around the simulated device and the
-    /// mocked service. The recordings go to the temporary folder unless <paramref name="outputFolder"/> names another.
-    /// The computer's clocks (<see cref="_times"/>) are read from <paramref name="time"/>. The session is kept in
-    /// <see cref="_session"/>, so that a test can see what its looks have read.
+    /// Builds the command with the real session, loop, preparer and workflow around the simulated device and the mocked
+    /// service, or with <paramref name="recordings"/> when given. The recordings go to the temporary folder unless
+    /// <paramref name="outputFolder"/> names another; ClassScribe's own folder is the test's, unless
+    /// <paramref name="runtimeFolder"/> names another. The computer's clocks (<see cref="_times"/>) are read from
+    /// <paramref name="time"/>. The run's states go to <see cref="_status"/> unless <paramref name="status"/> takes them.
+    /// The run's bookkeeping is kept in <see cref="_bookkeeping"/>, standing for the run's scope; its handlers for the end of
+    /// the process or the session wait for the log as long as <paramref name="handlerLogPatience"/> says, or as long as the
+    /// app's do.
     /// </summary>
     private RecordCommand CreateCommand(
-        string apiKey, TimeProvider? time = null, bool openWhenDone = false, int statusIntervalSeconds = 60, string device = "", string? outputFolder = null, int silenceWarningSeconds = 60,
-        string app = "", KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery)
+        string apiKey = "test-key", TimeProvider? time = null, bool openWhenDone = false, string? outputFolder = null, KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
+        bool blockShutdown = true, IRecordingFactory? recordings = null, RuntimeFolder? runtimeFolder = null, ILogger<RecordCommand>? logger = null,
+        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null)
     {
         time ??= TimeProvider.System;
         var recording = TestOptions.Create(new RecordingOptions
@@ -80,16 +144,12 @@ public class RecordCommandTests
             OutputFolder = outputFolder ?? _folder.Path,
             OpenFolderWhenDone = openWhenDone,
             OpenTranscriptWhenDone = openWhenDone,
-            StatusIntervalSeconds = statusIntervalSeconds,
-            SilenceWarningSeconds = silenceWarningSeconds,
-            Device = device,
-            App = app,
-            KeepScreenOn = keepScreenOn
+            KeepScreenOn = keepScreenOn,
+            BlockShutdown = blockShutdown
         });
         var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = _folder.File("no-glossary.txt") });
         var folders = new ClassFolders(recording, time, NullLogger<ClassFolders>.Instance);
         var marks = new ClassMarks(NullLogger<ClassMarks>.Instance);
-        _session = new RecordingSession(_provider, new CaptureChooser(time, new SourceChoice(recording)), recording, time, NullLogger<RecordingSession>.Instance);
         var workflow = new TranscriptionWorkflow(
             new AudioPreparer(NullLogger<AudioPreparer>.Instance),
             _client.Object,
@@ -99,27 +159,82 @@ public class RecordCommandTests
             marks,
             elevenLabs,
             recording,
+            _progress,
             NullLogger<TranscriptionWorkflow>.Instance);
 
         _times = new FakeSystemTimes(time);
+        status ??= _status;
+        var monitor = new RecordingMonitor(new FreezeWatch(_times, time, NullLogger<FreezeWatch>.Instance), new FakeFreeSpace(), recording, time);
+        var loop = new RecordingLoop(_ui, _signals, marks, monitor, status, time, _loopLog);
+
+        var ownFolder = runtimeFolder ?? _runtime.Folder;
+        _journal = new RunJournal(ownFolder, _runtime.Processes, time, NullLogger<RunJournal>.Instance);
+        _bookkeeping = new RunBookkeeping(
+            new RecordingLock(ownFolder, NullLogger<RecordingLock>.Instance, _ => { }), _journal, _recorderLog, _power, _powerSource, _session, _exitWarnings.Object,
+            _crashes, _window, _context, recording, time, _bookkeepingLog)
+        {
+            HandlerLogPatience = handlerLogPatience ?? RunBookkeeping.DefaultHandlerLogPatience
+        };
+        _results = new FakeResultShower(new WindowResultShower(_desktop.Object, recording, NullLogger<WindowResultShower>.Instance));
+        _choice = new SourceChoice(recording);
+
         return new RecordCommand(
-            _session, workflow, _signals, _ui, folders, marks, _desktop.Object, _exitWarnings.Object, _power, _powerSource,
-            new FreezeWatch(_times, time, NullLogger<FreezeWatch>.Instance),
-            recording, elevenLabs, time, _log);
+            recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
+                NullLogger<ClassRecording>.Instance),
+            loop, workflow, _progress, _signals, folders, marks, _bookkeeping, _results, status, _choice, elevenLabs, time, logger ?? _log);
     }
+
+    /// <summary>
+    /// Waits for <paramref name="run"/>, which must end by itself, without a stop: a start that is refused, or one that fails
+    /// before it records. Should it record instead, the test fails after 15 seconds, by name, rather than wait for a stop
+    /// that never comes; the run is then stopped, and given a moment to let go of its files.
+    /// </summary>
+    private async Task<int> EndingByItselfAsync(Task<int> run)
+    {
+        try
+        {
+            return await run.WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        catch (TimeoutException)
+        {
+            _signals.RequestStop();
+            await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(15)));
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// A request to record <paramref name="name"/> from the device the class plays on into the temporary folder: to
+    /// transcribe it unless <paramref name="transcribe"/> is false, as a new recording unless
+    /// <paramref name="continueBaseName"/> names one to continue, until stopped unless <paramref name="minutes"/> is given,
+    /// and opening the results as the settings say unless <paramref name="open"/> is false.
+    /// </summary>
+    private RecordRequest Request(bool transcribe = true, string name = "Kalam", string? continueBaseName = null, double? minutes = null, bool open = true) =>
+        new(RunIds.New(DateTimeOffset.UtcNow), name, transcribe, new SourcePlan(RecordingMode.Class, new ClassSource.Automatic(), Microphone: null), _folder.Path,
+            ContinueChoice.New, continueBaseName, minutes, open);
+
+    /// <summary>
+    /// Begins the run file of <paramref name="request"/> in ClassScribe's own folder as a recorder's host does, starting, in
+    /// a separate recorder with its pipe, and fills the run's context with it, so that the run is recorded as in a recorder.
+    /// Call after <see cref="CreateCommand"/>, which makes the journal.
+    /// </summary>
+    private RunHandle BeginAsTheRecordersHost(RecordRequest request)
+    {
+        var record = TestRuns.Record(request.RunId, RunState.Starting) with { Request = request, ProcessId = Environment.ProcessId };
+        var run = _journal.Begin(record);
+        _hostRuns.Add(run);
+        _context.Fill(new RunContext(request.RunId, RunHome.Separate, record.Pipe) { Run = run });
+        return run;
+    }
+
+    /// <summary>The one run file in ClassScribe's own folder, as it is now.</summary>
+    private RunRecord RunFile() => _journal.List().Single().Record;
+
+    /// <summary>A lock over ClassScribe's own folder that stands for another recording's, or looks at it.</summary>
+    private RecordingLock OtherLock() => new(_runtime.Folder, NullLogger<RecordingLock>.Instance, _ => { });
 
     /// <summary>A capture of an app's sound, which like Windows' process loopback hands over audio all the time, silence included.</summary>
     private static FakeAudioCapture AppCapture(int processId) => new(Pcm16KMono, "chrome", $"process:{processId}") { DeliversContinuously = true };
-
-    /// <summary>The lines about a time ClassScribe did not run, given so far.</summary>
-    private string[] FreezeLines() => [.. _log.Problems.Where(p => p.EndsWith("; nothing was recorded then", StringComparison.Ordinal))];
-
-    /// <summary>The warnings that audio has stopped arriving, given so far.</summary>
-    private string[] ArrivalWarnings() => [.. _log.Problems.Where(p => p.StartsWith("No audio has arrived from ", StringComparison.Ordinal))];
-
-    /// <summary>A moment as the freeze lines give it: the local time of day, to the second.</summary>
-    private static string Local(DateTimeOffset moment) =>
-        TimeZoneInfo.ConvertTime(moment, TimeZoneInfo.Local).ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 
     /// <summary>The folder of the recording named Kalam.</summary>
     private string KalamFolder() => Path.Combine(_folder.Path, "Kalam");
@@ -130,47 +245,9 @@ public class RecordCommandTests
     /// <summary>The recording's own audio file, as opposed to the upload copy made from it.</summary>
     private string Recording() => Directory.GetFiles(KalamFolder(), "*.wav").Single(f => !f.EndsWith(".upload.wav", StringComparison.Ordinal));
 
-    /// <summary>How many times the command has asked for a second Q.</summary>
-    private int SecondQRequests() => _log.Messages.Count(m => m == "Press Q again within 5 seconds to stop");
-
-    /// <summary>How many status lines the recording loop has logged.</summary>
-    private int StatusLines() => _log.Messages.Count(m => m.StartsWith("Recording: ", StringComparison.Ordinal));
-
-    /// <summary>The silence warnings given so far, each cut to its first sentence, such as "No sound for 60 seconds".</summary>
-    private string[] SilenceWarnings() => [.. _log.Problems.Where(p => p.StartsWith("No sound for ", StringComparison.Ordinal)).Select(p => p.Split('.')[0])];
-
-    /// <summary>
-    /// Moves the clock on one second at a time, each time waiting until the recording loop has logged
-    /// its status line for that second. That needs a status interval of one second.
-    /// </summary>
-    private async Task TickAsync(ManualTimeProvider time, int seconds)
-    {
-        for (var i = 0; i < seconds; i++)
-            await JumpAsync(time, TimeSpan.FromSeconds(1));
-    }
-
-    /// <summary>
-    /// Moves the clock on by <paramref name="step"/> at once, then waits until the recording loop has logged its
-    /// status line for that moment. That needs a status interval of one second.
-    /// </summary>
-    private async Task JumpAsync(ManualTimeProvider time, TimeSpan step)
-    {
-        var reported = StatusLines();
-        time.Advance(step);
-        await Wait.UntilAsync(() => StatusLines() > reported);
-    }
-
-    /// <summary>
-    /// Sets what Windows' meter shows for <paramref name="deviceId"/>, has the session look at the devices at once, as a
-    /// device notification would, and waits until that look has read the level. So the recording loop's next tick sees it,
-    /// without the clock moving meanwhile.
-    /// </summary>
-    private async Task SetLevelAsync(string deviceId, float level)
-    {
-        _provider.SetLevel(deviceId, level);
-        _provider.RaiseDevicesChanged();
-        await Wait.UntilAsync(() => _session.GetStatus().RecordedLevel == level);
-    }
+    /// <summary>A moment as the start lines and the refusal give it: the local time of day, to the minute.</summary>
+    private static string LocalMinute(DateTimeOffset moment) =>
+        TimeZoneInfo.ConvertTime(moment, TimeZoneInfo.Local).ToString("HH:mm", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Records a moment of sound and stops, with a folder put where the transcript's
@@ -179,7 +256,7 @@ public class RecordCommandTests
     /// </summary>
     private async Task<Exception?> RecordAndFailToSaveAsync(string blockedExtension)
     {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         Directory.CreateDirectory(Path.ChangeExtension(Recording(), blockedExtension));
@@ -204,11 +281,13 @@ public class RecordCommandTests
         Assert.That(_log.Messages, Has.None.EndsWith(CommandLine.Transcribe(Recording())), "the plain command, which the command line refuses here");
     }
 
+    // ------------------------------------------------------------------ recording and transcribing
+
     /// <summary>Recording runs until stopped, and the recording is then transcribed under its name.</summary>
     [Test]
     public async Task A_class_is_recorded_until_stopped_and_then_transcribed()
     {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(TestAudio.Tone(16000, seconds: 0.5, frequency: 440, amplitude: 0.5)));
         _signals.RequestStop();
@@ -222,11 +301,11 @@ public class RecordCommandTests
         Assert.That(_log.Messages, Has.Some.Contains("Recording \"Kalam\""));
     }
 
-    /// <summary>Record only keeps the recording and sends nothing.</summary>
+    /// <summary>Record only keeps the recording and sends nothing; the folder is opened, as the settings ask.</summary>
     [Test]
     public async Task Record_only_keeps_the_audio_and_sends_nothing()
     {
-        var run = CreateCommand("test-key", openWhenDone: true).RunAsync("Kalam", transcribe: false);
+        var run = CreateCommand(openWhenDone: true).RunAsync("Kalam", transcribe: false);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -244,7 +323,7 @@ public class RecordCommandTests
     [Test]
     public async Task The_folder_and_the_transcript_are_opened_when_it_is_ready()
     {
-        var run = CreateCommand("test-key", openWhenDone: true).RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand(openWhenDone: true).RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -254,262 +333,29 @@ public class RecordCommandTests
         _desktop.Verify(d => d.OpenFile(Only("*.md")), Times.Once);
     }
 
-    /// <summary>Q pressed twice stops the recording, and the hint at the start says so.</summary>
-    [Test]
-    public async Task Q_pressed_twice_stops_the_recording()
+    /// <summary>
+    /// With --no-open nothing is opened at the end, whatever the settings say: not the transcript, not its folder, and
+    /// not the folder of a recording made without one.
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task With_no_open_nothing_is_opened(bool transcribe)
     {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: false);
+        var run = CreateCommand(openWhenDone: true).RunAsync(Request(transcribe, open: false));
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
-        _ui.Type('q', 'q');
-
-        Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(0));
-        Assert.That(_log.Messages, Has.Some.StartsWith("Press Q twice (or Ctrl+C) to stop, P to pause or resume, M to mark a moment"));
-    }
-
-    /// <summary>A single Q, typed into the window by mistake, only asks for a second one: the recording goes on.</summary>
-    [Test]
-    public async Task A_single_Q_does_not_stop_the_recording()
-    {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(1000, -1000));
-        _ui.Type('q');
-        await Wait.UntilAsync(() => SecondQRequests() == 1);
-        _capture.Deliver(TestAudio.Shorts(-7, 7));
-        Assert.That(run.IsCompleted, Is.False, "still recording");
-
         _signals.RequestStop();
-        await run;
 
-        Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000, -7, 7 }), "the audio after the Q was kept");
-    }
-
-    /// <summary>A Q more than five seconds after the first one counts as a first press again; another Q right after it stops.</summary>
-    [Test]
-    public async Task A_Q_more_than_five_seconds_after_the_first_counts_as_a_first_press()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(1000, -1000));
-        _ui.Type('q');
-        await Wait.UntilAsync(() => SecondQRequests() == 1);
-
-        time.Advance(TimeSpan.FromSeconds(6));
-        _ui.Type('q');
-        await Wait.UntilAsync(() => SecondQRequests() == 2);
-        Assert.That(run.IsCompleted, Is.False, "still recording");
-
-        time.Advance(TimeSpan.FromSeconds(4));
-        _ui.Type('q');
-        Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(0));
-    }
-
-    /// <summary>
-    /// The five seconds between two Qs are the time that has really passed, whatever Windows does to its
-    /// clock: set back an hour between two Qs ten seconds apart, it does not make them stop the recording,
-    /// and set forward an hour between two quick ones, it does not keep them from stopping it.
-    /// </summary>
-    [Test]
-    public async Task Two_Qs_are_timed_by_the_time_that_has_really_passed()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(1000, -1000));
-        _ui.Type('q');
-        await Wait.UntilAsync(() => SecondQRequests() == 1);
-
-        time.StepWallClock(TimeSpan.FromHours(-1));
-        time.Advance(TimeSpan.FromSeconds(10));
-        _ui.Type('q');
-        await Wait.UntilAsync(() => SecondQRequests() == 2);
-        Assert.That(run.IsCompleted, Is.False, "still recording: the second Q came ten seconds after the first");
-
-        time.StepWallClock(TimeSpan.FromHours(1));
-        _ui.Type('q');
-        Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(0));
-    }
-
-    /// <summary>P pauses and resumes: audio that arrives during the pause is not kept.</summary>
-    [Test]
-    public async Task P_pauses_and_resumes_the_recording()
-    {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(1000, -1000));
-        _ui.Type('p');
-        await Wait.UntilAsync(() => _log.Messages.Any(m => m.StartsWith("Paused")));
-        _capture.Deliver(TestAudio.Shorts(5, 5));
-        _ui.Type('p');
-        await Wait.UntilAsync(() => _log.Messages.Any(m => m.StartsWith("Resumed")));
-        _capture.Deliver(TestAudio.Shorts(-7, 7));
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000, -7, 7 }));
-    }
-
-    /// <summary>
-    /// A minute without sound brings one warning, and while the silence lasts it comes back once a
-    /// minute, not more. It is the only sign that the class plays on a device that is not recorded.
-    /// </summary>
-    [Test]
-    public async Task Silence_is_warned_about_once_a_minute()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-
-        await TickAsync(time, seconds: 59);
-        Assert.That(SilenceWarnings(), Is.Empty, "not before a minute has passed");
-        await TickAsync(time, seconds: 1);
-        Assert.That(SilenceWarnings(), Is.EqualTo(new[] { "No sound for 60 seconds" }));
-        await TickAsync(time, seconds: 90);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(SilenceWarnings(), Is.EqualTo(new[] { "No sound for 60 seconds", "No sound for 120 seconds" }));
-    }
-
-    /// <summary>
-    /// A silence of up to two minutes is given in seconds; a longer one in whole minutes, and from an hour on in
-    /// hours and minutes, so that it reads at a glance however long the class has been silent. The silence warning
-    /// and the warning that audio has stopped arriving both give their lengths so.
-    /// </summary>
-    [TestCase(1, "1 second")]
-    [TestCase(120, "120 seconds")]
-    [TestCase(121, "2 minutes")]
-    [TestCase(179, "2 minutes")]
-    [TestCase(3599, "59 minutes")]
-    [TestCase(3600, "1 hour")]
-    [TestCase(3660, "1 hour 1 minute")]
-    [TestCase(9006, "2 hours 30 minutes")]
-    [TestCase(90000, "25 hours")]
-    public void A_silence_is_given_in_units_that_read_at_a_glance(int seconds, string length) =>
-        Assert.That(RecordCommand.DescribeSilence(TimeSpan.FromSeconds(seconds)), Is.EqualTo(length));
-
-    /// <summary>
-    /// The silence warning gives its length as <see cref="A_silence_is_given_in_units_that_read_at_a_glance"/> says, here
-    /// for a second without sound, with a limit of one second.
-    /// </summary>
-    [Test]
-    public async Task The_silence_warning_gives_its_length_in_words()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1, silenceWarningSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-
-        await TickAsync(time, seconds: 1);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(SilenceWarnings(), Is.EqualTo(new[] { "No sound for 1 second" }));
-    }
-
-    /// <summary>
-    /// After a sleep longer than the silence limit, the silence warning does not blame the device or Windows' sound for
-    /// the time asleep: the first tick after waking gives the sleep line alone. The silence counts from waking, as the
-    /// wait for audio does, so the warning comes once the class has been silent for the limit since then.
-    /// </summary>
-    [Test]
-    public async Task After_a_sleep_the_silence_counts_from_waking()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        for (var second = 0; second < 3; second++)
-        {
-            _capture.Deliver(TestAudio.Shorts(1000, -1000));
-            await TickAsync(time, seconds: 1);
-        }
-
-        var reported = StatusLines();
-        _times.Sleep(TimeSpan.FromMinutes(2));
-        await Wait.UntilAsync(() => StatusLines() > reported);
-        Assert.That(FreezeLines(), Has.Length.EqualTo(1).And.All.StartWith("The laptop slept from "));
-        Assert.That(SilenceWarnings(), Is.Empty, "the time asleep is no silence of the class");
-
-        await TickAsync(time, seconds: 59);
-        Assert.That(SilenceWarnings(), Is.Empty, "not before a minute without sound since waking");
-        await TickAsync(time, seconds: 1);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(SilenceWarnings(), Is.EqualTo(new[] { "No sound for 60 seconds" }));
-    }
-
-    /// <summary>
-    /// Windows setting its clock back or forward an hour neither stops nor hurries the status line or the
-    /// silence warning: the status line still comes every second, and the warning once a minute.
-    /// </summary>
-    [TestCase(-60)]
-    [TestCase(60)]
-    public async Task A_change_of_the_time_of_day_does_not_disturb_the_status_line_or_the_silence_warning(int minutes)
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        await TickAsync(time, seconds: 60);
-        Assert.That(SilenceWarnings(), Is.EqualTo(new[] { "No sound for 60 seconds" }));
-
-        time.StepWallClock(TimeSpan.FromMinutes(minutes));
-        await TickAsync(time, seconds: 59);
-        Assert.That(SilenceWarnings(), Is.EqualTo(new[] { "No sound for 60 seconds" }), "not again before another minute has passed");
-        await TickAsync(time, seconds: 1);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(SilenceWarnings(), Is.EqualTo(new[] { "No sound for 60 seconds", "No sound for 120 seconds" }));
-    }
-
-    /// <summary>While paused there is no warning about silence, and the status line says the recording is paused.</summary>
-    [Test]
-    public async Task No_silence_warning_is_given_while_paused()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _ui.Type('p');
-        await Wait.UntilAsync(() => _log.Messages.Any(m => m.StartsWith("Paused")));
-
-        // Each step moves the clock past the silence limit; the loop reports at its next tick.
-        await Wait.UntilAsync(() =>
-        {
-            time.Advance(TimeSpan.FromSeconds(61));
-            return _log.Messages.Any(m => m.Contains("(paused)"));
-        });
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(_log.Problems.Where(p => p.StartsWith("No sound")), Is.Empty);
-    }
-
-    /// <summary>While nothing can be recorded yet, the status line says what is being waited for, and there is no warning about silence.</summary>
-    [Test]
-    public async Task While_waiting_for_the_source_the_status_says_so()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        _provider.Enqueue(new FakeAudioCapture(new AudioFormat(16000, 1, 16, false), "Speakers"));
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1, device: "Pixel Buds").RunAsync("Kalam", transcribe: false);
-
-        await Wait.UntilAsync(() =>
-        {
-            time.Advance(TimeSpan.FromSeconds(61));
-            return _log.Messages.Any(m => m.Contains("waiting for the output device \"Pixel Buds\""));
-        });
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(_log.Problems.Where(p => p.StartsWith("No sound")), Is.Empty);
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(_results.Shown.Single().Open, Is.False);
+        _desktop.VerifyNoOtherCalls();
     }
 
     /// <summary>M marks the moment: its position goes to the marks file at once, and the mark shows in the transcript.</summary>
     [Test]
     public async Task M_marks_the_moment_in_the_recording_and_the_transcript()
     {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(TestAudio.Tone(16000, seconds: 0.5, frequency: 440, amplitude: 0.5)));
         _ui.Type('m');
@@ -527,52 +373,599 @@ public class RecordCommandTests
     {
         _provider = new FakeCaptureProvider();
         _capture = _provider.Enqueue(new FakeAudioCapture(new AudioFormat(1, 1, 16, false)));   // one sample a second
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: false);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: false);
         await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(new short[25 * 3600]));
+        _capture.Deliver(TestAudio.Shorts([.. Enumerable.Repeat((short)1000, 25 * 3600)]));
         _signals.RequestStop();
         await run;
 
         Assert.That(_log.Messages, Has.Some.EqualTo("Recorded 25:00:00 of audio"));
     }
 
-    /// <summary>Positions a day or more into the recording, in the status line and in the line for a mark, show all their hours.</summary>
+    /// <summary>
+    /// The start lines say where the recording goes, what it records, which keys work, that closing this window ends it,
+    /// and that the lid and the power button still put the laptop to sleep.
+    /// </summary>
     [Test]
-    public async Task Positions_a_day_or_more_into_the_recording_show_all_their_hours()
+    public async Task The_start_lines_say_where_what_the_keys_and_to_keep_the_lid_open()
     {
-        _provider = new FakeCaptureProvider();
-        _capture = _provider.Enqueue(new FakeAudioCapture(new AudioFormat(1, 1, 16, false)));   // one sample a second
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
+        var run = CreateCommand().RunAsync(Request(transcribe: true));
         await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(new short[25 * 3600]));
-        await TickAsync(time, seconds: 1);
-        _ui.Type('m');
-        await Wait.UntilAsync(() => _log.Messages.Any(m => m.StartsWith("Mark 1 at", StringComparison.Ordinal)));
         _signals.RequestStop();
         await run;
 
-        Assert.That(_log.Messages, Has.Some.EqualTo("Recording: 25:00:00 captured from \"Fake Speakers\""));
-        Assert.That(_log.Messages, Has.Some.EqualTo("Mark 1 at 25:00:00"));
+        Assert.That(_log.Messages.Take(4), Is.EqualTo(new[]
+        {
+            $"Recording \"Kalam\" to {KalamFolder()}",
+            "Recording from the device the class plays on",
+            "Press Q twice (or Ctrl+C twice) to stop and transcribe, P to pause or resume, M to mark a moment. If the window is closed instead, the recording ends and the audio so far is kept",
+            "Keep the lid open and the laptop plugged in; closing the lid still puts it to sleep"
+        }));
     }
 
-    /// <summary>When the window is closed or the process crashes mid-recording, the file on disk is brought up to date at once.</summary>
-    [Test]
-    public async Task A_process_about_to_end_brings_the_recording_on_disk_up_to_date()
+    /// <summary>The sources a run can be asked to record from the command line, each with the start line that names it.</summary>
+    private static IEnumerable<TestCaseData> SourcesNamedAtTheStart()
     {
-        Action? processEnding = null;
-        _exitWarnings.Setup(w => w.Register(It.IsAny<Action>())).Callback((Action onExit) => processEnding = onExit).Returns(Mock.Of<IDisposable>());
+        yield return new TestCaseData(new ClassSource.App("chrome"), "Recording from the app \"chrome\"").SetArgDisplayNames("--app chrome");
+        yield return new TestCaseData(new ClassSource.Device("Pixel Buds"), "Recording from the output device \"Pixel Buds\"").SetArgDisplayNames("--device \"Pixel Buds\"");
+        yield return new TestCaseData(new ClassSource.Automatic(), "Recording from the device the class plays on").SetArgDisplayNames("--device auto");
+    }
+
+    /// <summary>A start line names what is recorded: the app given with --app, the device given with --device, or the device the class plays on.</summary>
+    [TestCaseSource(nameof(SourcesNamedAtTheStart))]
+    public async Task A_start_line_names_what_is_recorded(ClassSource source, string line)
+    {
+        var recordings = new FakeRecordingFactory();
+        var run = CreateCommand(recordings: recordings).RunAsync(Request(transcribe: false) with { Source = new SourcePlan(RecordingMode.Class, source, Microphone: null) });
+        await Wait.UntilAsync(() => recordings.Created is [{ Started: true }]);
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(recordings.Plans.Single().Class, Is.EqualTo(source));
+        Assert.That(_log.Messages, Has.One.EqualTo(line));
+    }
+
+    /// <summary>With --minutes, a start line says when the recording stops by itself, by the local time of day.</summary>
+    [Test]
+    public async Task With_minutes_a_start_line_says_when_the_recording_stops_by_itself()
+    {
+        var start = new DateTimeOffset(2026, 10, 15, 23, 0, 2, TimeSpan.Zero);
+        var run = CreateCommand(time: new ManualTimeProvider(start)).RunAsync(Request(transcribe: false, minutes: 90));
+        await Wait.UntilAsync(() => _capture.Started);
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(_log.Messages, Has.Some.EqualTo($"This recording stops by itself at {LocalMinute(start.AddMinutes(90))} (--minutes 90); Q twice stops it sooner"));
+    }
+
+    /// <summary>
+    /// A recording asked for without a name of its own (menu choices 1 and 2, until they hand a whole request) records
+    /// what menu choice 6 picked, into the recordings folder of the settings, as a new recording, opening the results as
+    /// the settings say; the run file keeps that request.
+    /// </summary>
+    [Test]
+    public async Task A_recording_asked_for_by_name_records_what_menu_choice_6_picked_into_the_settings_folder()
+    {
+        var recordings = new FakeRecordingFactory();
+        var command = CreateCommand(recordings: recordings);
+        _choice.App = "chrome";
+
+        var run = command.RunAsync("Kalam", transcribe: false);
+        await Wait.UntilAsync(() => recordings.Created is [{ Started: true }]);
+        recordings.Created[0].MainSegments = [recordings.Created[0].Files!.Segment(1)];
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(recordings.Plans.Single(), Is.EqualTo(new SourcePlan(RecordingMode.Class, new ClassSource.App("chrome"), Microphone: null)));
+        Assert.That(recordings.Created[0].Files!.Folder, Is.EqualTo(KalamFolder()));
+        var request = RunFile().Request;
+        Assert.That((request.Name, request.Transcribe, request.OutputRoot, request.Continue, request.ContinueBaseName, request.Minutes, request.Open),
+            Is.EqualTo(("Kalam", false, _folder.Path, ContinueChoice.New, (string?)null, (double?)null, true)));
+        Assert.That(RunIds.IsWellFormed(request.RunId), Is.True);
+    }
+
+    // ------------------------------------------------------------------ one recording at a time
+
+    /// <summary>
+    /// The lock is taken before anything else and let go the moment capture stops, before the upload, so that the next
+    /// class may start while this one uploads; at the end nothing holds it.
+    /// </summary>
+    [Test]
+    public async Task The_lock_is_held_while_capturing_and_let_go_before_the_upload()
+    {
+        bool? heldDuringUpload = null;
+        _client.Setup(Calls.AnyTranscription).Returns((string _, IReadOnlyList<string> _, CancellationToken _) =>
+        {
+            heldDuringUpload = OtherLock().IsHeld();
+            return Task.FromResult(Mocks.Transcript);
+        });
+        var run = CreateCommand().RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        var heldWhileRecording = OtherLock().IsHeld();
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(heldWhileRecording, Is.True);
+        Assert.That(heldDuringUpload, Is.False);
+        Assert.That(OtherLock().IsHeld(), Is.False);
+    }
+
+    /// <summary>
+    /// While another recording holds the lock, a run is refused before it makes any file: it says why and returns 1, opens
+    /// no capture, writes no run file, and keeps nothing awake.
+    /// </summary>
+    [Test]
+    public async Task A_second_run_is_refused_before_it_makes_any_file()
+    {
+        using var other = OtherLock().TryTake();
+        Assert.That(other, Is.Not.Null);
+
+        var exitCode = await EndingByItselfAsync(CreateCommand().RunAsync(Request()));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(Directory.Exists(KalamFolder()), Is.False, "no file made");
+        Assert.That(_runtime.FilesInRuns(), Is.Empty, "no run file");
+        Assert.That(_provider.Created, Is.Empty, "no capture opened");
+        Assert.That(_power.Holds, Is.Empty);
+        Assert.That(_log.Problems.Single(), Is.EqualTo("Only one recording at a time: another recording is running. Start ClassScribe to see it, or stop it first."));
+        Assert.That(_results.Last, Is.EqualTo(new RunOutcome(OutcomeKind.Refused, 1, _log.Problems.Single(), null, null, null)));
+    }
+
+    /// <summary>
+    /// The refusal names the recording that runs, from its run file: its name, when it started by the local time of day, and
+    /// how long it has run.
+    /// </summary>
+    [Test]
+    public async Task The_refusal_names_the_recording_that_runs()
+    {
+        var time = new ManualTimeProvider(TestRuns.Start.Add(new TimeSpan(0, 42, 13)));
+        var command = CreateCommand(time: time);
+        using (var fiqh = _journal.Begin(TestRuns.Record(TestRuns.Id(), RunState.Recording, name: "Fiqh")))
+        {
+            _runtime.Processes.Start(TestRuns.ProcessId, TestRuns.ProcessStart);
+            using var other = OtherLock().TryTake();
+
+            Assert.That(await EndingByItselfAsync(command.RunAsync(Request())), Is.EqualTo(1));
+        }
+
+        Assert.That(_log.Problems.Single(), Is.EqualTo(
+            $"Only one recording at a time: \"Fiqh\" has been recording since {LocalMinute(TestRuns.Start)} (00:42:13). Start ClassScribe to see it, or stop it first."));
+    }
+
+    /// <summary>
+    /// In a recorder, a start the lock refuses is written into the run file its host began, as refused, and the recorder's
+    /// own exit code for it, 3, is returned; the window that started it then shows the recording that runs instead.
+    /// </summary>
+    [Test]
+    public async Task In_a_recorder_a_refused_start_is_written_into_the_run_file_and_returns_3()
+    {
+        using var other = OtherLock().TryTake();
+        var command = CreateCommand();
+        var request = Request();
+        var run = BeginAsTheRecordersHost(request);
+
+        var exitCode = await EndingByItselfAsync(command.RunAsync(request));
+
+        Assert.That(exitCode, Is.EqualTo(3));
+        Assert.That(run.Current.State, Is.EqualTo(RunState.Refused));
+        Assert.That(run.Current.Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.Refused, 1,
+            "Only one recording at a time: another recording is running. Start ClassScribe to see it, or stop it first.", null, null, null)));
+        Assert.That(Directory.Exists(KalamFolder()), Is.False);
+    }
+
+    // ------------------------------------------------------------------ the run file
+
+    /// <summary>
+    /// A run in this window begins its own run file as recording, with its files, then moves it to transcribing for the
+    /// upload and to finished with its outcome; the window has shown that outcome, so the run is marked seen.
+    /// </summary>
+    [Test]
+    public async Task The_run_file_goes_through_recording_and_transcribing_to_finished_with_its_outcome()
+    {
+        RunState? stateDuringUpload = null;
+        _client.Setup(Calls.AnyTranscription).Returns((string _, IReadOnlyList<string> _, CancellationToken _) =>
+        {
+            stateDuringUpload = RunFile().State;
+            return Task.FromResult(Mocks.Transcript);
+        });
+        var request = Request();
+        var run = CreateCommand().RunAsync(request);
+        await Wait.UntilAsync(() => _capture.Started);
+        var whileRecording = RunFile();
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        var files = RecordingFiles.TryParse(Recording())!;
+        Assert.That(whileRecording.State, Is.EqualTo(RunState.Recording));
+        Assert.That((whileRecording.RunId, whileRecording.Home, whileRecording.Pipe, whileRecording.BaseName, whileRecording.Folder),
+            Is.EqualTo((request.RunId, RunHome.InWindow, (string?)null, files.BaseName, files.Folder)));
+        Assert.That((whileRecording.ProcessId, whileRecording.Protocol, whileRecording.Request), Is.EqualTo((Environment.ProcessId, LinkProtocol.Version, request)));
+        Assert.That(stateDuringUpload, Is.EqualTo(RunState.Transcribing));
+
+        var finished = RunFile();
+        var outcome = new RunOutcome(OutcomeKind.Transcribed, 0, $"Transcript saved to {Only("*.md")}", Only("*.md"), KalamFolder(), null);
+        Assert.That((finished.State, finished.Outcome, finished.EndedBy, finished.Seen), Is.EqualTo((RunState.Finished, outcome, RunEndCause.Q, true)));
+        Assert.That(_results.Shown, Is.EqualTo(new[] { (outcome, true) }));
+    }
+
+    /// <summary>
+    /// While the recording stops and its files are finished, the run file says stopping: should the process end then, the
+    /// next start knows that the class was being stopped, not that it was still recording.
+    /// </summary>
+    [Test]
+    public async Task The_run_file_says_stopping_while_the_recording_stops()
+    {
+        var fakes = new FakeRecordingFactory();
+        var recordings = new WatchedRecordingFactory(fakes);
+        RunState? atTheStop = null;
+        recordings.BeforeCall = call =>
+        {
+            if (call == "Stop") atTheStop ??= RunFile().State;
+        };
+        var run = CreateCommand(recordings: recordings).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => fakes.Created is [{ Started: true }]);
+        var whileRecording = RunFile().State;
+        _signals.RequestStop();
+        await run;
+
+        Assert.That((whileRecording, atTheStop), Is.EqualTo((RunState.Recording, (RunState?)RunState.Stopping)));
+    }
+
+    /// <summary>
+    /// When a run in this window is over, its scope gives the window back: the taskbar button loses the run's bar and the
+    /// title says ClassScribe again, so that a failed run's red button and "! FAILED" title do not stay through whatever
+    /// the menu does next. Until then the window shows how the run ended.
+    /// </summary>
+    [Test]
+    public async Task When_a_run_in_this_window_is_over_the_window_is_given_back()
+    {
+        var run = CreateCommand(apiKey: "", status: new WindowStatusSink(_window)).RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+        Assert.That(await run, Is.EqualTo(1), "no key: the transcript failed");
+        var atTheEnd = (_window.Title, _window.Taskbar);
+
+        _bookkeeping!.Dispose();   // the run's scope ends
+
+        Assert.That(atTheEnd, Is.EqualTo(("! FAILED Kalam (in this window) | ClassScribe", ((TaskbarState, int)?)(TaskbarState.Error, 100))));
+        Assert.That((_window.Title, _window.Taskbar), Is.EqualTo(("ClassScribe", ((TaskbarState, int)?)(TaskbarState.None, 0))));
+    }
+
+    /// <summary>
+    /// A run in this window prunes the run files that have nothing left to report, as a recorder does when it starts, so
+    /// that recording from the window alone does not let them pile up: a run seen 31 days ago goes, one that ended
+    /// unexpectedly stays however old it is.
+    /// </summary>
+    [Test]
+    public async Task A_run_in_this_window_prunes_old_run_files()
+    {
+        var time = new ManualTimeProvider(TestRuns.Start.AddDays(31));
+        var command = CreateCommand(time: time);
+        var seen = TestRuns.Record(TestRuns.Id(1), RunState.Finished) with { Seen = true, Outcome = new RunOutcome(OutcomeKind.Recorded, 0, "Recorded.", null, null, null) };
+        var lost = TestRuns.Record(TestRuns.Id(2), RunState.Recording);
+        foreach (var old in new[] { seen, lost })
+        {
+            using var begun = new RunJournal(_runtime.Folder, _runtime.Processes, new ManualTimeProvider(TestRuns.Start), NullLogger<RunJournal>.Instance).Begin(old);
+        }
+
+        var run = command.RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(_journal.Find(seen.RunId), Is.Null, "pruned");
+        Assert.That(_journal.Find(lost.RunId), Is.Not.Null, "kept for its report");
+    }
+
+    /// <summary>
+    /// In a recorder, the run file its host began as starting is the run's own: it moves to recording with the recording's
+    /// files and to finished with the outcome, keeps its home and pipe, and stays unseen, for the windows that show the
+    /// outcome to mark.
+    /// </summary>
+    [Test]
+    public async Task In_a_recorder_the_run_file_its_host_began_is_kept_up_to_date()
+    {
+        var command = CreateCommand();
+        var request = Request(transcribe: false);
+        var run = BeginAsTheRecordersHost(request);
+
+        var recording = command.RunAsync(request);
+        await Wait.UntilAsync(() => _capture.Started);
+        var whileRecording = run.Current;
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await recording, Is.EqualTo(0));
+        Assert.That((whileRecording.State, whileRecording.BaseName), Is.EqualTo((RunState.Recording, RecordingFiles.TryParse(Recording())!.BaseName)));
+        var finished = RunFile();
+        Assert.That((finished.State, finished.Outcome!.Kind, finished.Home, finished.Pipe, finished.Seen),
+            Is.EqualTo((RunState.Finished, OutcomeKind.Recorded, RunHome.Separate, LinkProtocol.PipeNameFor(request.RunId), false)));
+        Assert.That(_log.Messages, Has.Some.EndsWith("Closing a window that shows this recording does not stop it"));
+
+        _bookkeeping!.Dispose();   // the run's scope ends
+        Assert.That(_window.Titles, Is.Empty, "a recorder has no window of its own to give back");
+    }
+
+    /// <summary>
+    /// After the stop the window's title and taskbar follow the run to its end: preparing the upload copy, uploading (the
+    /// mocked service says nothing of how far), then done.
+    /// </summary>
+    [Test]
+    public async Task The_states_after_the_stop_follow_the_run_to_its_end()
+    {
+        var run = CreateCommand().RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+        await run;
+
+        var phases = _status.States.Select(state => state.Phase).ToList();
+        var stop = phases.LastIndexOf(RecorderPhase.Stopping);
+        Assert.That(stop, Is.GreaterThanOrEqualTo(0));
+        Assert.That(phases.Skip(stop).Distinct(), Is.EqualTo(new[] { RecorderPhase.Stopping, RecorderPhase.Preparing, RecorderPhase.Uploading, RecorderPhase.Done }));
+        Assert.That(_status.Last!.Name, Is.EqualTo("Kalam"));
+    }
+
+    /// <summary>
+    /// The upload's progress, as the service reports it, shows on the title and the taskbar (UPLOADING 40%) and goes into
+    /// the run file's heartbeat, so that the menu and the list can say how far a transcription in the background is: the
+    /// first percent at once, the wait for the transcript as 100, and once the transcript is saved the percent is gone.
+    /// </summary>
+    [Test]
+    public async Task The_upload_s_progress_shows_on_the_window_and_in_the_run_file()
+    {
+        RecorderState? uploading = null;
+        int? inFileWhileUploading = null;
+        int? inFileWhileWaiting = null;
+        _client.Setup(Calls.AnyTranscription).Returns((string _, IReadOnlyList<string> _, CancellationToken _) =>
+        {
+            _progress.Report(TranscriptionStep.Uploading, 40);
+            uploading = _status.Last;
+            inFileWhileUploading = RunFile().UploadPercent;
+            _progress.Report(TranscriptionStep.WaitingForTranscript, 100);
+            inFileWhileWaiting = RunFile().UploadPercent;
+            return Task.FromResult(Mocks.Transcript);
+        });
+        var run = CreateCommand().RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+        await run;
+
+        Assert.That((uploading?.Phase, uploading?.UploadPercent), Is.EqualTo((RecorderPhase.Uploading, 40)));
+        Assert.That(TitleText.For(uploading!), Is.EqualTo("UPLOADING 40% Kalam (in this window) | ClassScribe"));
+        Assert.That(inFileWhileUploading, Is.EqualTo(40));
+        Assert.That(inFileWhileWaiting, Is.EqualTo(100));
+        Assert.That(_status.States.Select(state => state.Phase), Does.Contain(RecorderPhase.Transcribing), "waiting for the transcript");
+        Assert.That(RunFile().UploadPercent, Is.Null, "nothing uploads once the transcript is saved");
+    }
+
+    /// <summary>
+    /// A run in this window writes its own log beside the recording, &lt;base&gt;.log: the lines from the run's start, not
+    /// what the window did before, and it lets go of the file when the run is over.
+    /// </summary>
+    [Test]
+    public async Task A_run_in_this_window_writes_its_log_beside_the_recording()
+    {
+        _recorderLog.Write(LogLevel.Information, "The window's work before the run");
+        var logger = new TeeLogger<RecordCommand>(_log, new RecorderLogProvider(_recorderLog).CreateLogger(typeof(RecordCommand).FullName!));
+        var run = CreateCommand(logger: logger).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+        await run;
+
+        _bookkeeping!.Dispose();   // the run's scope ends
+        _recorderLog.Write(LogLevel.Information, "The window's work after the run");
+        Assert.That(_recorderLog.Flush(TimeSpan.FromSeconds(5)), Is.True);
+
+        var lines = File.ReadAllLines(RecordingFiles.TryParse(Recording())!.Log);
+        Assert.That(lines, Has.Some.Contains("Recording \"Kalam\" to"));
+        Assert.That(lines, Has.Some.Contains("Recorded 00:00:00 of audio"));
+        Assert.That(lines, Has.None.Contains("before the run").And.None.Contains("after the run"));
+    }
+
+    /// <summary>
+    /// Lines of the run's log that its file did not take are counted and reported at the end, with the first failure:
+    /// the recording itself is not affected.
+    /// </summary>
+    [Test]
+    public async Task Lines_the_log_file_did_not_take_are_reported_at_the_end()
+    {
+        _recorderLog.Dispose();
+        _recorderLog = new RecorderLog(TimeProvider.System) { OpenFile = _ => throw new IOException("There is not enough space on the disk.") };
+        var logger = new TeeLogger<RecordCommand>(_log, new RecorderLogProvider(_recorderLog).CreateLogger(typeof(RecordCommand).FullName!));
+        var run = CreateCommand(logger: logger).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(_bookkeepingLog.Problems, Has.Some.Match(
+            @"^[1-9][0-9]* lines of this recording's log were not saved to its file\. Could not write the log file .+\.log: There is not enough space on the disk\.$"));
+    }
+
+    /// <summary>
+    /// When ClassScribe's own folder cannot be written, the run records all the same: without the lock and without a run
+    /// file, each said with a warning.
+    /// </summary>
+    [Test]
+    public async Task Without_a_folder_of_its_own_a_run_records_without_the_lock_and_the_run_file()
+    {
+        File.WriteAllText(_folder.File("not-a-folder"), "");
+        var run = CreateCommand(runtimeFolder: new RuntimeFolder(_folder.File("not-a-folder"))).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(TestAudio.ReadWav(Recording()).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
+        Assert.That(_bookkeepingLog.Problems, Has.Some.StartsWith("Could not take the lock that allows one recording at a time"));
+        Assert.That(_bookkeepingLog.Problems, Has.Some.StartsWith("Could not write this recording's run file"));
+    }
+
+    // ------------------------------------------------------------------ continuing a recording
+
+    /// <summary>
+    /// A run that continues a recording writes into the same files: its audio goes into the next part, _part2, a resume
+    /// note marks where it begins, at the recording's length on disk, with how long was not recorded, and a mark set now
+    /// gets its position in the whole recording. The run file names the recording continued, and the one transcript is
+    /// made from the whole recording, in 2 parts: the upload holds the first part's audio and then this run's, not this
+    /// run's alone.
+    /// </summary>
+    [Test]
+    public async Task A_continued_recording_gets_its_next_part_a_resume_note_and_marks_at_their_place_in_the_whole()
+    {
+        (int SampleRate, short[] Samples)? uploaded = null;
+        _client.Setup(Calls.AnyTranscription).Returns((string path, IReadOnlyList<string> _, CancellationToken _) =>
+        {
+            var wav = TestAudio.ReadWav(path);
+            uploaded = (wav.SampleRate, wav.Samples);
+            return Task.FromResult(Mocks.Transcript);
+        });
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 10, 15, 23, 0, 2, TimeSpan.Zero));
+        var next = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        var first = CreateCommand(time: time).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts([.. Enumerable.Repeat((short)1000, 32000)]));   // 2 seconds
+        _signals.RequestStop();
+        Assert.That(await first, Is.EqualTo(0));
+        var files = RecordingFiles.TryParse(Recording())!;
+        File.SetLastWriteTimeUtc(files.Segment(1), time.GetUtcNow().UtcDateTime);
+
+        // Four minutes later, after the first run's scope has ended, a new run continues it.
+        _bookkeeping!.Dispose();
+        time.Advance(TimeSpan.FromMinutes(4));
+        _signals = new FakeUserSignals();
+        var request = Request(transcribe: true, continueBaseName: files.BaseName);
+        var second = CreateCommand(time: time).RunAsync(request);
+        await Wait.UntilAsync(() => next.Started);
+        next.Deliver(TestAudio.Shorts([.. Enumerable.Repeat((short)-1000, 16000)]));   // 1 second
+        _ui.Type('m');
+        await Wait.UntilAsync(() => _loopLog.Messages.Contains("Mark 1 at 00:00:03"));
+        _signals.RequestStop();
+
+        Assert.That(await second, Is.EqualTo(0));
+        Assert.That(files.FindSegments(), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
+        Assert.That(TestAudio.ReadWav(files.Segment(2)).Samples, Has.Length.EqualTo(16000));
+        Assert.That(File.ReadAllLines(files.Marks), Is.EqualTo(new[] { "00:00:02.000 ~ Resumed at 23:04 UTC, about 4 minutes not recorded", "00:00:03.000" }));
+        Assert.That(_journal.Find(request.RunId)!.Record.BaseName, Is.EqualTo(files.BaseName));
+        _client.Verify(Calls.TranscriptionOf(files.Upload), Times.Once);
+        Assert.That(uploaded?.SampleRate, Is.EqualTo(16000));
+        Assert.That(uploaded?.Samples, Is.EqualTo((short[])[.. Enumerable.Repeat((short)1000, 32000), .. Enumerable.Repeat((short)-1000, 16000)]),
+            "the first part's 2 seconds, then this run's second");
+        Assert.That(File.ReadAllText(files.Transcript()), Does.Contain("in 2 parts"));
+        Assert.That(_log.Messages, Has.Some.EqualTo($"Continuing \"Kalam\" as its next part ({files.BaseName}, 00:00:02 recorded so far), in {files.Folder}"));
+        Assert.That(_log.Messages, Has.Some.EqualTo("Recorded 00:00:01 in this part, 00:00:03 in all"));
+    }
+
+    /// <summary>
+    /// A continued recording whose new part heard nothing audible still has its earlier parts, so the run goes on to them
+    /// and ends with exit code 0: record only keeps the recording and says that this part heard nothing; record sends the
+    /// whole recording, which has sound in its first part.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task A_continued_recording_whose_new_part_heard_nothing_goes_on_with_its_earlier_parts(bool transcribe)
+    {
+        var next = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        var first = CreateCommand().RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+        Assert.That(await first, Is.EqualTo(0));
+        var files = RecordingFiles.TryParse(Recording())!;
+        _bookkeeping!.Dispose();   // the first run's scope ends
+
+        _signals = new FakeUserSignals();
+        var request = Request(transcribe, continueBaseName: files.BaseName);
+        var second = CreateCommand().RunAsync(request);
+        await Wait.UntilAsync(() => next.Started);
+        next.Deliver(TestAudio.Shorts(0, 0));
+        _signals.RequestStop();
+
+        Assert.That(await second, Is.EqualTo(0));
+        Assert.That(TestAudio.ReadWav(files.Segment(2)).Samples, Is.EqualTo(new short[] { 0, 0 }));
+        var outcome = _journal.Find(request.RunId)!.Record.Outcome!;
+        if (transcribe)
+        {
+            _client.Verify(Calls.TranscriptionOf(files.Upload), Times.Once);
+            Assert.That(outcome.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+            Assert.That(_log.Problems, Has.None.Contains("Nothing audible"));
+        }
+        else
+        {
+            _client.Verify(Calls.AnyTranscription, Times.Never);
+            Assert.That(outcome.Kind, Is.EqualTo(OutcomeKind.Recorded));
+            Assert.That(_log.Problems, Has.One.EqualTo($"Nothing audible was captured in this part; the earlier parts of {files.BaseName} are kept"));
+        }
+    }
+
+    /// <summary>
+    /// A recording to continue that is no longer there does not cost the class: the run says so and records a new
+    /// recording instead.
+    /// </summary>
+    [Test]
+    public async Task A_recording_to_continue_that_is_gone_is_recorded_as_a_new_one()
+    {
+        var run = CreateCommand().RunAsync(Request(transcribe: false, continueBaseName: "Kalam_2026-10-15_23-00-02Z"));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(Path.GetFileName(Recording()), Does.Not.StartWith("Kalam_2026-10-15_23-00-02Z"));
+        Assert.That(_log.Problems, Has.Some.StartsWith("Could not continue Kalam_2026-10-15_23-00-02Z (").And.Some.EndsWith("); recording \"Kalam\" as a new recording instead"));
+    }
+
+    // ------------------------------------------------------------------ the end of the process or the session
+
+    /// <summary>
+    /// When the window is closed mid-recording, the file on disk is brought up to date at once, and the run file says
+    /// that the window's closing ended it, for the next start to report.
+    /// </summary>
+    [Test]
+    public async Task Closing_the_window_saves_the_recording_and_puts_the_end_down_to_the_window()
+    {
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);   // the clock stands still, so nothing is saved on the usual schedule
-        var run = CreateCommand("test-key", time).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started && processEnding is not null);
+        var run = CreateCommand(time: time).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started && _processEnding is not null);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.Empty, "not saved yet");
 
-        processEnding!();
+        _processEnding!();
 
         Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
+        Assert.That(RunFile().EndedBy, Is.EqualTo(RunEndCause.WindowClosed));
         _signals.RequestStop();
         await run;
+    }
+
+    /// <summary>
+    /// When an error nobody caught takes the process down mid-recording, the file on disk is brought up to date, and the run
+    /// file puts the end down to the error, not to the window, although the exit warning that the crash raises after comes
+    /// too: the run hears of the error first, as it registers for it before it registers for the exit warning. Once the run
+    /// is over, it no longer listens.
+    /// </summary>
+    [Test]
+    public async Task A_crash_saves_the_recording_and_puts_the_end_down_to_the_error()
+    {
+        var run = CreateCommand(time: new ManualTimeProvider(DateTimeOffset.UtcNow)).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started && _processEnding is not null);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+
+        _crashes.Crash(new InvalidOperationException("A bug."));   // as .NET warns of the error nobody caught,
+        _processEnding!();                                         // and then the exit warnings that it raises too
+
+        Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
+        Assert.That(RunFile().EndedBy, Is.EqualTo(RunEndCause.Error));
+        Assert.That(_crashWarningsBeforeExitWarning, Is.EqualTo(1), "registered for the error before the exit warning");
+        _signals.RequestStop();
+        await run;
+        Assert.That(_crashes.Registered, Is.Zero, "no longer listening once the run is over");
     }
 
     /// <summary>
@@ -584,24 +977,328 @@ public class RecordCommandTests
     [SupportedOSPlatform("windows")]
     public async Task A_save_that_fails_as_the_process_ends_is_logged_and_goes_no_further()
     {
-        Action? processEnding = null;
-        _exitWarnings.Setup(w => w.Register(It.IsAny<Action>())).Callback((Action onExit) => processEnding = onExit).Returns(Mock.Of<IDisposable>());
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);   // the clock stands still, so nothing is saved on the usual schedule
-        var run = CreateCommand("test-key", time).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started && processEnding is not null);
+        var run = CreateCommand(time: time).RunAsync("Kalam", transcribe: false);
+        await Wait.UntilAsync(() => _capture.Started && _processEnding is not null);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
 
         using (var otherProgram = new FileStream(Only("*.wav"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
             otherProgram.Lock(0, WavSegmentWriter.HeaderSize);
-            Assert.DoesNotThrow(() => processEnding!());
+            Assert.DoesNotThrow(() => _processEnding!());
             otherProgram.Unlock(0, WavSegmentWriter.HeaderSize);
         }
 
-        Assert.That(_log.Problems, Has.Some.StartsWith("Could not bring the recording on disk up to date before exiting"));
+        Assert.That(_bookkeepingLog.Problems, Has.Some.StartsWith("Could not bring the recording on disk up to date before exiting"));
         _signals.RequestStop();
         Assert.That(await run, Is.EqualTo(0));
         Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000 }), "the audio is kept");
+    }
+
+    /// <summary>
+    /// While recording, a restart Gulzar starts makes Windows ask first. When Windows asks whether it may end the session,
+    /// the recording on disk is brought up to date and the run file puts a coming end down to Windows; when Windows goes on
+    /// after all, that is taken back and the class goes on recording.
+    /// </summary>
+    [Test]
+    public async Task Windows_asking_to_end_the_session_saves_the_recording_and_notes_why_it_may_end()
+    {
+        var run = CreateCommand(time: new ManualTimeProvider(DateTimeOffset.UtcNow)).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.Empty, "not saved yet");
+
+        var mayEnd = _session.AskToEnd();
+
+        Assert.That(mayEnd, Is.False, "Windows asks first");
+        Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
+        Assert.That(RunFile().EndedBy, Is.EqualTo(RunEndCause.Windows));
+
+        _session.CancelEnd();
+        Assert.That(RunFile().EndedBy, Is.Null, "taken back");
+        _capture.Deliver(TestAudio.Shorts(-7, 7));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000, -7, 7 }));
+        Assert.That(RunFile().EndedBy, Is.EqualTo(RunEndCause.Q));
+    }
+
+    /// <summary>
+    /// Each handler for an end without the usual stop has the run file's heartbeat say where the recording is, besides the
+    /// cause, so that the report at the next start gives the position the recording ended at: here Windows asking to end
+    /// the session 42 seconds in, and then the window closing 50 seconds in.
+    /// </summary>
+    [Test]
+    public async Task The_handlers_write_where_the_recording_is_into_the_run_file()
+    {
+        var recordings = new FakeRecordingFactory();
+        var recording = recordings.Enqueue(new FakeRecording { Written = TimeSpan.FromSeconds(42) });
+        var run = CreateCommand(recordings: recordings).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => recording.Started && _processEnding is not null);
+
+        _session.AskToEnd();
+        var asked = RunFile();
+        _session.CancelEnd();
+        recording.Written = TimeSpan.FromSeconds(50);
+        _processEnding!();
+        var closed = RunFile();
+        _signals.RequestStop();
+        await run;
+
+        Assert.That((asked.Position, asked.EndedBy), Is.EqualTo((TimeSpan.FromSeconds(42), RunEndCause.Windows)));
+        Assert.That((closed.Position, closed.EndedBy), Is.EqualTo((TimeSpan.FromSeconds(50), RunEndCause.WindowClosed)));
+        Assert.That(recording.Calls.Count(call => call == "Flush"), Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// While Windows asks whether it may end the session, the run file puts the coming end down to Windows before anything
+    /// else, before the recording on disk is brought up to date: should Windows end the process during the handler, as it
+    /// does when it forces the end and an answer takes longer than about a second, the next start still knows the cause.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Windows_asking_to_end_the_session_has_the_cause_written_first(bool forced)
+    {
+        var fakes = new FakeRecordingFactory();
+        var recordings = new WatchedRecordingFactory(fakes);
+        var run = CreateCommand(recordings: recordings).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => fakes.Created is [{ Started: true }]);
+        fakes.Created[0].Written = TimeSpan.FromSeconds(42);
+        string? causeAtTheFlush = "not flushed";
+        recordings.BeforeCall = call =>
+        {
+            if (call == "Flush") causeAtTheFlush = RunFile().EndedBy;
+        };
+
+        _session.AskToEnd(forced);
+
+        Assert.That(causeAtTheFlush, Is.EqualTo(RunEndCause.Windows));
+        Assert.That((RunFile().EndedBy, RunFile().Position), Is.EqualTo((RunEndCause.Windows, TimeSpan.FromSeconds(42))), "and the heartbeat after it");
+        recordings.BeforeCall = null;
+        _session.CancelEnd();
+        _signals.RequestStop();
+        await run;
+    }
+
+    /// <summary>
+    /// When Windows forces the end of the session, it gives about a second to answer whether it may end it, so the handler
+    /// does not wait for the run's log to reach its file, however slow the disk is: the cause and where the recording is are
+    /// written, and the answer goes back at once. Here the log's file has stalled, and a handler that waited for it would
+    /// wait without end.
+    /// </summary>
+    [Test]
+    public async Task When_Windows_forces_the_end_the_question_is_answered_without_waiting_for_the_log()
+    {
+        var stalled = new StalledStream();
+        _recorderLog.Dispose();
+        _recorderLog = new RecorderLog(TimeProvider.System) { OpenFile = _ => stalled };
+        var fakes = new FakeRecordingFactory();
+        Task<int> run;
+        try
+        {
+            run = CreateCommand(recordings: fakes, handlerLogPatience: Timeout.InfiniteTimeSpan).RunAsync(Request(transcribe: false));
+            await Wait.UntilAsync(() => fakes.Created is [{ Started: true }]);
+            fakes.Created[0].Written = TimeSpan.FromSeconds(42);
+            _recorderLog.Write(LogLevel.Information, "A line the stalled disk does not take");
+            Assert.That(stalled.WaitForAWrite(TimeSpan.FromSeconds(5)), Is.True, "the log's file has stalled");
+
+            var answered = Task.Run(() => _session.AskToEnd(forced: true));
+
+            Assert.That(answered.Wait(TimeSpan.FromSeconds(15)), Is.True, "answered without waiting for the log");
+            Assert.That((RunFile().EndedBy, RunFile().Position), Is.EqualTo((RunEndCause.Windows, TimeSpan.FromSeconds(42))));
+        }
+        finally
+        {
+            stalled.Release();
+        }
+
+        _session.CancelEnd();
+        _signals.RequestStop();
+        await run;
+    }
+
+    /// <summary>A run's context that names another run than its request is a mistake in the code that starts the run, and stops it before it records.</summary>
+    [Test]
+    public void A_context_for_another_run_is_refused()
+    {
+        var command = CreateCommand();
+        _context.Fill(new RunContext(TestRuns.Id(), RunHome.InWindow, PipeName: null));
+
+        Assert.ThrowsAsync<ArgumentException>(() => EndingByItselfAsync(command.RunAsync(Request())));
+        Assert.That(_provider.Created, Is.Empty, "nothing recorded");
+    }
+
+    /// <summary>
+    /// A run's context is filled once: a second filling is a mistake in the code that starts the run, which is told so, and
+    /// the first stays.
+    /// </summary>
+    [Test]
+    public void A_runs_context_is_filled_once()
+    {
+        var slot = new RunContextSlot();
+        var first = new RunContext(TestRuns.Id(1), RunHome.Separate, LinkProtocol.PipeNameFor(TestRuns.Id(1)));
+        slot.Fill(first);
+
+        Assert.Throws<InvalidOperationException>(() => slot.Fill(new RunContext(TestRuns.Id(2), RunHome.InWindow, PipeName: null)));
+        Assert.That(slot.Value, Is.SameAs(first));
+    }
+
+    /// <summary>
+    /// Once the run has read its context, the context cannot be filled any more: the run has already taken it to record in
+    /// this window, and filling it late is a mistake in the code that starts the run, which is told so.
+    /// </summary>
+    [Test]
+    public void A_runs_context_cannot_be_filled_once_the_run_has_read_it()
+    {
+        var slot = new RunContextSlot();
+        Assert.That(slot.Value, Is.Null, "read before it was filled: the run records in this window");
+
+        Assert.Throws<InvalidOperationException>(() => slot.Fill(new RunContext(TestRuns.Id(), RunHome.Separate, LinkProtocol.PipeNameFor(TestRuns.Id()))));
+        Assert.That(slot.Value, Is.Null);
+    }
+
+    /// <summary>
+    /// When Windows ends the session, the recording's files are finished and the run stops there: nothing is uploaded, and
+    /// the run file still says recording, with Windows as the cause, so that the next start reports it, and offers to
+    /// continue it while it can still be continued, which the last line promises no more than. The lock and Windows'
+    /// question are let go.
+    /// </summary>
+    [Test]
+    public async Task Windows_ending_the_session_finishes_the_files_and_leaves_the_run_for_the_next_start()
+    {
+        var run = CreateCommand(time: new ManualTimeProvider(DateTimeOffset.UtcNow)).RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+
+        _session.AskToEnd();
+        _session.End();
+
+        Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(1));
+        Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000 }), "the files are finished");
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+        var record = RunFile();
+        Assert.That((record.State, record.EndedBy, record.Outcome), Is.EqualTo((RunState.Recording, RunEndCause.Windows, (RunOutcome?)null)));
+        Assert.That(OtherLock().IsHeld(), Is.False);
+        Assert.That(_session.HeldReason, Is.Null);
+        Assert.That(_log.Problems.Last(), Is.EqualTo(
+            $"Windows is ending the session, so the recording stopped. Its audio is kept in {KalamFolder()}. The next start of ClassScribe reports it, and offers to continue it if that is still possible"));
+    }
+
+    // ------------------------------------------------------------------ how a run ends: outcome and exit code
+
+    /// <summary>Record only ends with the recording kept: exit code 0, and an outcome with the command that transcribes it later.</summary>
+    [Test]
+    public async Task Record_only_ends_with_the_recording_kept_and_the_command_to_transcribe_it()
+    {
+        var run = CreateCommand().RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        var command = CommandLine.Transcribe(Recording());
+        var outcome = new RunOutcome(OutcomeKind.Recorded, 0, $"The recording is in {KalamFolder()}. To transcribe it later, choose 3 in the menu, or run: {command}",
+            null, KalamFolder(), command);
+        Assert.That(RunFile().Outcome, Is.EqualTo(outcome));
+        Assert.That(_results.Shown, Is.EqualTo(new[] { (outcome, true) }));
+        Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Done));
+    }
+
+    /// <summary>The hint for transcribing later names menu choice 3 and a transcribe command that runs as printed.</summary>
+    [Test]
+    public async Task The_hint_for_transcribing_later_gives_a_command_that_runs_as_printed()
+    {
+        var run = CreateCommand().RunAsync("Kalam", transcribe: false);
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+        await run;
+
+        var hint = _log.Messages.Single(m => m.StartsWith("The recording is in", StringComparison.Ordinal));
+        Assert.That(hint, Does.Contain("choose 3 in the menu").And.Contain(CommandLine.Transcribe(Only("*.wav"))));
+        Assert.That(hint, Does.Not.Contain("run: ClassScribe transcribe"), "a bare ClassScribe is not a command anywhere");
+    }
+
+    /// <summary>Nothing captured means nothing to pay for: nothing is uploaded, the run ends with nothing recorded, and exit code 1.</summary>
+    [Test]
+    public async Task Nothing_is_uploaded_when_nothing_was_captured()
+    {
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
+        await Wait.UntilAsync(() => _capture.Started);
+        _signals.RequestStop();
+
+        var exitCode = await run;
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+        Assert.That(_log.Problems.Last(), Is.EqualTo("No audio was captured. Was anything playing?"));
+        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.NothingRecorded, 1, "No audio was captured. Was anything playing?", null, KalamFolder(), null)));
+        Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Failed));
+    }
+
+    /// <summary>
+    /// A recording of digital silence, nothing but exact zeros, is not sent, by the upload's own rule, and because trying
+    /// again would find the same silence, the hint says what to check rather than how to try again. The run ends with
+    /// nothing recorded, and the refusal goes on to the caller, which gives exit code 1.
+    /// </summary>
+    [Test]
+    public async Task A_silent_recording_is_not_sent_or_offered_for_another_try()
+    {
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(0, 0, 0, 0));
+        _signals.RequestStop();
+
+        Assert.ThrowsAsync<NoAudioException>(async () => await run);
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+        Assert.That(_log.Problems.Last(), Does.StartWith("Nothing audible was captured from \"Fake Speakers\", so nothing was sent to ElevenLabs").And.Contain("Windows is not muted"));
+        Assert.That(_log.Problems, Has.None.Contains("try the transcript again"));
+        Assert.That(_log.Problems, Has.None.Contains(CommandLine.Transcribe(Recording())));
+        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.NothingRecorded, 1, _log.Problems.Last(), null, KalamFolder(), null)));
+        Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Failed));
+    }
+
+    /// <summary>
+    /// A class that is merely quiet, with nothing as loud as the recording counts as audible, is still sent, as transcribe
+    /// would send its file: for what is sent, only exact zeros count as silence, by the upload's own rule (see
+    /// <see cref="AudioPreparer"/>).
+    /// </summary>
+    [Test]
+    public async Task A_quiet_class_is_still_sent()
+    {
+        var run = CreateCommand().RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(50, -50, 30, -30));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        _client.Verify(Calls.AnyTranscription, Times.Once);
+        Assert.That(RunFile().Outcome!.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+        Assert.That(_log.Problems, Has.None.Contains("Nothing audible"));
+    }
+
+    /// <summary>
+    /// Record only, when nothing audible reached the recording (digital silence, or sound too faint to hear), keeps the file
+    /// but ends with nothing recorded and exit code 1, and says what to check: there is no command to transcribe it, since
+    /// there is nothing in it to hear.
+    /// </summary>
+    [TestCase(new short[] { 0, 0, 0, 0 }, TestName = "Record_only_of_digital_silence_ends_with_nothing_recorded")]
+    [TestCase(new short[] { 50, -50, 30, -30 }, TestName = "Record_only_of_sound_too_faint_to_hear_ends_with_nothing_recorded")]
+    public async Task Record_only_with_nothing_audible_ends_with_nothing_recorded(short[] samples)
+    {
+        var run = CreateCommand().RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(samples));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(1));
+        const string silent =
+            "Nothing audible was captured from \"Fake Speakers\". Check that the class plays through that device or app (menu choice 6 picks another) and that Windows is not muted";
+        Assert.That(_log.Problems.Last(), Is.EqualTo(silent));
+        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.NothingRecorded, 1, silent, null, KalamFolder(), null)));
+        Assert.That(TestAudio.ReadWav(Recording()).Samples, Is.EqualTo(samples), "the file is kept");
+        Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Failed));
     }
 
     /// <summary>Without a key the class is still recorded, so it can be transcribed later, and the hint says how.</summary>
@@ -620,21 +1317,7 @@ public class RecordCommandTests
         _client.Verify(Calls.AnyTranscription, Times.Never);
         Assert.That(_log.Problems.Last(), Does.Contain("open a new terminal").And.Contain("quit every VS Code window")
             .And.Contain("choose 3 in the menu").And.Contain(CommandLine.Transcribe(Only("*.wav"))));
-    }
-
-    /// <summary>The hint for transcribing later names menu choice 3 and a transcribe command that runs as printed.</summary>
-    [Test]
-    public async Task The_hint_for_transcribing_later_gives_a_command_that_runs_as_printed()
-    {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(1000, -1000));
-        _signals.RequestStop();
-        await run;
-
-        var hint = _log.Messages.Single(m => m.StartsWith("The recording is in", StringComparison.Ordinal));
-        Assert.That(hint, Does.Contain("choose 3 in the menu").And.Contain(CommandLine.Transcribe(Only("*.wav"))));
-        Assert.That(hint, Does.Not.Contain("run: ClassScribe transcribe"), "a bare ClassScribe is not a command anywhere");
+        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.TranscriptFailed, 1, _log.Problems.Last(), null, KalamFolder(), CommandLine.Transcribe(Only("*.wav")))));
     }
 
     /// <summary>
@@ -648,7 +1331,7 @@ public class RecordCommandTests
         var outputFolder = Path.Combine(_folder.Path, $"%CLASSSCRIBE_UNSET_{Guid.NewGuid():N}%");
         var problem = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = outputFolder }), TimeProvider.System, NullLogger<ClassFolders>.Instance).DescribeRootProblem();
         Assert.That(problem, Is.Not.Null, "the setting really has a problem");
-        var run = CreateCommand("test-key", outputFolder: outputFolder).RunAsync("Kalam", transcribe: false);
+        var run = CreateCommand(outputFolder: outputFolder).RunAsync("Kalam", transcribe: false);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -660,26 +1343,31 @@ public class RecordCommandTests
         Assert.That(_log.Problems, Has.Member(problem), "as a warning");
     }
 
-    /// <summary>Nothing captured means nothing to pay for, so nothing is uploaded.</summary>
+    /// <summary>
+    /// A recording made into a recordings folder given for the run (--output) is not warned about for the setting's
+    /// folder, which it does not use.
+    /// </summary>
     [Test]
-    public async Task Nothing_is_uploaded_when_nothing_was_captured()
+    public async Task A_problem_with_the_setting_is_not_warned_about_for_a_run_that_does_not_use_it()
     {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var outputFolder = Path.Combine(_folder.Path, $"%CLASSSCRIBE_UNSET_{Guid.NewGuid():N}%");
+        var run = CreateCommand(outputFolder: outputFolder).RunAsync(Request(transcribe: false));
         await Wait.UntilAsync(() => _capture.Started);
         _signals.RequestStop();
+        await run;
 
-        var exitCode = await run;
-
-        Assert.That(exitCode, Is.EqualTo(1));
-        _client.Verify(Calls.AnyTranscription, Times.Never);
+        Assert.That(_log.Problems, Has.None.Contains("Recording:OutputFolder"));
     }
 
-    /// <summary>A failed transcript leaves the recording in place for another try, and the hint says how to make it.</summary>
+    /// <summary>
+    /// A failed transcript leaves the recording in place for another try, and the hint says how to make it; the run ends
+    /// with the transcript failed, exit code 1, and the command that tries again. Nothing is opened.
+    /// </summary>
     [Test]
     public async Task A_failed_transcript_leaves_the_recording_in_place()
     {
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand(openWhenDone: true).RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -688,25 +1376,10 @@ public class RecordCommandTests
         Assert.That(TestAudio.ReadWav(Recording()).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
         Assert.That(_log.Problems.Last(), Does.Contain("choose 3 in the menu").And.Contain(CommandLine.Transcribe(Recording())));
         Assert.That(_log.Problems.Last(), Does.Not.Contain("kept in"), "no answer arrived, so none was kept");
-    }
-
-    /// <summary>
-    /// A recording with nothing audible in it is not sent, and because trying again would find the same
-    /// silence, the hint says what to check rather than how to try again.
-    /// </summary>
-    [Test]
-    public async Task A_silent_recording_is_not_offered_for_another_try()
-    {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(0, 0, 0, 0));
-        _signals.RequestStop();
-
-        Assert.ThrowsAsync<NoAudioException>(async () => await run);
-        _client.Verify(Calls.AnyTranscription, Times.Never);
-        Assert.That(_log.Problems.Last(), Does.StartWith("Nothing audible was captured from \"Fake Speakers\"").And.Contain("Windows is not muted"));
-        Assert.That(_log.Problems, Has.None.Contains("try the transcript again"));
-        Assert.That(_log.Problems, Has.None.Contains(CommandLine.Transcribe(Recording())));
+        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.TranscriptFailed, 1, _log.Problems.Last(), null, KalamFolder(), CommandLine.Transcribe(Recording()))));
+        Assert.That(RunFile().State, Is.EqualTo(RunState.Finished));
+        Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Failed));
+        _desktop.VerifyNoOtherCalls();
     }
 
     /// <summary>
@@ -719,7 +1392,7 @@ public class RecordCommandTests
     {
         _provider = new FakeCaptureProvider();
         _capture = _provider.Enqueue(new FakeAudioCapture(new AudioFormat(10, 1, 16, false)));
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts([.. Enumerable.Repeat((short)1000, (int)new TimeSpan(9, 30, 1).TotalSeconds * 10)]));
         _signals.RequestStop();
@@ -729,17 +1402,19 @@ public class RecordCommandTests
         Assert.That(_log.Problems.Last(), Does.StartWith($"The audio is safe in {KalamFolder()}"));
         Assert.That(_log.Messages, Has.None.Contains("try the transcript again"));
         Assert.That(_log.Messages, Has.None.Contains(CommandLine.Transcribe(Recording())));
+        Assert.That(RunFile().Outcome!.RetryCommand, Is.Null);
     }
 
     /// <summary>
     /// An answer that ElevenLabs charged for but that could not be read is kept, and the hint points to it
-    /// before offering a free rebuild from it and another try, which is charged again.
+    /// before offering a free rebuild from it and another try, which is charged again. The command the outcome gives to try
+    /// again is the free rebuild.
     /// </summary>
     [Test]
     public async Task An_answer_that_could_not_be_read_is_pointed_to_before_another_try()
     {
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("The answer could not be read.", HttpStatusCode.OK, "{\"text\": \"Hello"));
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -748,6 +1423,7 @@ public class RecordCommandTests
         var answer = Only("*.unread.json");
         Assert.That(_log.Problems.Last(), Does.Contain($"kept in {answer}").And.Contain("charged again"));
         AssertTheCommandsAfterAKeptAnswer(answer);
+        Assert.That(RunFile().Outcome!.RetryCommand, Is.EqualTo(CommandLine.Rebuild(answer)));
     }
 
     /// <summary>
@@ -789,7 +1465,7 @@ public class RecordCommandTests
     /// </summary>
     private async Task<Exception?> RecordWithNowhereToKeepTheAnswerAsync()
     {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         var files = RecordingFiles.TryParse(Recording())!;
@@ -851,7 +1527,7 @@ public class RecordCommandTests
         File.WriteAllText(earlier.Json(), "{}");
         File.WriteAllText(earlier.Transcript(), "# Kalam");
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
-        var run = CreateCommand("test-key", new ManualTimeProvider(started)).RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand(time: new ManualTimeProvider(started)).RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -875,7 +1551,7 @@ public class RecordCommandTests
         File.WriteAllText(Path.Combine(KalamFolder(), $"{lastWeek.BaseName}.unread.json"), "{\"text\": \"Hello");
         File.WriteAllText(_folder.File($"{lastWeek.BaseName}.unread.json"), "{\"text\": \"Hello");
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
-        var run = CreateCommand("test-key", new ManualTimeProvider(started)).RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand(time: new ManualTimeProvider(started)).RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -887,8 +1563,9 @@ public class RecordCommandTests
     }
 
     /// <summary>
-    /// Ctrl+C during the upload cancels it, as the line logged before the upload says; the recording
-    /// stays for another try. The cancel reaches the caller, which reports it with its own exit code.
+    /// Ctrl+C during the upload cancels it, as the line logged before the upload says; the recording stays for another
+    /// try. The run ends cancelled, with exit code 130 and the command that transcribes it later, and the cancel reaches
+    /// the caller, which reports it with that exit code.
     /// </summary>
     [Test]
     public async Task Ctrl_C_during_the_upload_cancels_it_and_keeps_the_recording()
@@ -898,7 +1575,7 @@ public class RecordCommandTests
             await Task.Delay(Timeout.Infinite, cancellation);
             return Mocks.Transcript;
         });
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -909,38 +1586,60 @@ public class RecordCommandTests
         Assert.CatchAsync<OperationCanceledException>(async () => await run);
         Assert.That(TestAudio.ReadWav(Recording()).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
         Assert.That(_log.Messages, Has.Some.StartsWith("Press Ctrl+C to cancel the upload"));
+        var outcome = RunFile().Outcome!;
+        Assert.That((outcome.Kind, outcome.ExitCode, outcome.RetryCommand), Is.EqualTo((OutcomeKind.Cancelled, 130, CommandLine.Transcribe(Recording()))));
+        Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Cancelled));
     }
+
+    // ------------------------------------------------------------------ keeping the laptop awake
 
     /// <summary>
     /// The laptop is kept awake from the start of capture until the transcript is saved: the hold, with its reason, is
     /// taken by the time capture starts, still held while the recording uploads, and let go once, after the transcript
-    /// is on disk.
+    /// is on disk. Windows asks first before a restart for as long, under the same reason.
     /// </summary>
     [Test]
     public async Task The_laptop_is_kept_awake_from_the_start_of_capture_until_the_transcript_is_saved()
     {
         bool? heldDuringUpload = null;
+        string? askedDuringUpload = null;
         bool? savedBeforeRelease = null;
         _client.Setup(Calls.AnyTranscription).Returns((string _, IReadOnlyList<string> _, CancellationToken _) =>
         {
             heldDuringUpload = _power.Holding;
+            askedDuringUpload = _session.HeldReason;
             return Task.FromResult(Mocks.Transcript);
         });
         _power.OnRelease = () => savedBeforeRelease = Directory.GetFiles(KalamFolder(), "*.md").Length == 1;
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         var hold = _power.Holds.Single();
         var heldWhileRecording = !hold.Released;
+        var askedWhileRecording = _session.HeldReason;
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
 
         Assert.That(await run, Is.EqualTo(0));
-        Assert.That(hold.Reason, Is.EqualTo("ClassScribe is recording a class"));
+        Assert.That(hold.Reason, Is.EqualTo(StayAwakeReason));
         Assert.That(hold.Needs() & Awake, Is.EqualTo(Awake), "the laptop awake and ClassScribe running");
         Assert.That(heldWhileRecording, Is.True);
         Assert.That(heldDuringUpload, Is.True);
         Assert.That(savedBeforeRelease, Is.True, "let go after the transcript was saved");
         Assert.That(hold.Releases, Is.EqualTo(1));
+        Assert.That((askedWhileRecording, askedDuringUpload, _session.HeldReason), Is.EqualTo((StayAwakeReason, StayAwakeReason, (string?)null)));
+    }
+
+    /// <summary>With Recording:BlockShutdown false, Windows is never asked to wait for ClassScribe; the laptop is still kept awake.</summary>
+    [Test]
+    public async Task Without_Recording_BlockShutdown_Windows_is_not_asked_to_wait()
+    {
+        var run = CreateCommand(blockShutdown: false).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(_session.Blocks, Is.Empty);
+        Assert.That(_power.Holds, Has.Count.EqualTo(1));
     }
 
     /// <summary>Record only keeps the laptop awake until the recording's files are closed: by then its header is final.</summary>
@@ -950,7 +1649,7 @@ public class RecordCommandTests
         short[]? onDiskAtRelease = null;
         _power.OnRelease = () => onDiskAtRelease = TestAudio.ReadWav(Only("*.wav")).Samples;
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);   // the clock stands still, so only closing the file writes its header
-        var run = CreateCommand("test-key", time).RunAsync("Kalam", transcribe: false);
+        var run = CreateCommand(time: time).RunAsync("Kalam", transcribe: false);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -965,7 +1664,7 @@ public class RecordCommandTests
     public async Task The_laptop_is_let_go_after_a_failed_transcript()
     {
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts(1000, -1000));
         _signals.RequestStop();
@@ -978,7 +1677,7 @@ public class RecordCommandTests
     [Test]
     public async Task The_laptop_is_let_go_when_nothing_was_captured()
     {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _signals.RequestStop();
 
@@ -986,15 +1685,73 @@ public class RecordCommandTests
         Assert.That(_power.Holds.Single().Releases, Is.EqualTo(1));
     }
 
-    /// <summary>A device in a format ClassScribe cannot read ends the run at the start, and lets the laptop go, once.</summary>
+    /// <summary>
+    /// A device in a format ClassScribe cannot read ends the run at the start: the laptop is let go, once, and so is the
+    /// lock, and the run file says the recording failed, with the error as its cause. Nothing was recorded, and the words
+    /// say so, rather than point to audio that is not there.
+    /// </summary>
     [Test]
-    public void The_laptop_is_let_go_when_capturing_cannot_start()
+    public void A_recording_that_cannot_start_ends_the_run_as_failed()
     {
         _provider = new FakeCaptureProvider();
         _capture = _provider.Enqueue(new FakeAudioCapture(new AudioFormat(16000, 1, 8, false)));   // 8-bit: not readable
 
-        Assert.ThrowsAsync<NotSupportedException>(() => CreateCommand("test-key").RunAsync("Kalam", transcribe: false));
+        var error = Assert.ThrowsAsync<NotSupportedException>(() => EndingByItselfAsync(CreateCommand().RunAsync("Kalam", transcribe: false)));
         Assert.That(_power.Holds.Single().Releases, Is.EqualTo(1));
+        Assert.That(OtherLock().IsHeld(), Is.False);
+        var record = RunFile();
+        Assert.That((record.State, record.Outcome!.Kind, record.Outcome.ExitCode, record.EndedBy), Is.EqualTo((RunState.Failed, OutcomeKind.RecorderFailed, 1, RunEndCause.Error)));
+        Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Failed));
+        var message = $"The recording failed: {error!.Message.TrimEnd('.')}. Nothing was recorded.";
+        Assert.That((_log.Problems.Last(), record.Outcome.Message, record.Outcome.Folder), Is.EqualTo((message, message, (string?)null)));
+    }
+
+    /// <summary>
+    /// A recording that fails once it has recorded, here as the recording loop ends, keeps what it recorded, and the words
+    /// say where it is.
+    /// </summary>
+    [Test]
+    public async Task A_recording_that_fails_after_it_has_recorded_says_where_its_audio_is()
+    {
+        var fakes = new FakeRecordingFactory();
+        var recordings = new WatchedRecordingFactory(fakes);
+        var run = CreateCommand(recordings: recordings).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => fakes.Created is [{ Started: true }]);
+        var recording = fakes.Created[0];
+        recording.MainSegments = [recording.Files!.Segment(1)];
+        recordings.BeforeCall = call =>
+        {
+            if (call == "GetSnapshot" && _signals.StopRequested.IsCompleted) throw new InvalidOperationException("A bug.");
+        };
+        _signals.RequestStop();
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () => await run);
+        var message = $"The recording failed: A bug. The audio recorded so far is kept in {KalamFolder()}";
+        var outcome = RunFile().Outcome!;
+        Assert.That((_log.Problems.Last(), outcome.Kind, outcome.Message, outcome.Folder), Is.EqualTo((message, OutcomeKind.RecorderFailed, message, KalamFolder())));
+    }
+
+    /// <summary>
+    /// A continued recording that fails at the start of its next part still has its earlier parts, and the words say where
+    /// they are.
+    /// </summary>
+    [Test]
+    public async Task A_continued_recording_that_cannot_start_says_where_its_earlier_parts_are()
+    {
+        var first = CreateCommand().RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+        Assert.That(await first, Is.EqualTo(0));
+        var files = RecordingFiles.TryParse(Recording())!;
+        _bookkeeping!.Dispose();   // the first run's scope ends
+
+        _provider.Enqueue(new FakeAudioCapture(new AudioFormat(16000, 1, 8, false)));   // 8-bit: not readable
+        _signals = new FakeUserSignals();
+        var error = Assert.ThrowsAsync<NotSupportedException>(() =>
+            EndingByItselfAsync(CreateCommand().RunAsync(Request(transcribe: false, continueBaseName: files.BaseName))));
+
+        Assert.That(_log.Problems.Last(), Is.EqualTo($"The recording failed: {error!.Message.TrimEnd('.')}. The audio recorded so far is kept in {files.Folder}"));
     }
 
     /// <summary>
@@ -1008,7 +1765,7 @@ public class RecordCommandTests
     public async Task The_screen_is_kept_on_as_the_setting_says(KeepScreenOn setting, bool onBattery, bool screenOn)
     {
         _powerSource.OnBattery = onBattery;
-        var run = CreateCommand("test-key", keepScreenOn: setting).RunAsync("Kalam", transcribe: false);
+        var run = CreateCommand(keepScreenOn: setting).RunAsync("Kalam", transcribe: false);
         await Wait.UntilAsync(() => _capture.Started);
         var needs = _power.Holds.Single().Needs();
         _signals.RequestStop();
@@ -1021,7 +1778,7 @@ public class RecordCommandTests
     [Test]
     public async Task By_default_the_screen_follows_the_power_source_during_the_class()
     {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: false);
+        var run = CreateCommand().RunAsync("Kalam", transcribe: false);
         await Wait.UntilAsync(() => _capture.Started);
         var hold = _power.Holds.Single();
         var onMains = hold.Needs();
@@ -1034,388 +1791,77 @@ public class RecordCommandTests
         Assert.That(onBattery, Is.EqualTo(Awake | PowerNeeds.Display));
     }
 
-    /// <summary>The start lines say that the lid and the power button still put the laptop to sleep.</summary>
-    [Test]
-    public async Task The_start_lines_say_to_keep_the_lid_open_and_the_laptop_plugged_in()
-    {
-        var run = CreateCommand("test-key").RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(_log.Messages, Has.Some.EqualTo("Keep the lid open and the laptop plugged in; closing the lid still puts it to sleep"));
-    }
-
     /// <summary>
-    /// 18 seconds in which ClassScribe did not run gives one line, from the last tick before to the first tick after, in
-    /// local time: worded as a sleep when the laptop slept, and as a hold-up when it stayed awake. The ticks after it,
-    /// a second apart again, give no more.
-    /// </summary>
-    [TestCase(true, "The laptop slept from {0} to {1}; nothing was recorded then")]
-    [TestCase(false, "ClassScribe was held up from {0} to {1} (Windows paused it); nothing was recorded then")]
-    public async Task A_freeze_gives_one_line_worded_as_a_sleep_or_a_hold_up(bool slept, string line)
-    {
-        var start = new DateTimeOffset(2026, 10, 15, 23, 42, 10, TimeSpan.Zero);
-        var time = new ManualTimeProvider(start);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(1000, -1000));
-        await TickAsync(time, seconds: 1);
-
-        var reported = StatusLines();
-        if (slept)
-            _times.Sleep(TimeSpan.FromSeconds(18));
-        else
-            time.Advance(TimeSpan.FromSeconds(18));
-        await Wait.UntilAsync(() => StatusLines() > reported);
-        await TickAsync(time, seconds: 10);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(FreezeLines(), Is.EqualTo(new[] { string.Format(CultureInfo.InvariantCulture, line, Local(start.AddSeconds(1)), Local(start.AddSeconds(19))) }));
-    }
-
-    /// <summary>A class during which ClassScribe ran all along, ticking a second apart, gives no such line.</summary>
-    [Test]
-    public async Task Ticks_a_second_apart_give_no_freeze_line()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(1000, -1000));
-
-        await TickAsync(time, seconds: 30);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(FreezeLines(), Is.Empty);
-    }
-
-    /// <summary>
-    /// The recording loop held up by its own work, as when the recording's lock waits for a slow disk to save, is not
-    /// taken for a time ClassScribe did not run: the freeze watch goes on ticking on a timer of its own meanwhile. Here the
-    /// loop is held for 5 seconds as it logs a status line, while the rest of ClassScribe runs on.
+    /// An app's capture that stops delivering is still watched once the record command has handed its loop over: the
+    /// warning and the reopening come from the loop, with the app's name. (The rest of the arrival watch is tested with the
+    /// loop and its checks.)
     /// </summary>
     [Test]
-    public async Task The_loop_held_up_by_its_own_work_is_not_taken_for_a_freeze()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts(1000, -1000));
-        await TickAsync(time, seconds: 1);
-
-        using (var release = new ManualResetEventSlim())
-        {
-            _log.HoldNext("Recording: ", release);
-
-            // The loop's next second ends on a thread of its own, on which the loop then runs and is held.
-            var nextSecond = Task.Run(() => time.Advance(TimeSpan.FromSeconds(1)));
-            await Wait.UntilAsync(() => _log.Held);
-            for (var second = 0; second < 5; second++) time.Advance(TimeSpan.FromSeconds(1));
-            release.Set();
-            await nextSecond.WaitAsync(TimeSpan.FromSeconds(15));
-        }
-
-        await TickAsync(time, seconds: 3);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(FreezeLines(), Is.Empty);
-    }
-
-    /// <summary>
-    /// A second that ends while the loop handles a key is not lost: the loop waits for the same second across a key
-    /// press, so its tick, and the status line, still come for it. Here the second ends after the loop has handled P and
-    /// before it has begun to wait again, while it starts to read the next key.
-    /// </summary>
-    [Test]
-    public async Task A_second_that_ends_while_a_key_is_handled_is_not_lost()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-
-        using (var release = new ManualResetEventSlim())
-        {
-            _ui.HoldNextRead(release);
-            _ui.Type('p');
-            await Wait.UntilAsync(() => _ui.ReadHeld);
-            var reported = StatusLines();
-            time.Advance(TimeSpan.FromSeconds(1));
-            release.Set();
-
-            await Wait.UntilAsync(() => StatusLines() > reported);
-        }
-
-        _signals.RequestStop();
-        await run;
-        Assert.That(_log.Messages, Has.Some.StartsWith("Paused"));
-    }
-
-    /// <summary>
-    /// An app's sound, which arrives all the time, silence included, that stops arriving for 5 seconds is warned about, and
-    /// its capture is reopened. The new capture stays silent too, but the warning and the reopening come again only 30
-    /// seconds after the last.
-    /// </summary>
-    [Test]
-    public async Task A_continuous_source_that_hands_over_nothing_for_5_seconds_is_warned_about_and_reopened_at_most_once_per_30_seconds()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var first = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
-        var second = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;   // ready for each reopening
-        var third = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1, app: "chrome").RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => first.Started);
-
-        await TickAsync(time, seconds: 4);
-        Assert.That(ArrivalWarnings(), Is.Empty, "not before 5 seconds");
-        await TickAsync(time, seconds: 1);
-        Assert.That(ArrivalWarnings(), Is.EqualTo(new[]
-        {
-            "No audio has arrived from \"chrome\" for 5 seconds although it should; the recording has fallen behind the clock. Reopening it"
-        }));
-        await TickAsync(time, seconds: 1);
-        await Wait.UntilAsync(() => second.Started);
-        Assert.That(first.Disposed, Is.True, "the stalled capture is replaced");
-
-        await TickAsync(time, seconds: 28);
-        Assert.That(ArrivalWarnings(), Has.Length.EqualTo(1), "not again within 30 seconds");
-        await TickAsync(time, seconds: 1);
-        Assert.That(ArrivalWarnings(), Has.Length.EqualTo(2), "again 30 seconds after the first");
-        await TickAsync(time, seconds: 1);
-        await Wait.UntilAsync(() => third.Started);
-
-        _signals.RequestStop();
-        Assert.That(await run, Is.EqualTo(1), "nothing was captured");
-    }
-
-    /// <summary>
-    /// While paused, an app's sound that stops arriving is reopened too, so that the recording can go on when the pause
-    /// ends; the warning says so, rather than speak of a recording falling behind while nothing is being recorded.
-    /// </summary>
-    [Test]
-    public async Task While_paused_a_continuous_source_that_stops_arriving_is_reopened_for_after_the_pause()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var first = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
-        var second = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;   // ready for the reopening
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1, app: "chrome").RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => first.Started);
-        _ui.Type('p');
-        await Wait.UntilAsync(() => _log.Messages.Any(m => m.StartsWith("Paused", StringComparison.Ordinal)));
-
-        await TickAsync(time, seconds: 5);
-        Assert.That(ArrivalWarnings(), Is.EqualTo(new[]
-        {
-            "No audio has arrived from \"chrome\" for 5 seconds although it should. Reopening it, so that the recording can go on when you press P again"
-        }));
-        await TickAsync(time, seconds: 1);
-        await Wait.UntilAsync(() => second.Started);
-
-        _signals.RequestStop();
-        await run;
-        Assert.That(first.Disposed, Is.True, "the stalled capture is replaced during the pause");
-    }
-
-    /// <summary>
-    /// A device whose meter has shown sound for 10 seconds while no audio arrived from its capture is warned about, and its
-    /// capture is reopened: a device's capture hands over audio whenever something plays on it.
-    /// </summary>
-    [Test]
-    public async Task A_device_that_plays_for_10_seconds_while_no_audio_arrives_is_warned_about_and_reopened()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        _provider.SetLevel("Fake Speakers", 0.5f);
-        var reopened = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));   // the same device, ready for the reopening
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-
-        await TickAsync(time, seconds: 10);
-        Assert.That(ArrivalWarnings(), Is.Empty, "not before the meter has shown sound for 10 seconds");
-        await TickAsync(time, seconds: 1);
-        Assert.That(ArrivalWarnings(), Is.EqualTo(new[]
-        {
-            "No audio has arrived from \"Fake Speakers\" for 10 seconds although Windows shows sound playing there; the recording has fallen behind the clock. Reopening it"
-        }));
-        await TickAsync(time, seconds: 1);
-        await Wait.UntilAsync(() => reopened.Started);
-
-        _signals.RequestStop();
-        await run;
-        Assert.That(_capture.Disposed, Is.True, "the stalled capture is replaced");
-    }
-
-    /// <summary>
-    /// A device that falls quiet hands over nothing, and that is no stall: once its meter shows no sound, the time it
-    /// showed sound before no longer counts, so a quiet stretch after the class has played is neither warned about nor
-    /// reopened, however long it lasts.
-    /// </summary>
-    [Test]
-    public async Task A_device_that_falls_quiet_is_not_warned_about()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        _provider.SetLevel("Fake Speakers", 0.5f);
-        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));   // the same device, ready for a reopening that must not come
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-        for (var second = 0; second < 3; second++)
-        {
-            _capture.Deliver(TestAudio.Shorts(1000, -1000));
-            await TickAsync(time, seconds: 1);
-        }
-
-        await SetLevelAsync("Fake Speakers", 0f);   // the class falls quiet: nothing plays, so nothing arrives
-        await TickAsync(time, seconds: 40);
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(ArrivalWarnings(), Is.Empty);
-        Assert.That(_provider.Created, Is.EqualTo(new[] { _capture }), "never reopened");
-    }
-
-    /// <summary>
-    /// The meter has to show sound at every tick: one tick with it quiet starts the count again. So a device that plays
-    /// while nothing arrives is warned about 10 seconds after its meter last came back, not 10 seconds after it first
-    /// showed sound.
-    /// </summary>
-    [Test]
-    public async Task One_quiet_tick_on_the_meter_starts_the_count_again()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        _provider.SetLevel("Fake Speakers", 0.5f);
-        _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));   // the same device, ready for the reopening
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1).RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => _capture.Started);
-
-        await TickAsync(time, seconds: 6);
-        await SetLevelAsync("Fake Speakers", 0f);
-        await TickAsync(time, seconds: 1);
-        await SetLevelAsync("Fake Speakers", 0.5f);
-        await TickAsync(time, seconds: 10);
-        Assert.That(ArrivalWarnings(), Is.Empty, "not before the meter has shown sound for 10 seconds again");
-        await TickAsync(time, seconds: 1);
-        Assert.That(ArrivalWarnings(), Is.EqualTo(new[]
-        {
-            "No audio has arrived from \"Fake Speakers\" for 10 seconds although Windows shows sound playing there; the recording has fallen behind the clock. Reopening it"
-        }));
-
-        _signals.RequestStop();
-        await run;
-    }
-
-    /// <summary>
-    /// Silence is audio too: an app's capture that hands over only silence, as it does while the class is quiet, keeps
-    /// arriving, so it is neither warned about nor reopened. Only a capture that hands over nothing at all is.
-    /// </summary>
-    [Test]
-    public async Task An_app_that_hands_over_only_silence_is_not_warned_about()
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var chrome = _provider.AddApp(4242, "chrome", "Speakers", capture: AppCapture(4242))!;
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1, app: "chrome").RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => chrome.Started);
-
-        for (var second = 0; second < 40; second++)
-        {
-            chrome.Deliver(TestAudio.Shorts(0, 0));
-            await TickAsync(time, seconds: 1);
-        }
-
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(ArrivalWarnings(), Is.Empty);
-        Assert.That(_provider.Created, Is.EqualTo(new[] { chrome }), "never reopened");
-    }
-
-    /// <summary>
-    /// Audio that keeps arriving is never warned about: from a device whose meter shows sound, as from an app, nor is its
-    /// capture reopened.
-    /// </summary>
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task Audio_that_keeps_arriving_is_not_warned_about(bool app)
-    {
-        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var capture = _capture;
-        if (app)
-            capture = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
-        else
-            _provider.SetLevel("Fake Speakers", 0.5f);
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1, app: app ? "chrome" : "").RunAsync("Kalam", transcribe: false);
-        await Wait.UntilAsync(() => capture.Started);
-
-        for (var second = 0; second < 40; second++)
-        {
-            capture.Deliver(TestAudio.Shorts(1000, -1000));
-            await TickAsync(time, seconds: 1);
-        }
-
-        _signals.RequestStop();
-        await run;
-
-        Assert.That(ArrivalWarnings(), Is.Empty);
-        Assert.That(_provider.Created, Is.EqualTo(new[] { capture }), "never reopened");
-    }
-
-    /// <summary>
-    /// A sleep is no fault of the capture: no audio arrives while the laptop sleeps, so the wait for audio starts again on
-    /// waking. A capture that delivers again is not warned about; one that stays silent is, 5 seconds after waking.
-    /// </summary>
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task After_a_sleep_audio_is_awaited_for_5_seconds_from_waking(bool arrivesAgain)
+    public async Task The_loop_watches_that_audio_keeps_arriving()
     {
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var chrome = _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242))!;
-        _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242));   // ready for a reopening
-        var run = CreateCommand("test-key", time, statusIntervalSeconds: 1, app: "chrome").RunAsync("Kalam", transcribe: false);
+        _provider.AddApp(4242, "chrome", "Speakers", level: 0.3f, AppCapture(4242));   // ready for the reopening
+        var command = CreateCommand(time: time);
+        _choice.App = "chrome";
+        var run = command.RunAsync("Kalam", transcribe: false);
         await Wait.UntilAsync(() => chrome.Started);
-        for (var second = 0; second < 2; second++)
-        {
-            chrome.Deliver(TestAudio.Shorts(1000, -1000));
-            await TickAsync(time, seconds: 1);
-        }
 
-        var reported = StatusLines();
-        _times.Sleep(TimeSpan.FromSeconds(18));
-        await Wait.UntilAsync(() => StatusLines() > reported);
-        Assert.That(ArrivalWarnings(), Is.Empty, "not on waking");
-        for (var second = 1; second <= 5; second++)
+        for (var second = 0; second < 5; second++)
         {
-            if (arrivesAgain) chrome.Deliver(TestAudio.Shorts(1000, -1000));
-            await TickAsync(time, seconds: 1);
-            if (second < 5) Assert.That(ArrivalWarnings(), Is.Empty, $"not {second} seconds after waking");
+            var published = _status.Count;
+            time.Advance(TimeSpan.FromSeconds(1));
+            await Wait.UntilAsync(() => _status.Count > published);
         }
 
         _signals.RequestStop();
         await run;
-
-        Assert.That(FreezeLines(), Has.Length.EqualTo(1));
-        Assert.That(ArrivalWarnings(), arrivesAgain
-            ? Is.Empty
-            : Is.EqualTo(new[] { "No audio has arrived from \"chrome\" for 5 seconds although it should; the recording has fallen behind the clock. Reopening it" }));
+        Assert.That(_loopLog.Problems, Has.Some.StartsWith("No audio has arrived from \"chrome\" for 5 seconds"));
     }
 
+    // ------------------------------------------------------------------ the app's services
+
     /// <summary>
-    /// The record command resolves in a run's scope with what keeps the laptop awake and the computer's clocks, as the app
-    /// registers them, and each run gets a freeze watch of its own.
+    /// A run resolves in a scope of its own from what the app registers, in this window: the record command as the run, a
+    /// bookkeeping, a loop and a freeze watch of its own, the window's title and taskbar for its states, the window's way of
+    /// opening the results, and a window of its own for Windows' end of the session; and, for the process, the run files,
+    /// the lock, the liveness of processes, the free space, the window's signals, keeping the laptop awake, the computer's
+    /// clocks, .NET's warning of an error nobody caught, and the recorder's log as one more place every logger writes to,
+    /// once.
     /// </summary>
-    [Test, Platform("Win")]
+    [Test, Platform("Win"), Category("WindowsProcess")]
     [SupportedOSPlatform("windows")]
-    public void The_record_command_resolves_in_a_run_scope_with_a_freeze_watch_of_its_own()
+    public void A_run_resolves_in_a_scope_of_its_own_with_what_it_needs_in_this_window()
     {
         File.WriteAllText(_folder.File("appsettings.json"), "{}");
-        using var app = AppHost.Build(_folder.Path, "dummy-key-for-a-local-test", services => services.AddSingleton<ILoopbackCaptureProvider>(_provider));
+        using var app = AppHost.Build(_folder.Path, "dummy-key-for-a-local-test", services => services
+            .AddSingleton<ILoopbackCaptureProvider>(_provider)
+            .AddSingleton(_runtime.Folder));   // never the real %LOCALAPPDATA%\ClassScribe
         using var first = app.Services.CreateScope();
         using var second = app.Services.CreateScope();
+        var run = first.ServiceProvider;
 
-        Assert.That(first.ServiceProvider.GetRequiredService<RecordCommand>(), Is.Not.Null);
-        Assert.That(first.ServiceProvider.GetRequiredService<FreezeWatch>(), Is.SameAs(first.ServiceProvider.GetRequiredService<FreezeWatch>()), "one per run");
-        Assert.That(first.ServiceProvider.GetRequiredService<FreezeWatch>(), Is.Not.SameAs(second.ServiceProvider.GetRequiredService<FreezeWatch>()), "each run its own");
-        Assert.That(app.Services.GetRequiredService<IPowerRequests>(), Is.InstanceOf<WindowsPowerRequests>());
-        Assert.That(app.Services.GetRequiredService<IPowerSource>(), Is.InstanceOf<WindowsPowerSource>());
-        Assert.That(app.Services.GetRequiredService<ISystemTimes>(), Is.InstanceOf<WindowsSystemTimes>());
+        Assert.That(run.GetRequiredService<IRecordRun>(), Is.InstanceOf<RecordCommand>());
+        Assert.That(run.GetRequiredService<RunBookkeeping>(), Is.SameAs(run.GetRequiredService<RunBookkeeping>()), "one per run");
+        Assert.That(run.GetRequiredService<RunBookkeeping>(), Is.Not.SameAs(second.ServiceProvider.GetRequiredService<RunBookkeeping>()), "each run its own");
+        Assert.That(run.GetRequiredService<RunContextSlot>(), Is.Not.SameAs(second.ServiceProvider.GetRequiredService<RunContextSlot>()));
+        Assert.That(run.GetRequiredService<RecordingLoop>(), Is.Not.SameAs(second.ServiceProvider.GetRequiredService<RecordingLoop>()));
+        Assert.That(run.GetRequiredService<FreezeWatch>(), Is.Not.SameAs(second.ServiceProvider.GetRequiredService<FreezeWatch>()));
+        Assert.That(run.GetRequiredService<IRecorderStatusSink>(), Is.InstanceOf<WindowStatusSink>());
+        Assert.That(run.GetRequiredService<IResultShower>(), Is.InstanceOf<WindowResultShower>());
+        Assert.That(run.GetRequiredService<ISessionEvents>(), Is.InstanceOf<SessionWindow>());
+
+        var process = app.Services;
+        Assert.That(process.GetRequiredService<RunJournal>(), Is.SameAs(process.GetRequiredService<RunJournal>()));
+        Assert.That(process.GetRequiredService<RecordingLock>(), Is.Not.Null);
+        Assert.That(process.GetRequiredService<IProcessLiveness>(), Is.InstanceOf<ProcessLiveness>());
+        Assert.That(process.GetRequiredService<IFreeSpace>(), Is.InstanceOf<FreeSpace>());
+        Assert.That(process.GetRequiredService<IWindowSignals>(), Is.InstanceOf<ConsoleWindowSignals>());
+        Assert.That(process.GetRequiredService<IPowerRequests>(), Is.InstanceOf<WindowsPowerRequests>());
+        Assert.That(process.GetRequiredService<IPowerSource>(), Is.InstanceOf<WindowsPowerSource>());
+        Assert.That(process.GetRequiredService<ISystemTimes>(), Is.InstanceOf<WindowsSystemTimes>());
+        Assert.That(process.GetRequiredService<ICrashWarnings>(), Is.InstanceOf<AppDomainCrashWarnings>());
+        Assert.That(process.GetRequiredService<RecorderLog>().StartupFile, Is.Null, "a window keeps the lines between runs in memory only");
+        Assert.That(process.GetServices<ILoggerProvider>().OfType<RecorderLogProvider>().Count(), Is.EqualTo(1));
     }
 }

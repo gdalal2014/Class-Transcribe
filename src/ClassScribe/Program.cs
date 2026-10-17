@@ -1,6 +1,13 @@
 using ClassScribe;
 using ClassScribe.Commands;
+using ClassScribe.Recorder;
 using ClassScribe.Settings;
+
+// A recorder, started by a window as "ClassScribe.exe --recorder <run id>" to record one class in the background: it
+// has no window, so it is handed its run before anything touches the console, and it never waits for Enter at the end,
+// which nobody could press. Its key comes from its own environment, inherited from the window, and from nowhere else.
+if (RecorderHost.IsRecorderStart(args, out var recorderRunId))
+    return await new RecorderHost().RunAsync(recorderRunId, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable));
 
 // First, before anything writes to the console, so that the log shows Arabic, transliteration and
 // device names such as "Intel®" as they are.

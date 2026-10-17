@@ -4,20 +4,72 @@ using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Audio;
 
-/// <summary>Registers what records: Windows audio, the choice of what to record, the session, and the upload preparation.</summary>
+/// <summary>
+/// Registers what records: Windows audio, made only when something first uses it; the choice of what to record; the
+/// recordings a run makes from its source plan; and the upload preparation.
+/// </summary>
 public static class AudioServices
 {
     /// <summary>Adds the audio services.</summary>
     public static IServiceCollection AddAudio(this IServiceCollection services)
     {
-        // Only resolved by the record command and the menu, so transcribing an existing file works on any system.
-        services.AddSingleton<ILoopbackCaptureProvider>(provider => OperatingSystem.IsWindows()
+        // Windows audio is reached only when a recording starts or the devices are listed: the menu and the command line
+        // take the provider as a part of the app, so without this transcribe, rebuild, list and help would all touch Windows
+        // audio as the app is put together, and transcribing an existing file would need Windows at all.
+        services.AddSingleton<ILoopbackCaptureProvider>(provider => new LazyLoopbackCaptureProvider(() => OperatingSystem.IsWindows()
             ? new WasapiLoopbackCaptureProvider(provider.GetRequiredService<ILogger<WasapiLoopbackCaptureProvider>>())
-            : throw new PlatformNotSupportedException("Recording system audio needs Windows."));
+            : throw new PlatformNotSupportedException("Recording system audio needs Windows.")));
+
+        // For the devices command, which asks for the provider only when it runs: the one registered above, so that a
+        // stand-in registered in its place is what the command lists.
+        services.AddSingleton(provider => new Lazy<ILoopbackCaptureProvider>(provider.GetRequiredService<ILoopbackCaptureProvider>));
         services.AddSingleton<SourceChoice>();
-        services.AddTransient<CaptureChooser>();
-        services.AddTransient<RecordingSession>();
+
+        // One per use, inside a run's scope, with that run's settings: each recording it makes has a session of its own.
+        services.AddTransient<ClassRecordingFactory>();
+        services.AddTransient<IRecordingFactory>(provider => provider.GetRequiredService<ClassRecordingFactory>());
+
         services.AddSingleton<IAudioPreparer, AudioPreparer>();
         return services;
+    }
+}
+
+/// <summary>
+/// The capture provider as the app holds it: the real one is made the first time anything lists the devices or the apps,
+/// makes a capture, or listens for the devices to change, and not before, so that the parts of the app that only take the
+/// provider along, such as the menu, never touch Windows audio. Made once, it is kept and disposed with this.
+/// </summary>
+/// <param name="make">Makes the real provider.</param>
+internal sealed class LazyLoopbackCaptureProvider(Func<ILoopbackCaptureProvider> make) : ILoopbackCaptureProvider
+{
+    private readonly Lazy<ILoopbackCaptureProvider> _inner = new(make, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>True once the real provider has been made.</summary>
+    internal bool IsMade => _inner.IsValueCreated;
+
+    /// <inheritdoc />
+    public event EventHandler? DevicesChanged
+    {
+        add => _inner.Value.DevicesChanged += value;
+        remove
+        {
+            // A listener that never listened has nothing to let go of; the real provider is not made for it.
+            if (_inner.IsValueCreated) _inner.Value.DevicesChanged -= value;
+        }
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<OutputDevice> GetOutputDevices() => _inner.Value.GetOutputDevices();
+
+    /// <inheritdoc />
+    public IReadOnlyList<PlayingApp> GetPlayingApps() => _inner.Value.GetPlayingApps();
+
+    /// <inheritdoc />
+    public IAudioCapture CreateCapture(CaptureTarget target) => _inner.Value.CreateCapture(target);
+
+    /// <summary>Disposes the real provider, when it was made.</summary>
+    public void Dispose()
+    {
+        if (_inner.IsValueCreated) _inner.Value.Dispose();
     }
 }

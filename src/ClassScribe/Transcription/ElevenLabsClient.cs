@@ -8,14 +8,17 @@ namespace ClassScribe.Transcription;
 
 /// <summary>
 /// Gets transcripts from ElevenLabs through <see cref="IElevenLabsApi"/>. Around the call itself it
-/// checks the key, retries temporary failures, reports upload progress, holds the whole exchange to a
-/// time limit that grows with the upload (see <see cref="UploadTimeLimit"/>) and tells that apart from a
-/// cancel, and keeps the answer's JSON exactly as it arrived, read by <see cref="ElevenLabsAnswer"/>.
-/// The settings are those of the run's own scope; the limit is its own alone, as HttpClient's is switched off.
+/// checks the key, retries temporary failures, reports upload progress (to the log every ten percent,
+/// and to the run that follows it at each percent, see <see cref="TranscriptionProgress"/>), holds the
+/// whole exchange to a time limit that grows with the upload (see <see cref="UploadTimeLimit"/>) and
+/// tells that apart from a cancel, and keeps the answer's JSON exactly as it arrived, read by
+/// <see cref="ElevenLabsAnswer"/>. The settings are those of the run's own scope; the limit is its own
+/// alone, as HttpClient's is switched off.
 /// </summary>
 public sealed class ElevenLabsClient(
     IElevenLabsApi api,
     IOptionsSnapshot<ElevenLabsOptions> options,
+    TranscriptionProgress progress,
     TimeProvider time,
     ILogger<ElevenLabsClient> logger) : ITranscriptionClient
 {
@@ -62,6 +65,8 @@ public sealed class ElevenLabsClient(
         logger.LogInformation("Uploading {File} ({Megabytes:F1} MB) with {Keyterms} keyterms; time limit {Minutes} minutes",
             Path.GetFileName(audioPath), file.Length / 1_000_000.0, keyterms.Count, (long)limit.TotalMinutes);
 
+        // Each try begins at nought, so that a second try shows as the new upload it is.
+        progress.Report(TranscriptionStep.Uploading, 0);
         var (status, body) = await ExchangeAsync(file, audioPath, keyterms, settings, limit, cancellationToken);
         if ((int)status is < 200 or > 299)
             throw new TranscriptionException(Describe(status, body), status, body);
@@ -109,14 +114,24 @@ public sealed class ElevenLabsClient(
         }
     }
 
-    /// <summary>Wraps the file as the <c>file</c> form field and logs upload progress every ten percent.</summary>
+    /// <summary>
+    /// Wraps the file as the <c>file</c> form field, logs upload progress every ten percent, and reports each percent to
+    /// the run that follows the upload, with the wait for the transcript once all of it has gone.
+    /// </summary>
     private StreamPart CreateFilePart(FileStream file, string audioPath)
     {
         var length = file.Length;
         var nextStep = 10;
+        var reported = 0;
         var stream = new ProgressReadStream(file, read =>
         {
-            var percent = length == 0 ? 100 : (int)(read * 100 / length);
+            var percent = length == 0 ? 100 : (int)Math.Min(100, read * 100 / length);
+            if (percent != reported)
+            {
+                reported = percent;
+                progress.Report(percent >= 100 ? TranscriptionStep.WaitingForTranscript : TranscriptionStep.Uploading, percent);
+            }
+
             if (percent < nextStep) return;
 
             nextStep = percent / 10 * 10 + 10;

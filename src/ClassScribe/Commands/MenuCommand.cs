@@ -1,4 +1,6 @@
+using System.Globalization;
 using ClassScribe.Audio;
+using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -6,13 +8,19 @@ using Microsoft.Extensions.Logging;
 namespace ClassScribe.Commands;
 
 /// <summary>
-/// The menu shown when ClassScribe starts without arguments. One key picks a choice; when the choice
-/// has run, successfully or not, the menu comes back, until Q or Ctrl+C leaves it. Keys typed while a
-/// choice ran are dropped, so the menu only acts on a key pressed after it is shown. Each choice reads
-/// the settings again first, and runs only once they have passed the check (see <see cref="RunGate"/>).
+/// The menu shown when ClassScribe starts without arguments. It opens with the report at the start (see
+/// <see cref="IStartupReport"/>), with its offers, which the report carries out itself, and, when a recording is in
+/// progress, shows that recording at once; A shows it again later. One key picks a choice; when the choice has run,
+/// successfully or not, the menu comes back, until Q or Ctrl+C leaves it. Keys typed while something ran are dropped, so
+/// the menu only acts on a key pressed after it is shown. Each choice reads the settings again first, and runs only once
+/// they have passed the check (see <see cref="RunGate"/>); showing the recording in progress never waits for the settings.
+/// The menu reaches every command through the runner (<see cref="ICommandRunner"/>), which runs each in a scope of its
+/// own, and the runs only through the report, so that it is made before the services of the background recorder are
+/// registered.
 /// </summary>
 public sealed class MenuCommand(
     ICommandRunner commands,
+    IStartupReport report,
     IConsoleUi ui,
     RunGate gate,
     SettingsFile settings,
@@ -27,6 +35,9 @@ public sealed class MenuCommand(
     /// <summary>How many recent recordings choice 3 offers, so that one digit picks one.</summary>
     private const int RecentRecordings = 9;
 
+    /// <summary>The key that shows the recording in progress, as the menu returns it.</summary>
+    private const char ShowKey = 'A';
+
     /// <summary>
     /// The console log is written on a background thread. Waiting this long before showing the menu
     /// again lets the last lines of a choice appear above the menu rather than below it.
@@ -36,17 +47,27 @@ public sealed class MenuCommand(
     /// <summary>The warning about an out-of-date copy of the settings that the menu's header gave when it was last shown; null when it gave none.</summary>
     private string? _staleCopyShown;
 
-    /// <summary>Shows the menu until it is left. Returns the exit code, which is 0.</summary>
+    /// <summary>
+    /// A menu without the report at the start, for the callers that do not pass one yet: it reports nothing and never
+    /// finds a recording in progress (see <see cref="NoStartupReport"/>). The container uses the other constructor.
+    /// </summary>
+    internal MenuCommand(ICommandRunner commands, IConsoleUi ui, RunGate gate, SettingsFile settings, ClassFolders folders, ILoopbackCaptureProvider devices,
+        SourceChoice choice, RecordingNamePrompt prompt, IDesktop desktop, TimeProvider time, ILogger<MenuCommand> logger)
+        : this(commands, new NoStartupReport(), ui, gate, settings, folders, devices, choice, prompt, desktop, time, logger)
+    {
+    }
+
+    /// <summary>Shows the report at the start, then the menu until it is left. Returns the exit code, which is 0.</summary>
     public async Task<int> RunAsync()
     {
-        for (var first = true; ; first = false)
+        for (var settle = await StartAsync(); ; settle = true)
         {
-            if (!first)
+            if (settle)
             {
                 await Task.Delay(LogSettleTime, time);
 
-                // A key pressed while the choice ran, such as a Q or an Enter during the upload, was not
-                // meant for this menu: taken as a choice, it could quit or start something unasked.
+                // A key pressed while something ran, such as a Q or an Enter during the upload, was not meant for this
+                // menu: taken as a choice, it could quit or start something unasked.
                 ui.DiscardPendingKeys();
             }
 
@@ -58,15 +79,65 @@ public sealed class MenuCommand(
     }
 
     /// <summary>
-    /// Runs the choice picked, once the settings, read again, have passed the check: an edit made since the last choice
-    /// counts, and one that cannot be used stops the choice before anything starts. Under dotnet run, an edit made to the
-    /// project's own appsettings.json while the menu was shown does not count until the next build, so that is said
-    /// first, unless the menu's header has said it already. A failure is reported, and the menu carries on.
+    /// What comes before the menu is first shown: the report at the start, with its offers; then the recording in progress,
+    /// shown at once, unless C in the report has just continued one, which the run that continued it showed. The report
+    /// carries out what is chosen there itself, with the check of the settings that C and T need, so the choice it returns
+    /// only says what was done, and the menu does not do it again. Returns true when anything was chosen or shown, so that
+    /// the menu lets the log settle and drops the keys typed meanwhile. A failure is reported, and the menu opens all the
+    /// same.
+    /// </summary>
+    private async Task<bool> StartAsync()
+    {
+        try
+        {
+            var chosen = await report.ShowAsync(interactive: true);
+            if (chosen?.Action == StartupAction.Continue || report.RecordingNow() is not { } inProgress) return chosen is not null;
+
+            await ShowRecordingAsync(inProgress);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Deliberately not rethrown: Ctrl+C during a transcription, such as that of the recording shown at the start
+            // once the view has gone on with it in this window, is a normal way on to the menu, as during one chosen in
+            // the menu, and this warning reports it.
+            logger.LogWarning("Cancelled");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: the menu opens all the same, so that a report or a recording that cannot be
+            // shown never keeps anyone from the other choices, and this log line is the report.
+            logger.LogError(ex, "Stopped because of an error");
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Runs the choice picked. A shows the recording in progress whatever the settings say: a broken file must not keep
+    /// anyone from seeing or stopping a recording. While a recording is in progress, 1 and 2 explain that there is one
+    /// recording at a time, and start nothing. Any other choice runs once the settings, read again, have passed the check:
+    /// an edit made since the last choice counts, and one that cannot be used stops the choice before anything starts.
+    /// Under dotnet run, an edit made to the project's own appsettings.json while the menu was shown does not count until
+    /// the next build, so that is said first, unless the menu's header has said it already. A failure is reported, and
+    /// the menu carries on.
     /// </summary>
     private async Task RunChoiceAsync(char picked)
     {
         try
         {
+            if (picked == ShowKey)
+            {
+                await ShowRecordingAsync(report.RecordingNow());
+                return;
+            }
+
+            if (picked is '1' or '2' && report.RecordingNow() is { } inProgress)
+            {
+                ui.WriteLine(OneRecordingAtATime(inProgress));
+                return;
+            }
+
             // Written here rather than logged, so that it shows before whatever the choice shows first, such as the
             // question for the recording's name; the log is written on a thread of its own.
             if (_staleCopyShown is null && settings.DescribeStaleCopy() is { } stale) ui.WriteLine($"WARNING  {stale}.");
@@ -110,11 +181,13 @@ public sealed class MenuCommand(
     }
 
     /// <summary>
-    /// Lists the choices, the settings file read, where the files go and which device is recorded. Under the file's name
-    /// it points out a copy of the settings that a build has not brought up to date, and settings that could not be used
-    /// when they were last read, at start or for the last choice: each problem, and that no choice runs until the file is
-    /// fixed, so the folder and the source shown below are not taken for the file's. A recordings folder that cannot be
-    /// used, such as one on a drive that is not there, is pointed out right under its own, before anything is recorded.
+    /// Lists the choices, the settings file read, where the files go, which device is recorded and the runs going on now.
+    /// Under the file's name it points out a copy of the settings that a build has not brought up to date, and settings
+    /// that could not be used when they were last read, at start or for the last choice: each problem, and that no choice
+    /// runs until the file is fixed, so the folder and the source shown below are not taken for the file's. A recordings
+    /// folder that cannot be used, such as one on a drive that is not there, is pointed out right under its own, before
+    /// anything is recorded. The report's lines about the runs now follow what is recorded, and A is offered while a
+    /// recording is in progress in the background.
     /// </summary>
     private void ShowMenu()
     {
@@ -132,6 +205,7 @@ public sealed class MenuCommand(
         ui.WriteLine($"Recordings and transcripts: {folders.Root}");
         if (folders.DescribeRootProblem() is { } problem) ui.WriteLine($"WARNING  {problem}.");
         ui.WriteLine($"Recording from: {choice.Description}");
+        foreach (var line in report.HeaderLines()) ui.WriteLine(line);
         ui.WriteLine();
         ui.WriteLine("  1  Record only");
         ui.WriteLine("  2  Record and transcribe");
@@ -139,14 +213,47 @@ public sealed class MenuCommand(
         ui.WriteLine("  4  Transcribe a file");
         ui.WriteLine("  5  Open the recordings folder");
         ui.WriteLine("  6  Choose what to record: a device or an app");
+        if (report.RecordingNow() is { Home: RunHome.Separate }) ui.WriteLine($"  {ShowKey}  Show the recording in progress");
         ui.WriteLine("  Q  Quit");
         ui.WriteLine();
     }
 
     /// <summary>
+    /// Shows <paramref name="inProgress"/> through the runner, as a window that did not start it: what it logged so far,
+    /// then what happens, with the recording keys passed on to it; Esc brings the menu back, and the recording carries on.
+    /// A recording in another ClassScribe window has no link to show it by, so that window is named instead. Null: there
+    /// is none, which is said.
+    /// </summary>
+    private async Task ShowRecordingAsync(RunRecord? inProgress)
+    {
+        if (inProgress is null)
+        {
+            ui.WriteLine("No recording is in progress.");
+            return;
+        }
+
+        if (inProgress.Home == RunHome.InWindow)
+        {
+            ui.WriteLine($"{CommandRunner.InAnotherWindow(inProgress)}.");
+            return;
+        }
+
+        await commands.AttachAsync(inProgress.RunId, alert: false);
+    }
+
+    /// <summary>
+    /// What 1 and 2 say while <paramref name="inProgress"/> records: one recording at a time, with since when it records in
+    /// local time and that A shows it, or, for one in another ClassScribe window, which window shows it.
+    /// </summary>
+    private string OneRecordingAtATime(RunRecord inProgress) =>
+        inProgress.Home == RunHome.InWindow
+            ? $"Only one recording at a time: {CommandRunner.InAnotherWindow(inProgress)}."
+            : $"Only one recording at a time: \"{inProgress.Request.Name}\" has been recording since {TimeZoneInfo.ConvertTime(inProgress.StartedUtc, time.LocalTimeZone).ToString("HH:mm", CultureInfo.InvariantCulture)}. {ShowKey} shows it.";
+
+    /// <summary>
     /// Choice 6: lists the connected output devices and the apps with sound open, and pins the one picked, or automatic,
     /// until ClassScribe is closed, whatever the settings say (see <see cref="SourceChoice"/>). It says so, and which
-    /// setting keeps the pick.
+    /// setting keeps the pick. ClassScribe's own processes are not offered (see <see cref="DevicesCommand.AppsByName"/>).
     /// </summary>
     private async Task ChooseSourceAsync()
     {
@@ -157,14 +264,9 @@ public sealed class MenuCommand(
             return;
         }
 
-        // One entry per app, at its loudest: a browser can have several processes with sound open.
-        var apps = devices.GetPlayingApps()
-            .GroupBy(app => app.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderByDescending(app => app.Level).First())
-            .OrderBy(app => app.Name, StringComparer.OrdinalIgnoreCase);
         var entries = connected
-            .Select(device => new SourceEntry(Describe(device), device.Name, "Recording:Device", () => choice.Device = device.Name))
-            .Concat(apps.Select(app => new SourceEntry(Describe(app), app.Name, "Recording:App", () => choice.App = app.Name)))
+            .Select(device => new SourceEntry(DevicesCommand.Describe(device), device.Name, "Recording:Device", () => choice.Device = device.Name))
+            .Concat(DevicesCommand.AppsByName(devices.GetPlayingApps()).Select(app => new SourceEntry(DevicesCommand.Describe(app), app.Name, "Recording:App", () => choice.App = app.Name)))
             .Take(9)
             .ToList();
 
@@ -198,21 +300,13 @@ public sealed class MenuCommand(
         }
     }
 
-    /// <summary>A device's line in the list: its name, and whether it is the default one or playing.</summary>
-    private static string Describe(OutputDevice device)
-    {
-        var notes = string.Join(", ", new[] { device.IsDefault ? "default" : null, device.Level >= CaptureChooser.SoundLevel ? "playing" : null }.OfType<string>());
-        return notes.Length > 0 ? $"{device.Name}  ({notes})" : device.Name;
-    }
-
-    /// <summary>An app's line in the list: its name, the device it plays through, and whether it is playing now.</summary>
-    private static string Describe(PlayingApp app) =>
-        app.Level >= CaptureChooser.SoundLevel ? $"{app.Name}  (app on {app.DeviceName}, playing)" : $"{app.Name}  (app on {app.DeviceName})";
-
     /// <summary>One line of the list of sources: what it shows, the name to pin, the setting that keeps it, and how to pin it.</summary>
     private sealed record SourceEntry(string Line, string Name, string Setting, Action Pick);
 
-    /// <summary>Waits for one of the menu's keys, ignoring any other. Returns null for Q, for Ctrl+C, or when nobody can type.</summary>
+    /// <summary>
+    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 6, or A, which comes back as
+    /// <see cref="ShowKey"/>. Returns null for Q, for Ctrl+C, or when nobody can type.
+    /// </summary>
     private async Task<char?> ReadChoiceAsync()
     {
         while (true)
@@ -220,15 +314,23 @@ public sealed class MenuCommand(
             var key = await ui.ReadKeyAsync(CancellationToken.None);
             if (key is not { } pressed || IsQuit(pressed)) return null;
             if (pressed.KeyChar is >= '1' and <= '6') return pressed.KeyChar;
+            if (pressed.Key == ConsoleKey.A && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return ShowKey;
         }
     }
 
-    /// <summary>Choices 1 and 2: ask for the recording's name, then record, and transcribe when asked to.</summary>
+    /// <summary>
+    /// Choices 1 and 2: ask for the recording's name, then hand the runner a request to record it, started from the menu:
+    /// a new run id, what menu choice 6 or the settings say to record, the recordings folder of the settings, no time
+    /// limit, the results opened at the end, and the question whether to continue a recent recording of the same name
+    /// left to the starter, which asks it. 2 also transcribes it.
+    /// </summary>
     private async Task RecordAsync(bool transcribe)
     {
         if (await prompt.AskAsync() is not { } name) return;
 
-        await commands.RecordAsync(name, transcribe);
+        var request = new RecordRequest(RunIds.New(time.GetUtcNow()), name, transcribe, choice.Current, folders.Root, ContinueChoice.Ask,
+            ContinueBaseName: null, Minutes: null, Open: true);
+        await commands.RecordAsync(request, StartOrigin.Menu);
     }
 
     /// <summary>
@@ -249,7 +351,8 @@ public sealed class MenuCommand(
         for (var i = 0; i < recordings.Count; i++)
         {
             var recorded = recordings[i];
-            ui.WriteLine($"  {i + 1}  {recorded.Files.BaseName}  {Durations.Format(recorded.Length)}  {TranscriptState(recorded)}");
+            var notes = string.Concat(ListCommand.NotesOf(recorded).Select(note => $"  {note}"));
+            ui.WriteLine($"  {i + 1}  {recorded.Files.BaseName}  {Durations.Format(recorded.Length)}{notes}  {TranscriptState(recorded)}");
         }
 
         ui.WriteLine("Press a recording's number to transcribe it, or Esc to go back.");
@@ -263,7 +366,8 @@ public sealed class MenuCommand(
     /// Transcribes a recording picked in choice 3 or given in choice 4 by sending <paramref name="path"/>, which names it,
     /// with the care such a recording needs. One being recorded now is not sent: what was sent would stop short. One that
     /// would be billed again offers the free rebuild first, with R, when there is an answer to rebuild from (see
-    /// <see cref="WhyBilledAgain"/>), and the new try with Y; any other key goes back without either.
+    /// <see cref="WhyBilledAgain"/>), and the new try with Y; any other key goes back without either. The runner refuses
+    /// one that a recorder transcribes in the background.
     /// </summary>
     private async Task TranscribeRecordingAsync(RecordedClass recorded, string path)
     {
@@ -291,9 +395,9 @@ public sealed class MenuCommand(
         await commands.TranscribeAsync(new TranscribeRequest(path));
     }
 
-    /// <summary>What the list says about a recording: being recorded now, its transcript ready, an answer paid for and kept without one, or none yet.</summary>
+    /// <summary>What choice 3 says about a recording after its notes: RECORDING NOW while it is being recorded, its transcript ready, an answer paid for and kept without one, or none yet.</summary>
     private static string TranscriptState(RecordedClass recorded) =>
-        recorded.BeingWritten ? "being recorded now"
+        recorded.BeingWritten ? "RECORDING NOW"
         : recorded.HasTranscript ? "transcript ready"
         : recorded.KeptAnswer is not null ? "answer kept"
         : "no transcript yet";

@@ -33,6 +33,7 @@ public sealed class TranscriptionWorkflow(
     ClassMarks marks,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     IOptionsSnapshot<RecordingOptions> recording,
+    TranscriptionProgress progress,
     ILogger<TranscriptionWorkflow> logger)
 {
     /// <summary>
@@ -51,7 +52,8 @@ public sealed class TranscriptionWorkflow(
 
     /// <summary>
     /// Transcribes a recording from every one of its segments on disk, in recording order, and saves the transcript under
-    /// the recording's name, next to the audio, with the marks set while recording in it. A recording transcribed before
+    /// the recording's name, next to the audio, with the marks set while recording and the notes made in it, and, for a
+    /// recording taken up again after it stopped, the number of parts it was made in. A recording transcribed before
     /// keeps its earlier transcript and gets the next copy. A recording longer than <see cref="LongestRecording"/> is
     /// refused before anything is prepared.
     /// </summary>
@@ -73,14 +75,22 @@ public sealed class TranscriptionWorkflow(
     /// file itself stays where it is. A WAV file is first reduced to 16 kHz mono; anything else is
     /// uploaded as it is.
     /// </summary>
-    public async Task<TranscriptFiles> TranscribeFileAsync(string path, CancellationToken cancellationToken)
+    public Task<TranscriptFiles> TranscribeFileAsync(string path, CancellationToken cancellationToken) =>
+        TranscribeFileAsync(path, outputRoot: null, cancellationToken);
+
+    /// <summary>
+    /// Transcribes one audio or video file into a folder named after it under <paramref name="outputRoot"/>, the recordings
+    /// folder given for this run (transcribe --output), or under Recording:OutputFolder when that is null; the file itself
+    /// stays where it is. A WAV file is first reduced to 16 kHz mono; anything else is uploaded as it is.
+    /// </summary>
+    public async Task<TranscriptFiles> TranscribeFileAsync(string path, string? outputRoot, CancellationToken cancellationToken)
     {
         string? upload = null;
         var saved = false;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var files = folders.CreateForFile(path);
+            var files = folders.CreateForFile(path, outputRoot);
             logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), files.Folder);
 
             if (TryPrepare(path, files.Upload, cancellationToken)) upload = files.Upload;
@@ -120,7 +130,8 @@ public sealed class TranscriptionWorkflow(
 
             var result = ElevenLabsAnswer.Parse(await File.ReadAllTextAsync(answer, cancellationToken), HttpStatusCode.OK);
             var recordedUtc = IsRecording(files) ? files.StartedUtc : null;
-            var rebuilt = TranscriptCopies.SaveRebuilt(files, formatter.Format(result, files.Name, recordedUtc, marks.Read(files)), logger);
+            var classMarks = marks.Read(files);
+            var rebuilt = TranscriptCopies.SaveRebuilt(files, formatter.Format(result, files.Name, recordedUtc, classMarks, ClassMarks.PartsIn(classMarks)), logger);
             logger.LogInformation("Rebuilt from {Answer} into {Transcript}; nothing was uploaded", Path.GetFileName(answer), Path.GetFileName(rebuilt));
             return rebuilt;
         }
@@ -177,6 +188,7 @@ public sealed class TranscriptionWorkflow(
             // An upload copy left by a run that was ended before it could remove it is made afresh.
             File.Delete(files.Upload);
             logger.LogInformation("Preparing the recording for upload ({Segments} segment(s)); this takes a moment for a long class", segments.Count);
+            progress.Report(TranscriptionStep.Preparing);
             preparer.Prepare(segments, files.Upload, cancellationToken);
             upload = files.Upload;
 
@@ -219,6 +231,7 @@ public sealed class TranscriptionWorkflow(
         {
             File.Delete(uploadPath);
             logger.LogInformation("Preparing {File} for upload; this takes a moment for a long recording", Path.GetFileName(path));
+            progress.Report(TranscriptionStep.Preparing);
             preparer.Prepare([path], uploadPath, cancellationToken);
             return true;
         }
@@ -247,6 +260,8 @@ public sealed class TranscriptionWorkflow(
         TranscriptionResult result;
         try
         {
+            // The upload begins; the client says how far it gets.
+            progress.Report(TranscriptionStep.Uploading);
             result = await client.TranscribeAsync(audioPath, keyterms, cancellationToken);
         }
         catch (TranscriptionException ex) when (ex.ResponseBody is { } answer && IsSuccess(ex.StatusCode))
@@ -275,7 +290,7 @@ public sealed class TranscriptionWorkflow(
     {
         try
         {
-            return TranscriptCopies.Save(files, result.RawJson, () => formatter.Format(result, title, recordedUtc, classMarks), logger);
+            return TranscriptCopies.Save(files, result.RawJson, () => formatter.Format(result, title, recordedUtc, classMarks, ClassMarks.PartsIn(classMarks)), logger);
         }
         catch (Exception ex) when (ex.Data[TranscriptCopies.SavedAnswerKey] is string saved)
         {

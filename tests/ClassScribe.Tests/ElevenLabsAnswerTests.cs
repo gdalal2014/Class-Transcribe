@@ -88,7 +88,8 @@ public class ElevenLabsAnswerTests
         var handler = new StubHttpHandler();
         handler.Enqueue(HttpStatusCode.OK, Golden);
         var api = RestService.ForGenerated<IElevenLabsApi>(new HttpClient(handler) { BaseAddress = new Uri("https://api.elevenlabs.io/") }, ElevenLabsJson.Default, ElevenLabsApiSettings.Create());
-        var client = new ElevenLabsClient(api, TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test" }), TimeProvider.System, NullLogger<ElevenLabsClient>.Instance);
+        var client = new ElevenLabsClient(api, TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test" }), new TranscriptionProgress(), TimeProvider.System,
+            NullLogger<ElevenLabsClient>.Instance);
 
         var received = await client.TranscribeAsync(audio, [], CancellationToken.None);
         var parsed = ElevenLabsAnswer.Parse(Golden, HttpStatusCode.OK);

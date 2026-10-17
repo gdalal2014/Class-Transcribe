@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using ClassScribe.Audio;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;
 
@@ -58,15 +60,52 @@ public class ClassFoldersTests
         mklink.WaitForExit();
     }
 
-    /// <summary>Writes a recording of the given length into its folder, last written at the given time.</summary>
-    private RecordingFiles WriteRecording(string name, DateTimeOffset started, double seconds = 0.1, bool withTranscript = false)
+    /// <summary>
+    /// Writes a recording of the given length into the folder of its name, under <paramref name="root"/> or else the
+    /// temporary folder, last written at the given time.
+    /// </summary>
+    private RecordingFiles WriteRecording(string name, DateTimeOffset started, double seconds = 0.1, bool withTranscript = false, string? root = null)
     {
-        var files = RecordingFiles.ForNew(_folder.File(name), name, started);
+        var files = RecordingFiles.ForNew(Path.Combine(root ?? _folder.Path, name), name, started);
         Directory.CreateDirectory(files.Folder);
         TestAudio.WriteWav(files.Segment(1), 16000, new short[(int)(16000 * seconds)]);
         File.SetLastWriteTimeUtc(files.Segment(1), started.UtcDateTime);
         if (withTranscript) File.WriteAllText(files.Transcript(), "# Kalam");
         return files;
+    }
+
+    /// <summary>
+    /// Writes a recording of <paramref name="name"/> that started an hour before now and stopped
+    /// <paramref name="stoppedAgo"/> before now, as one stopped by a crash or with Q leaves its audio.
+    /// </summary>
+    private RecordingFiles WriteStopped(string name, TimeSpan stoppedAgo, double seconds = 1.0, string? root = null)
+    {
+        var files = WriteRecording(name, Now.AddHours(-1), seconds, root: root);
+        File.SetLastWriteTimeUtc(files.Segment(1), (Now - stoppedAgo).UtcDateTime);
+        return files;
+    }
+
+    /// <summary>
+    /// Writes segment <paramref name="number"/> of the recording's microphone track, which ends in .mic.wav, holding
+    /// <paramref name="seconds"/> of audio and last written <paramref name="stoppedAgo"/> before now, and returns its path.
+    /// </summary>
+    private static string WriteMicrophone(RecordingFiles files, int number, double seconds = 1.0, TimeSpan? stoppedAgo = null)
+    {
+        var path = Path.Combine(files.Folder, number == 1 ? $"{files.BaseName}.mic.wav" : $"{files.BaseName}_part{number}.mic.wav");
+        TestAudio.WriteWav(path, 16000, new short[(int)(16000 * seconds)]);
+        File.SetLastWriteTimeUtc(path, (Now - (stoppedAgo ?? TimeSpan.FromMinutes(5))).UtcDateTime);
+        return path;
+    }
+
+    /// <summary>
+    /// Writes a segment of <paramref name="length"/> with the recorder's own writer at ten samples a second, so that hours
+    /// of it take less than a megabyte.
+    /// </summary>
+    private static void WriteLong(string segment, TimeSpan length)
+    {
+        File.Delete(segment);
+        using var writer = new WavSegmentWriter(segment, 10);
+        writer.Write(new byte[(int)Math.Round(length.TotalSeconds * 10) * 2]);
     }
 
     /// <summary>Saves a transcript and ElevenLabs' answer where the files say, as the workflow does after the upload, and checks they arrived.</summary>
@@ -715,5 +754,408 @@ public class ClassFoldersTests
         Assert.That(folders.KeptAnswerOf(beside), Is.EqualTo(beside.Json(2)));
         Assert.That(folders.KeptAnswerOf(inTheRoot), Is.EqualTo(keptInTheRoot));
         Assert.That(folders.KeptAnswerOf(without), Is.Null);
+    }
+
+    /// <summary>
+    /// A recording goes under the recordings folder given for its run (--output), in a folder of its name there, and
+    /// under the setting's folder when none is given; the setting's folder stays the root either way.
+    /// </summary>
+    [Test]
+    public void A_recording_goes_under_the_root_given_for_its_run()
+    {
+        var folders = Folders();
+        var elsewhere = _folder.File("Elsewhere");
+
+        var given = folders.CreateRecording("Kalam", elsewhere);
+        var unset = folders.CreateRecording("Fiqh", root: null);
+
+        Assert.That(given.Folder, Is.EqualTo(Path.Combine(elsewhere, "Kalam")));
+        Assert.That(given.BaseName, Is.EqualTo("Kalam_2026-10-14_18-30-00Z"));
+        Assert.That(Directory.Exists(given.Folder), Is.True);
+        Assert.That(unset.Folder, Is.EqualTo(_folder.File("Fiqh")));
+        Assert.That(folders.Root, Is.EqualTo(_folder.Path));
+    }
+
+    /// <summary>A file transcribed with a recordings folder given for it gets the folder of its transcript there.</summary>
+    [Test]
+    public void A_file_gets_its_folder_under_the_root_given_for_it()
+    {
+        var files = Folders().CreateForFile(@"D:\Downloads\Lecture 5.mp4", _folder.File("Elsewhere"));
+
+        Assert.That(files.Folder, Is.EqualTo(Path.Combine(_folder.File("Elsewhere"), "Lecture 5")));
+        Assert.That(Directory.Exists(files.Folder), Is.True);
+    }
+
+    /// <summary>A recording to continue is opened by its folder and base name, as a run's request names it: its files are the ones it was recorded into.</summary>
+    [Test]
+    public void A_recording_to_continue_is_opened_by_its_folder_and_base_name()
+    {
+        var files = WriteRecording("Kalam", Now.AddHours(-1));
+
+        Assert.That(Folders().Open(files.Folder, files.BaseName), Is.EqualTo(files));
+    }
+
+    /// <summary>A recording to continue with no audio left in its folder is an error that names it, rather than a recording started afresh under its old name.</summary>
+    [Test]
+    public void A_recording_to_continue_without_audio_is_an_error_that_names_it()
+    {
+        var files = WriteRecording("Kalam", Now.AddHours(-1));
+        File.Delete(files.Segment(1));
+
+        var error = Assert.Throws<FileNotFoundException>(() => Folders().Open(files.Folder, files.BaseName));
+
+        Assert.That(error!.Message, Does.Contain(files.BaseName));
+    }
+
+    /// <summary>A base name that is not a recording's, such as one that leads out of the folder or has no time stamp, is refused.</summary>
+    [TestCase(@"..\Kalam_2026-10-14_18-30-00Z")]
+    [TestCase(@"Fiqh\Kalam_2026-10-14_18-30-00Z")]
+    [TestCase("Kalam")]
+    [TestCase("")]
+    public void A_base_name_that_is_not_a_recordings_is_refused(string baseName) =>
+        Assert.Throws<ArgumentException>(() => Folders().Open(_folder.File("Kalam"), baseName));
+
+    /// <summary>
+    /// A recording of the name that stopped recently without a transcript is offered to be continued, with its length on
+    /// disk, when its audio was last written, and the parts it was made in so far.
+    /// </summary>
+    [Test]
+    public void A_recording_that_stopped_recently_without_a_transcript_is_offered()
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(4), seconds: 1.5);
+        new ClassMarks(NullLogger<ClassMarks>.Instance).AddResume(files, TimeSpan.FromSeconds(1), Now.AddMinutes(-30), TimeSpan.FromMinutes(2));
+
+        var candidate = Folders().FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60));
+
+        Assert.That(candidate, Is.EqualTo(new ContinueCandidate(files, TimeSpan.FromSeconds(1.5), Now.AddMinutes(-4), Parts: 2)));
+    }
+
+    /// <summary>
+    /// Only a recording whose audio was last written within the time allowed is offered: with an hour, one that stopped 59
+    /// minutes ago is, and one that stopped 61 minutes ago is not. A time of zero never offers one.
+    /// </summary>
+    [TestCase(59, 60, true)]
+    [TestCase(61, 60, false)]
+    [TestCase(0, 0, false)]
+    public void Only_a_recording_that_stopped_within_the_time_allowed_is_offered(int stoppedMinutesAgo, int withinMinutes, bool offered)
+    {
+        WriteStopped("Kalam", TimeSpan.FromMinutes(stoppedMinutesAgo));
+
+        var candidate = Folders().FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(withinMinutes));
+
+        Assert.That(candidate is not null, Is.EqualTo(offered));
+    }
+
+    /// <summary>A recording with a transcript, here a later copy of one, is finished: it is not offered, even a moment after it stopped.</summary>
+    [Test]
+    public void A_recording_with_a_transcript_is_not_offered()
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(1));
+        File.WriteAllText(files.Transcript(2), "# Kalam");
+
+        Assert.That(Folders().FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+    }
+
+    /// <summary>
+    /// A recording with an answer from ElevenLabs that was paid for but did not become a transcript is not offered,
+    /// wherever the answer is kept: beside it, in the recordings folder when its own folder would not take it (the
+    /// setting's, where the workflow keeps it, or the one given for the run), or saved without its transcript. Continued,
+    /// it would be sent again whole, so what was paid for would be billed twice; the answer can be laid out for free
+    /// instead. The reason is logged with where the answer is.
+    /// </summary>
+    [TestCase("unread, beside it", false)]
+    [TestCase("unread, in the recordings folder", false)]
+    [TestCase("saved without its transcript", false)]
+    [TestCase("unread, in the recordings folder given for the run", true)]
+    [TestCase("unread, in the setting's recordings folder, for a run given another", true)]
+    public void A_recording_with_an_answer_paid_for_and_kept_is_not_offered(string kept, bool rootGiven)
+    {
+        var root = rootGiven ? _folder.File("Elsewhere") : null;
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(4), root: root);
+        var answer = kept switch
+        {
+            "unread, beside it" => files.UnreadAnswer(),
+            "saved without its transcript" => files.Json(),
+            "unread, in the recordings folder given for the run" => (files with { Folder = root! }).UnreadAnswer(),
+            _ => (files with { Folder = _folder.Path }).UnreadAnswer()
+        };
+        var folders = Folders();
+        Assert.That(folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60), root), Is.Not.Null, "offered before the answer was kept");
+
+        File.WriteAllText(answer, "{}");
+
+        Assert.That(folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60), root), Is.Null);
+        Assert.That(_log.Messages, Has.Some.Contains($"which has been paid for, is kept in {answer}"));
+    }
+
+    /// <summary>
+    /// A recording with its upload copy beside it and no transcript is not offered: a recorder or a window is transcribing
+    /// it now, or a transcription of it was cut off, and ElevenLabs may bill it either way. Continued, it would be sent
+    /// again whole. Once a failed transcription has removed its copy, it is offered again.
+    /// </summary>
+    [Test]
+    public void A_recording_being_transcribed_is_not_offered()
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(1));
+        var folders = Folders();
+        Assert.That(folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Not.Null, "offered before its upload copy was made");
+
+        TestAudio.WriteWav(files.Upload, 16000, new short[1600]);
+        Assert.That(folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+        Assert.That(_log.Messages, Has.Some.Contains("upload copy"));
+
+        File.Delete(files.Upload);
+        Assert.That(folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60))?.Files, Is.EqualTo(files));
+    }
+
+    /// <summary>A recording that a recorder still writes, holding its newest segment open for writing, is not offered.</summary>
+    [Test]
+    public void A_recording_being_written_is_not_offered()
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(1));
+        using var writer = HoldForWriting(files.Segment(1));
+
+        Assert.That(Folders().FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+    }
+
+    /// <summary>
+    /// A recording whose microphone track a recorder still writes is being written too, although its class track is not,
+    /// and is not offered.
+    /// </summary>
+    [Test]
+    public void A_recording_whose_microphone_is_being_written_is_not_offered()
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(1));
+        var microphone = WriteMicrophone(files, 1, stoppedAgo: TimeSpan.FromMinutes(1));
+        using var writer = HoldForWriting(microphone);
+
+        Assert.That(ClassFolders.IsBeingWritten(files), Is.True);
+        Assert.That(Folders().FindContinuable("Kalam", RecordingMode.ClassAndMicrophone, TimeSpan.FromMinutes(60)), Is.Null);
+    }
+
+    /// <summary>
+    /// A recording with the microphone stopped when the last of its tracks did: written to last on the microphone's track,
+    /// it is offered within the time allowed after that, although its class track stopped longer ago, and that is the time
+    /// it is said to have stopped.
+    /// </summary>
+    [Test]
+    public void A_recording_with_the_microphone_stopped_when_the_last_of_its_tracks_did()
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(61), seconds: 1.0);
+        WriteMicrophone(files, 1, seconds: 1.0, stoppedAgo: TimeSpan.FromMinutes(4));
+
+        var candidate = Folders().FindContinuable("Kalam", RecordingMode.ClassAndMicrophone, TimeSpan.FromMinutes(60));
+
+        Assert.That(candidate, Is.EqualTo(new ContinueCandidate(files, TimeSpan.FromSeconds(1), Now.AddMinutes(-4), Parts: 1)));
+    }
+
+    /// <summary>
+    /// A recording whose microphone track holds nine and a half hours or more is not offered, although its class track is
+    /// short: the longer track decides. One a second shorter still is.
+    /// </summary>
+    [TestCase(9 * 3600 + 30 * 60, false)]
+    [TestCase(9 * 3600 + 30 * 60 - 1, true)]
+    public void A_recording_whose_microphone_track_is_nine_and_a_half_hours_or_more_is_not_offered(int seconds, bool offered)
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(5));
+        var microphone = WriteMicrophone(files, 1);
+        WriteLong(microphone, TimeSpan.FromSeconds(seconds));
+        File.SetLastWriteTimeUtc(microphone, Now.AddMinutes(-5).UtcDateTime);
+
+        var candidate = Folders().FindContinuable("Kalam", RecordingMode.ClassAndMicrophone, TimeSpan.FromMinutes(60));
+
+        Assert.That(candidate is not null, Is.EqualTo(offered));
+    }
+
+    /// <summary>
+    /// A recording with the microphone is described from both its tracks, in a listing as for one recording: its length
+    /// is the longer track's, here the microphone's; it was last recorded when its microphone's track was last written,
+    /// after its class track; and it is being written while a recorder holds the newest segment of the microphone's track,
+    /// though not an earlier one.
+    /// </summary>
+    [Test]
+    public void A_recording_with_the_microphone_is_described_from_both_its_tracks()
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(30), seconds: 1.0);
+        var firstMicrophone = WriteMicrophone(files, 1, seconds: 1.5, stoppedAgo: TimeSpan.FromMinutes(20));
+        var newestMicrophone = WriteMicrophone(files, 2, seconds: 1.0, stoppedAgo: TimeSpan.FromMinutes(3));
+        var folders = Folders();
+
+        var described = folders.Describe(files);
+        var listed = folders.ListAll().Single();
+        RecordedClass whileWritten, whileEarlierHeld;
+        using (HoldForWriting(newestMicrophone))
+            whileWritten = folders.ListAll().Single();
+        using (HoldForWriting(firstMicrophone))
+            whileEarlierHeld = folders.Describe(files);
+
+        Assert.That(listed, Is.EqualTo(described));
+        Assert.That(described.Length.TotalSeconds, Is.EqualTo(2.5).Within(0.001), "the microphone's track, the longer");
+        Assert.That(described.LastRecordedUtc, Is.EqualTo(Now.AddMinutes(-3).UtcDateTime), "the microphone's track, written to last");
+        Assert.That((described.HasMicrophone, described.BeingWritten), Is.EqualTo((true, false)));
+        Assert.That(whileWritten.BeingWritten, Is.True, "a recorder holds the newest segment of the microphone's track");
+        Assert.That(whileEarlierHeld.BeingWritten, Is.False, "an earlier segment is not the one being written");
+    }
+
+    /// <summary>
+    /// Only a recording with the same tracks as the new run is offered: one with the microphone's .mic.wav files for a run
+    /// with the microphone, and one without them for a run of the class alone.
+    /// </summary>
+    [TestCase(false, RecordingMode.Class, true)]
+    [TestCase(true, RecordingMode.Class, false)]
+    [TestCase(false, RecordingMode.ClassAndMicrophone, false)]
+    [TestCase(true, RecordingMode.ClassAndMicrophone, true)]
+    public void Only_a_recording_with_the_same_tracks_is_offered(bool withMicrophone, RecordingMode mode, bool offered)
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(5));
+        if (withMicrophone) WriteMicrophone(files, 1);
+
+        var candidate = Folders().FindContinuable("Kalam", mode, TimeSpan.FromMinutes(60));
+
+        Assert.That(candidate is not null, Is.EqualTo(offered));
+    }
+
+    /// <summary>A recording of the name in another letter case is offered, in its folder as it is on disk, since Windows takes the two names for one.</summary>
+    [Test]
+    public void A_recording_of_the_name_in_another_letter_case_is_offered()
+    {
+        var files = WriteStopped("kalam", TimeSpan.FromMinutes(5));
+
+        Assert.That(Folders().FindContinuable("KALAM", RecordingMode.Class, TimeSpan.FromMinutes(60))?.Files, Is.EqualTo(files));
+    }
+
+    /// <summary>
+    /// A recording of nine and a half hours or more is not offered: continued, it would be longer than ClassScribe sends to
+    /// ElevenLabs in one file. One a second shorter still is.
+    /// </summary>
+    [TestCase(9 * 3600 + 30 * 60, false)]
+    [TestCase(9 * 3600 + 30 * 60 - 1, true)]
+    public void A_recording_of_nine_and_a_half_hours_or_more_is_not_offered(int seconds, bool offered)
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(5));
+        WriteLong(files.Segment(1), TimeSpan.FromSeconds(seconds));
+        File.SetLastWriteTimeUtc(files.Segment(1), Now.AddMinutes(-5).UtcDateTime);
+
+        var candidate = Folders().FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60));
+
+        Assert.That(candidate is not null, Is.EqualTo(offered));
+    }
+
+    /// <summary>
+    /// Only the newest recording of the name is ever offered: when it has a transcript, an earlier one that stopped within
+    /// the time allowed is not offered instead, since the class went on after it.
+    /// </summary>
+    [Test]
+    public void Only_the_newest_recording_of_the_name_is_offered()
+    {
+        var earlier = WriteRecording("Kalam", Now.AddMinutes(-50));
+        File.SetLastWriteTimeUtc(earlier.Segment(1), Now.AddMinutes(-40).UtcDateTime);
+        var newest = WriteRecording("Kalam", Now.AddMinutes(-30), withTranscript: true);
+        File.SetLastWriteTimeUtc(newest.Segment(1), Now.AddMinutes(-10).UtcDateTime);
+
+        Assert.That(Folders().FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+    }
+
+    /// <summary>
+    /// A recording of another name is never offered, even one moved into the name's folder by hand; nor is anything for a
+    /// name without a folder, or without a letter that can go into one.
+    /// </summary>
+    [Test]
+    public void Nothing_of_another_name_is_offered()
+    {
+        var other = RecordingFiles.ForNew(_folder.File("Kalam"), "Fiqh", Now.AddMinutes(-20));
+        Directory.CreateDirectory(other.Folder);
+        TestAudio.WriteWav(other.Segment(1), 16000, new short[1600]);
+        File.SetLastWriteTimeUtc(other.Segment(1), Now.AddMinutes(-5).UtcDateTime);
+        var folders = Folders();
+
+        Assert.That(folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+        Assert.That(folders.FindContinuable("Tafsir", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+        Assert.That(folders.FindContinuable(" ... ", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+    }
+
+    /// <summary>The recording to continue is looked for under the recordings folder given for the run (--output), rather than under the setting's.</summary>
+    [Test]
+    public void The_recording_to_continue_is_looked_for_under_the_root_given()
+    {
+        var elsewhere = _folder.File("Elsewhere");
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(5), root: elsewhere);
+        var folders = Folders(outputFolder: _folder.File("Setting"));
+
+        Assert.That(folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60), elsewhere)?.Files, Is.EqualTo(files));
+        Assert.That(folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+    }
+
+    /// <summary>
+    /// A recording's length on disk is that of its longest track, each track's segments read to the end of their files, so
+    /// that a header a crash left behind still gives the whole length.
+    /// </summary>
+    [Test]
+    public void The_length_on_disk_is_the_longest_track_read_to_the_end_of_its_files()
+    {
+        var files = WriteRecording("Kalam", Now, seconds: 1.0);
+        TestAudio.WriteWav(files.Segment(2), 48000, new short[48000]);
+        using (var stream = new FileStream(files.Segment(2), FileMode.Append)) stream.Write(new byte[48000]);   // half a second after the last header update
+        var folders = Folders();
+
+        Assert.That(folders.LengthOnDisk(files).TotalSeconds, Is.EqualTo(2.5).Within(0.001));
+
+        WriteMicrophone(files, 1, seconds: 3.0);
+        Assert.That(folders.LengthOnDisk(files).TotalSeconds, Is.EqualTo(3.0).Within(0.001));
+    }
+
+    /// <summary>
+    /// The list command's listing: every recording under the root, however many, newest first by the time each started
+    /// whatever was written to last, each with the parts it was made in, whether it has the microphone's track, and
+    /// whether it is being written now.
+    /// </summary>
+    [Test]
+    public void Every_recording_under_the_root_is_listed_newest_first_by_its_start()
+    {
+        var days = Enumerable.Range(1, 10).Select(day => WriteRecording("Kalam", new DateTimeOffset(2026, 10, day, 10, 0, 0, TimeSpan.Zero))).ToList();
+        File.SetLastWriteTimeUtc(days[0].Segment(1), new DateTime(2026, 10, 13, 0, 0, 0, DateTimeKind.Utc));   // the oldest, written to last
+        var continued = WriteRecording("Fiqh", new DateTimeOffset(2026, 10, 11, 10, 0, 0, TimeSpan.Zero));
+        WriteMicrophone(continued, 1);
+        new ClassMarks(NullLogger<ClassMarks>.Instance).AddResume(continued, TimeSpan.FromSeconds(0.05), Now, TimeSpan.FromMinutes(3));
+        var recordingNow = WriteRecording("Tafsir", new DateTimeOffset(2026, 10, 12, 10, 0, 0, TimeSpan.Zero));
+
+        IReadOnlyList<RecordedClass> all;
+        using (HoldForWriting(recordingNow.Segment(1)))
+            all = Folders().ListAll();
+
+        Assert.That(all.Select(r => r.Files), Is.EqualTo(new[] { recordingNow, continued }.Concat(Enumerable.Reverse(days))));
+        Assert.That(all.Take(3).Select(r => (r.Parts, r.HasMicrophone, r.BeingWritten)), Is.EqualTo(new[] { (1, false, true), (2, true, false), (1, false, false) }));
+        Assert.That(_log.Problems, Is.Empty);
+    }
+
+    /// <summary>A recordings folder given for the listing (--output) is listed instead of the setting's; one that is not there lists nothing.</summary>
+    [Test]
+    public void A_root_given_for_the_listing_is_listed_instead_of_the_settings()
+    {
+        WriteRecording("Kalam", Now);
+        var elsewhere = WriteRecording("Fiqh", Now, root: _folder.File("Elsewhere"));
+        var folders = Folders(outputFolder: _folder.Path);
+
+        Assert.That(folders.ListAll(_folder.File("Elsewhere")).Select(r => r.Files), Is.EqualTo(new[] { elsewhere }));
+        Assert.That(folders.ListAll(_folder.File("not-there")), Is.Empty);
+    }
+
+    /// <summary>
+    /// The files of a recording without any of its audio are no recording to list: an upload copy, a transcript and marks
+    /// alone, as a transcribed file leaves them, list nothing, and their folder has no newest recording, although each of
+    /// those files names one.
+    /// </summary>
+    [Test]
+    public void Files_of_a_recording_without_its_audio_are_not_listed_as_one()
+    {
+        var files = RecordingFiles.ForNew(_folder.File("Lecture 5"), "Lecture 5", Now);
+        Directory.CreateDirectory(files.Folder);
+        TestAudio.WriteWav(files.Upload, 16000, new short[1600]);
+        File.WriteAllText(files.Transcript(), "# Lecture 5");
+        File.WriteAllLines(files.Marks, ["00:00:01"]);
+
+        Assert.That(Folders().ListRecent(9), Is.Empty);
+        Assert.That(Folders().ListAll(), Is.Empty);
+        Assert.That(ClassFolders.FindNewest(files.Folder), Is.Null);
     }
 }

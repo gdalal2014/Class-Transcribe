@@ -50,7 +50,7 @@ public class TranscriptionWorkflowTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Creates the workflow under test around the mocks, or around the preparer, settings and loggers given.</summary>
+    /// <summary>Creates the workflow under test around the mocks, or around the preparer, settings, progress and loggers given.</summary>
     private TranscriptionWorkflow CreateWorkflow(
         bool keepUploadFile = false,
         string? keytermsFile = null,
@@ -58,7 +58,8 @@ public class TranscriptionWorkflowTests
         ILogger<TranscriptionWorkflow>? logger = null,
         ILogger<KeytermLoader>? glossaryLogger = null,
         string apiKey = "dummy-key-for-a-local-test",
-        TestOptions<TranscriptOptions>? transcript = null)
+        TestOptions<TranscriptOptions>? transcript = null,
+        TranscriptionProgress? progress = null)
     {
         var recording = TestOptions.Create(new RecordingOptions { KeepUploadFile = keepUploadFile, OutputFolder = _recordings });
         return new(
@@ -70,7 +71,27 @@ public class TranscriptionWorkflowTests
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") }),
             recording,
+            progress ?? new TranscriptionProgress(),
             logger ?? NullLogger<TranscriptionWorkflow>.Instance);
+    }
+
+    /// <summary>
+    /// Whoever follows the transcription is told that the upload copy is being prepared, and then that the upload begins,
+    /// before the service is called; how far the upload gets is the service's to report.
+    /// </summary>
+    [Test]
+    public async Task The_workflow_reports_preparing_and_then_the_upload_beginning()
+    {
+        var progress = new TranscriptionProgress();
+        List<(TranscriptionStep Step, int? Percent)> reported = [];
+        progress.Changed += (step, percent) => reported.Add((step, percent));
+        var reportedBeforeSending = -1;
+        _client.Setup(Calls.AnyTranscription).Callback(() => reportedBeforeSending = reported.Count).ReturnsAsync(Mocks.Transcript);
+
+        await CreateWorkflow(progress: progress).TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        Assert.That(reported, Is.EqualTo(new[] { (TranscriptionStep.Preparing, (int?)null), (TranscriptionStep.Uploading, (int?)null) }));
+        Assert.That(reportedBeforeSending, Is.EqualTo(2), "both before the service was called");
     }
 
     /// <summary>The real preparer, for tests that need the upload file it actually makes.</summary>
@@ -1147,5 +1168,102 @@ public class TranscriptionWorkflowTests
 
         Assert.That(log.Problems, Has.Some.Contains("Kalam_2026-10-15_20-55-27Z.json"));
         Assert.That(Directory.GetFiles(_files.Folder, "*.md"), Is.Empty);
+    }
+
+    /// <summary>
+    /// The notes in a recording's marks file reach its transcript as headings without numbers, among the numbered marks, and
+    /// a recording that was continued says under its title in how many parts it was made. A rebuild lays it out the same
+    /// way, byte for byte.
+    /// </summary>
+    [Test]
+    public async Task Notes_and_parts_reach_the_transcript_and_its_rebuild()
+    {
+        File.WriteAllLines(_files.Marks, ["00:00:02.000", "00:00:03.000 ~ Resumed at 21:47 UTC, about 4 minutes not recorded", "00:00:04.200"]);
+        AnswerWithTimedWords();
+        var workflow = CreateWorkflow();
+
+        var transcribed = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
+        var rebuilt = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(transcribed.TranscriptPath), Is.EqualTo(
+            $"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC, in 2 parts.{Blank}[00:00:00] Hello world.{Blank}## [00:00:02] Mark 1{Blank}" +
+            $"## [00:00:03] Resumed at 21:47 UTC, about 4 minutes not recorded{Blank}[00:00:04] Goodbye.{Blank}## [00:00:04] Mark 2{Environment.NewLine}"));
+        Assert.That(File.ReadAllBytes(rebuilt), Is.EqualTo(File.ReadAllBytes(transcribed.TranscriptPath)));
+    }
+
+    /// <summary>
+    /// A transcript of a recording made in parts still tells a later rebuild that it is a recording's: with its audio and
+    /// its marks deleted, the rebuild keeps the time the recording started, although it can no longer count the parts.
+    /// </summary>
+    [Test]
+    public async Task A_transcript_of_a_recording_made_in_parts_still_gives_a_rebuild_its_recording_time()
+    {
+        File.WriteAllLines(_files.Marks, ["00:00:03.000 ~ Resumed at 21:47 UTC, about 4 minutes not recorded"]);
+        AnswerWithTimedWords();
+        var workflow = CreateWorkflow();
+        var transcribed = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
+        File.Delete(_files.Segment(1));
+        File.Delete(_files.Marks);
+
+        var rebuilt = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(transcribed.TranscriptPath), Does.Contain($"Recorded 15 October 2026, 20:55 UTC, in 2 parts.{Blank}"));
+        Assert.That(File.ReadAllText(rebuilt), Does.StartWith($"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC.{Blank}"));
+    }
+
+    /// <summary>
+    /// The multipart report's alignment check, across a continue: a class recorded first at 44.1 kHz, then at 48 kHz after a
+    /// device switch, is continued later from its length on disk, and the continued run rolls over into another part. A
+    /// tone that starts at a mark set in the continued run starts at that mark's position in the 16 kHz upload, within a
+    /// millisecond, so that the mark's heading lands where the tone is in the transcript.
+    /// </summary>
+    [Test]
+    public async Task A_tone_at_a_mark_set_after_a_continue_starts_at_the_marks_position_in_the_upload()
+    {
+        File.Delete(_files.Segment(1));
+        TestAudio.WriteWav(_files.Segment(1), 44100, new short[103_441]);   // the first run, until a device switch
+        TestAudio.WriteWav(_files.Segment(2), 48000, new short[59_256]);    // the first run, after it
+        var folders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _recordings }), new ManualTimeProvider(Started), NullLogger<ClassFolders>.Instance);
+        var marks = new ClassMarks(NullLogger<ClassMarks>.Instance);
+
+        var files = folders.Open(_files.Folder, _files.BaseName);
+        var offset = folders.LengthOnDisk(files);
+        marks.AddResume(files, offset, Started.AddMinutes(50), TimeSpan.FromMinutes(4));
+        TestAudio.WriteWav(files.Segment(3), 48000, new short[36_000]);   // the continued run, until a rollover
+        var toneAt = offset + TimeSpan.FromSeconds(36_000 / 48000.0) + TimeSpan.FromSeconds(14_400 / 48000.0);
+        marks.Add(files, toneAt);
+        TestAudio.WriteWav(files.Segment(4), 48000, [.. new short[14_400], .. TestAudio.Tone(48000, seconds: 0.5, frequency: 1000, amplitude: 0.5)]);
+
+        short[] uploaded = [];
+        _client.Setup(Calls.AnyTranscription).ReturnsAsync((string path, IReadOnlyList<string> _, CancellationToken _) =>
+        {
+            uploaded = TestAudio.ReadWav(path).Samples;
+            return Mocks.Transcript;
+        });
+
+        await CreateWorkflow(preparer: RealPreparer()).TranscribeRecordingAsync(files, CancellationToken.None);
+
+        var mark = marks.Read(files).Single(m => !m.IsNote);
+        var onset = Array.FindIndex(uploaded, sample => Math.Abs((int)sample) > short.MaxValue / 4);
+        Assert.That(offset.TotalSeconds, Is.EqualTo(103_441 / 44100.0 + 59_256 / 48000.0).Within(1e-6));
+        Assert.That(onset / (double)AudioPreparer.TargetSampleRate, Is.EqualTo(mark.Position.TotalSeconds).Within(0.001));
+    }
+
+    /// <summary>
+    /// A file transcribed with a recordings folder given for it (--output) gets the folder of its transcript under that
+    /// folder rather than under Recording:OutputFolder; the file itself stays where it is.
+    /// </summary>
+    [Test]
+    public async Task A_file_transcribed_with_a_recordings_folder_of_its_own_gets_its_folder_there()
+    {
+        var video = _folder.File("class.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+        var elsewhere = _folder.File("Elsewhere");
+
+        var files = await CreateWorkflow().TranscribeFileAsync(video, elsewhere, CancellationToken.None);
+
+        Assert.That(files.TranscriptPath, Is.EqualTo(Path.Combine(elsewhere, "class", "class_2026-10-15_20-55-27Z.md")));
+        Assert.That(File.Exists(video), Is.True);
+        Assert.That(Directory.Exists(Path.Combine(_recordings, "class")), Is.False);
     }
 }

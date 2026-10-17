@@ -6,6 +6,7 @@ using System.Text;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -300,6 +301,9 @@ public sealed class RecordingLogger<T> : ILogger<T>
 
     /// <summary>Every message logged, whatever its level, in order.</summary>
     public IReadOnlyList<string> Messages => [.. _entries.Select(entry => entry.Message)];
+
+    /// <summary>Every message logged, with its level, in order.</summary>
+    public IReadOnlyList<(LogLevel Level, string Message)> Entries => [.. _entries];
 
     /// <summary>True once the code that logs is held at the message <see cref="HoldNext"/> named.</summary>
     public bool Held => _held;
@@ -632,11 +636,19 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     }
 }
 
-/// <summary>Stop and cancel signals the test raises by hand.</summary>
+/// <summary>
+/// Stop and cancel signals the test raises by hand: directly (<see cref="RequestStop"/>, <see cref="Cancel"/>), or by
+/// pressing Ctrl+C as the recorder does for one a window passes on (<see cref="CtrlCPressed"/>).
+/// </summary>
 public sealed class FakeUserSignals : IUserSignals
 {
     private readonly TaskCompletionSource _stop = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource _cancellation = new();
+    private readonly Lock _gate = new();
+    private int _ctrlCPresses;
+
+    /// <summary>True while a first Ctrl+C pressed while recording waits for its second.</summary>
+    private bool _firstPressWaiting;
 
     /// <inheritdoc />
     public Task StopRequested => _stop.Task;
@@ -644,11 +656,137 @@ public sealed class FakeUserSignals : IUserSignals
     /// <inheritdoc />
     public CancellationToken Cancellation => _cancellation.Token;
 
+    /// <summary>How many times Ctrl+C has been pressed.</summary>
+    public int CtrlCPresses
+    {
+        get { lock (_gate) return _ctrlCPresses; }
+    }
+
     /// <inheritdoc />
     public void RequestStop() => _stop.TrySetResult();
 
     /// <summary>Cancels whatever is still running, such as the upload, as a later Ctrl+C does.</summary>
     public void Cancel() => _cancellation.Cancel();
+
+    /// <summary>
+    /// Presses Ctrl+C, counted in <see cref="CtrlCPresses"/>, as the real signals take it but without their timing: while
+    /// recording, the first press waits for a second and the second stops; after the stop, a press cancels whatever still
+    /// runs. The real signals' five and two seconds are their own tests' business.
+    /// </summary>
+    public void CtrlCPressed()
+    {
+        lock (_gate)
+        {
+            _ctrlCPresses++;
+            if (!_stop.Task.IsCompleted)
+            {
+                if (_firstPressWaiting) _stop.TrySetResult();
+                _firstPressWaiting = !_firstPressWaiting;
+                return;
+            }
+        }
+
+        _cancellation.Cancel();
+    }
+}
+
+/// <summary>
+/// The free space of a drive as a test sets it: plenty unless the test says otherwise. Each folder asked about is kept,
+/// so that a test can see how often the space was read.
+/// </summary>
+public sealed class FakeFreeSpace : IFreeSpace
+{
+    private readonly Lock _gate = new();
+    private readonly List<string> _asked = [];
+    private long? _bytes = 500_000_000_000;
+
+    /// <summary>The bytes free on every drive: 500 GB, room for any class, unless the test sets less; null for a drive that cannot be read.</summary>
+    public long? Bytes
+    {
+        get { lock (_gate) return _bytes; }
+        set { lock (_gate) _bytes = value; }
+    }
+
+    /// <summary>The folders whose free space was asked for, in order.</summary>
+    public IReadOnlyList<string> Asked
+    {
+        get { lock (_gate) return [.. _asked]; }
+    }
+
+    /// <inheritdoc />
+    public long? AvailableBytes(string folder)
+    {
+        lock (_gate)
+        {
+            _asked.Add(folder);
+            return _bytes;
+        }
+    }
+}
+
+/// <summary>
+/// Takes a run's states as a window's title or the windows that show the run would, and keeps them, in order. It can be
+/// made to fail once, or at every state until it recovers, after keeping the state, as a window whose title cannot be set
+/// would.
+/// </summary>
+public sealed class FakeStatusSink : IRecorderStatusSink
+{
+    private readonly Lock _gate = new();
+    private readonly List<RecorderState> _states = [];
+    private Exception? _failure;
+
+    /// <summary>What every publish throws until <see cref="Recover"/>; null while publishing works.</summary>
+    private Exception? _lastingFailure;
+
+    /// <summary>Every state published, in order.</summary>
+    public IReadOnlyList<RecorderState> States
+    {
+        get { lock (_gate) return [.. _states]; }
+    }
+
+    /// <summary>How many states have been published.</summary>
+    public int Count
+    {
+        get { lock (_gate) return _states.Count; }
+    }
+
+    /// <summary>The state published last, or null before the first.</summary>
+    public RecorderState? Last
+    {
+        get { lock (_gate) return _states.Count == 0 ? null : _states[^1]; }
+    }
+
+    /// <summary>Makes the next <see cref="Publish"/> throw <paramref name="failure"/> once it has kept its state.</summary>
+    public void FailNext(Exception failure)
+    {
+        lock (_gate) _failure = failure;
+    }
+
+    /// <summary>Makes every <see cref="Publish"/> from now on throw <paramref name="failure"/> once it has kept its state, until <see cref="Recover"/>.</summary>
+    public void FailFromNow(Exception failure)
+    {
+        lock (_gate) _lastingFailure = failure;
+    }
+
+    /// <summary>Lets <see cref="Publish"/> work again after <see cref="FailFromNow"/>.</summary>
+    public void Recover()
+    {
+        lock (_gate) _lastingFailure = null;
+    }
+
+    /// <inheritdoc />
+    public void Publish(RecorderState state)
+    {
+        Exception? failure;
+        lock (_gate)
+        {
+            _states.Add(state);
+            failure = _failure ?? _lastingFailure;
+            _failure = null;
+        }
+
+        if (failure is not null) throw failure;
+    }
 }
 
 /// <summary>
@@ -671,9 +809,19 @@ public sealed class FakeConsoleUi : IConsoleUi
     private ManualResetEventSlim? _readHold;
 
     private volatile bool _readHeld;
+    private int _keyReads;
 
     /// <inheritdoc />
     public bool IsInteractive { get; init; } = true;
+
+    /// <summary>
+    /// True for a console whose keys have run out, as when the source of the keys has closed: every read of a key answers
+    /// null at once, without being cancelled.
+    /// </summary>
+    public bool KeysClosed { get; init; }
+
+    /// <summary>How many reads of a key have begun.</summary>
+    public int KeyReads => Volatile.Read(ref _keyReads);
 
     /// <summary>Everything shown so far, as one text.</summary>
     public string Screen => string.Join(Environment.NewLine, _output);
@@ -689,13 +837,20 @@ public sealed class FakeConsoleUi : IConsoleUi
     public void HoldNextRead(ManualResetEventSlim gate) => Volatile.Write(ref _readHold, gate);
 
     /// <summary>Queues key presses: letters and digits as they are, '\r' for Enter, '\u001b' for Esc and '\u0003' for Ctrl+C.</summary>
-    public void Type(params char[] keys) => Enqueue(_keys, keys);
+    public void Type(params char[] keys) => Enqueue(_keys, [.. keys.Select(ToKeyInfo)]);
+
+    /// <summary>
+    /// Queues key presses made with <paramref name="modifiers"/> held, such as Ctrl+Q or Alt+M: each character as
+    /// <see cref="Type"/> takes it, with those keys held as well.
+    /// </summary>
+    public void TypeHolding(ConsoleModifiers modifiers, params char[] keys) =>
+        Enqueue(_keys, [.. keys.Select(key => Holding(ToKeyInfo(key), modifiers))]);
 
     /// <summary>
     /// Queues key presses made while nothing reads the keyboard, such as during an upload. They wait in
     /// the console, so they are read before the keys queued with <see cref="Type"/>, unless they are discarded first.
     /// </summary>
-    public void TypeAhead(params char[] keys) => Enqueue(_typedAhead, keys);
+    public void TypeAhead(params char[] keys) => Enqueue(_typedAhead, [.. keys.Select(ToKeyInfo)]);
 
     /// <summary>Queues a line, as typed or dragged in and followed by Enter. Null stands for Esc.</summary>
     public void TypeLine(string? line)
@@ -712,6 +867,9 @@ public sealed class FakeConsoleUi : IConsoleUi
     /// <inheritdoc />
     public async Task<ConsoleKeyInfo?> ReadKeyAsync(CancellationToken cancellationToken)
     {
+        Interlocked.Increment(ref _keyReads);
+        if (KeysClosed) return null;
+
         if (Interlocked.Exchange(ref _readHold, null) is { } hold)
         {
             _readHeld = true;
@@ -752,14 +910,26 @@ public sealed class FakeConsoleUi : IConsoleUi
     public void WriteLine(string text = "") => _output.Enqueue(text);
 
     /// <summary>Adds key presses to one of the queues and wakes a read that waits for them.</summary>
-    private void Enqueue(Queue<ConsoleKeyInfo> queue, char[] keys)
+    private void Enqueue(Queue<ConsoleKeyInfo> queue, ConsoleKeyInfo[] keys)
     {
         lock (_gate)
         {
-            foreach (var key in keys) queue.Enqueue(ToKeyInfo(key));
+            foreach (var key in keys) queue.Enqueue(key);
             _typed.TrySetResult();
             _typed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
+    }
+
+    /// <summary>
+    /// <paramref name="key"/> pressed with <paramref name="modifiers"/> held as well. With Ctrl held, a letter types its
+    /// control character, as Windows gives it: Ctrl+Q types '\u0011'.
+    /// </summary>
+    private static ConsoleKeyInfo Holding(ConsoleKeyInfo key, ConsoleModifiers modifiers)
+    {
+        var held = key.Modifiers | modifiers;
+        var control = held.HasFlag(ConsoleModifiers.Control);
+        var character = control && key.Key is >= ConsoleKey.A and <= ConsoleKey.Z ? (char)(key.Key - ConsoleKey.A + 1) : key.KeyChar;
+        return new(character, key.Key, held.HasFlag(ConsoleModifiers.Shift), held.HasFlag(ConsoleModifiers.Alt), control);
     }
 
     /// <summary>Turns a character into the key press that types it.</summary>
