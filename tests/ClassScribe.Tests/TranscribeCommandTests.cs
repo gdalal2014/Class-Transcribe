@@ -125,6 +125,23 @@ public class TranscribeCommandTests
         Assert.That(File.ReadAllText(recording.Transcript()), Does.Contain("## [00:00:00] Mark 1"));
     }
 
+    /// <summary>
+    /// A recording whose class track was never written has only its .mic.wav files; given one of them, it is transcribed
+    /// as the recording it is, its transcript beside it, rather than sent as a stray file into a folder of its own.
+    /// </summary>
+    [Test]
+    public async Task A_microphone_file_of_a_recording_without_a_class_track_is_transcribed_as_the_recording()
+    {
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        File.Move(recording.Segment(1), recording.Segment(1, Track.Microphone));
+
+        var exitCode = await CreateCommand().RunAsync(new TranscribeRequest(recording.Segment(1, Track.Microphone)));
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        _preparer.Verify(p => p.Prepare(new[] { recording.Segment(1, Track.Microphone) }, recording.Upload, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.That(File.Exists(recording.Transcript()), Is.True, "the transcript goes beside the recording");
+    }
+
     /// <summary>A folder without any recording is an error, and nothing is sent.</summary>
     [Test]
     public async Task A_folder_without_recordings_is_an_error()

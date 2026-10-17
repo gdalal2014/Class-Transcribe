@@ -1,5 +1,6 @@
 using System.Globalization;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
@@ -21,32 +22,48 @@ public class RecordingMonitorTests
     /// <summary>The folder the tests' recording goes to; only its drive's free space is read, from the test's stand-in.</summary>
     private const string Folder = @"D:\Classes\Kalam";
 
-    /// <summary>The source the tests' tracks record unless a test names another.</summary>
+    /// <summary>The source the tests' tracks record unless a test names another: the speakers, which the room hears.</summary>
     private const string Speakers = "Fake Speakers";
+
+    /// <summary>Headphones, which the room does not hear.</summary>
+    private const string Headphones = "Headphones (Pixel Buds Pro 2)";
 
     private ManualTimeProvider _time = null!;
     private FakeSystemTimes _times = null!;
     private FakeFreeSpace _space = null!;
+    private FakeRegistryValues _registry = null!;
+    private FakeCaptureProvider _outputs = null!;
     private RecordingMonitor _monitor = null!;
     private MonitorContext _context = null!;
 
-    /// <summary>The clock at the tests' class, the computer's clocks read from it, and room for any class on the disk.</summary>
+    /// <summary>
+    /// The clock at the tests' class, the computer's clocks read from it, room for any class on the disk, a registry with
+    /// Vantage off and ducking set to Do nothing, and the output devices: the speakers, heard in the room, and headphones.
+    /// </summary>
     [SetUp]
     public void SetUp()
     {
         _time = new ManualTimeProvider(TestRuns.Start);
         _times = new FakeSystemTimes(_time);
         _space = new FakeFreeSpace();
+        _registry = new FakeRegistryValues()
+            .Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "0")
+            .Set(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue, 3);
+        _outputs = new FakeCaptureProvider();
+        _outputs.ConnectDevice(Speakers, heardInTheRoom: true);
+        _outputs.ConnectDevice(Headphones);
     }
 
     /// <summary>
     /// Makes the monitor with <paramref name="options"/> (the defaults unless given) for <paramref name="request"/> (the
-    /// tests' request unless given), as the recording loop starts it now.
+    /// tests' request unless given), as the recording loop starts it now; <paramref name="microphone"/> is what the
+    /// recording says about your microphone beyond its snapshot, when it has one.
     /// </summary>
-    private void Begin(RecordingOptions? options = null, RecordRequest? request = null)
+    private void Begin(RecordingOptions? options = null, RecordRequest? request = null, IMicrophoneRecording? microphone = null)
     {
-        _monitor = new RecordingMonitor(new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance), _space, TestOptions.Create(options ?? new RecordingOptions()), _time);
-        _context = new MonitorContext(request ?? TestRuns.Request(TestRuns.Id()), Folder, _time.GetUtcNow(), _time.GetTimestamp(), TimeSpan.Zero);
+        _monitor = new RecordingMonitor(new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance), _space, TestOptions.Create(options ?? new RecordingOptions()),
+            new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _outputs, _time);
+        _context = new MonitorContext(request ?? TestRuns.Request(TestRuns.Id()), Folder, _time.GetUtcNow(), _time.GetTimestamp(), TimeSpan.Zero, microphone);
     }
 
     /// <summary>A look at <paramref name="snapshot"/> now, without moving the clock.</summary>
@@ -793,4 +810,670 @@ public class RecordingMonitorTests
     [TestCase(90000, "25 hours")]
     public void A_length_is_given_in_units_that_read_at_a_glance(int seconds, string length) =>
         Assert.That(RecordingMonitor.DescribeLength(TimeSpan.FromSeconds(seconds)), Is.EqualTo(length));
+
+    // ------------------------------------------------------------------ the microphone: the lines at the start
+
+    private const string ClassPrivacy = "Your microphone is recorded too, and uploaded to ElevenLabs with the class.";
+    private const string RoomPrivacy = "Your microphone records the room, and the recording is uploaded to ElevenLabs. Ask before recording others.";
+    private const string VisibleCase = "Your voice is recorded while chrome is listening: when you mute in chrome, ClassScribe stops too. V switches it off by hand.";
+    private const string InvisibleCase = "chrome keeps the microphone open while you are muted, so ClassScribe cannot see your mute. Your voice is recorded only after you press V, and only while chrome holds the microphone. Muting the microphone in Windows (the microphone key) stops it too.";
+    private const string UnknownCase = "ClassScribe has not been told whether chrome lets go of the microphone when you mute (most class apps and pages keep it open), so it cannot follow your mute yet: your voice is recorded only after you press V, and only while chrome holds the microphone. Muting the microphone in Windows (the microphone key) stops it too. Run the microphone check (menu choice 8) during a class, or set Recording:ClassAppMute.";
+    private const string VAlone = "V switches it off and on; muting yourself in the class app does not.";
+    private const string FollowingChrome = "Following: chrome (Recording:MicrophoneFollows)";
+    private const string ArrayRaw = "Microphone: \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" (Windows' default microphone), without Windows' sound processing (RAW)";
+    private const string VantageOn = "Lenovo Vantage's microphone noise cancelling is on (mode 1, probably \"Multiple Voices\"); it can cut out a lecturer across the room. Set Vantage > Device Settings > Sound > Input to Off.";
+    private const string Ducking80 = "Windows lowers other sounds by 80% while a microphone is open, which can make the class quieter, in the recording too. Set Sound > More sound settings > Communications to Do nothing.";
+    private const string EchoOnSpeakers = "The class plays on \"Fake Speakers\", so the microphone records it a second time (an echo). Use headphones.";
+    private const string BluetoothBuds = "The microphone \"Headset (2- Pixel Buds Pro 2)\" is Bluetooth: using it switches the earbuds to call quality, for the class too. The laptop's microphone array avoids that.";
+    private const string InPersonAdvice = "Plug in and keep the lid open; the screen stays on while on battery. For a break press P; V switches the microphone off but keeps the clock running, and that silence is uploaded.";
+    private const string StatusOnHeadphones = "Recording: 00:00:42 captured from \"Headphones (Pixel Buds Pro 2)\"";
+
+    /// <summary>A request to record the class from <paramref name="source"/> (the device it plays on unless given) and your microphone, following what the settings say unless <paramref name="chosen"/> names a rule for the run.</summary>
+    private static RecordRequest WithMicrophone(ClassSource? source = null, FollowRule? chosen = null, string? namePart = null) =>
+        TestRuns.Request(TestRuns.Id()) with { Source = new SourcePlan(RecordingMode.ClassAndMicrophone, source ?? new ClassSource.Automatic(), new MicrophoneChoice(namePart, chosen)) };
+
+    /// <summary>A request to record your microphone alone, in person.</summary>
+    private static RecordRequest InPerson() =>
+        TestRuns.Request(TestRuns.Id()) with { Source = new SourcePlan(RecordingMode.Microphone, Class: null, new MicrophoneChoice(null)) };
+
+    /// <summary>The microphone track: the array, capturing and handing over audio all the time, unless a test says otherwise.</summary>
+    private static TrackSnapshot MicrophoneTrack(bool capturing = true, bool off = false, bool onlyZeros = false, string? waitingFor = null) =>
+        FakeRecording.Track(LaptopMicrophones.Array.Name, waitingFor: waitingFor, deliversContinuously: true, capturing: capturing, off: off, onlyZeros: onlyZeros);
+
+    /// <summary>A recording of the class, from the headphones unless <paramref name="main"/> says otherwise, and your microphone, the array unless <paramref name="microphone"/> says otherwise, 42 seconds in.</summary>
+    private static RecordingSnapshot WithTracks(TrackSnapshot? main = null, TrackSnapshot? microphone = null, int seconds = 42, bool paused = false) =>
+        new(TimeSpan.FromSeconds(seconds), paused, main ?? FakeRecording.Track(Headphones), microphone ?? MicrophoneTrack());
+
+    /// <summary>A recording of your microphone alone, in person, 42 seconds in.</summary>
+    private static RecordingSnapshot InPersonTracks(TrackSnapshot? main = null) =>
+        new(TimeSpan.FromSeconds(42), false, main ?? MicrophoneTrack(), Microphone: null);
+
+    /// <summary>
+    /// Begins with the class and your microphone, the status line off unless <paramref name="options"/> say otherwise:
+    /// the recording follows <paramref name="rule"/> (chrome unless given) through a gate for an app whose mute is
+    /// <paramref name="appMute"/>, as the settings say too, and the class comes from <paramref name="source"/>. Returns
+    /// the recording, whose gate the test feeds looks and whose microphone it changes.
+    /// </summary>
+    private FakeMicrophoneRecording BeginWithMicrophone(ClassAppMute appMute = ClassAppMute.Visible, FollowRule? rule = null, ClassSource? source = null,
+        RecordingOptions? options = null, FollowRule? chosen = null)
+    {
+        var recording = new FakeMicrophoneRecording();
+        recording.Follow(rule ?? new FollowRule.Named("chrome"), appMute, _time);
+        Begin(options ?? new RecordingOptions { StatusIntervalSeconds = 3600, ClassAppMute = appMute }, WithMicrophone(source, chosen), recording);
+        return recording;
+    }
+
+    /// <summary>Hands the gate a look made now, as the watch does: <paramref name="look"/> makes it for the clock's moment.</summary>
+    private static WatchLook Feed(MicrophoneGate gate, ManualTimeProvider time, Func<TimeSpan, WatchLook> look)
+    {
+        var made = look(TimeSpan.FromTicks(time.GetTimestamp()));
+        gate.Record(made);
+        return made;
+    }
+
+    /// <summary>Hands the test's gate a look made now.</summary>
+    private void Feed(MicrophoneGate gate, Func<TimeSpan, WatchLook> look) => Feed(gate, _time, look);
+
+    /// <summary>The texts of the lines that are warnings, in order.</summary>
+    private static string[] Warnings(MonitorTick tick) => [.. tick.Lines.Where(line => line.Level == LogLevel.Warning).Select(line => line.Text)];
+
+    /// <summary>The texts of every look's lines that are warnings, in order.</summary>
+    private static string[] Warnings(IEnumerable<MonitorTick> ticks) => [.. ticks.SelectMany(Warnings)];
+
+    /// <summary>
+    /// With the class and your microphone, the first look gives the privacy line, the case line for an app whose mute
+    /// Windows can see, which app is followed and from where, and which microphone with how it is recorded; nothing
+    /// needs attention when the class plays on headphones and the settings are right.
+    /// </summary>
+    [Test]
+    public void With_the_class_the_first_look_gives_the_privacy_the_case_the_following_and_the_microphone_lines()
+    {
+        BeginWithMicrophone(ClassAppMute.Visible);
+
+        var first = Look(WithTracks());
+        var second = Tick(WithTracks());
+
+        Assert.That(first.Lines, Is.EqualTo(new[]
+        {
+            (LogLevel.Information, ClassPrivacy),
+            (LogLevel.Information, VisibleCase),
+            (LogLevel.Information, FollowingChrome),
+            (LogLevel.Information, ArrayRaw)
+        }));
+        Assert.That(first.Attention, Is.EqualTo(Attention.None));
+        Assert.That(Texts(second), Is.Empty, "the start lines come once");
+    }
+
+    /// <summary>
+    /// Each warning at the start is logged as one, in the advice's order after the lines about what is recorded, and the
+    /// warnings are a Notice in the title, which says how many, for five minutes.
+    /// </summary>
+    [Test]
+    public void Each_warning_at_the_start_is_logged_and_the_warnings_are_a_Notice_for_5_minutes()
+    {
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "1");
+        _registry.Remove(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue);
+        BeginWithMicrophone(ClassAppMute.Unknown);
+
+        var first = Look(WithTracks(main: FakeRecording.Track(Speakers)));
+        var during = Run(299, _ => WithTracks(main: FakeRecording.Track(Speakers)));
+        var after = Tick(WithTracks(main: FakeRecording.Track(Speakers)));
+
+        Assert.That(first.Lines, Is.EqualTo(new[]
+        {
+            (LogLevel.Information, ClassPrivacy),
+            (LogLevel.Information, UnknownCase),
+            (LogLevel.Information, FollowingChrome),
+            (LogLevel.Information, ArrayRaw),
+            (LogLevel.Warning, VantageOn),
+            (LogLevel.Warning, Ducking80),
+            (LogLevel.Warning, EchoOnSpeakers)
+        }));
+        Assert.That(first.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "3 warnings at the start", $"{VantageOn} {Ducking80} {EchoOnSpeakers}", 1)));
+        Assert.That(during.Select(tick => tick.Attention.Level), Has.All.EqualTo(AttentionLevel.Notice));
+        Assert.That(after.Attention, Is.EqualTo(new Attention(AttentionLevel.None, "", "", 1)), "the Notice lasts 5 minutes; the log keeps the words");
+        Assert.That(Texts(during.Append(after)), Is.Empty);
+    }
+
+    /// <summary>In app mode the followed app is the app being recorded, and the line says so.</summary>
+    [Test]
+    public void In_app_mode_the_following_line_names_the_app_being_recorded()
+    {
+        _outputs.AddApp(4242, "chrome", Headphones);
+        BeginWithMicrophone(ClassAppMute.Visible, source: new ClassSource.App("chrome"));
+
+        var first = Look(WithTracks(main: FakeRecording.Track("chrome", deliversContinuously: true)));
+
+        Assert.That(Texts(first), Has.One.EqualTo("Following: chrome, the app being recorded"));
+        Assert.That(Warnings(first), Is.Empty, "the app plays on headphones");
+    }
+
+    /// <summary>A rule chosen for the run, with --mic-follows or in the menu, is said to be so.</summary>
+    [Test]
+    public void A_rule_chosen_for_the_run_is_said_to_be()
+    {
+        BeginWithMicrophone(ClassAppMute.Visible, rule: new FollowRule.Named("zoom"), chosen: new FollowRule.Named("zoom"));
+
+        Assert.That(Texts(Look(WithTracks())), Has.One.EqualTo("Following: zoom (chosen for this run)"));
+    }
+
+    /// <summary>Following any app that holds the microphone is said as such; following none gives no line, and the case line names V.</summary>
+    [Test]
+    public void Following_any_app_and_none_are_said_as_such()
+    {
+        BeginWithMicrophone(ClassAppMute.Visible, rule: new FollowRule.Any());
+        var any = Look(WithTracks());
+
+        BeginWithMicrophone(ClassAppMute.Visible, rule: new FollowRule.None());
+        var none = Look(WithTracks());
+
+        Assert.That(Texts(any), Has.One.EqualTo("Following: any app that holds the microphone (Recording:MicrophoneFollows auto)"));
+        Assert.That(Texts(none), Has.None.StartsWith("Following:"));
+        Assert.That(Texts(none)[1], Is.EqualTo(VAlone));
+    }
+
+    /// <summary>In person the lines are the room's privacy line, the microphone, and the advice about the battery; ducking and the echo do not apply.</summary>
+    [Test]
+    public void In_person_the_lines_are_the_room_the_microphone_and_the_battery_advice()
+    {
+        _registry.Remove(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue);
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600 }, InPerson(), new FakeMicrophoneRecording(RecordingMode.Microphone));
+
+        var first = Look(InPersonTracks());
+
+        Assert.That(first.Lines, Is.EqualTo(new[]
+        {
+            (LogLevel.Information, RoomPrivacy),
+            (LogLevel.Information, ArrayRaw),
+            (LogLevel.Information, InPersonAdvice)
+        }));
+        Assert.That(first.Attention, Is.EqualTo(Attention.None));
+    }
+
+    /// <summary>
+    /// A recording that says nothing about its microphone beyond its snapshot (one without <see cref="IMicrophoneRecording"/>)
+    /// still has the microphone it captures named at the start, with the processing the settings ask for, rather than
+    /// said to be waited for; with no app followed, the case line names V, and nothing is said about a move.
+    /// </summary>
+    [Test]
+    public void A_recording_that_says_no_more_than_its_snapshot_still_names_its_microphone_at_the_start()
+    {
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600 }, WithMicrophone(), microphone: null);
+
+        var first = Look(WithTracks());
+        var second = Tick(WithTracks());
+
+        Assert.That(Texts(first), Is.EqualTo(new[] { ClassPrivacy, VAlone, "Microphone: \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\", without Windows' sound processing (RAW)" }));
+        Assert.That(first.Attention, Is.EqualTo(Attention.None));
+        Assert.That(Texts(second), Is.Empty);
+    }
+
+    /// <summary>
+    /// A track that starts switched off, as it does while the class app's mute cannot be seen, has no microphone recorded
+    /// yet: the line names the one the recording would record, with why and what will be asked for, as switched off
+    /// until V rather than waited for, and the warnings about it (Vantage, for the array) come at the start, not at V,
+    /// which then opens the microphone already named and has nothing new to warn about.
+    /// </summary>
+    [Test]
+    public void A_microphone_switched_off_at_the_start_is_named_and_warned_about()
+    {
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "1");
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        recording.Microphone = null;
+        recording.WouldRecord = LaptopMicrophones.Array;
+        var off = WithTracks(microphone: MicrophoneTrack(capturing: false, off: true));
+
+        var first = Look(off);
+        var next = Run(31, _ => off);
+        recording.Microphone = LaptopMicrophones.Array;
+        var on = Tick(WithTracks());
+
+        Assert.That(Texts(first), Is.EqualTo(new[]
+        {
+            ClassPrivacy,
+            UnknownCase,
+            FollowingChrome,
+            $"Microphone: \"{LaptopMicrophones.Array.Name}\" (Windows' default microphone), switched off until you press V; RAW will be asked for",
+            VantageOn
+        }));
+        Assert.That(first.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "1 warning at the start", VantageOn, 1)));
+        Assert.That(Texts(next), Is.Empty, "nothing is waited for while off");
+        Assert.That(Texts(on), Is.Empty, "V opened the microphone named at the start: nothing new to warn about");
+    }
+
+    /// <summary>When Windows refused RAW and the capture opened with its sound processing, the microphone line says so: the processing the recording reports is the capture's, not the setting's.</summary>
+    [Test]
+    public void The_microphone_line_says_with_Windows_sound_processing_when_the_capture_opened_so()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible);
+        recording.Processing = MicrophoneProcessing.Default;
+
+        var first = Look(WithTracks());
+
+        Assert.That(Texts(first), Does.Contain($"Microphone: \"{LaptopMicrophones.Array.Name}\" (Windows' default microphone), with Windows' sound processing"));
+    }
+
+    /// <summary>Without a microphone at the start the microphone line says what is waited for, and a warning says so every 30 seconds, with a Notice, until one is found.</summary>
+    [Test]
+    public void A_missing_microphone_with_the_class_is_said_every_30_seconds_and_is_a_Notice()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible);
+        recording.Microphone = null;
+        var missing = MicrophoneTrack(capturing: false, waitingFor: "the microphone \"OBSBOT\"");
+        const string waiting = "Waiting for the microphone \"OBSBOT\"; the class is being recorded";
+
+        var first = Look(WithTracks(microphone: missing));
+        var next = Run(29, _ => WithTracks(microphone: missing));
+        var thirty = Tick(WithTracks(microphone: missing));
+        recording.Microphone = LaptopMicrophones.Obsbot;
+        var found = Tick(WithTracks(microphone: FakeRecording.Track(LaptopMicrophones.Obsbot.Name, deliversContinuously: true)));
+
+        Assert.That(Texts(first), Is.EqualTo(new[] { ClassPrivacy, VisibleCase, FollowingChrome, "Microphone: waiting for the microphone \"OBSBOT\"", waiting }));
+        Assert.That(first.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "no microphone", waiting, 1)));
+        Assert.That(Texts(next), Is.Empty);
+        Assert.That(Texts(thirty), Is.EqualTo(new[] { waiting }));
+        Assert.That(found.Attention.Level, Is.EqualTo(AttentionLevel.None));
+        Assert.That(Warnings(found), Is.Empty, "the OBSBOT is neither Bluetooth nor the array");
+    }
+
+    // ------------------------------------------------------------------ the microphone: Vantage, the echo, a move
+
+    /// <summary>Vantage's mode is read again every 30 seconds: a change to on is a warning and a Notice; a change to off is said plainly and clears the Notice.</summary>
+    [Test]
+    public void Vantage_is_read_again_every_30_seconds_and_a_change_is_noticed()
+    {
+        BeginWithMicrophone(ClassAppMute.Visible);
+        Look(WithTracks());
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "4");
+        var before = Run(29, _ => WithTracks());
+        var thirty = Tick(WithTracks());
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "0");
+        var sixty = Run(30, _ => WithTracks())[^1];
+
+        const string switchedOn = "Lenovo Vantage's microphone noise cancelling has switched on (mode 4, probably \"Only My Voice\"); it can cut out a lecturer across the room. Set Vantage > Device Settings > Sound > Input to Off.";
+        Assert.That(Texts(before), Is.Empty, "not before 30 seconds");
+        Assert.That(thirty.Lines, Is.EqualTo(new[] { (LogLevel.Warning, switchedOn) }));
+        Assert.That(thirty.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "Vantage noise cancelling on", switchedOn, 1)));
+        Assert.That(sixty.Lines, Is.EqualTo(new[] { (LogLevel.Information, "Lenovo Vantage's microphone noise cancelling is now off.") }));
+        Assert.That(sixty.Attention.Level, Is.EqualTo(AttentionLevel.None));
+    }
+
+    /// <summary>The echo is checked again whenever the class moves to another device: a warning and a Notice on the speakers, nothing on headphones.</summary>
+    [Test]
+    public void The_echo_is_checked_again_when_the_class_moves_to_another_device()
+    {
+        BeginWithMicrophone(ClassAppMute.Visible);
+        var start = Look(WithTracks());
+        var onSpeakers = Tick(WithTracks(main: FakeRecording.Track(Speakers)));
+        var still = Tick(WithTracks(main: FakeRecording.Track(Speakers)));
+        var back = Tick(WithTracks());
+
+        Assert.That(Warnings(start), Is.Empty);
+        Assert.That(onSpeakers.Lines, Is.EqualTo(new[] { (LogLevel.Warning, EchoOnSpeakers) }));
+        Assert.That(onSpeakers.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "echo: use headphones", EchoOnSpeakers, 1)));
+        Assert.That(Texts(still), Is.Empty, "said once per move");
+        Assert.That(Texts(back), Is.Empty);
+        Assert.That(back.Attention.Level, Is.EqualTo(AttentionLevel.None), "headphones end the echo");
+    }
+
+    /// <summary>In app mode the class's source does not change when the app moves to another device, so the app's device is looked at every 30 seconds.</summary>
+    [Test]
+    public void In_app_mode_the_apps_device_is_checked_every_30_seconds()
+    {
+        _outputs.AddApp(4242, "chrome", Headphones);
+        BeginWithMicrophone(ClassAppMute.Visible, source: new ClassSource.App("chrome"));
+        var chrome = WithTracks(main: FakeRecording.Track("chrome", deliversContinuously: true));
+        var start = Look(chrome);
+        _outputs.AddApp(4242, "chrome", Speakers);
+        var before = Run(29, _ => chrome);
+        var thirty = Tick(chrome);
+
+        Assert.That(Warnings(start), Is.Empty);
+        Assert.That(Texts(before), Is.Empty);
+        Assert.That(thirty.Lines, Is.EqualTo(new[] { (LogLevel.Warning, EchoOnSpeakers) }));
+        Assert.That(thirty.Attention.Short, Is.EqualTo("echo: use headphones"));
+    }
+
+    /// <summary>
+    /// A look at the devices that fails, as while Windows' audio service restarts, costs the echo check alone: the other
+    /// checks go on, the failure leaves a Debug line once per stretch of failures, and the check looks again at the next
+    /// look, so that the echo is warned about once the list can be read.
+    /// </summary>
+    [Test]
+    public void A_listing_that_fails_does_not_stop_the_checks()
+    {
+        BeginWithMicrophone(ClassAppMute.Visible, options: new RecordingOptions { StatusIntervalSeconds = 1 });
+        Look(WithTracks());
+        _outputs.FailListings(new InvalidOperationException("The audio service is not running."));
+        var moved = Tick(WithTracks(main: FakeRecording.Track(Speakers)));
+        var still = Tick(WithTracks(main: FakeRecording.Track(Speakers)));
+        _outputs.FailListings(null);
+        var read = Tick(WithTracks(main: FakeRecording.Track(Speakers)));
+        _outputs.FailListings(new InvalidOperationException("The audio service is not running."));
+        var again = Tick(WithTracks());
+
+        const string gateClause = "; microphone: following chrome, waiting for chrome to open the microphone";
+        const string onSpeakers = "Recording: 00:00:42 captured from \"Fake Speakers\"" + gateClause;
+        const string failed = "The echo check could not read Windows' device list, so it looks again at the next second: The audio service is not running.";
+        Assert.That(moved.Lines, Is.EqualTo(new[] { (LogLevel.Debug, failed), (LogLevel.Information, onSpeakers) }));
+        Assert.That(still.Lines, Is.EqualTo(new[] { (LogLevel.Information, onSpeakers) }), "noted once per stretch of failures");
+        Assert.That(read.Lines, Is.EqualTo(new[] { (LogLevel.Warning, EchoOnSpeakers), (LogLevel.Information, onSpeakers) }));
+        Assert.That(again.Lines, Is.EqualTo(new[] { (LogLevel.Debug, failed), (LogLevel.Information, StatusOnHeadphones + gateClause) }), "a new stretch is noted again");
+    }
+
+    /// <summary>
+    /// A move to another microphone is advised about as the start was: a Bluetooth one is warned about, with a Notice
+    /// that says how many warnings; a move to one that needs no warning clears it; a move back to the array reads Vantage again.
+    /// </summary>
+    [Test]
+    public void A_move_to_another_microphone_is_warned_about()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible);
+        Look(WithTracks());
+        recording.Microphone = LaptopMicrophones.PixelBuds;
+        var buds = Tick(WithTracks(microphone: FakeRecording.Track(LaptopMicrophones.PixelBuds.Name, deliversContinuously: true)));
+        recording.Microphone = LaptopMicrophones.Obsbot;
+        var obsbot = Tick(WithTracks(microphone: FakeRecording.Track(LaptopMicrophones.Obsbot.Name, deliversContinuously: true)));
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "1");
+        recording.Microphone = LaptopMicrophones.Array;
+        var array = Tick(WithTracks());
+
+        Assert.That(buds.Lines, Is.EqualTo(new[] { (LogLevel.Warning, BluetoothBuds) }));
+        Assert.That(buds.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "1 warning about the microphone", BluetoothBuds, 1)));
+        Assert.That(Texts(obsbot), Is.Empty);
+        Assert.That(obsbot.Attention.Level, Is.EqualTo(AttentionLevel.None));
+        Assert.That(array.Lines, Is.EqualTo(new[] { (LogLevel.Warning, VantageOn) }));
+    }
+
+    // ------------------------------------------------------------------ the microphone: the gate in the status line and the log
+
+    /// <summary>The status line names both sources: the class, and your microphone with the gate's words for its state.</summary>
+    [Test]
+    public void The_status_line_names_both_sources()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible, options: new RecordingOptions { StatusIntervalSeconds = 1 });
+        var gate = recording.Gate!;
+        Look(WithTracks());
+
+        Feed(gate, at => Looks.Open(at));
+        var open = Tick(WithTracks());
+        Feed(gate, at => Looks.NotListening(at));
+        var notListening = Tick(WithTracks());
+        Feed(gate, at => Looks.MutedInWindows(at));
+        var mutedInWindows = Tick(WithTracks());
+        Feed(gate, at => Looks.NotOpened(at));
+        var notOpened = Tick(WithTracks());
+        Feed(gate, at => Looks.OtherMicrophone(at));
+        var other = Tick(WithTracks());
+        Feed(gate, at => Looks.Unknown(at));
+        Tick(WithTracks());
+        var unreadable = Tick(WithTracks());
+        gate.Arm(false);
+        var off = Tick(WithTracks(microphone: MicrophoneTrack(off: true)));
+        gate.Arm(true);
+        var missing = Tick(WithTracks(microphone: MicrophoneTrack(capturing: false, waitingFor: "the microphone \"OBSBOT\"")));
+
+        Assert.That(Texts(open), Is.EqualTo(new[] { $"{StatusOnHeadphones}; microphone: following chrome, recording" }));
+        Assert.That(Texts(notListening), Does.Contain($"{StatusOnHeadphones}; microphone: following chrome, muted (chrome is not listening)"));
+        Assert.That(Texts(mutedInWindows), Does.Contain($"{StatusOnHeadphones}; microphone: following chrome, muted in Windows"));
+        Assert.That(Texts(notOpened), Does.Contain($"{StatusOnHeadphones}; microphone: following chrome, waiting for chrome to open the microphone"));
+        Assert.That(Texts(other), Does.Contain($"{StatusOnHeadphones}; microphone: chrome uses \"{Laptop.ObsbotName}\"; ClassScribe records \"{Laptop.ArrayName}\""));
+        Assert.That(Texts(unreadable), Does.Contain($"{StatusOnHeadphones}; microphone: following chrome, cannot read chrome's microphone session: sessions not readable: The audio service is not running (0x88890010)"));
+        Assert.That(Texts(off), Does.Contain($"{StatusOnHeadphones}; microphone: off (V switches it on)"));
+        Assert.That(Texts(missing), Does.Contain($"{StatusOnHeadphones}; microphone: waiting for the microphone \"OBSBOT\""));
+    }
+
+    /// <summary>With no app followed the status line names the microphone recorded; in person the microphone is the one source named.</summary>
+    [Test]
+    public void The_status_line_names_the_microphone_when_no_app_is_followed()
+    {
+        BeginWithMicrophone(ClassAppMute.Unknown, rule: new FollowRule.None(), options: new RecordingOptions { StatusIntervalSeconds = 1 });
+        Look(WithTracks());
+        var withClass = Tick(WithTracks());
+
+        Begin(new RecordingOptions { StatusIntervalSeconds = 1 }, InPerson(), new FakeMicrophoneRecording(RecordingMode.Microphone));
+        Look(InPersonTracks());
+        var inPerson = Tick(InPersonTracks());
+
+        Assert.That(Texts(withClass), Is.EqualTo(new[] { $"{StatusOnHeadphones}; microphone: recording \"{Laptop.ArrayName}\"" }));
+        Assert.That(Texts(inPerson), Is.EqualTo(new[] { $"Recording: 00:00:42 captured from \"{Laptop.ArrayName}\"" }));
+    }
+
+    /// <summary>When the app's mute cannot be seen the microphone starts off, and the status line says what V does.</summary>
+    [Test]
+    public void When_the_apps_mute_cannot_be_seen_the_status_line_says_what_V_does()
+    {
+        BeginWithMicrophone(ClassAppMute.Unknown, options: new RecordingOptions { StatusIntervalSeconds = 1, ClassAppMute = ClassAppMute.Unknown });
+        Look(WithTracks(microphone: MicrophoneTrack(off: true)));
+
+        var off = Tick(WithTracks(microphone: MicrophoneTrack(off: true)));
+
+        Assert.That(Texts(off), Is.EqualTo(new[] { $"{StatusOnHeadphones}; microphone: off (V records your voice while chrome holds the microphone)" }));
+    }
+
+    /// <summary>A state of the gate that has held for a second is logged once, with the position it began at; one that did not hold is not.</summary>
+    [Test]
+    public void A_gate_state_held_for_a_second_is_logged_once_with_its_position()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible);
+        var gate = recording.Gate!;
+        Look(WithTracks(seconds: 0));
+
+        Feed(gate, at => Looks.Open(at));
+        var one = Tick(WithTracks(seconds: 1));
+        Feed(gate, at => Looks.Open(at));
+        var two = Tick(WithTracks(seconds: 2));
+        Feed(gate, at => Looks.NotListening(at));
+        var three = Tick(WithTracks(seconds: 3));
+        Feed(gate, at => Looks.Open(at));
+        var four = Tick(WithTracks(seconds: 4));
+        Feed(gate, at => Looks.Open(at));
+        var five = Tick(WithTracks(seconds: 5));
+        Feed(gate, at => Looks.NotListening(at));
+        var six = Tick(WithTracks(seconds: 6));
+        Feed(gate, at => Looks.NotListening(at));
+        var seven = Tick(WithTracks(seconds: 7));
+
+        Assert.That(Texts(one), Is.Empty, "not before the state has held for a second");
+        Assert.That(two.Lines, Is.EqualTo(new[] { (LogLevel.Information, "Microphone: chrome is listening; your voice is being recorded from 00:00:01") }));
+        Assert.That(Texts(new[] { three, four, five }), Is.Empty, "a change that reverts within a second is not logged");
+        Assert.That(Texts(six), Is.Empty);
+        Assert.That(seven.Lines, Is.EqualTo(new[] { (LogLevel.Information, "Microphone: chrome is not listening; your voice is not recorded from 00:00:06") }));
+    }
+
+    /// <summary>The app not having opened the microphone for 5 minutes is said once and is a Notice while it lasts.</summary>
+    [Test]
+    public void The_app_not_opening_the_microphone_for_5_minutes_is_a_Notice()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible);
+        var gate = recording.Gate!;
+        Look(WithTracks());
+
+        var before = Run(299, _ => { Feed(gate, at => Looks.NotOpened(at)); return WithTracks(); });
+        Feed(gate, at => Looks.NotOpened(at));
+        var fiveMinutes = Tick(WithTracks());
+        Feed(gate, at => Looks.NotOpened(at));
+        var after = Tick(WithTracks());
+        Feed(gate, at => Looks.Open(at));
+        var opened = Tick(WithTracks());
+
+        const string line = "chrome has not opened the microphone for 5 minutes; your voice is not recorded until it does. Join the class, or check that the page may use the microphone";
+        Assert.That(Warnings(before.Skip(1)), Is.Empty);
+        Assert.That(before.Select(tick => tick.Attention.Level), Has.All.EqualTo(AttentionLevel.None));
+        Assert.That(fiveMinutes.Lines, Does.Contain((LogLevel.Warning, line)));
+        Assert.That(fiveMinutes.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "chrome has not opened the microphone", line, 1)));
+        Assert.That(Warnings(after), Is.Empty, "said once");
+        Assert.That(after.Attention.Level, Is.EqualTo(AttentionLevel.Notice));
+        Assert.That(opened.Attention.Level, Is.EqualTo(AttentionLevel.None));
+    }
+
+    /// <summary>
+    /// Sessions that cannot be read for 10 seconds are an Alert, said once, which outranks the Notice for a silent class;
+    /// the first unreadable look is skipped for a second (see <see cref="MicrophoneGate.UnreadableAfter"/>), and the
+    /// condition counts from the look before it was first seen.
+    /// </summary>
+    [Test]
+    public void Sessions_unreadable_for_10_seconds_are_an_Alert()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible);
+        var gate = recording.Gate!;
+        Look(WithTracks());
+        RecordingSnapshot SilentClass(int seconds) => WithTracks(main: FakeRecording.Track(Headphones, sinceLastSound: TimeSpan.FromSeconds(seconds)));
+
+        var silent = Run(60, seconds => { Feed(gate, at => Looks.Open(at)); return SilentClass(seconds); })[^1];
+        var before = Run(10, seconds => { Feed(gate, at => Looks.Unknown(at)); return SilentClass(seconds); });
+        Feed(gate, at => Looks.Unknown(at));
+        var ten = Tick(SilentClass(71));
+        Feed(gate, at => Looks.Open(at));
+        var readable = Tick(WithTracks());
+
+        const string line = "Cannot read chrome's microphone session: sessions not readable: The audio service is not running (0x88890010); your voice is not recorded until the sessions can be read again";
+        Assert.That(silent.Attention.Level, Is.EqualTo(AttentionLevel.Notice), "the silent class");
+        Assert.That(before.Select(tick => tick.Attention.Level), Has.All.EqualTo(AttentionLevel.Notice), "the silent class still, until 10 seconds");
+        Assert.That(Warnings(before), Is.Empty);
+        Assert.That(ten.Lines, Does.Contain((LogLevel.Warning, line)));
+        Assert.That(ten.Attention.Level, Is.EqualTo(AttentionLevel.Alert));
+        Assert.That(ten.Attention.Short, Is.EqualTo("CANNOT READ THE MICROPHONE SESSIONS"));
+        Assert.That(ten.Attention.Text, Is.EqualTo(line));
+        Assert.That(readable.Attention.Level, Is.EqualTo(AttentionLevel.None));
+    }
+
+    /// <summary>The evidence that the app's mute is visible, reported once by the gate, is a warning and a Notice for five minutes.</summary>
+    [Test]
+    public void The_evidence_of_a_visible_mute_is_a_warning_and_a_Notice()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        var gate = recording.Gate!;
+        using var started = _monitor.Start(_context);
+        Look(WithTracks());
+        Feed(gate, at => Looks.Open(at));
+        Tick(WithTracks());
+        Feed(gate, at => Looks.NotListening(at));
+        Tick(WithTracks());
+        Feed(gate, at => Looks.NotListening(at));
+        Tick(WithTracks());
+        Feed(gate, at => Looks.Open(at));
+
+        var evidence = Tick(WithTracks());
+        var later = Run(300, _ => WithTracks())[^1];
+
+        var line = Warnings(evidence).Single();
+        Assert.That(line, Does.StartWith("chrome let go of the microphone at ").And.EndWith("set Recording:ClassAppMute to Visible and ClassScribe will follow it by itself."));
+        Assert.That(evidence.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "chrome let go of the microphone (see the log)", line, 1)));
+        Assert.That(later.Attention.Level, Is.EqualTo(AttentionLevel.None));
+    }
+
+    // ------------------------------------------------------------------ the microphone: only zeros, and the silence warning in person
+
+    /// <summary>
+    /// The recording counts the microphone's exact zeros itself and says so in its snapshot once they have lasted 2
+    /// minutes (see <see cref="TrackSnapshot.OnlyZeros"/>): the look that first finds that, while the app listens and
+    /// Windows is not muting, gives the warning, with that length in its words, and a Notice with the class; it is said
+    /// once, and anything but zeros ends the Notice. The monitor does not wait another 2 minutes of its own.
+    /// </summary>
+    [Test]
+    public void Only_zeros_with_the_class_are_said_at_the_look_that_finds_them_and_are_a_Notice()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible);
+        var gate = recording.Gate!;
+        Look(WithTracks());
+
+        var before = Run(5, _ => { Feed(gate, at => Looks.Open(at)); return WithTracks(); });
+        Feed(gate, at => Looks.Open(at));
+        var zeros = Tick(WithTracks(microphone: MicrophoneTrack(onlyZeros: true)));
+        Feed(gate, at => Looks.Open(at));
+        var still = Tick(WithTracks(microphone: MicrophoneTrack(onlyZeros: true)));
+        Feed(gate, at => Looks.Open(at));
+        var sound = Tick(WithTracks());
+
+        const string line = "Only silence from the microphone \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" for 2 minutes although chrome is listening and Windows is not muting it. Check Settings > Privacy & security > Microphone (Let desktop apps access your microphone), and the microphone itself";
+        Assert.That(Warnings(before), Is.Empty);
+        Assert.That(zeros.Lines, Does.Contain((LogLevel.Warning, line)));
+        Assert.That(zeros.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "only silence from the microphone", line, 1)));
+        Assert.That(Warnings(still), Is.Empty, "said once");
+        Assert.That(still.Attention.Level, Is.EqualTo(AttentionLevel.Notice));
+        Assert.That(sound.Attention.Level, Is.EqualTo(AttentionLevel.None));
+    }
+
+    /// <summary>
+    /// In person the look that first finds the recording reporting only zeros gives the warning, with what to check, and
+    /// an Alert: the whole recording is silence. Said once; the Alert lasts while the zeros do.
+    /// </summary>
+    [Test]
+    public void Only_zeros_in_person_are_an_Alert_at_the_look_that_finds_them()
+    {
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600, SilenceWarningSeconds = 3600 }, InPerson(), new FakeMicrophoneRecording(RecordingMode.Microphone));
+        Look(InPersonTracks());
+
+        var before = Run(5, _ => InPersonTracks());
+        var zeros = Tick(InPersonTracks(MicrophoneTrack(onlyZeros: true)));
+        var still = Tick(InPersonTracks(MicrophoneTrack(onlyZeros: true)));
+
+        const string line = "Only silence from the microphone \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" for 2 minutes. Check that it is not muted in Windows (the microphone key, or Sound settings > Input) and that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)";
+        Assert.That(before.Select(tick => tick.Attention.Level), Has.All.EqualTo(AttentionLevel.None));
+        Assert.That(zeros.Lines, Is.EqualTo(new[] { (LogLevel.Warning, line) }));
+        Assert.That(zeros.Attention, Is.EqualTo(new Attention(AttentionLevel.Alert, "ONLY SILENCE FROM THE MICROPHONE", line, 1)));
+        Assert.That(Texts(still), Is.Empty, "said once");
+        Assert.That(still.Attention.Level, Is.EqualTo(AttentionLevel.Alert));
+    }
+
+    /// <summary>
+    /// In person, where no gate has read the mute, the recording is asked whether Windows mutes the microphone at the look
+    /// that first finds only zeros: when it does, the line says so outright; when Windows says no, or cannot say, the line
+    /// says what to check, as before. Asked once: the words stay while the zeros last, whatever Windows says later.
+    /// </summary>
+    [TestCase(true, "Only silence from the microphone \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" for 2 minutes: it is muted in Windows (the microphone key, or Sound settings > Input)")]
+    [TestCase(false, "Only silence from the microphone \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" for 2 minutes. Check that it is not muted in Windows (the microphone key, or Sound settings > Input) and that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)")]
+    public void Only_zeros_in_person_say_muted_in_Windows_when_Windows_says_so(bool muted, string line)
+    {
+        var recording = new FakeMicrophoneRecording(RecordingMode.Microphone) { MutedInWindows = muted };
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600, SilenceWarningSeconds = 3600 }, InPerson(), recording);
+        Look(InPersonTracks());
+
+        var zeros = Tick(InPersonTracks(MicrophoneTrack(onlyZeros: true)));
+        recording.MutedInWindows = !muted;
+        var still = Tick(InPersonTracks(MicrophoneTrack(onlyZeros: true)));
+
+        Assert.That(zeros.Lines, Is.EqualTo(new[] { (LogLevel.Warning, line) }));
+        Assert.That(zeros.Attention, Is.EqualTo(new Attention(AttentionLevel.Alert, "ONLY SILENCE FROM THE MICROPHONE", line, 1)));
+        Assert.That(still.Attention.Text, Is.EqualTo(line), "asked once, at the look that found the zeros");
+    }
+
+    /// <summary>
+    /// A microphone beside the class that hands over nothing for 5 seconds, although a microphone hands over audio all the
+    /// time, is warned about and its capture reopened, and a Notice until audio flows again; switched off with V it has no
+    /// capture to watch, and a stall from before is forgotten.
+    /// </summary>
+    [Test]
+    public void A_microphone_beside_the_class_that_hands_over_nothing_for_5_seconds_is_reopened_and_a_Notice()
+    {
+        BeginWithMicrophone(ClassAppMute.Visible);
+        Look(WithTracks());
+
+        var before = Run(4, seconds => WithTracks(microphone: MicrophoneTrack() with { SinceLastPacket = TimeSpan.FromSeconds(seconds) }));
+        var five = Tick(WithTracks(microphone: MicrophoneTrack() with { SinceLastPacket = TimeSpan.FromSeconds(5) }));
+        var off = Tick(WithTracks(microphone: MicrophoneTrack(off: true)));
+
+        const string line = "No audio has arrived from \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" for 5 seconds although it should; the recording has fallen behind the clock. Reopening it";
+        Assert.That(Warnings(before), Is.Empty);
+        Assert.That(before.Select(tick => tick.Reopen), Has.All.Null);
+        Assert.That(five.Lines, Does.Contain((LogLevel.Warning, line)));
+        Assert.That(five.Reopen, Is.EqualTo((Track.Microphone, "no audio has arrived for 5 seconds")));
+        Assert.That(five.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "no audio from the microphone", line, 1)));
+        Assert.That(off.Attention.Level, Is.EqualTo(AttentionLevel.None), "switched off with V, the microphone has no capture to watch");
+    }
+
+    /// <summary>In person the silence warning names the microphone and says what to check about it.</summary>
+    [Test]
+    public void In_person_the_silence_warning_names_the_microphone()
+    {
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600 }, InPerson(), new FakeMicrophoneRecording(RecordingMode.Microphone));
+        Look(InPersonTracks());
+
+        var minute = Run(60, seconds => InPersonTracks(FakeRecording.Track(Laptop.ArrayName, sinceLastSound: TimeSpan.FromSeconds(seconds), deliversContinuously: true)))[^1];
+
+        const string line = "No sound from the microphone \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" for 60 seconds. Check that it is not muted in Windows (the microphone key) and that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)";
+        Assert.That(minute.Lines, Is.EqualTo(new[] { (LogLevel.Warning, line) }));
+        Assert.That(minute.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "no sound 1 min", line, 1)));
+    }
 }

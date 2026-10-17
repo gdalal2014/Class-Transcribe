@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 
 namespace ClassScribe.Commands;
 
@@ -35,12 +36,16 @@ public abstract record ClassSource
     public sealed record App(string ProcessName) : ClassSource;
 }
 
-/// <summary>Which microphone to record.</summary>
+/// <summary>Which microphone to record, and with the class, which app's microphone use its track follows.</summary>
 /// <param name="NamePart">
 /// Part of the microphone's name, in any case; null for Recording:Microphone, and when that is empty too, Windows' default
 /// microphone, never a Bluetooth one.
 /// </param>
-public sealed record MicrophoneChoice(string? NamePart);
+/// <param name="Follows">
+/// The app whose microphone use the track follows, from --mic-follows; null for the app the class is recorded from in app
+/// mode, and otherwise Recording:MicrophoneFollows. In person no app is followed, whatever this says.
+/// </param>
+public sealed record MicrophoneChoice(string? NamePart, FollowRule? Follows = null);
 
 /// <summary>Everything a run records.</summary>
 /// <param name="Mode">The class alone, the class and your microphone, or your microphone alone in person.</param>

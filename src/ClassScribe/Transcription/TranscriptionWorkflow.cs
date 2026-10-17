@@ -53,30 +53,72 @@ public sealed class TranscriptionWorkflow(
     /// <summary>
     /// Transcribes a recording from every one of its segments on disk, in recording order, and saves the transcript under
     /// the recording's name, next to the audio, with the marks set while recording and the notes made in it, and, for a
-    /// recording taken up again after it stopped, the number of parts it was made in. A recording transcribed before
-    /// keeps its earlier transcript and gets the next copy. A recording longer than <see cref="LongestRecording"/> is
-    /// refused before anything is prepared.
+    /// recording taken up again after it stopped, the number of parts it was made in. A recording made with the class
+    /// and your microphone has a second track on disk, its .mic.wav files, and the two are mixed into the one file that
+    /// is sent (see <see cref="IAudioPreparer.Prepare(UploadTracks, string, CancellationToken)"/>); in person your
+    /// microphone is the main track, under the recording's plain names, and there is nothing to mix. A recording whose
+    /// class track was never written, because the class could not be recorded while your microphone could, has only the
+    /// .mic.wav files, and they are sent on their own, as in person. A recording transcribed before keeps its earlier
+    /// transcript and gets the next copy. A recording longer than <see cref="LongestRecording"/> is refused before
+    /// anything is prepared. The upload copy is removed when the run ends, after a failure or a cancel as well, unless
+    /// Recording:KeepUploadFile keeps it.
     /// </summary>
-    /// <exception cref="FileNotFoundException">The recording has no audio on disk.</exception>
+    /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
     /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
-    public Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, CancellationToken cancellationToken) =>
-        TranscribeSegmentsAsync(files, segmentPaths: null, cancellationToken);
+    public async Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, CancellationToken cancellationToken)
+    {
+        string? upload = null;
+        var saved = false;
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var segments = files.FindSegments();
+            var microphone = files.FindSegments(Track.Microphone);
+            if (segments.Count == 0 && microphone.Count == 0)
+                throw new FileNotFoundException($"There is no audio of the recording {files.BaseName} in {files.Folder}, so there is nothing to transcribe.", files.Segment(1));
 
-    /// <summary>
-    /// Transcribes a recording from the segments given, as <see cref="TranscribeRecordingAsync(RecordingFiles, CancellationToken)"/>
-    /// does from those on disk, with the same checks. It stays for the commands that still pass the segments themselves,
-    /// until they leave it to the workflow to find them.
-    /// </summary>
-    public Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, IReadOnlyList<string> segmentPaths, CancellationToken cancellationToken) =>
-        TranscribeSegmentsAsync(files, segmentPaths, cancellationToken);
+            // The length is the main track's alone: your microphone's track runs on the same clock as the class, so it
+            // is as long, and adding the two would refuse a class of five hours. The microphone's files only decide
+            // what the refusal advises, unless they are all there is, and are then the track measured.
+            var microphoneAlone = segments.Count == 0;
+            RefuseIfTooLong(files, microphoneAlone ? microphone : segments, microphoneAlone ? [] : microphone, microphoneAlone);
 
-    /// <summary>
-    /// Transcribes one audio or video file into a folder named after it in the recordings folder; the
-    /// file itself stays where it is. A WAV file is first reduced to 16 kHz mono; anything else is
-    /// uploaded as it is.
-    /// </summary>
-    public Task<TranscriptFiles> TranscribeFileAsync(string path, CancellationToken cancellationToken) =>
-        TranscribeFileAsync(path, outputRoot: null, cancellationToken);
+            // An upload copy left by a run that was ended before it could remove it is made afresh.
+            File.Delete(files.Upload);
+            progress.Report(TranscriptionStep.Preparing);
+            if (microphoneAlone)
+            {
+                logger.LogInformation("Only your microphone was recorded ({Segments} segment(s)); it is sent on its own", microphone.Count);
+                preparer.Prepare(microphone, files.Upload, cancellationToken);
+            }
+            else if (microphone.Count == 0)
+            {
+                // A single track is prepared as it always was; the mix is only asked for when there is a second track.
+                logger.LogInformation("Preparing the recording for upload ({Segments} segment(s)); this takes a moment for a long class", segments.Count);
+                preparer.Prepare(segments, files.Upload, cancellationToken);
+            }
+            else
+            {
+                logger.LogInformation("Preparing the recording for upload ({Segments} segment(s) of the class and {MicrophoneSegments} of your microphone); this takes a moment for a long class", segments.Count, microphone.Count);
+                preparer.Prepare(new UploadTracks(segments, microphone), files.Upload, cancellationToken);
+            }
+
+            upload = files.Upload;
+
+            var transcript = await UploadAndSaveAsync(upload, files, files.Name, files.StartedUtc, marks.Read(files), cancellationToken);
+            saved = true;
+            return transcript;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError("Could not transcribe the recording {Recording}", files.BaseName);
+            throw;
+        }
+        finally
+        {
+            if (upload is not null && !recording.Value.KeepUploadFile) RemoveUploadCopy(upload, saved);
+        }
+    }
 
     /// <summary>
     /// Transcribes one audio or video file into a folder named after it under <paramref name="outputRoot"/>, the recordings
@@ -147,12 +189,14 @@ public sealed class TranscriptionWorkflow(
 
     /// <summary>
     /// True when the files are a recording's, whose name gives the time it started, rather than those of a file
-    /// transcribed on its own, whose name gives the time it was transcribed: the recording's audio or marks are beside
-    /// them, or one of its transcripts says when it was recorded, as they still do once the audio is deleted. With none
-    /// of these left the two cannot be told apart, and false claims no recording time that may be wrong.
+    /// transcribed on its own, whose name gives the time it was transcribed: the recording's audio, of either track, or
+    /// its marks are beside them, or one of its transcripts says when it was recorded, as they still do once the audio
+    /// is deleted. With none of these left the two cannot be told apart, and false claims no recording time that may be
+    /// wrong.
     /// </summary>
     private static bool IsRecording(RecordingFiles files) =>
-        files.FindSegments().Count > 0 || File.Exists(files.Marks) || TranscriptCopies.Transcripts(files).Any(SaysWhenRecorded);
+        files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0 || File.Exists(files.Marks)
+        || TranscriptCopies.Transcripts(files).Any(SaysWhenRecorded);
 
     /// <summary>
     /// True when the transcript at <paramref name="path"/> says when its recording was made, in the line the formatter
@@ -168,58 +212,28 @@ public sealed class TranscriptionWorkflow(
     }
 
     /// <summary>
-    /// Transcribes a recording from <paramref name="segmentPaths"/>, or from its segments on disk when that is null: checks
-    /// that there is audio and that it is not too long, prepares the upload copy, uploads it and saves the transcript, then
-    /// removes the upload copy, after a failure or a cancel as well, unless Recording:KeepUploadFile keeps it.
+    /// Refuses a recording whose sent track's segments, <paramref name="segments"/>, hold more than <see cref="LongestRecording"/>
+    /// of audio together, before anything is prepared. Each segment is read to its end, as the preparer reads it (see
+    /// <see cref="UploadTimeLimit.AudioLength"/>); a file the recorder did not write counts as empty, as it does in the
+    /// list of recordings. The microphone's segments beside the class, <paramref name="microphone"/>, are not measured:
+    /// they only decide the advice. A folder holding the copied .wav files alone looks like a class-only recording, which
+    /// would drop your microphone from every piece without a word, so when the recording has a microphone track the
+    /// message says to copy the matching .mic.wav files along with them; a recording that is the microphone's files
+    /// alone (<paramref name="microphoneAlone"/>) is transcribed by one of them, since a folder is read by its .wav files.
     /// </summary>
-    private async Task<TranscriptFiles> TranscribeSegmentsAsync(RecordingFiles files, IReadOnlyList<string>? segmentPaths, CancellationToken cancellationToken)
-    {
-        string? upload = null;
-        var saved = false;
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var segments = segmentPaths ?? files.FindSegments();
-            if (segments.Count == 0)
-                throw new FileNotFoundException($"There is no audio of the recording {files.BaseName} in {files.Folder}, so there is nothing to transcribe.", files.Segment(1));
-
-            RefuseIfTooLong(files, segments);
-
-            // An upload copy left by a run that was ended before it could remove it is made afresh.
-            File.Delete(files.Upload);
-            logger.LogInformation("Preparing the recording for upload ({Segments} segment(s)); this takes a moment for a long class", segments.Count);
-            progress.Report(TranscriptionStep.Preparing);
-            preparer.Prepare(segments, files.Upload, cancellationToken);
-            upload = files.Upload;
-
-            var transcript = await UploadAndSaveAsync(upload, files, files.Name, files.StartedUtc, marks.Read(files), cancellationToken);
-            saved = true;
-            return transcript;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogError("Could not transcribe the recording {Recording}", files.BaseName);
-            throw;
-        }
-        finally
-        {
-            if (upload is not null && !recording.Value.KeepUploadFile) RemoveUploadCopy(upload, saved);
-        }
-    }
-
-    /// <summary>
-    /// Refuses a recording whose segments hold more than <see cref="LongestRecording"/> of audio together, before anything
-    /// is prepared. Each segment is read to its end, as the preparer reads it (see <see cref="UploadTimeLimit.AudioLength"/>);
-    /// a file the recorder did not write counts as empty, as it does in the list of recordings.
-    /// </summary>
-    private static void RefuseIfTooLong(RecordingFiles files, IReadOnlyList<string> segments)
+    private static void RefuseIfTooLong(RecordingFiles files, IReadOnlyList<string> segments, IReadOnlyList<string> microphone, bool microphoneAlone)
     {
         var length = TimeSpan.Zero;
         foreach (var segment in segments) length += UploadTimeLimit.AudioLength(segment) ?? TimeSpan.Zero;
         if (length <= LongestRecording) return;
 
+        var advice = microphoneAlone
+            ? "copy some of its .mic.wav files into a folder of their own and transcribe one of them there by its path."
+            : microphone.Count == 0
+                ? "copy some of its .wav files into a folder of their own and transcribe that folder."
+                : "copy some of its .wav files into a folder of their own, with the matching .mic.wav files of your microphone beside them under the same names, and transcribe that folder; without the .mic.wav files only the class is sent.";
         throw new RecordingTooLongException(
-            $"{files.BaseName} holds {Durations.Format(length)} of audio, and ElevenLabs takes at most 10 hours per file, so ClassScribe sends at most 9 and a half hours. Nothing was prepared or sent. To transcribe it in pieces, copy some of its .wav files into a folder of their own and transcribe that folder.");
+            $"{files.BaseName} holds {Durations.Format(length)} of audio, and ElevenLabs takes at most 10 hours per file, so ClassScribe sends at most 9 and a half hours. Nothing was prepared or sent. To transcribe it in pieces, {advice}");
     }
 
     /// <summary>Makes the smaller upload copy of a WAV file. Returns false when the file should be uploaded as it is.</summary>

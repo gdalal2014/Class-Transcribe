@@ -1750,7 +1750,7 @@ public class RecordingSessionTests
     {
         var client = new Mock<IAudioClient>(MockBehavior.Strict);
 
-        var capture = new WasapiLoopbackAudioCapture(new AudioClient(client.Object), "process:4242", "chrome", NullLogger.Instance);
+        var capture = WasapiAudioCapture.ForApp(new AudioClient(client.Object), "process:4242", "chrome", NullLogger.Instance);
 
         Assert.That(capture.DeliversContinuously, Is.True);
     }
@@ -1768,7 +1768,7 @@ public class RecordingSessionTests
         using var enumerator = new MMDeviceEnumerator();
         Assume.That(enumerator.HasDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia), Is.True, "this computer has no output device");
 
-        using var capture = new WasapiLoopbackAudioCapture(enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia), "the default output device", NullLogger.Instance);
+        using var capture = WasapiAudioCapture.ForOutputDevice(enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia), "the default output device", NullLogger.Instance);
 
         Assert.That(capture.DeliversContinuously, Is.False);
     }
@@ -2028,5 +2028,166 @@ public class RecordingSessionTests
         Assert.That(spare.StartEntered, Is.False, "the open capture was not asked about, so it is kept");
         Assert.That(_provider.Created, Is.EqualTo(new[] { buds }), "and nothing is opened after the stop");
         Assert.That(TestAudio.ReadWav(result.SegmentPaths.Single()).Samples, Is.EqualTo(new short[] { 1, 2 }));
+    }
+
+    /// <summary>
+    /// A session recording the class alone, as today, that notes a stretch of at least <paramref name="noteGapsLongerThan"/>
+    /// with nothing playing, made through the constructor that names the track and its placement.
+    /// </summary>
+    private RecordingSession CreateContiguousSession(TimeSpan noteGapsLongerThan)
+    {
+        var settings = TestOptions.Create(new RecordingOptions());
+        var source = new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog));
+        return new RecordingSession(source, new TrackSpec(Track.Main, TrackPlacement.Contiguous, noteGapsLongerThan), null, settings, _time, _log);
+    }
+
+    /// <summary>A packet's stamp <paramref name="seconds"/> after the test clock's zero, in its units of 100 nanoseconds.</summary>
+    private static long Stamp(double seconds) => (long)Math.Round(seconds * TimeSpan.TicksPerSecond);
+
+    /// <summary>Mono 16-bit audio at 16 kHz lasting <paramref name="milliseconds"/>, of one sample value.</summary>
+    private static byte[] Audio16K(short value, int milliseconds) => Samples(16 * milliseconds, value);
+
+    /// <summary>
+    /// In a recording of the class alone, silence while nothing plays is not written, as ever; but where the stamps show
+    /// that at least the given time passed between one packet's end and the next packet, a note says about how much was
+    /// left out, at the position the recording had reached, so that the transcript can show it.
+    /// </summary>
+    [Test]
+    public void A_long_stretch_with_nothing_playing_is_noted_where_it_was_left_out()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateContiguousSession(TimeSpan.FromSeconds(60));
+        var notes = new List<TimelineNote>();
+        session.NoteWorthy += (_, note) => notes.Add(note);
+
+        session.Start(_files);
+        capture.Deliver(Audio16K(1, 500), Stamp(10));            // ends at 10.5 s
+        capture.Deliver(Audio16K(2, 500), Stamp(10.5));          // follows on: nothing left out
+        capture.Deliver(Audio16K(3, 500), Stamp(201));           // 190 s later: about 3 minutes left out
+        capture.Deliver(Audio16K(4, 500), Stamp(261.5));         // 60 s later: just long enough
+        var result = session.Stop();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.Duration, Is.EqualTo(TimeSpan.FromSeconds(2)), "nothing was written for the gaps");
+            Assert.That(notes, Has.Count.EqualTo(2));
+            Assert.That(notes[0], Is.EqualTo(new TimelineNote(TimeSpan.FromSeconds(1), "About 3 minutes with nothing playing were left out here")));
+            Assert.That(notes[1], Is.EqualTo(new TimelineNote(TimeSpan.FromSeconds(1.5), "About 1 minute with nothing playing was left out here")));
+        }
+    }
+
+    /// <summary>A stretch shorter than the setting is not noted, and a setting of zero turns the notes off altogether.</summary>
+    [TestCase(60, 59.9, 0)]
+    [TestCase(0, 600, 0)]
+    [TestCase(10, 45, 1)]
+    public void Shorter_stretches_and_a_setting_of_zero_give_no_note(int noteFromSeconds, double gapSeconds, int expectedNotes)
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateContiguousSession(TimeSpan.FromSeconds(noteFromSeconds));
+        var notes = new List<TimelineNote>();
+        session.NoteWorthy += (_, note) => notes.Add(note);
+
+        session.Start(_files);
+        capture.Deliver(Audio16K(1, 100), Stamp(10));
+        capture.Deliver(Audio16K(2, 100), Stamp(10.1 + gapSeconds));
+        session.Stop();
+
+        Assert.That(notes, Has.Count.EqualTo(expectedNotes));
+        if (expectedNotes > 0) Assert.That(notes[0].Text, Is.EqualTo("About 45 seconds with nothing playing were left out here"));
+    }
+
+    /// <summary>The time paused with P is not a stretch with nothing playing: the first packet after the pause starts the count afresh.</summary>
+    [Test]
+    public void A_pause_is_not_noted_as_nothing_playing()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateContiguousSession(TimeSpan.FromSeconds(60));
+        var notes = new List<TimelineNote>();
+        session.NoteWorthy += (_, note) => notes.Add(note);
+
+        session.Start(_files);
+        capture.Deliver(Audio16K(1, 100), Stamp(10));
+        session.Pause();
+        capture.Deliver(Audio16K(2, 100), Stamp(100));           // dropped: paused
+        session.Resume();
+        capture.Deliver(Audio16K(3, 100), Stamp(900));
+        capture.Deliver(Audio16K(4, 100), Stamp(1000));          // but after the pause the count runs again
+        session.Stop();
+
+        Assert.That(notes, Has.Count.EqualTo(1));
+        Assert.That(notes[0].Text, Does.StartWith("About 2 minutes"));
+    }
+
+    /// <summary>Packets without a stamp, as a capture that gives none hands over, tell nothing about time, so they are never noted.</summary>
+    [Test]
+    public void Packets_without_stamps_give_no_note()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateContiguousSession(TimeSpan.FromSeconds(60));
+        var notes = new List<TimelineNote>();
+        session.NoteWorthy += (_, note) => notes.Add(note);
+
+        session.Start(_files);
+        capture.Deliver(Audio16K(1, 100));
+        _time.Advance(TimeSpan.FromMinutes(10));
+        capture.Deliver(Audio16K(2, 100));
+        session.Stop();
+
+        Assert.That(notes, Is.Empty);
+    }
+
+    /// <summary>
+    /// The status says when the capture has handed over nothing but exact zeros for two minutes, as a microphone muted in
+    /// Windows or blocked by its privacy settings gives, and stops saying so as soon as any other sample arrives.
+    /// </summary>
+    [Test]
+    public void The_status_says_when_only_exact_zeros_have_arrived_for_two_minutes()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono) { DeliversContinuously = true });
+        using var session = CreateSession();
+
+        session.Start(_files);
+        var beforeAnything = session.GetStatus();
+        capture.Deliver(TestAudio.Shorts(0, 0, 0));
+        _time.Advance(TimeSpan.FromSeconds(119));
+        capture.Deliver(TestAudio.Shorts(0, 0, 0));
+        var afterTwoMinutesLessASecond = session.GetStatus();
+        _time.Advance(TimeSpan.FromSeconds(1));
+        capture.Deliver(TestAudio.Shorts(0, 0, 0));
+        var afterTwoMinutes = session.GetStatus();
+        capture.Deliver(TestAudio.Shorts(0, 1, 0));
+        var afterASample = session.GetStatus();
+        session.Stop();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(beforeAnything.OnlyZeros, Is.False, "nothing has arrived yet");
+            Assert.That(afterTwoMinutesLessASecond.OnlyZeros, Is.False);
+            Assert.That(afterTwoMinutes.OnlyZeros, Is.True);
+            Assert.That(afterASample.OnlyZeros, Is.False, "a sample of 1 is not an exact zero, whatever the sound threshold says");
+        }
+    }
+
+    /// <summary>A capture that stayed silent and was then replaced counts its zeros afresh: the time is the new capture's.</summary>
+    [Test]
+    public async Task A_new_capture_counts_its_zeros_afresh()
+    {
+        var first = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers") { DeliversContinuously = true });
+        using var session = CreateSession();
+
+        session.Start(_files);
+        first.Deliver(TestAudio.Shorts(0, 0));
+        _time.Advance(TimeSpan.FromMinutes(3));
+        first.Deliver(TestAudio.Shorts(0, 0));
+        var before = session.GetStatus();
+        var second = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono, "Speakers") { DeliversContinuously = true });
+        first.Fail(new IOException("gone"));
+        await TickUntilAsync(() => second.Started);
+        second.Deliver(TestAudio.Shorts(0, 0));
+        var after = session.GetStatus();
+        session.Stop();
+
+        Assert.That(before.OnlyZeros, Is.True);
+        Assert.That(after.OnlyZeros, Is.False);
     }
 }

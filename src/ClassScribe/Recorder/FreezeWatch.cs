@@ -24,11 +24,17 @@ public sealed record Freeze(DateTimeOffset FromUtc, DateTimeOffset ToUtc, long F
 /// setting its time of day moves neither clock, so it is never taken for a freeze, and no power notification is relied on.
 /// </summary>
 /// <remarks>
-/// The recording loop ticks the watch once a second, but between its ticks it does work of its own, and that can hold it
+/// <para>The recording loop ticks the watch once a second, but between its ticks it does work of its own, and that can hold it
 /// up, as when the recording's lock waits for a slow disk to save. So the watch also ticks on a timer of its own (see
 /// <see cref="Start"/>), which does nothing else and never waits for the recording: while only the loop is held up, the
 /// timer's ticks keep coming, and only a time when the whole of ClassScribe did not run counts. Whichever tick finds a
-/// freeze first, the freeze is kept until the loop's next tick hands it on, once.
+/// freeze first, the freeze is kept until the loop's next tick hands it on, once.</para>
+/// <para>A capture thread that sees a packet far ahead of its track, as the first packet after a sleep is, asks for a look
+/// at once (<see cref="CheckNow"/>) rather than wait for the tick. Each freeze found, by a tick, by the timer or by a look,
+/// is also raised through <see cref="Frozen"/> once, by the next tick or look and never on the timer's thread, so that the
+/// recording clock cuts it out before the packet is placed. It is raised while that tick or look still holds the watch,
+/// so that every other tick or look, as the other track's capture thread makes one when both wake from one sleep, answers
+/// only after the cut has landed and never pads the sleep.</para>
 /// </remarks>
 public sealed class FreezeWatch(ISystemTimes times, TimeProvider time, ILogger<FreezeWatch> logger)
 {
@@ -46,8 +52,11 @@ public sealed class FreezeWatch(ISystemTimes times, TimeProvider time, ILogger<F
 
     private readonly Lock _gate = new();
 
-    /// <summary>The freezes found and not handed on yet, oldest first.</summary>
+    /// <summary>The freezes found and not handed on by <see cref="Tick"/> yet, oldest first.</summary>
     private readonly List<Freeze> _found = [];
+
+    /// <summary>The freezes found and not raised through <see cref="Frozen"/> yet, oldest first.</summary>
+    private readonly List<Freeze> _unraised = [];
 
     /// <summary>The clocks as the last tick read them, whoever made it, or null before the first tick.</summary>
     private Reading? _last;
@@ -56,8 +65,17 @@ public sealed class FreezeWatch(ISystemTimes times, TimeProvider time, ILogger<F
     private bool _timerFailed;
 
     /// <summary>
+    /// Raised once for each freeze found, on the thread of the <see cref="Tick"/> or <see cref="CheckNow"/> that finds it or
+    /// that follows the timer's finding it, never on the timer's thread, and while that call holds the watch: a tick or a
+    /// look from another thread answers only after the handlers have run. The recording clock cuts the freeze out of the
+    /// positions of every track that follows it, by the freeze's edges on the steady clock. A handler is quick and never
+    /// waits for another caller of the watch, which would be waiting for it.
+    /// </summary>
+    public event EventHandler<Freeze>? Frozen;
+
+    /// <summary>
     /// Starts the watch, if no tick has yet, and has it tick once a second on a timer of its own until the result is
-    /// disposed. Freezes the timer finds wait for the next <see cref="Tick"/>.
+    /// disposed. Freezes the timer finds wait for the next <see cref="Tick"/> or <see cref="CheckNow"/>.
     /// </summary>
     public IDisposable Start()
     {
@@ -67,21 +85,54 @@ public sealed class FreezeWatch(ISystemTimes times, TimeProvider time, ILogger<F
     }
 
     /// <summary>
-    /// One tick, once a second: compares the clocks with the last tick, this caller's or the timer's, and hands on every
-    /// freeze found since the last call and not handed on yet, by this tick or by the timer, oldest first. Empty when there
-    /// is none, as at the first tick, which only starts the watch.
+    /// One tick, once a second: compares the clocks with the last tick, this caller's or the timer's, raises
+    /// <see cref="Frozen"/> for every freeze not raised yet, and hands on every freeze found since the last call and not
+    /// handed on yet, by this tick, by the timer or by a look, oldest first. Empty when there is none, as at the first
+    /// tick, which only starts the watch.
     /// </summary>
     public IReadOnlyList<Freeze> Tick()
     {
         lock (_gate)
         {
             Look();
-            if (_found.Count == 0) return [];
-
             Freeze[] found = [.. _found];
             _found.Clear();
+            RaiseLocked();
             return found;
         }
+    }
+
+    /// <summary>
+    /// A look at once, from a capture thread that sees a packet far ahead of its track: compares the clocks with the last
+    /// tick or look, whoever made it, and raises <see cref="Frozen"/> for every freeze not raised yet, this look's or the
+    /// timer's. Answers with the last freeze raised, so that the caller knows the clock has just been cut, or null when
+    /// there was none to raise; either way, by the time it answers, every freeze found so far has been cut, a look on
+    /// another thread included. The freeze still waits for the next <see cref="Tick"/> to hand it on, so a look and a tick
+    /// on one freeze give one event and one freeze handed on.
+    /// </summary>
+    public Freeze? CheckNow()
+    {
+        lock (_gate)
+        {
+            Look();
+            return RaiseLocked();
+        }
+    }
+
+    /// <summary>
+    /// Raises <see cref="Frozen"/> for every freeze not raised yet, oldest first, and answers with the last of them, or null
+    /// when there was none. Call with the lock held: the handlers run before any other tick or look can answer, so the clock
+    /// is always cut before a packet after the freeze is placed. The list is cleared first, so a handler that looks or ticks
+    /// again on this thread, which the lock lets in, finds nothing to raise twice.
+    /// </summary>
+    private Freeze? RaiseLocked()
+    {
+        if (_unraised.Count == 0) return null;
+
+        Freeze[] unraised = [.. _unraised];
+        _unraised.Clear();
+        foreach (var freeze in unraised) Frozen?.Invoke(this, freeze);
+        return unraised[^1];
     }
 
     /// <summary>A tick of the watch's own timer: notes a freeze for the next <see cref="Tick"/>. Runs on a thread of the timer's.</summary>
@@ -111,7 +162,8 @@ public sealed class FreezeWatch(ISystemTimes times, TimeProvider time, ILogger<F
 
     /// <summary>
     /// Reads the clocks and, when the steady clock has jumped <see cref="Threshold"/> or more beyond the tick since the last
-    /// reading, keeps the freeze for <see cref="Tick"/> to hand on. Call with the lock held.
+    /// reading, keeps the freeze for <see cref="Tick"/> to hand on and for the next tick or look to raise. Call with the
+    /// lock held.
     /// </summary>
     private void Look()
     {
@@ -127,7 +179,9 @@ public sealed class FreezeWatch(ISystemTimes times, TimeProvider time, ILogger<F
         // this stretch is the time the laptop slept in it.
         var asleep = TimeSpan.FromTicks(now.Interrupt - last.Interrupt - (now.Unbiased - last.Unbiased));
         var margin = ToTimestamp(Margin);
-        _found.Add(new Freeze(last.Utc, now.Utc, last.Timestamp + margin, now.Timestamp - margin, Slept: asleep >= SleepEvidence));
+        var freeze = new Freeze(last.Utc, now.Utc, last.Timestamp + margin, now.Timestamp - margin, Slept: asleep >= SleepEvidence);
+        _found.Add(freeze);
+        _unraised.Add(freeze);
     }
 
     /// <summary>Reads the clocks.</summary>

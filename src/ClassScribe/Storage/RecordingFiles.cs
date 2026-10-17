@@ -87,10 +87,11 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     internal static RecordingFiles? TryParseSegment(string path) => Parse(MainSegmentName(), path);
 
     /// <summary>
-    /// The audio file of segment <paramref name="number"/> of the main track: the first has the bare name, the rest a part
-    /// number.
+    /// The audio file of segment <paramref name="number"/> of <paramref name="track"/>: the first has the bare name, the rest
+    /// a part number; the main track's files end in .wav, the microphone's in .mic.wav. The main track is meant when none is named.
     /// </summary>
-    public string Segment(int number) => Path.Combine(Folder, number == 1 ? $"{BaseName}.wav" : $"{BaseName}_part{number}.wav");
+    public string Segment(int number, Track track = Track.Main) =>
+        Path.Combine(Folder, number == 1 ? $"{BaseName}{Extension(track)}" : $"{BaseName}_part{number}{Extension(track)}");
 
     /// <summary>The transcript, a Markdown document. <paramref name="copy"/> 2 and up name later transcripts of the same recording.</summary>
     public string Transcript(int copy = 1) => Path.Combine(Folder, copy == 1 ? $"{BaseName}.md" : $"{BaseName} ({copy}).md");
@@ -140,8 +141,7 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     {
         if (!Directory.Exists(Folder)) return [];
 
-        var extension = track == Track.Microphone ? "\\.mic\\.wav" : "\\.wav";
-        var segment = new Regex($"^{Regex.Escape(BaseName)}(?:_part(?<number>[0-9]{{1,9}}))?{extension}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var segment = new Regex($"^{Regex.Escape(BaseName)}(?:_part(?<number>[0-9]{{1,9}}))?{Regex.Escape(Extension(track))}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         return Directory.EnumerateFiles(Folder, $"{BaseName}*.wav")
             .Select(file => (Path: file, Match: segment.Match(Path.GetFileName(file))))
             .Where(file => file.Match.Success)
@@ -149,6 +149,9 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
             .Select(file => file.Path)
             .ToList();
     }
+
+    /// <summary>What a segment file's name ends in on <paramref name="track"/>: .wav on the main track, .mic.wav on the microphone's.</summary>
+    private static string Extension(Track track) => track == Track.Microphone ? ".mic.wav" : ".wav";
 
     /// <summary>The recording whose base name <paramref name="fileName"/> gives the file at <paramref name="path"/>, or null when it gives none.</summary>
     private static RecordingFiles? Parse(Regex fileName, string path)

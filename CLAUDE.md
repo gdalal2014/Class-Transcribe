@@ -2,17 +2,20 @@
 
 A .NET 10 console app for personal study. During an online class it records whatever the laptop
 plays, by WASAPI loopback: the output device the class plays on, a device pinned by name, or one
-app's sound through process loopback. It does not record the microphone yet. The recording runs in
-a separate recorder process (`ClassScribe.exe --recorder <run id>`), which the window shows through
-a named pipe, so closing the window does not end a class. When stopped, it sends the recording to
-ElevenLabs Scribe v2 with a glossary of Arabic terms and saves a Markdown transcript and
-ElevenLabs' JSON answer beside the recording. `README.md` is the user guide. The full background,
-design decisions and history are in `docs/HANDOFF.md` (kept out of git); read it before larger
-changes. It has not been brought up to date with the review fix round, with increment 1 (settings
-read before each run, rebuild and the transcribe guards, the growing upload limit, the arrival
-watch, keep-awake, the device check's COM fix) or with increment 2 (the process split, the command
-line, the alerts, continue and the report at the start) yet, section 6.4 above all, so where it
-disagrees with the code or with this file, the code wins.
+app's sound through process loopback. It can record the user's microphone beside the class, as a
+second track on the same clock, written only while the class app is listening on that microphone
+and Windows is not muting it, and mixed into the class's track at upload; or the microphone alone,
+for a class in a room. The recording runs in a separate recorder process
+(`ClassScribe.exe --recorder <run id>`), which the window shows through a named pipe, so closing
+the window does not end a class. When stopped, it sends the recording to ElevenLabs Scribe v2 with
+a glossary of Arabic terms and saves a Markdown transcript and ElevenLabs' JSON answer beside the
+recording. `README.md` is the user guide. The full background, design decisions and history are in
+`docs/HANDOFF.md` (kept out of git); read it before larger changes. It has not been brought up to
+date with the review fix round, with increment 1 (settings read before each run, rebuild and the
+transcribe guards, the growing upload limit, the arrival watch, keep-awake, the device check's COM
+fix), with increment 2 (the process split, the command line, the alerts, continue and the report at
+the start) or with increment 3 (the microphone, the QPC timeline, the microphone check) yet,
+section 6.4 above all, so where it disagrees with the code or with this file, the code wins.
 
 ## Ground rules
 
@@ -31,6 +34,16 @@ disagrees with the code or with this file, the code wins.
   ElevenLabs, so ask before making one. Tests use `StubHttpHandler`; manual runs can point
   `ElevenLabs__BaseUrl` at a local stub.
 - Do not turn on trimming or Native AOT: NAudio reaches Windows audio through COM interop.
+- No test opens a capture stream on any microphone, and nothing plays a sound: the normal tests use
+  the fakes, and the only tests that open a real device (listening only, the two `AudioDevice` tests
+  in `WindowsCaptureTests`) are `[Explicit]` and are not run with the suite. The readers that look at
+  the microphones (`WasapiMicrophoneProvider`, `WasapiMicrophoneSessions`, the usage record) never
+  ask Windows for an audio client, the object through which a program opens a microphone, so they
+  cannot open one; the fake endpoints fail a test that asks for one. Keep it that way: the menu, the
+  `devices` command, the microphone check and the watch on the class app all rest on it.
+- Tests never read or write the real `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` or
+  `%USERPROFILE%\ClassScribe`: temporary folders only (`TestRuntime`, `TempFolder`). After a full run,
+  check that `%LOCALAPPDATA%\ClassScribe` is still empty or absent; a test that wrote there is a bug.
 
 ## Conventions
 
@@ -75,7 +88,8 @@ disagrees with the code or with this file, the code wins.
 - Settings in code: singletons read `IOptionsMonitor<T>.CurrentValue` each time they use it
   (`ClassFolders`, `TranscriptFormatter`, `SourceChoice`, the Refit client's `ConfigureHttpClient`);
   per-run services, scoped or transient (the commands, `TranscriptionWorkflow`, `ElevenLabsClient`,
-  `RecordingSession`), take `IOptionsSnapshot<T>`, read once in the run's scope. Never `IOptions<T>`
+  `RecordingSession`, `TrackSetFactory`, `MicrophoneAdvice`, `MicrophoneMenu`, `RecordingMonitor`),
+  take `IOptionsSnapshot<T>`, read once in the run's scope. Never `IOptions<T>`
   for ClassScribe's sections: it keeps the first value for the life of the process, so an edit
   would never reach that part (`No_part_keeps_the_settings_it_read_first_for_the_whole_session`
   fails on one).
@@ -89,22 +103,67 @@ disagrees with the code or with this file, the code wins.
   never swallow exceptions. A deliberate exception, a catch that does not rethrow, carries a
   comment that starts `// Deliberately not rethrown:` and gives the reason, so
   `grep -rn "Deliberately not rethrown" src` lists them. A few older ones give their reason in other
-  words or in the method's summary: `App.RunAsync`, the Ctrl+C catch in
-  `MenuCommand.RunChoiceAsync`, `AudioPreparer.DeleteUnfinished`, `RecordingSession.RestartAsync`,
-  `WasapiLoopbackAudioCapture.CaptureLoop`, `TranscriptionWorkflow.TryPrepare` and the retry catch in
-  `ElevenLabsClient.TranscribeAsync`. Use the phrase for every new one and hold it to the same
-  standard. `docs/HANDOFF.md` section 6.4 lists them too, but is out of date until it is refreshed;
-  until then the comments are the list.
+  words or in the method's summary: the Ctrl+C catch in `MenuCommand.RunChoiceAsync`,
+  `AudioPreparer.DeleteUnfinished`, `RecordingSession.RestartAsync`, `WasapiAudioCapture.CaptureLoop`,
+  `TranscriptionWorkflow.TryPrepare` and the retry catch in `ElevenLabsClient.TranscribeAsync`. Use
+  the phrase for every new one and hold it to the same standard. `docs/HANDOFF.md` section 6.4 lists
+  them too, but is out of date until it is refreshed; until then the comments are the list. The
+  microphone's are all phrased; the ones worth knowing: `ClassMicrophoneWatch.Run` catches
+  everything on the watch's own thread (an exception there would end the process and the class; the
+  failure is logged, handed on through `Failed`, and a last Unknown look makes the gate drop
+  everything), `RecordingSession.PadToClock` catches on the padding timer's thread for the same
+  reason, `TrackSet.Start` leaves out a track whose format is refused while the other records,
+  `TrackSet.LastLook` keeps a failed look from stopping V or the stop, `MicrophoneAdvice.TryRead`
+  leaves out advice whose registry value cannot be read, and the readers (`WasapiMicrophoneSessions`,
+  `MicrophoneUsageRecord`, `WasapiMicrophoneProvider`) answer a failed read with a listing that says
+  so, four times a second. `TrackSet.Flush`'s catch is not one: it keeps the first failure, flushes
+  the other track and rethrows it as it was.
 - Windows audio objects: the device check (`WasapiLoopbackCaptureProvider`'s two listings, once a
   second for the whole class) goes through ClassScribe's own declarations in
   `Audio/Windows/CoreAudioInterop.cs` and releases every COM object it receives in a `finally` block
   (`CoreAudio.Release`). Never make Windows' device enumerator with `new` of a `[ComImport]` class or
   through a cached wrapper; use `CoreAudio.CreateEnumerator`. Windows hands out one enumerator per
   process, and a second wrapper type for it makes NAudio's `new MMDeviceEnumerator()` throw
-  `InvalidCastException`.
+  `InvalidCastException`. The microphone side does the same: `WasapiMicrophoneProvider` lists the
+  capture endpoints from their property stores (`EndpointFacts`: the built-in array by jack subtype,
+  Bluetooth by enumerator or any property naming BTHENUM, BTHLE or Bluetooth, loopback inputs by
+  name) and reads the endpoint mute, `WasapiMicrophoneSessions` reads each endpoint's sessions and
+  mute, and both release every COM object in a `finally`. The Core Audio declarations live in
+  `CoreAudioInterop.cs` (`IAudioEndpointVolumeRaw` and `ISimpleAudioVolumeRaw` included), except
+  `IAudioSessionControl2WholeRaw` in `WasapiMicrophoneSessions.cs` and ClassScribe's own
+  `IAudioClient2` in `AudioClient2Interop.cs`, which `MicrophoneActivation` uses to ask for RAW
+  before `Initialize` (never NAudio's `IAudioClient2`), falling back to Default when the endpoint
+  does not offer it, Windows refuses it, or a stream failed to open with it before (remembered per
+  endpoint for the process). Method order in these declarations is checked against the IDLs, and
+  setters are declared only to keep that order.
 - Time every interval on the steady clock (`TimeProvider.GetTimestamp` and `GetElapsedTime`), never
   the time of day, so a change of the Windows clock neither stretches nor shortens it. In tests,
   `ManualTimeProvider.Advance` moves both clocks and `StepWallClock` only the time of day.
+- The QPC timeline (`Audio/Timeline`, design section 3): a packet carries the performance-counter
+  stamp of its first frame in 100-ns units (`AudioDataEventArgs.Qpc100ns`, null when Windows flags
+  `TimestampError`, which places it by its arrival). `MediaTime` converts without overflow,
+  `RecordingClock` is one per run (origin at the first packet of any track, the offset when
+  continuing, pauses and cut freezes as exclusions; `Now()` is a position), and `TrackPlacer` decides
+  where a packet goes (`Append`, `Pad`, `Trim`, `Drop`, `CheckFreeze`, `LongGap`, `TooFarAhead`), with
+  the device position never used. A `TrackSpec` is `Contiguous` (class-only recordings: audio appended
+  as it comes, as always, with a gap note at `Transcript:ShowGapsLongerThanSeconds`) or
+  `ClockAligned` (both tracks with the microphone, and the microphone in person: padded with zeros
+  by a one-second timer to 1.5 s behind the clock, in chunks of at most a second, and to one end
+  position at the stop). A `FreezeWatch` freeze is cut from the clock by `TrackSet.OnFrozen`, which
+  must never call into a session (lock order: a capture thread holds the session's gate while it
+  asks for the freeze look). Drift corrections count only up to `TrackPlacer.DriftLimit` (200 ms).
+  Before any other path moves onto the clock, run the four-hour soak (below).
+- The microphone gate (`MicrophoneGate`, pure) judges each microphone packet by the watch's looks on
+  both sides of its stamp (`Write`, `Drop`, `Undecided`); `RecordingSession.SetGate` holds undecided
+  packets, judges them again on `Changed`, every second and at the stop, and drops any held longer
+  than `LongestHold` (2 s). `ClassMicrophoneWatch` looks every 250 ms on its own MTA thread
+  ("ClassScribe microphone watch"), over every microphone every 10 s, and hands `WatchLook`s to the
+  gate through `TrackSet`, which starts the watch at the session's first pick (a track that starts
+  switched off still looks), follows it to another microphone, makes a last look before V arms and
+  at the stop, and tells `MicrophoneSource.FollowApp` which microphone the class app listens on.
+  The chooser (`MicrophoneChooser`) pins by endpoint id, falls back after 10 s and moves to the
+  class app's microphone; the gate is armed at the start only for `ClassAppMute.Visible` or
+  `FollowRule.None`.
 - TDD with NUnit and Moq: write the failing test first. Run `dotnet test` before handing code over.
   For the real host with stand-ins, use `AppHost.Build(contentRoot, apiKey, configureServices)`;
   `configureServices` runs last. `TestDoubles.cs` has `TestOptions<T>` (one object for `IOptions`,
@@ -122,7 +181,17 @@ disagrees with the code or with this file, the code wins.
   (`text.Contains('\a')`, `EndsWith(..., StringComparison.Ordinal)`); and a `[TestCase]` whose
   arguments hold a control character gets a name VSTest cannot match, so under a `--filter` it
   silently never runs. A burst of log lines larger than `RecorderServer.QueueCapacity` (2,000) drops
-  even a window that is reading, so tests write in realistic chunks.
+  even a window that is reading, so tests write in realistic chunks. The microphone's fakes are
+  `FakeMicrophoneProvider` and `LaptopMicrophones` (this laptop's five capture endpoints),
+  `FakeMicrophoneSessions`, `FakeMicrophoneUsageRecord`, `FakeProcessNames`, `FakeOwnProcesses`,
+  `ScriptedLooks` and the `Laptop` fixture (`TestDoubles.MicrophoneGate.cs`), `FakePacketGate` and
+  `JumpingClock` (`TestDoubles.Timeline.cs`), `FakeAudioClient`, `FakeAudioClient2` and
+  `FakeAudioClientActivator` (`TestDoubles.Capture.cs`), the fake enumerator, endpoints and stores of
+  `TestDoubles.MicrophoneListing.cs`, `FakeRegistryValues`, and `FakeMicrophoneRecording`
+  (`TestDoubles.MicrophoneRun.cs`); `FakeAudioCapture.Deliver(audio, qpc, flags)` stamps packets.
+  `RecorderSoakTests` is the accelerated soak of design 5.5 through the real `TrackSetFactory`, watch
+  and gate on `ManualTimeProvider`: twelve simulated minutes run with the suite, and the four-hour
+  case is `Explicit` (it writes about a gigabyte of audio to a temporary folder and takes minutes).
 - Keep `README.md` in step when behaviour changes, including its troubleshooting rows when a log
   message is added or changed.
 
@@ -143,9 +212,15 @@ dotnet test --filter TestCategory=WindowsAudio                         # real de
 dotnet test --filter TestCategory=WindowsPower                         # a real power request, let go at once
 dotnet test --filter TestCategory=AudioDevice                          # Explicit tests on real devices
 dotnet test --filter TestCategory=WindowsProcess                       # real processes, pipes, windows, all of the test's own
+dotnet test --filter TestCategory=WindowsRegistry                      # reads two HKCU values every profile has; creates nothing
+dotnet test --filter "FullyQualifiedName~Four_simulated_hours"         # the Explicit four-hour soak; run it before any path moves onto the clock
+dotnet build --no-incremental --disable-build-servers                  # when other builds run at the same time; must report 0 warnings
 dotnet run --project src/ClassScribe                                   # the menu (a recording then runs in the window)
 dotnet run --project src/ClassScribe -- record "Kalam" --device auto --output "<folder>"       # record; Q twice stops and transcribes
 dotnet run --project src/ClassScribe -- record-only "Kalam" --app chrome --output "<folder>"   # record only
+dotnet run --project src/ClassScribe -- record "Kalam" --app chrome --mic --mic-follows chrome --output "<folder>"   # the class and the microphone
+dotnet run --project src/ClassScribe -- record "Kalam" --in-person --output "<folder>"         # the microphone alone, in person
+dotnet run --project src/ClassScribe -- mic-check --seconds 600        # watch what apps do with the microphone; opens nothing
 dotnet run --project src/ClassScribe -- transcribe "C:\path\to\folder-or-file"   # --no-open opens nothing; --output for a file
 dotnet run --project src/ClassScribe -- transcribe "<path>" --again    # one with a transcript; billed again
 dotnet run --project src/ClassScribe -- rebuild "C:\path\to\folder-or-file"      # free, from the saved .json; --no-open
@@ -176,16 +251,23 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   failed, 3 refused by the lock, 4 no request or one it cannot take, 130 cancelled; the window turns
   them into the codes below. Its lines go to `%LOCALAPPDATA%\ClassScribe\recorder.log`
   (`recorder.old.log` at 1 MB) until the recording's folder is known, then into `<base>.log`.
-- `record` and `record-only` need the name, a source (`--device "<part>"`, `--device auto` or
-  `--app <process>`) and `--output`; one validator names everything missing, shows that command's
-  help and exits 2, and nothing is prompted (`CommandLineTree` on System.CommandLine 2.0.13: `Tidy`,
-  `Parse` with ClassScribe's own errors and exit 2, `KindOf`, `InvokeAsync` with Ctrl+C left to
-  ClassScribe; `App` is thin: parse, then the gate and the start-up report for commands, then
-  invoke). `--continue` / `--new` decide about a recent recording of the same name without a
-  question; the menu asks C, N or Esc (`ContinueQuestion`). `transcribe <path> --output` is passed
-  on as a full path for a file that is not a recording's. `list` and `devices` work;
-  `attach` is hidden. Commands printed for later (`CommandLine`) name the program by its full path
-  and escape PowerShell's `$`, backtick and double quotes.
+- `record` and `record-only` need the name, a source (`--device "<part>"`, `--device auto`,
+  `--app <process>` or `--in-person ["<microphone>"]`) and `--output`; `--mic ["<microphone>"]`
+  adds the microphone beside `--device` or `--app`, and `--mic-follows <app>|auto|none` names the
+  app it follows (only with `--mic`, never `--in-person`, never ClassScribe itself; parsed with
+  `FollowRule.TryParse`, the one parser `SettingsCheck` and the menu use too). One validator names
+  everything missing, shows that command's help and exits 2, and nothing is prompted
+  (`CommandLineTree` on System.CommandLine 2.0.13: `Tidy`, `Parse` with ClassScribe's own errors and
+  exit 2, `KindOf`, `InvokeAsync` with Ctrl+C left to ClassScribe; `App` is thin: parse, then the
+  gate and the start-up report for commands, then invoke). `--mic` and `--in-person` take an optional
+  value, so a name right after them is taken as the microphone's, which the message points out.
+  `--continue` / `--new` decide about a recent recording of the same name without a question; the
+  menu asks C, N or Esc (`ContinueQuestion`), and only a recording of the same `RecordingMode` is
+  offered. `transcribe <path> --output` is passed on as a full path for a file that is not a
+  recording's. `list`, `devices` and `mic-check [--seconds <1..86400>] [--log-folder "<folder>"]`
+  work; `attach` is hidden. Commands printed for later (`CommandLine`) name the program by its full
+  path, keep the microphone options (`--mic`, `--in-person`, `--mic-follows` through
+  `FollowRule.Word`) and escape PowerShell's `$`, backtick and double quotes.
 - One recording at a time: `%LOCALAPPDATA%\ClassScribe\recording.lock` (`RecordingLock`,
   `FileShare.None`, held only while capturing, so the next class may start during an upload). Run
   files in `runs\<run id>.json` (`RunJournal`, `RunRecord`: state, a heartbeat every 10 s, `EndedBy`,
@@ -227,9 +309,18 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   over `DuplexStreamPair` connections, with `FakeCaptureProvider`, `StubHttpHandler` and the dummy
   key, on the real clock. `ServiceRegistrationTests` cover both roles (the recorder's through
   `AppHost.BuildRecorder`) and run `list`, `transcribe` and `rebuild` through the real `App`; the
-  `devices` registration test is `WindowsAudio`, since it lists the real devices once. Nothing is
-  played or recorded. The suite had 887 tests at the end of increment 1 and 2,134 at the end of
-  increment 2.
+  `devices` registration test is `WindowsAudio`, since it lists the real devices once. The
+  microphone's Windows tests are `WindowsAudio` too and open nothing: `MicrophoneListingTests` lists
+  this computer's microphones from their property stores and reads the endpoint mute, then checks
+  that the test process owns no capture session; `MicrophoneSessionsTests` and
+  `MicrophoneUsageRecordTests` read the real sessions and the real usage record (no entry for the
+  test exe); `AudioClient2SlotTests` activates the default output device's audio client, never
+  initialised, to pin ClassScribe's `IAudioClient2` slot. `WindowsRegistry` (`RegistryValuesTests`)
+  reads values every profile has and creates nothing; `ProcessNamesTests` is `WindowsProcess`.
+  `EndToEndTests` also covers in person from the command line, the class with the microphone
+  following chrome through a cycle of listening and not (mixed by the real preparer), and
+  `mic-check --seconds 1`. Nothing is played or recorded. The suite had 887 tests at the end of
+  increment 1, 2,134 at the end of increment 2 and 2,822 at the end of increment 3.
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes well under a
@@ -242,24 +333,51 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 - While recording: Q twice within 5 s stops (the first Q logs "Press Q again within 5 seconds to
   stop"); Ctrl+C twice within 5 s stops the same way, and after the stop one Ctrl+C cancels the
   preparation and upload (with a 2 s allowance after a stop by Ctrl+C); P pauses or resumes; M
-  writes a mark to the recording's `.marks.txt`; Esc leaves the view of a background recording
-  without stopping it (from the menu, the menu comes back and offers A). A window the recorder
-  opened by itself ignores every key until Enter.
-- What is recorded (`CaptureChooser`): by default the output device with sound, found with Windows'
-  level meters once a second; `Recording:Device` pins a device; `Recording:App` records one app's
-  process tree through Windows process loopback (`ProcessLoopback`). A pick from menu choice 6,
-  automatic included, holds until ClassScribe is closed (`SourceChoice`); without one, the settings
-  decide as they are read again. ClassScribe's own processes, this one and any other ClassScribe,
-  are left out of the apps with sound (a recording's own capture is a session too), so
-  `Recording:App` cannot pick ClassScribe.
+  writes a mark to the recording's `.marks.txt`; V switches the microphone off and on
+  (`IRecording.SetMicrophone`, null for a recording without one: `TrackSet` disarms the gate and
+  releases the capture, or makes a last look, arms the gate and reopens; with the class app followed
+  the title shows `MIC OFF`, `MIC MUTED` or `MIC WAITING` from `MicrophoneState`, see `TitleText`);
+  Esc leaves the view of a background recording without stopping it (from the menu, the menu comes
+  back and offers A). A window the recorder opened by itself ignores every key until Enter.
+- What is recorded: a `SourcePlan` with a `RecordingMode` (`Class`, `ClassAndMicrophone`,
+  `Microphone`), the class's `ClassSource` and a `MicrophoneChoice(NamePart, Follows)`;
+  `TrackSetFactory` (the registered `IRecordingFactory`) makes a `ClassRecording` for the class
+  alone, as always, and a `TrackSet` of two `RecordingSession`s on one `RecordingClock` with the
+  class, or of the microphone alone in person. The class (`CaptureChooser`): by default the output
+  device with sound, found with Windows' level meters once a second; `Recording:Device` pins a
+  device; `Recording:App` records one app's process tree through Windows process loopback
+  (`ProcessLoopback`). The microphone (`MicrophoneChooser` over `MicrophoneSource`): Windows' default
+  unless it is Bluetooth or a loopback input, then the built-in array, then another; a name part
+  picks one, Bluetooth allowed, a loopback input never; pinned by endpoint id, a stand-in after 10 s
+  away, the class app's microphone first when the watch finds the app listening there; looked at
+  every 10 s and on `MicrophonesChanged`. The followed app: the plan's `Follows` (menu 7,
+  `--mic-follows`), else the `--app` in app mode, else `Recording:MicrophoneFollows`; `None` in
+  person. A pick from menu choice 6 or 7, automatic included, holds until ClassScribe is closed
+  (`SourceChoice`); without one, the settings decide as they are read again. ClassScribe's own
+  processes, this one and any other ClassScribe, are left out of the apps with sound and never count
+  as an app listening on a microphone (`IOwnProcesses`), so neither `Recording:App` nor
+  `Recording:MicrophoneFollows` can pick ClassScribe.
+- The run with the microphone (`RecordingMonitor`, `MicrophoneChecks`): the advice lines at the
+  checks' first look (`MicrophoneAdvice.AtStart`: privacy, the `ClassAppMute` case line, the
+  following line, the microphone line, then the warnings about Vantage, ducking, Bluetooth and the
+  echo, which are one Notice for 5 minutes), Vantage's mode read again every 30 s while the array is
+  recorded, the echo whenever the class moves (in app mode the app's device every 30 s), the gate's
+  state logged once it has held for a second, a Notice after 5 minutes of `NotOpened`, an Alert after
+  10 s of `Unreadable`, the gate's `Evidence` as a Notice, a missing microphone every 30 s, only
+  zeros for 2 minutes (`RecordingSession.OnlyZerosAfter`), the status clause
+  (`MicrophoneChecks.StatusClause`) and, from `RecordCommand`, the microphone's summary from
+  `MicrophoneGate.Summary()`. The run reads the microphone through `IMicrophoneRecording`, which
+  `TrackSet` implements and `ClassRecording` does not. `TrackSet.Stop` logs the clock's own summary
+  line (paused, cut, parts, drift corrections).
 - Arrival watch: `RecordingSession.GetStatus` also reports `SinceLastPacket` (since the open capture
   last handed over any audio, silence and pauses included), `DeliversContinuously` (true for process
-  loopback, false for device loopback) and `RecordedLevel` (Windows' meter for the recorded device or
-  app at the last look; null while paused, after a failed look, or when it is not listed).
-  `RecordCommand.WatchArrival` warns when an app's capture has handed over nothing for 5 s, or a
-  device's meter has shown sound at every tick for 10 s while nothing arrived, at most every 30 s,
-  and calls `RecordingSession.Reopen(reason)`, which replaces the open capture at the next look, in
-  a new part, and logs the reason at Debug.
+  loopback and microphones, false for device loopback) and `RecordedLevel` (Windows' meter for the
+  recorded device or app at the last look; null while paused, after a failed look, when it is not
+  listed, and for a microphone). The monitor's per-track `ArrivalWatch` warns when a continuous
+  capture has handed over nothing for 5 s, or a device's meter has shown sound at every tick for
+  10 s while nothing arrived, at most every 30 s, and the loop calls `IRecording.Reopen(track,
+  reason)`, which replaces that track's open capture at the next look, in a new part, and logs the
+  reason at Debug; the microphone's stall is a Notice, the class's an Alert.
 - Keep-awake: `IPowerRequests.Hold(StayAwake.RecordingReason, ...)` from the start of capture until
   the transcript is saved (`record-only`: until the files are closed), and
   `StayAwake.TranscribingReason` while `transcribe` prepares and uploads. `StayAwake.Needs` asks for
@@ -271,35 +389,53 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   Tests may make a real power request only if they let it go at once (the `WindowsPower` category),
   and must never change the computer's power settings; everywhere else use `FakePowerRequests` and
   `FakePowerSource`.
-- Exit codes: 0 success, and Esc leaving a recording that carries on; 1 failure, settings that fail
-  the check included, a refused command (a transcribed recording without `--again`, a recording
-  still being written, `rebuild` without a saved answer), another recording running, and a lost
-  recorder that was not continued; 2 a mistake on the command line, named with that command's help
-  (a missing name, source or `--output`, two sources, a bad value, an unknown word, a path that is
-  not there); 130 cancelled. A window closed during a background recording gives none; the run file
-  in `%LOCALAPPDATA%\ClassScribe\runs` keeps the outcome for the next start's report (`StartupReport`).
+- Exit codes: 0 success, and Esc leaving a recording that carries on, and `mic-check` stopped by Q,
+  Ctrl+C, `--seconds` or a cancellation; 1 failure, settings that fail the check included, a refused
+  command (a transcribed recording without `--again`, a recording still being written, `rebuild`
+  without a saved answer), another recording running, a lost recorder that was not continued,
+  nothing recorded (a class track never written while the microphone's was counts, with the
+  `transcribe` command for the microphone's files), and `mic-check` unable to create its log; 2 a
+  mistake on the command line, named with that command's help (a missing name, source or
+  `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a bad value,
+  an unknown word, a path that is not there); 130 cancelled. A window closed during a background
+  recording gives none; the run file in `%LOCALAPPDATA%\ClassScribe\runs` keeps the outcome for the
+  next start's report (`StartupReport`). A microphone track that could not be started is left out
+  of the run and the class goes on alone, with a warning at the end and exit 0.
 - Recordings go to `Recording:OutputFolder` (`%USERPROFILE%\ClassScribe`; a relative path is taken
   from the user profile, see `ClassFolders.Root`): a folder per recording name, and files named
-  `<name>_<yyyy-MM-dd_HH-mm-ss>Z` (UTC start) with `.wav`, `_partN.wav`, `.marks.txt` (marks, and
-  notes written as `hh:mm:ss.fff ~ words`, such as the resume note `ClassMarks.AddResume` writes and
-  the sleep notes; `ClassMarks.PartsOf` counts the parts), `.log` (everything the recording's runs
-  logged, in both homes, `RecorderLog.WriteFileTo`), `.md` (the
-  Markdown transcript), `.json` (ElevenLabs' answer), `.upload.wav` (the 16 kHz copy, removed after
-  every try, failed or cancelled included, unless `Recording:KeepUploadFile`) and `.unread.json` (an
-  answer ElevenLabs charged for that did not become a transcript; a `.json` left without its `.md`
-  counts as one too, see `RecordingFiles.FindKeptAnswers`; menu choice 3 shows `answer kept` and
-  asks before a charged retry). `RecordingFiles` owns the naming and `TranscriptCopies` the copy
-  numbers: a transcript is never overwritten (`(2).md`, `(3).md`), not even by two processes at
-  once, because each copy's `.json` and `.md` are claimed with `FileMode.CreateNew`. `HasTranscript`
-  counts any copy.
+  `<name>_<yyyy-MM-dd_HH-mm-ss>Z` (UTC start) with `.wav`, `_partN.wav`, `.mic.wav` and
+  `_partN.mic.wav` (the microphone's track beside the class, `Track.Microphone`,
+  `RecordingFiles.FindSegments(Track)`; in person the microphone is the main track under the plain
+  names), `.marks.txt` (marks, and notes written as `hh:mm:ss.fff ~ words`, such as the resume note
+  `ClassMarks.AddResume` writes, the sleep notes and the gap notes of class-only recordings;
+  `ClassMarks.PartsOf` counts the parts), `.log` (everything the recording's runs logged, in both
+  homes, `RecorderLog.WriteFileTo`), `.md` (the Markdown transcript), `.json` (ElevenLabs' answer),
+  `.upload.wav` (the 16 kHz copy, the two tracks mixed when there are two, removed after every try,
+  failed or cancelled included, unless `Recording:KeepUploadFile`) and `.unread.json` (an answer
+  ElevenLabs charged for that did not become a transcript; a `.json` left without its `.md` counts as
+  one too, see `RecordingFiles.FindKeptAnswers`; menu choice 3 shows `answer kept` and asks before a
+  charged retry). `RecordingFiles` owns the naming and `TranscriptCopies` the copy numbers: a
+  transcript is never overwritten (`(2).md`, `(3).md`), not even by two processes at once, because
+  each copy's `.json` and `.md` are claimed with `FileMode.CreateNew`. `HasTranscript` counts any
+  copy; `ClassFolders` measures a recording by its longest track, reports `HasMicrophone` (`list`
+  and menu choice 3 say `class + microphone`), and continues a recording only with the tracks it
+  was made with. The microphone check's logs go to `<root>\mic-check\mic-check_<local stamp>.log`
+  (`MicCheckLog`: no `Z`, so `RecordingFiles.TryParse` never takes one for a recording, and the
+  folder lists no recordings).
 - Transcription: `ElevenLabsAnswer` is the only reader of ElevenLabs' answers, for the client and for
   rebuild. `UploadTimeLimit` gives each try 10 minutes plus the upload at
   `ElevenLabs:SlowestUploadMbps` plus a quarter of the audio, rounded to the minute, never below
   `ElevenLabs:TimeoutMinutes` (2 h of audio: 71 minutes); `HttpClient.Timeout` is off, as
   `ElevenLabsClient` holds the limit. A recording longer than `TranscriptionWorkflow.LongestRecording`
-  (9.5 h) is refused before anything is prepared. `TranscriptionWorkflow.RebuildAsync` lays the
-  newest saved answer (never an `.unread.json` unless it is named) out again with the current marks
-  and `Transcript` settings, as the next free copy, with no key and no request.
+  (9.5 h) is refused before anything is prepared, measured by the class track alone (the
+  microphone's track is as long; the advice says to copy the `.mic.wav` files along). With `.mic.wav`
+  files the workflow hands `AudioPreparer.Prepare(UploadTracks)` both tracks, which mixes them into
+  one 16 kHz mono track from position 0 without gain, clamped at full scale, and leaves out a
+  microphone track that never rose above `MicrophoneSoundThreshold` (100 of 32,767) with the line
+  `Your microphone stayed silent; only the class is sent.`; a recording with only `.mic.wav` files is
+  sent on its own. `TranscriptionWorkflow.RebuildAsync` lays the newest saved answer (never an
+  `.unread.json` unless it is named) out again with the current marks and `Transcript` settings, as
+  the next free copy, with no key and no request.
 - Settings are in `src/ClassScribe/appsettings.json`, read from the exe's folder (under `dotnet run`,
   the copy in `bin\Debug\net10.0`; the menu names it and warns when the project's file is newer).
   `RunGate` reads the file again before each menu choice and each command (`SettingsReloader`): a
@@ -314,7 +450,19 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   given once per process. `SettingsReloader.Snapshot` gives the Recording, ElevenLabs (never the
   key), Transcript and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
   the recorder in the request file, and `RunJournal.WriteRequest` leaves the key out should it ever
-  be in it. A recording that is running keeps the settings it started with.
+  be in it. A recording that is running keeps the settings it started with. The microphone's
+  settings are `Recording:Mode`, `Recording:Microphone`, `Recording:MicrophoneProcessing` (`Raw` or
+  `Default`), `Recording:MicrophoneFollows` (refused when empty or when it names ClassScribe; not
+  read in app mode) and `Recording:ClassAppMute` (`Visible`, `Invisible`, `Unknown`; a fact about
+  the class app, so no command-line option), plus `Transcript:ShowGapsLongerThanSeconds` (0 or more).
+- The microphone check (`MicCheckCommand`, menu choice 8 and `mic-check`, resolved through
+  `IMicCheckRun` in a scope of its own): MicWatch inside ClassScribe. Every 250 ms it reads
+  `IMicrophoneSessions.ReadAll()` and `IMicrophoneUsageRecord.Read()`, hands them to the pure
+  `MicrophoneChangeTracker` (MIC, SESSION, PRIVACY, MARK, NOTE, ERROR and SELF lines, MicWatch's
+  formats; another ClassScribe process is `ClassScribe, a recording in progress (pid N)`), writes
+  each line to `MicCheckLog` and the window, Q or one Ctrl+C stops it, M marks, `--seconds` stops it
+  by itself, a gap of 2 s or more gives a NOTE, and the title is `MIC CHECK 00:12:40, 23 lines  Q
+  stops`. It runs in the window, takes no lock, and may run beside a recording.
 
 ## Layout
 
@@ -329,9 +477,13 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 - `src/ClassScribe/Desktop`: keeping the laptop awake (`IPowerRequests`, `IPowerSource` and
   `StayAwake`, all in `IPowerRequests.cs`), the computer's clocks (`ISystemTimes`), the window's
   title, taskbar and flash (`IWindowSignals`, `TitleText`, `WindowStatusSink`), starting processes
-  (`IProcessStarter`), the job check (`IJobInspector`) and Windows' end of the session
-  (`ISessionEvents`); `Desktop/Windows` holds the Windows calls. `DesktopServices` registers them
-  and `FreezeWatch`.
+  (`IProcessStarter`), the job check (`IJobInspector`), Windows' end of the session
+  (`ISessionEvents`), the registry read only (`IRegistryValues`, HKEY_CURRENT_USER, for the
+  microphone advice), the program behind a process id (`IProcessNames`, a limited query) and
+  ClassScribe's own processes (`IOwnProcesses`, by pid and by `OwnProcesses.ProgramName`);
+  `Desktop/Windows` holds the Windows calls, `MicrophoneUsageRecord` (the ConsentStore key: which
+  apps used the microphone and when) among them. `DesktopServices` registers them, the usage record,
+  the process names, the own processes and `FreezeWatch`.
 - `src/ClassScribe/Recorder`: the separate recorder: `RecorderHost.cs` (`RecorderStart` and
   `RecorderHost`: the recorder process from the request to the end, with `IsRecorderStart` for
   `Program`), `RuntimeFolder` (`%LOCALAPPDATA%\ClassScribe`), `RecordingLock`, `RunJournal` with
@@ -345,28 +497,64 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 - `src/ClassScribe/Link`: one named pipe per run (`LinkProtocol`, `LinkTypes` and `LinkKeys` in
   `LinkMessages.cs`, `LineChannel`, `RecorderServer`, `RecorderClient`); messages are lines of JSON
   (`LinkJson`), and a field added to a record that travels on it needs a default.
-- `src/ClassScribe/Audio`: capture (`Windows/` holds the WASAPI code), `RecordingSession`, WAV
-  writing (each packet goes to Windows at once; the header is rewritten and flushed to disk every
-  `Recording:FlushSeconds`), upload preparation; `RecordingMode`, `Track`, `IRecording` (the
-  recording a run drives, and its factory), `ICaptureSource` and `LoopbackSource` (what the computer
-  plays, through `CaptureChooser`, which follows the run's `ClassSource`), `ClassRecording` with
-  `ClassRecordingFactory` (an `IRecording` over one session of the class alone, from a run's
-  `SourcePlan`), `SourceChoice` (the menu's pick, or the settings, as a `SourcePlan`).
-  `AudioServices.cs` holds `LazyLoopbackCaptureProvider`: `ILoopbackCaptureProvider` is made on first
-  use, so the app, `transcribe`, `rebuild` and `list` never touch Windows audio, and
-  `Lazy<ILoopbackCaptureProvider>` (for `devices`) resolves the registered provider.
-  `Audio/Windows/CoreAudioInterop.cs` holds
-  ClassScribe's own Core Audio declarations and `CoreAudio` (`CreateEnumerator`, `Check`, `Release`):
-  the device check lists through them, and NAudio does the notifications, the device names and the
-  captures.
+- `src/ClassScribe/Audio`: capture (`Windows/` holds the WASAPI code), `RecordingSession` (which
+  also declares `TrackSpec` and `TrackPlacement`, places `ClockAligned` tracks through
+  `Audio/Timeline`, holds packets for a gate, pads to the clock on its own one-second timer, and
+  reports `Off`, `OnlyZeros` and `Corrections`), WAV writing (each packet goes to Windows at once;
+  the header is rewritten and flushed to disk every `Recording:FlushSeconds`), upload preparation
+  (`AudioPreparer`, `UploadTracks`: the microphone's track mixed in); `RecordingMode`, `Track`,
+  `IRecording` (the recording a run drives, and its factory), `ICaptureSource` and `LoopbackSource`
+  (what the computer plays, through `CaptureChooser`, which follows the run's `ClassSource`),
+  `ClassRecording` (an `IRecording` over one session of the class alone), `TrackSet.cs` (`TrackSet`:
+  the class and the microphone on one clock, or the microphone in person; owns the gate and the
+  watch; `MicrophoneTrack`, and `MicrophoneProviderTap`, the provider as a recording sees it, noting
+  each capture opened), `TrackSetFactory.cs` (the registered `IRecordingFactory`: the recording per
+  mode, and which app is followed), `SourceChoice` (the picks of menu choices 6 and 7, or the
+  settings, as a `SourcePlan`). `AudioServices.cs` holds `LazyLoopbackCaptureProvider`:
+  `ILoopbackCaptureProvider` is made on first use, so the app, `transcribe`, `rebuild` and `list`
+  never touch Windows audio, and `Lazy<ILoopbackCaptureProvider>` (for `devices`) resolves the
+  registered provider.
+- `src/ClassScribe/Audio/Timeline`: the QPC timeline of design section 3: `MediaTime` (positions in
+  100-ns units, conversions without overflow), `RecordingClock` (origin, offset, pauses and cuts,
+  positions, the paused and cut totals) and `TrackPlacer` (where a packet goes on a track, the
+  padding target, the drift corrections).
+- `src/ClassScribe/Audio/Microphone` (namespace `ClassScribe.Audio.Microphones`, plural on purpose: a
+  `Microphone` namespace would hide the `Microphone` record): `Microphone.cs` (the contracts:
+  `Microphone`, `IMicrophoneProvider`, `IMicrophoneCaptureFactory`, `MicrophoneProcessing`,
+  `ClassAppMute`, `FollowRule` with `TryParse`, `Word` and `Named.Matches`, `MicrophoneGateState`),
+  `MicrophoneChooser.cs` (which microphone, pinned by id), `MicrophoneAdvice.cs` (the start lines,
+  the echo check, the Vantage poll; `MicrophoneStart`), `MicrophoneSource.cs` (the microphone as a
+  capture source: chooser plus provider, `Picked`, `FollowApp`), `MicrophoneWatch.cs`
+  (`ClassMicrophoneWatch`, `WatchLook`, and the readers' contracts `IMicrophoneSessions`,
+  `MicrophoneListings`, `MicrophoneSessionListing`, `CaptureSession`, `IMicrophoneUsageRecord`,
+  `UsageRecordListing`, `UsageEntry`), `MicrophoneGate.cs` (`MicrophoneGate`, `IPacketGate`,
+  `GateVerdict`, `GateSummary`), `MicrophoneChangeTracker.cs` (the check's lines, `MicCheckLine`)
+  and `MicrophoneServices.cs` (`AddMicrophone`, called from `AddClassScribe`: the capture factory
+  `MicrophoneActivation`, the provider behind `LazyMicrophoneProvider`, the sessions reader, and the
+  `Lazy<>`s for `devices`).
+- `src/ClassScribe/Audio/Windows`: `CoreAudioInterop.cs` holds ClassScribe's own Core Audio
+  declarations (the property store and its readers, `PropertyKeys`, `EndpointFormFactor`, the
+  endpoint volume and session interfaces) and `CoreAudio` (`CreateEnumerator`, `OpenPropertyStore`,
+  `Check`, `Release`): the device check and the microphone listing go through them, and NAudio does
+  the notifications, the output device names and the captures. `WasapiAudioCapture.cs` is the one
+  capture class for devices, apps and microphones (`ForOutputDevice`, `ForApp`, `ForMicrophone`;
+  the capture thread is "ClassScribe capture" or "ClassScribe microphone"; packets through an
+  internal `IPacketSource` seam, stamped with their QPC position); `AudioClient2Interop.cs`
+  (ClassScribe's `IAudioClient2`) and `MicrophoneActivation.cs` (the microphone capture factory and
+  Windows' activator, RAW with the fallback); `WasapiMicrophoneProvider.cs` (the microphone listing,
+  notifications, mute) and `EndpointFacts.cs` (what a capture endpoint's property store says: the
+  array, Bluetooth and loopback rules); `WasapiMicrophoneSessions.cs` (the sessions and mute per
+  capture endpoint, with `IAudioSessionControl2WholeRaw`); `WasapiLoopbackCaptureProvider.cs`,
+  `ProcessLoopback.cs` and `CaptureGapWatch.cs` as before.
 - `src/ClassScribe/Transcription`: ElevenLabs client (a Refit interface plus `ElevenLabsClient`
   around it), the shared answer parser (`ElevenLabsAnswer`), the upload's time limit
   (`UploadTimeLimit`), glossary loader, transcript formatter, workflow (rebuild included), and
   `TranscriptionProgress` (scoped: the workflow and the client report preparing, uploading at a
   percent and waiting; `RecordCommand` shows it as UPLOADING 40% and writes it into the run file's
   heartbeat, which the menu header and `list` read).
-- `src/ClassScribe/Storage`: class folders under the output folder, recording file names, numbered
-  transcript copies (`TranscriptCopies`, never overwritten), and marks.
+- `src/ClassScribe/Storage`: class folders under the output folder, recording file names (both
+  tracks), numbered transcript copies (`TranscriptCopies`, never overwritten), marks, and the
+  microphone check's log file (`MicCheckLog`: the header, the cost line, flushed per line).
 - `src/ClassScribe/Commands`: the menu, the command line (`CommandLineTree` on System.CommandLine,
   `App`, `CommandLine` for the commands printed for later), the contracts (`Requests.cs`:
   `RecordRequest`, `SourcePlan`, `ClassSource`, `ContinueChoice`, `StartOrigin`, `RunIds`;
@@ -377,14 +565,20 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   keep-awake and the end handlers, with `RunContext`, `RunContextSlot` and `ICrashWarnings`,
   `WindowResultShower`), the starter (`RecordStarter`, `RecorderLauncher`, `ContinueQuestion`), the
   view of a background run (`RecorderView`, `AttachCommand`), the report at the start
-  (`StartupReport`), `transcribe`, `rebuild`, `list` and `devices`, the gate (`RunGate`), the
+  (`StartupReport`), `transcribe`, `rebuild`, `list` and `devices` (output devices, apps with sound,
+  then the microphones with which apps hold them, from `Lazy<IMicrophoneProvider>` and
+  `Lazy<IMicrophoneSessions>`), `MicrophoneMenu.cs` (menu choice 7: W, I or N, the microphone, the
+  follow question), `MicCheckCommand.cs` (the microphone check's loop), the gate (`RunGate`), the
   console and desktop abstractions, the name prompt, the close prompt and the exit warnings, and
-  `WindowServices.cs` (the registration of the window's side). Each command runs in its own DI scope
-  (`ICommandRunner`: record through `IRecordStarter`, attach through `AttachCommand`, list and
-  devices through their commands; `TranscribeAsync` refuses a recording a live run records or
-  transcribes). A start from the window the recorder opened by itself is
-  `StartOrigin.AutoContinueFromAlert`: shown with the keys locked, never recorded in that window,
-  never marked seen.
+  `WindowServices.cs` (the registration of the window's side). `RecordingMonitor.cs` also declares
+  `IMicrophoneRecording` (what a recording with the microphone tells the run beyond its snapshot),
+  `MicrophoneWords` and `MicrophoneChecks` (the microphone's checks beside the class's);
+  `ICommandRunner.cs` declares `MicCheckRequest` and the `IMicCheckRun` seam. Each command runs in
+  its own DI scope (`ICommandRunner`: record through `IRecordStarter`, attach through
+  `AttachCommand`, list, devices, the microphone menu and the check through their commands;
+  `TranscribeAsync` refuses a recording a live run records or transcribes). A start from the window
+  the recorder opened by itself is `StartOrigin.AutoContinueFromAlert`: shown with the keys locked,
+  never recorded in that window, never marked seen.
 - `src/ClassScribe/Desktop/Windows`: `ProcessStarter` (`CreateProcessW` behind `IProcessCreationApi`),
   `JobInspector` (`IsProcessInJob` and `QueryInformationJobObject` behind `IJobApi`),
   `SessionWindow` (with `IShutdownReasonApi`), `ConsoleWindowSignals` (`IConsoleWindowApi`:
@@ -413,6 +607,20 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (`FakeCrashWarnings`, `WatchedRecordingFactory`, `StalledStream`, `FakeResultShower`),
   `TestDoubles.Starter.cs` (`PlayedRecorder`, `FakeRunViewer`, `FakeRecordRuns`),
   `TestDoubles.Menu.cs` (`PlayedRuns`, `FakeRecordStarter`, `WatchedScopes`),
-  `TestDoubles.View.cs` (`FakeCtrlC`, `FakeStopRequests`) and `TestDoubles.CommandLine.cs`.
-  `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang guard. The test
-  project sees ClassScribe's internals (`InternalsVisibleTo` in `CoreAudioInterop.cs`).
+  `TestDoubles.View.cs` (`FakeCtrlC`, `FakeStopRequests`), `TestDoubles.CommandLine.cs`,
+  `TestDoubles.Capture.cs` (`FakeAudioClient` over NAudio's public `IAudioClient`,
+  `FakeAudioClient2`, `FakePacketSource`, `FakeAudioClientActivator`), `TestDoubles.Timeline.cs`
+  (`FakePacketGate`, `JumpingClock`), `TestDoubles.Microphone.cs` (`LaptopMicrophones`,
+  `FakeMicrophoneProvider`, `FakeRegistryValues`), `TestDoubles.MicrophoneListing.cs` (the fake
+  enumerator, endpoints, stores and endpoint volumes, and `LaptopEndpoints`),
+  `TestDoubles.MicrophoneGate.cs` (the `Laptop` fixture, `FakeMicrophoneSessions`,
+  `FakeMicrophoneUsageRecord`, `FakeProcessNames`, `FakeOwnProcesses`, `ScriptedLooks`, and the
+  COM-level fakes of the capture endpoints), `TestDoubles.MicrophoneRun.cs`
+  (`FakeMicrophoneRecording`, `FakeMicrophoneRecordingFactory`) and `TestDoubles.TrackSet.cs`
+  (`TestLoggerFactory`). The microphone's tests: `TrackSetTests`, `RecordingSessionTimelineTests`,
+  `MicrophoneGateTests`, `ClassMicrophoneWatchTests`, `MicrophoneChooserTests`, `MicrophoneAdviceTests`,
+  `MicrophoneSourceTests`, `MicrophoneActivationTests`, `MicrophoneMenuTests`, `MicCheckCommandTests`,
+  `MicrophoneChangeTrackerTests`, `MicCheckLogTests`, `UploadMixTests`, `MediaTimeTests`,
+  `RecordingClockTests`, `TrackPlacerTests`, `EndpointFactsTests`, `CoreAudioPropertyTests` and
+  `RecorderSoakTests`. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
+  guard. The test project sees ClassScribe's internals (`InternalsVisibleTo` in `CoreAudioInterop.cs`).

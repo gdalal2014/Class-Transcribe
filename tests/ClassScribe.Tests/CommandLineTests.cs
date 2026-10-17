@@ -1,4 +1,5 @@
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 
 namespace ClassScribe.Tests;
@@ -114,6 +115,25 @@ public class CommandLineTests
 
         Assert.That(CommandLine.Record(withClass, Exe, ExeFolder), Does.EndWith(@" record ""Kalam"" --device auto --mic --output ""D:\Classes"" --continue"));
         Assert.That(CommandLine.Record(inPerson, Exe, ExeFolder), Does.EndWith(@" record ""Kalam"" --in-person ""OBSBOT"" --output ""D:\Classes"" --continue"));
+    }
+
+    /// <summary>
+    /// A rule chosen for the run with --mic-follows, or in the menu, is kept when the recording is continued, so that the
+    /// next part follows the same app: the name part, auto or none, as the option spells them. Without one, nothing is
+    /// added, and the continued part follows the recorded app or the setting, as the run did.
+    /// </summary>
+    [TestCase("zoom", @"--mic-follows ""zoom""")]
+    [TestCase("auto", @"--mic-follows ""auto""")]
+    [TestCase("none", @"--mic-follows ""none""")]
+    public void The_record_command_keeps_the_app_the_microphone_was_chosen_to_follow(string word, string option)
+    {
+        Assert.That(FollowRule.TryParse(word, out var rule), Is.True);
+        var request = Request(new ClassSource.App("chrome")) with
+        {
+            Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.App("chrome"), new MicrophoneChoice("OBSBOT", rule))
+        };
+
+        Assert.That(CommandLine.Record(request, Exe, ExeFolder), Does.EndWith($@" record ""Kalam"" --app ""chrome"" --mic ""OBSBOT"" {option} --output ""D:\Classes"" --continue"));
     }
 
     /// <summary>

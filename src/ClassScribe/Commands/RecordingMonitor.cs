@@ -1,10 +1,14 @@
+using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Condition = (string Name, ClassScribe.Commands.AttentionLevel Level, string Short, string Text);
 
 namespace ClassScribe.Commands;
 
@@ -27,38 +31,102 @@ public sealed record MonitorTick(IReadOnlyList<(LogLevel Level, string Text)> Li
 /// <param name="StartedUtc">When the recording loop started, by the time of day.</param>
 /// <param name="StartedTimestamp">When the recording loop started, on the steady clock (<see cref="TimeProvider.GetTimestamp"/>): --minutes and the safety stop count from here.</param>
 /// <param name="Offset">The length the recording already had on disk when this run continued it; zero for a new one.</param>
-public sealed record MonitorContext(RecordRequest Request, string Folder, DateTimeOffset StartedUtc, long StartedTimestamp, TimeSpan Offset);
+/// <param name="Microphone">
+/// What the recording says about your microphone beyond its snapshot (see <see cref="IMicrophoneRecording"/>); null for a
+/// recording that has no microphone, or one that cannot say more about it.
+/// </param>
+public sealed record MonitorContext(RecordRequest Request, string Folder, DateTimeOffset StartedUtc, long StartedTimestamp, TimeSpan Offset,
+    IMicrophoneRecording? Microphone = null);
+
+/// <summary>
+/// What a recording with your microphone says about it beyond its snapshot, for the run's lines, its status line, its
+/// title and its end-of-class summary: which microphone is recorded now and why, how Windows processes its audio, which
+/// app the track follows, and the gate that follows it. A recording that has your microphone implements this beside
+/// <see cref="IRecording"/>; a recording of the class alone does not, and the run then asks nothing of it. Each member
+/// answers for now, from whatever thread asks.
+/// </summary>
+public interface IMicrophoneRecording
+{
+    /// <summary>The app the microphone track follows, as the recording was built to follow it; null when none is followed, as in person.</summary>
+    FollowRule? Follows { get; }
+
+    /// <summary>
+    /// The gate that follows the app, whose state, words, evidence and summary the run shows; null when the recording has
+    /// none. In person, and with the class when no app is followed, a gate for <see cref="FollowRule.None"/> follows
+    /// nothing but still counts the time on and off with V, which the end-of-class summary gives; without one that line
+    /// is left out.
+    /// </summary>
+    MicrophoneGate? Gate { get; }
+
+    /// <summary>The microphone recorded now, as Windows lists it; null while there is none to record.</summary>
+    Microphone? Microphone { get; }
+
+    /// <summary>
+    /// The microphone the recording would record, as its last look picked it, while none is recorded: the track switched
+    /// off with V, or not yet opened. The same as <see cref="Microphone"/> while one is recorded. Null when no look has
+    /// picked one, as before the first look and while none is connected.
+    /// </summary>
+    Microphone? WouldRecord { get; }
+
+    /// <summary>Why that microphone, in the words the choice was made with, such as Windows' default microphone; null when there is nothing to say.</summary>
+    string? MicrophoneWhy { get; }
+
+    /// <summary>How Windows processes the microphone's audio, as the open capture reports it; null while no capture is open, or when the capture cannot say.</summary>
+    MicrophoneProcessing? Processing { get; }
+
+    /// <summary>
+    /// Whether the microphone recorded now is muted in Windows (the switch in Sound settings, and the microphone key), read
+    /// from Windows when asked; null while none is recorded, or when Windows cannot say.
+    /// </summary>
+    bool? MutedInWindows { get; }
+}
+
+/// <summary>The words for the app the microphone track follows, as the run's lines, status line and summary use them.</summary>
+public static class MicrophoneWords
+{
+    /// <summary>The app as a name after "following": chrome, or "any app"; null when none is followed.</summary>
+    public static string? Followed(FollowRule? rule) => rule switch
+    {
+        FollowRule.Named named => named.NamePart,
+        FollowRule.Any => "any app",
+        _ => null
+    };
+
+    /// <summary>The app as the subject of a sentence: chrome, "an app" when any app is followed, "the class app" when none is.</summary>
+    public static string App(FollowRule? rule) => rule switch
+    {
+        FollowRule.Named named => named.NamePart,
+        FollowRule.Any => "an app",
+        _ => "the class app"
+    };
+}
 
 /// <summary>
 /// The checks made once a second while a class records (see <see cref="Tick"/>). They say what they find and leave acting
 /// on it to the recording loop: the lines to log, the notes for the transcript, what needs attention, a stop, and a
 /// capture to replace. All of it is timed on the steady clock (<see cref="TimeProvider.GetTimestamp"/>), so Windows setting
 /// its time of day neither hurries nor holds up a check; only the times shown to Gulzar are read from the time of day.
-/// One monitor watches one run.
+/// One monitor watches one run. The checks about your microphone are made beside the class's in the modes that record
+/// it (see <see cref="MicrophoneChecks"/>).
 /// </summary>
 /// <remarks>
 /// <para>What needs attention, most pressing first: nothing recorded for 15 seconds; files that cannot be written; audio
 /// that stops arriving; a disk with room for less than 30 minutes; sound while paused for 30 seconds; a pause of 10
-/// minutes or more; a time ClassScribe did not run, for 5 minutes after it. Each of these is an Alert. A silence as long
-/// as Recording:SilenceWarningSeconds is a Notice. The title shows the most pressing one.</para>
+/// minutes or more; a time ClassScribe did not run, for 5 minutes after it; then the microphone's: its sessions
+/// unreadable for 10 seconds, and in person only exact zeros from it, which the recording reports after 2 minutes of
+/// them. Each of these is an Alert. A silence as
+/// long as Recording:SilenceWarningSeconds is a Notice, and so are the microphone's lesser troubles and the warnings
+/// about it. The title shows the most pressing one.</para>
 /// <para>The count in the attention grows by one for each new event that is at least as pressing as what the title shows,
 /// so that a window flashes once for each new Alert, and a Notice that begins under an Alert is not counted. A condition
 /// first seen at a look began after the look before it, so it is counted from that look, at most a second early, or from
 /// the end of a time ClassScribe did not run.</para>
 /// </remarks>
-public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOptionsSnapshot<RecordingOptions> recording, TimeProvider time)
+public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOptionsSnapshot<RecordingOptions> recording, MicrophoneAdvice advice,
+    ILoopbackCaptureProvider outputs, TimeProvider time)
 {
     /// <summary>How long nothing may be recorded, other than while paused, before it is an Alert. A device being replaced takes less.</summary>
     public static readonly TimeSpan NotRecordingAlertAfter = TimeSpan.FromSeconds(15);
-
-    /// <summary>How long a capture that hands over audio all the time, silence included, as an app's does, may hand over none at all before it counts as stalled.</summary>
-    private static readonly TimeSpan ContinuousArrivalLimit = TimeSpan.FromSeconds(5);
-
-    /// <summary>How long a device's meter may show sound while no audio arrives from its capture before the capture counts as stalled.</summary>
-    private static readonly TimeSpan MeterArrivalLimit = TimeSpan.FromSeconds(10);
-
-    /// <summary>The least time between two warnings that audio has stopped arriving, each with a reopening of the capture.</summary>
-    private static readonly TimeSpan ArrivalWarningSpacing = TimeSpan.FromSeconds(30);
 
     /// <summary>How long a time ClassScribe did not run stays in the title after it is found.</summary>
     private static readonly TimeSpan FreezeAlertFor = TimeSpan.FromMinutes(5);
@@ -96,6 +164,15 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// <summary>The words for sound that keeps arriving while paused.</summary>
     private const string PlayingWhilePausedText = "The class seems to be playing while paused; P records again";
 
+    /// <summary>The checks about your microphone, in the modes that record it.</summary>
+    private readonly MicrophoneChecks _microphone = new(advice, outputs, time);
+
+    /// <summary>The watch that audio keeps arriving on the main track.</summary>
+    private readonly ArrivalWatch _mainArrival = new(time);
+
+    /// <summary>The watch that audio keeps arriving on the microphone track, beside the class.</summary>
+    private readonly ArrivalWatch _microphoneArrival = new(time);
+
     /// <summary>True once the first look has taken its bearings from the run's context.</summary>
     private bool _begun;
 
@@ -116,21 +193,6 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
 
     /// <summary>Since when nothing has been recorded, other than while paused; null while recording.</summary>
     private long? _notRecordingSince;
-
-    /// <summary>Since when the recorded device's meter has shown sound at every look, or null while it does not.</summary>
-    private long? _meterSoundSince;
-
-    /// <summary>When the last warning that audio has stopped arriving was given, or null.</summary>
-    private long? _lastArrivalWarning;
-
-    /// <summary>True from a look that found audio had stopped arriving until audio has flowed again for as long.</summary>
-    private bool _stalled;
-
-    /// <summary>Since when audio has flowed again after a stall, or null.</summary>
-    private long? _flowingSince;
-
-    /// <summary>The words of the last warning that audio has stopped arriving, and the title's words for it.</summary>
-    private (string Short, string Text) _stall = ("", "");
 
     /// <summary>Since when the recording has been paused, or null while it is not.</summary>
     private long? _pausedSince;
@@ -168,14 +230,19 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// <summary>The conditions that needed attention at the last look, by name.</summary>
     private HashSet<string> _active = [];
 
-    /// <summary>Starts the watch for a time ClassScribe did not run, with a timer of its own (see <see cref="FreezeWatch.Start"/>); disposing the result stops the timer.</summary>
-    public IDisposable Start() => freezes.Start();
+    /// <summary>
+    /// Starts the checks for the run <paramref name="context"/> describes: the watch for a time ClassScribe did not run,
+    /// with a timer of its own (see <see cref="FreezeWatch.Start"/>), and the ear for the evidence the microphone's gate
+    /// reports, when the recording has one. Disposing the result stops both.
+    /// </summary>
+    public IDisposable Start(MonitorContext context) => new Started(freezes.Start(), _microphone.Listen(context.Microphone?.Gate));
 
     /// <summary>
-    /// One look at the recording, once a second: a time ClassScribe did not run; nothing recorded; the silence warning;
-    /// audio that stops arriving; a pause left on; the free space, at the first look and then every 5 minutes; --minutes
-    /// and the safety stop; the status line at its interval, which says when the recording stops by itself; and from all of
-    /// that, what needs attention. The first look takes its bearings from <paramref name="context"/>.
+    /// One look at the recording, once a second: a time ClassScribe did not run; the microphone's lines (the advice at the
+    /// start, and its checks since); nothing recorded; the silence warning; audio that stops arriving; a pause left on;
+    /// the free space, at the first look and then every 5 minutes; --minutes and the safety stop; the status line at its
+    /// interval, which says when the recording stops by itself and, with the class and your microphone, how the microphone
+    /// is doing; and from all of that, what needs attention. The first look takes its bearings from <paramref name="context"/>.
     /// </summary>
     public MonitorTick Tick(RecordingSnapshot snapshot, MonitorContext context)
     {
@@ -190,6 +257,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         var lines = new List<(LogLevel Level, string Text)>();
         var notes = new List<TimelineNote>();
         var main = snapshot.Main;
+        var mode = context.Request.Source.Mode;
 
         foreach (var freeze in freezes.Tick())
         {
@@ -202,25 +270,42 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
             _awakeSince = now;
         }
 
+        // A condition first seen now began after the last look, or after the last freeze, whichever is later.
+        var began = Math.Max(_lastLook, _awakeSince);
+
+        // The microphone's lines first, so that at the first look the advice about it leads.
+        List<Condition> microphoneConditions = [];
+        _microphone.Tick(snapshot, context, options, now, began, lines, microphoneConditions);
+
         // Nothing recorded, other than while paused, which is a choice; a track switched off with V records nothing by choice too.
         if (snapshot.Paused || main.Capturing || main.Off)
             _notRecordingSince = null;
         else
-            _notRecordingSince ??= Math.Max(_lastLook, _awakeSince);
+            _notRecordingSince ??= began;
 
         // Nothing is heard while ClassScribe does not run either, so the silence counts from the end of the last freeze at
         // most: the time asleep is no sign that the class does not reach the recording.
         var silenceAfter = TimeSpan.FromSeconds(Math.Max(1, options.SilenceWarningSeconds));
         var silence = Shorter(main.SinceLastSound, time.GetElapsedTime(_awakeSince, now));
         var silent = main.Capturing && !snapshot.Paused && silence >= silenceAfter;
-        var silenceText = $"No sound for {DescribeLength(silence)}. Check that the class is playing through \"{main.Source}\" and that Windows is not muted";
+        var silenceText = SilenceText(main, mode, silence);
         if (silent && (_lastSilenceWarning is not { } warned || time.GetElapsedTime(warned, now) >= silenceAfter))
         {
             _lastSilenceWarning = now;
             lines.Add((LogLevel.Warning, silenceText));
         }
 
-        var reopen = WatchArrival(main, snapshot.Paused, now, lines);
+        var reopen = _mainArrival.Watch(main, Track.Main, snapshot.Paused, now, _awakeSince, lines);
+        if (mode == RecordingMode.ClassAndMicrophone && snapshot.Microphone is { } microphone)
+        {
+            // The microphone beside the class is watched too; switched off with V it has no capture to watch, and a stall
+            // from before V is forgotten, so that the next capture starts afresh.
+            if (microphone.Off)
+                _microphoneArrival.Reset();
+            else
+                reopen ??= _microphoneArrival.Watch(microphone, Track.Microphone, snapshot.Paused, now, _awakeSince, lines);
+        }
+
         var (pausedFor, playingWhilePaused) = WatchPause(snapshot, now, lines);
 
         if (_lastSpaceCheck is not { } lastCheck || time.GetElapsedTime(lastCheck, now) >= SpaceCheckEvery)
@@ -236,12 +321,12 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         if (time.GetElapsedTime(_lastStatus, now) >= TimeSpan.FromSeconds(Math.Max(1, options.StatusIntervalSeconds)))
         {
             _lastStatus = now;
-            lines.Add((LogLevel.Information, StatusLine(snapshot, stopsAt)));
+            lines.Add((LogLevel.Information, StatusLine(snapshot, stopsAt) + _microphone.StatusClause(snapshot, context)));
         }
 
         lines.AddRange(stopLines);
 
-        List<(string Name, AttentionLevel Level, string Short, string Text)> conditions = [];
+        List<Condition> conditions = [];
         var notRecording = _notRecordingSince is { } waitingSince ? time.GetElapsedTime(waitingSince, now) : TimeSpan.Zero;
         if (notRecording >= NotRecordingAlertAfter)
             conditions.Add(("NotRecording", AttentionLevel.Alert, NotRecordingShort(context.Request.Source.Class),
@@ -249,7 +334,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
                     ? $"Nothing has been recorded for {DescribeLength(notRecording)}; waiting for {awaited}"
                     : $"Nothing has been recorded for {DescribeLength(notRecording)}"));
         if (main.WriteFailing) conditions.Add(("CannotWrite", AttentionLevel.Alert, "CANNOT WRITE", CannotWriteText));
-        if (_stalled) conditions.Add(("NoAudio", AttentionLevel.Alert, _stall.Short, _stall.Text));
+        if (_mainArrival.Stalled) conditions.Add(("NoAudio", AttentionLevel.Alert, _mainArrival.Stall.Short, _mainArrival.Stall.Text));
         if (_spaceAlert is { } spaceText) conditions.Add(("DiskNearlyFull", AttentionLevel.Alert, "DISK NEARLY FULL", spaceText));
         if (playingWhilePaused) conditions.Add(("PlayingWhilePaused", AttentionLevel.Alert, "PLAYING WHILE PAUSED", PlayingWhilePausedText));
         if (pausedFor >= PauseAlertAfter)
@@ -258,9 +343,13 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
             conditions.Add((string.Create(CultureInfo.InvariantCulture, $"Freeze{frozen.Number}"), AttentionLevel.Alert, frozen.Short, frozen.Text));
         if (silent)
             conditions.Add(("NoSound", AttentionLevel.Notice, string.Create(CultureInfo.InvariantCulture, $"no sound {Math.Max(1, (int)silence.TotalMinutes)} min"), silenceText));
+        if (_microphoneArrival.Stalled) conditions.Add(("MicrophoneNoAudio", AttentionLevel.Notice, "no audio from the microphone", _microphoneArrival.Stall.Text));
+        conditions.AddRange(microphoneConditions);
 
         _lastLook = now;
-        return new MonitorTick(lines, notes, Attend(conditions), stopBecause, reopen, stopsAt);
+
+        // The class's conditions come before the microphone's at each level; an Alert of the microphone's still outranks a Notice.
+        return new MonitorTick(lines, notes, Attend([.. conditions.OrderByDescending(condition => condition.Level)]), stopBecause, reopen, stopsAt);
     }
 
     /// <summary>
@@ -279,15 +368,23 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         return minutes % 60 == 0 ? hours : $"{hours} {Count(minutes % 60, "minute")}";
     }
 
-    /// <summary>A number with its unit, singular for one and plural otherwise, such as "1 minute" or "30 minutes".</summary>
-    private static string Count(long number, string unit) =>
-        string.Create(CultureInfo.InvariantCulture, $"{number} {unit}{(number == 1 ? "" : "s")}");
+    /// <summary>A number with its unit, singular for one and plural otherwise, such as "1 minute" or "30 minutes"; <paramref name="plural"/> when the plural is not the unit with an s.</summary>
+    internal static string Count(long number, string unit, string? plural = null) =>
+        string.Create(CultureInfo.InvariantCulture, $"{number} {(number == 1 ? unit : plural ?? unit + "s")}");
 
     /// <summary>The shorter of two lengths.</summary>
     private static TimeSpan Shorter(TimeSpan first, TimeSpan second) => first < second ? first : second;
 
     /// <summary>A pause's reminder, for one that has lasted <paramref name="paused"/>.</summary>
     private static string PauseText(TimeSpan paused) => $"Still paused, for {DescribeLength(paused)} now; P records again";
+
+    /// <summary>
+    /// The silence warning: with the class, that nothing has been heard from what it plays through; in person, that nothing
+    /// has been heard from the microphone, with what to check about it.
+    /// </summary>
+    private static string SilenceText(TrackSnapshot main, RecordingMode mode, TimeSpan silence) => mode == RecordingMode.Microphone
+        ? $"No sound from the microphone \"{main.Source}\" for {DescribeLength(silence)}. Check that it is not muted in Windows (the microphone key) and that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)"
+        : $"No sound for {DescribeLength(silence)}. Check that the class is playing through \"{main.Source}\" and that Windows is not muted";
 
     /// <summary>
     /// The title's words for nothing recorded: what the run waits for, by the name it was given, in as few words as a title
@@ -325,7 +422,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// What needs attention, from the conditions found now, most pressing first: the first of them, with the count grown by
     /// each that is new since the last look and at least as pressing as the first.
     /// </summary>
-    private Attention Attend(List<(string Name, AttentionLevel Level, string Short, string Text)> conditions)
+    private Attention Attend(List<Condition> conditions)
     {
         var shown = conditions.Count == 0 ? AttentionLevel.None : conditions[0].Level;
         foreach (var condition in conditions)
@@ -337,78 +434,6 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         return conditions.Count == 0
             ? new Attention(AttentionLevel.None, "", "", _count)
             : new Attention(conditions[0].Level, conditions[0].Short, conditions[0].Text, _count);
-    }
-
-    /// <summary>
-    /// Watches that audio keeps arriving from <paramref name="track"/>'s open capture although it should, and has the capture
-    /// reopened when it does not. Silence is audio too: what counts is whether the capture hands over anything at all, never
-    /// how loud it is, so a quiet class is no stall. A capture that hands over audio all the time, silence included, as an
-    /// app's does, should never hand over nothing for <see cref="ContinuousArrivalLimit"/>. A device's capture hands over audio
-    /// whenever something plays on it, so it is stalled when the device's meter has shown sound at every look for
-    /// <see cref="MeterArrivalLimit"/> while nothing arrived; a look with the meter quiet starts that count again. The time
-    /// before the last freeze does not count. A stall is warned about, with a reopening, at most once per
-    /// <see cref="ArrivalWarningSpacing"/>, and needs attention until audio has flowed again for as long as the limit: a
-    /// new capture that has not delivered yet is no sign that audio is back, and nor is a time with no capture open at all.
-    /// Returns the track to reopen, or null.
-    /// </summary>
-    private (Track Track, string Reason)? WatchArrival(TrackSnapshot track, bool paused, long now, List<(LogLevel Level, string Text)> lines)
-    {
-        if (track.SinceLastPacket is not { } sinceLastPacket)
-        {
-            // No capture is open: nothing is awaited from one, and no audio has come back either, so a stall stays one.
-            _meterSoundSince = null;
-            _flowingSince = null;
-            return null;
-        }
-
-        TimeSpan missing;
-        var limit = ContinuousArrivalLimit;
-        var nothingArrived = Shorter(sinceLastPacket, time.GetElapsedTime(_awakeSince, now));
-        if (track.DeliversContinuously)
-        {
-            _meterSoundSince = null;
-            missing = nothingArrived;
-        }
-        else
-        {
-            if (track.RecordedLevel is { } level && level >= CaptureChooser.SoundLevel)
-                _meterSoundSince ??= now;
-            else
-                _meterSoundSince = null;
-
-            var playing = _meterSoundSince is { } since ? time.GetElapsedTime(since, now) : TimeSpan.Zero;
-            missing = Shorter(nothingArrived, playing);
-            limit = MeterArrivalLimit;
-        }
-
-        if (missing < limit)
-        {
-            if (!_stalled) return null;
-
-            _flowingSince ??= now;
-            if (time.GetElapsedTime(_flowingSince.Value, now) >= limit)
-            {
-                _stalled = false;
-                _flowingSince = null;
-            }
-
-            return null;
-        }
-
-        _stalled = true;
-        _flowingSince = null;
-        if (_lastArrivalWarning is { } last && time.GetElapsedTime(last, now) < ArrivalWarningSpacing) return null;
-
-        _lastArrivalWarning = now;
-        var length = DescribeLength(missing);
-        var text = !track.DeliversContinuously
-            ? $"No audio has arrived from \"{track.Source}\" for {length} although Windows shows sound playing there; the recording has fallen behind the clock. Reopening it"
-            : paused
-                ? $"No audio has arrived from \"{track.Source}\" for {length} although it should. Reopening it, so that the recording can go on when you press P again"
-                : $"No audio has arrived from \"{track.Source}\" for {length} although it should; the recording has fallen behind the clock. Reopening it";
-        _stall = ($"NO AUDIO from \"{track.Source}\"", text);
-        lines.Add((LogLevel.Warning, text));
-        return (Track.Main, $"no audio has arrived for {length}");
     }
 
     /// <summary>
@@ -569,4 +594,682 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// <summary>A moment as the local time of day, to the second unless <paramref name="format"/> says otherwise, such as 19:42:10.</summary>
     private string LocalTime(DateTimeOffset moment, string format = "HH:mm:ss") =>
         TimeZoneInfo.ConvertTime(moment, time.LocalTimeZone).ToString(format, CultureInfo.InvariantCulture);
+
+    /// <summary>What <see cref="Start"/> began: the freeze watch's timer and the ear for the gate's evidence, stopped together.</summary>
+    private sealed class Started(IDisposable timer, IDisposable ear) : IDisposable
+    {
+        /// <summary>Stops listening for evidence, then the timer.</summary>
+        public void Dispose()
+        {
+            ear.Dispose();
+            timer.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Watches that audio keeps arriving from one track's open capture although it should, and has the capture reopened
+    /// when it does not. Silence is audio too: what counts is whether the capture hands over anything at all, never how
+    /// loud it is, so a quiet class is no stall. A capture that hands over audio all the time, silence included, as an
+    /// app's or a microphone's does, should never hand over nothing for <see cref="ContinuousArrivalLimit"/>. A device's
+    /// capture hands over audio whenever something plays on it, so it is stalled when the device's meter has shown sound at
+    /// every look for <see cref="MeterArrivalLimit"/> while nothing arrived; a look with the meter quiet starts that count
+    /// again. The time before the last freeze does not count. A stall is warned about, with a reopening, at most once per
+    /// <see cref="ArrivalWarningSpacing"/>, and needs attention until audio has flowed again for as long as the limit: a
+    /// new capture that has not delivered yet is no sign that audio is back, and nor is a time with no capture open at all.
+    /// One watch per track.
+    /// </summary>
+    private sealed class ArrivalWatch(TimeProvider time)
+    {
+        /// <summary>How long a capture that hands over audio all the time, silence included, may hand over none at all before it counts as stalled.</summary>
+        private static readonly TimeSpan ContinuousArrivalLimit = TimeSpan.FromSeconds(5);
+
+        /// <summary>How long a device's meter may show sound while no audio arrives from its capture before the capture counts as stalled.</summary>
+        private static readonly TimeSpan MeterArrivalLimit = TimeSpan.FromSeconds(10);
+
+        /// <summary>The least time between two warnings that audio has stopped arriving, each with a reopening of the capture.</summary>
+        private static readonly TimeSpan ArrivalWarningSpacing = TimeSpan.FromSeconds(30);
+
+        /// <summary>Since when the recorded device's meter has shown sound at every look, or null while it does not.</summary>
+        private long? _meterSoundSince;
+
+        /// <summary>When the last warning that audio has stopped arriving was given, or null.</summary>
+        private long? _lastArrivalWarning;
+
+        /// <summary>Since when audio has flowed again after a stall, or null.</summary>
+        private long? _flowingSince;
+
+        /// <summary>True from a look that found audio had stopped arriving until audio has flowed again for as long.</summary>
+        public bool Stalled { get; private set; }
+
+        /// <summary>The words of the last warning that audio has stopped arriving, and the title's words for it.</summary>
+        public (string Short, string Text) Stall { get; private set; } = ("", "");
+
+        /// <summary>Forgets a stall and its counts, as when the track's capture was released on purpose.</summary>
+        public void Reset()
+        {
+            Stalled = false;
+            _meterSoundSince = null;
+            _flowingSince = null;
+        }
+
+        /// <summary>One look at <paramref name="track"/>, which is <paramref name="which"/> one; returns the track to reopen, or null.</summary>
+        public (Track Track, string Reason)? Watch(TrackSnapshot track, Track which, bool paused, long now, long awakeSince, List<(LogLevel Level, string Text)> lines)
+        {
+            if (track.SinceLastPacket is not { } sinceLastPacket)
+            {
+                // No capture is open: nothing is awaited from one, and no audio has come back either, so a stall stays one.
+                _meterSoundSince = null;
+                _flowingSince = null;
+                return null;
+            }
+
+            TimeSpan missing;
+            var limit = ContinuousArrivalLimit;
+            var nothingArrived = Shorter(sinceLastPacket, time.GetElapsedTime(awakeSince, now));
+            if (track.DeliversContinuously)
+            {
+                _meterSoundSince = null;
+                missing = nothingArrived;
+            }
+            else
+            {
+                if (track.RecordedLevel is { } level && level >= CaptureChooser.SoundLevel)
+                    _meterSoundSince ??= now;
+                else
+                    _meterSoundSince = null;
+
+                var playing = _meterSoundSince is { } since ? time.GetElapsedTime(since, now) : TimeSpan.Zero;
+                missing = Shorter(nothingArrived, playing);
+                limit = MeterArrivalLimit;
+            }
+
+            if (missing < limit)
+            {
+                if (!Stalled) return null;
+
+                _flowingSince ??= now;
+                if (time.GetElapsedTime(_flowingSince.Value, now) >= limit)
+                {
+                    Stalled = false;
+                    _flowingSince = null;
+                }
+
+                return null;
+            }
+
+            Stalled = true;
+            _flowingSince = null;
+            if (_lastArrivalWarning is { } last && time.GetElapsedTime(last, now) < ArrivalWarningSpacing) return null;
+
+            _lastArrivalWarning = now;
+            var length = DescribeLength(missing);
+            var text = !track.DeliversContinuously
+                ? $"No audio has arrived from \"{track.Source}\" for {length} although Windows shows sound playing there; the recording has fallen behind the clock. Reopening it"
+                : paused
+                    ? $"No audio has arrived from \"{track.Source}\" for {length} although it should. Reopening it, so that the recording can go on when you press P again"
+                    : $"No audio has arrived from \"{track.Source}\" for {length} although it should; the recording has fallen behind the clock. Reopening it";
+            Stall = ($"NO AUDIO from \"{track.Source}\"", text);
+            lines.Add((LogLevel.Warning, text));
+            return (which, $"no audio has arrived for {length}");
+        }
+    }
+}
+
+/// <summary>
+/// The checks about your microphone, made once a second beside the class's in the modes that record it: the advice at
+/// the start (the privacy line, the case line for the class app's mute, which app is followed, which microphone and how,
+/// or which one V will open when the track starts switched off, and the warnings, which are a Notice for five minutes),
+/// the advice again whenever the recording moves to another microphone, Lenovo Vantage's mode read again every 30
+/// seconds, the echo checked again whenever the class moves to another device (in app mode, the app's device every 30
+/// seconds), the gate that follows the class app (a line when a state has held for a second, the app not opening the
+/// microphone for 5 minutes, its sessions unreadable for 10 seconds, the evidence that its mute is visible), a microphone
+/// missing beside the class, and only exact zeros from it, which the recording reports after 2 minutes of them. The
+/// status line's clause about the microphone comes from here too. Nothing here opens a microphone: the advice reads the
+/// registry, the echo check reads Windows' lists of devices and apps, the gate is read as the watch left it, and the
+/// mute is read from Windows' own switch.
+/// </summary>
+internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCaptureProvider outputs, TimeProvider time)
+{
+    /// <summary>How long the followed app may leave the microphone unopened before it is a Notice.</summary>
+    public static readonly TimeSpan NotOpenedNoticeAfter = TimeSpan.FromMinutes(5);
+
+    /// <summary>How long the app's sessions may be unreadable before it is an Alert.</summary>
+    public static readonly TimeSpan UnreadableAlertAfter = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// The length of exact zeros that the recording's snapshot stands for when it says <see cref="TrackSnapshot.OnlyZeros"/>:
+    /// the recording counts the zeros itself (RecordingSession's OnlyZerosAfter, 2 minutes), and the checks say so at the
+    /// look that first finds the flag set, with this length in the words, rather than counting them a second time.
+    /// </summary>
+    public static readonly TimeSpan OnlyZerosLength = TimeSpan.FromMinutes(2);
+
+    /// <summary>How often a microphone missing beside the class is said to be waited for.</summary>
+    public static readonly TimeSpan MissingReminderEvery = TimeSpan.FromSeconds(30);
+
+    /// <summary>How long a warning about the microphone stays a Notice in the title; the log keeps the words.</summary>
+    public static readonly TimeSpan NoticeFor = TimeSpan.FromMinutes(5);
+
+    /// <summary>How long a state of the gate must hold before it is logged: shorter changes are counted by the gate, not logged.</summary>
+    private static readonly TimeSpan HeldFor = TimeSpan.FromSeconds(1);
+
+    /// <summary>The words by which the advice's line that Vantage's noise cancelling went off is told from its warnings, which are about it being on.</summary>
+    private const string VantageWentOff = " is now off";
+
+    /// <summary>The evidence the gate reported, from the watch's thread, waiting for the next look.</summary>
+    private readonly ConcurrentQueue<string> _evidence = new();
+
+    /// <summary>The warnings that are Notices now, newest last.</summary>
+    private readonly List<Noticed> _noticed = [];
+
+    /// <summary>True once the first look has given the advice at the start.</summary>
+    private bool _advised;
+
+    /// <summary>The microphone last advised about, by its id; null for none.</summary>
+    private string? _microphoneId;
+
+    /// <summary>The device the class was last found to play on, by name, and whether the room hears it; null before the first look found one.</summary>
+    private string? _classDevice;
+
+    private bool _classHeard;
+
+    /// <summary>When Vantage's mode, and in app mode the app's device, were last looked at.</summary>
+    private long _lastPoll;
+
+    /// <summary>The gate's state as last seen, since when, and the position then; and the state last logged.</summary>
+    private MicrophoneGateState? _pending;
+
+    private long _pendingSince;
+    private TimeSpan _pendingPosition;
+    private MicrophoneGateState? _logged;
+
+    /// <summary>Since when the app has not opened the microphone, or null; and whether that has been said for this stretch.</summary>
+    private long? _notOpenedSince;
+
+    private bool _notOpenedSaid;
+
+    /// <summary>Since when the sessions have been unreadable, or null; whether that has been said; and its words.</summary>
+    private long? _unreadableSince;
+
+    private bool _unreadableSaid;
+    private string _unreadableText = "";
+
+    /// <summary>True once only zeros from the microphone, while it should be heard, have been said for this stretch of them; and the words they were said with.</summary>
+    private bool _zerosSaid;
+
+    private string _zerosText = "";
+
+    /// <summary>True while Windows' lists of devices and apps cannot be read, from the look that noted it: the note is given once per such stretch.</summary>
+    private bool _listingFailing;
+
+    /// <summary>When a microphone missing beside the class was last said to be waited for, or null.</summary>
+    private long? _lastMissingWarning;
+
+    /// <summary>Listens for the evidence <paramref name="gate"/> reports, until the result is disposed; nothing to listen to without a gate.</summary>
+    public IDisposable Listen(MicrophoneGate? gate)
+    {
+        if (gate is null) return new Ear(null);
+        gate.Evidence += OnEvidence;
+        return new Ear(() => gate.Evidence -= OnEvidence);
+    }
+
+    /// <summary>
+    /// The status line's clause about your microphone, with the class: "; microphone: following chrome, recording", the
+    /// gate's words while it is not, what is waited for while there is no microphone, "off" with what V does while it is
+    /// switched off, or the microphone's name while no app is followed. Empty for the other modes.
+    /// </summary>
+    public string StatusClause(RecordingSnapshot snapshot, MonitorContext context)
+    {
+        if (context.Request.Source.Mode != RecordingMode.ClassAndMicrophone || snapshot.Microphone is not { } track) return "";
+
+        var details = context.Microphone;
+        var gate = details?.Gate;
+        var followed = MicrophoneWords.Followed(details?.Follows);
+        string clause;
+        if (track.Off)
+            clause = gate?.Why ?? "off (V switches it on)";
+        else if (track.WaitingFor is { } waitingFor)
+            clause = $"waiting for {waitingFor}";
+        else if (gate is null)
+            clause = $"recording \"{track.Source}\"";
+        else
+        {
+            var (state, why) = gate.Describe();
+            clause = state switch
+            {
+                MicrophoneGateState.Recording => $"following {followed}, recording",
+                MicrophoneGateState.NotListening => $"following {followed}, muted ({why})",
+                MicrophoneGateState.MutedInWindows => $"following {followed}, muted in Windows",
+                MicrophoneGateState.NotOpened or MicrophoneGateState.Unreadable => $"following {followed}, {why}",
+                MicrophoneGateState.OtherMicrophone => why ?? $"following {followed}",
+                MicrophoneGateState.Off => why ?? "off (V switches it on)",
+                _ => $"recording \"{track.Source}\""
+            };
+        }
+
+        return $"; microphone: {clause}";
+    }
+
+    /// <summary>
+    /// One look, in the modes that record your microphone: the advice at the start at the first look, and at every look
+    /// since the microphone followed to another, Vantage's mode and the class's device looked at again, the gate watched,
+    /// a missing microphone and only zeros said, the evidence reported, and the warnings that are still Notices added to
+    /// <paramref name="conditions"/>. <paramref name="began"/> is when a condition first seen now began.
+    /// </summary>
+    public void Tick(RecordingSnapshot snapshot, MonitorContext context, RecordingOptions options, long now, long began,
+        List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
+    {
+        var mode = context.Request.Source.Mode;
+        if (mode == RecordingMode.Class) return;
+
+        var withClass = mode == RecordingMode.ClassAndMicrophone;
+        var track = withClass ? snapshot.Microphone : snapshot.Main;
+        if (track is null) return;
+
+        var details = context.Microphone;
+        var gate = withClass ? details?.Gate : null;
+        var inAppMode = context.Request.Source.Class is ClassSource.App;
+
+        if (!_advised)
+        {
+            AdviseAtStart(snapshot, track, context, options, withClass, now, lines);
+        }
+        else
+        {
+            FollowTheMicrophone(details, withClass, now, lines);
+            var poll = time.GetElapsedTime(_lastPoll, now) >= MicrophoneAdvice.VantageInterval;
+            if (poll)
+            {
+                _lastPoll = now;
+                PollVantage(now, lines);
+            }
+
+            // The class's device is looked at when its source changes; in app mode the source stays the app while it moves
+            // between devices, so the app's device is looked at as soon as the app plays, and then with each poll.
+            if (withClass && (inAppMode ? _classDevice is null || poll : snapshot.Main.Source != _classDevice))
+                CheckTheClassDevice(snapshot.Main, context, now, lines);
+        }
+
+        // The state and its words are read together, so that a look arriving on the watch's thread between two reads
+        // cannot pair one state with another state's words.
+        var described = gate?.Describe();
+        var state = described?.State;
+        if (described is { } gateNow) WatchTheGate(gateNow.State, gateNow.Why, details!.Follows, snapshot, now, began, lines, conditions);
+        WatchAMissingMicrophone(track, withClass, now, lines, conditions);
+        WatchOnlyZeros(track, state, snapshot.Paused, withClass, MicrophoneWords.App(details?.Follows), details, lines, conditions);
+        ReportEvidence(MicrophoneWords.App(details?.Follows), now, lines);
+
+        _noticed.RemoveAll(notice => time.GetElapsedTime(notice.At, now) >= NoticeFor);
+        foreach (var notice in _noticed) conditions.Add((notice.Name, AttentionLevel.Notice, notice.Short, notice.Text));
+    }
+
+    /// <summary>
+    /// The advice at the start, at the first look: the lines in the advice's order, with the line that names the followed
+    /// app after the case line; each warning as one, and all of them one Notice that says how many. A track that starts
+    /// switched off is advised about the microphone it would record, so that the warnings about it come now and not at V.
+    /// </summary>
+    private void AdviseAtStart(RecordingSnapshot snapshot, TrackSnapshot track, MonitorContext context, RecordingOptions options, bool withClass, long now,
+        List<(LogLevel Level, string Text)> lines)
+    {
+        _advised = true;
+        _lastPoll = now;
+        var details = context.Microphone;
+        var microphone = details is null ? NamedOnly(track) : Named(details);
+        _microphoneId = microphone?.Id;
+
+        string? classDevice = null;
+        var heard = false;
+        if (withClass)
+        {
+            string? failure;
+            (classDevice, heard, failure) = ClassDevice(snapshot.Main, context.Request.Source.Class);
+            NoteTheListing(failure, lines);
+        }
+
+        _classDevice = classDevice;
+        _classHeard = heard;
+
+        var start = new MicrophoneStart(context.Request.Source.Mode, microphone, details?.Processing ?? options.MicrophoneProcessing, RawRefusal: null,
+            Why: details?.MicrophoneWhy, WaitingFor: microphone is null ? track.WaitingFor : null, ClassDeviceName: classDevice, ClassHeardInTheRoom: heard,
+            Follows: details?.Follows, AppMute: options.ClassAppMute, Off: track.Off);
+        List<string> warnings = [];
+        var index = 0;
+        foreach (var line in advice.AtStart(start))
+        {
+            lines.Add((line.Warning ? LogLevel.Warning : LogLevel.Information, line.Text));
+            if (line.Warning) warnings.Add(line.Text);
+            if (++index == 2 && withClass && FollowingLine(context, details?.Follows) is { } following) lines.Add((LogLevel.Information, following));
+        }
+
+        if (warnings.Count > 0)
+            Notice("StartWarnings", $"{RecordingMonitor.Count(warnings.Count, "warning")} at the start", string.Join(" ", warnings), now);
+    }
+
+    /// <summary>
+    /// The line that names the followed app and where that came from: the app being recorded, the setting, or a choice
+    /// made for the run (--mic-follows, or the menu). Null when no app is followed.
+    /// </summary>
+    private static string? FollowingLine(MonitorContext context, FollowRule? follows)
+    {
+        if (MicrophoneWords.Followed(follows) is not { } followed) return null;
+
+        var whom = follows is FollowRule.Any ? "any app that holds the microphone" : followed;
+        if (context.Request.Source.Microphone?.Follows is not null) return $"Following: {whom} (chosen for this run)";
+        if (follows is FollowRule.Named && context.Request.Source.Class is ClassSource.App) return $"Following: {whom}, the app being recorded";
+        return follows is FollowRule.Any ? $"Following: {whom} (Recording:MicrophoneFollows {FollowRule.AnyWord})" : $"Following: {whom} (Recording:MicrophoneFollows)";
+    }
+
+    /// <summary>
+    /// The microphone a recording captures when it says no more about it than its snapshot (one without
+    /// <see cref="IMicrophoneRecording"/>): a stand-in with only the name known, so that the start names it rather than
+    /// says one is waited for. It is not the array, Bluetooth or anything else the warnings look for, since the recording
+    /// cannot say. Null while the track captures nothing.
+    /// </summary>
+    private static Microphone? NamedOnly(TrackSnapshot track) => track.Capturing && track.Source.Length > 0
+        ? new Microphone(track.Source, track.Source, IsDefault: false, IsBuiltInArray: false, IsBluetooth: false, IsLoopbackInput: false, RawSupported: false,
+            Enumerator: "", BluetoothEvidence: null)
+        : null;
+
+    /// <summary>The microphone the advice is about: the one recorded now, or, while none is (switched off, or not opened yet), the one the recording would record.</summary>
+    private static Microphone? Named(IMicrophoneRecording details) => details.Microphone ?? details.WouldRecord;
+
+    /// <summary>
+    /// The advice again when the recording has moved to another microphone, or would record another once switched on:
+    /// its warnings, and a Notice that says how many; none clears the Notice. A recording that says no more than its
+    /// snapshot cannot be seen to move.
+    /// </summary>
+    private void FollowTheMicrophone(IMicrophoneRecording? details, bool withClass, long now, List<(LogLevel Level, string Text)> lines)
+    {
+        if (details is null) return;
+
+        var microphone = Named(details);
+        if (microphone?.Id == _microphoneId) return;
+
+        _microphoneId = microphone?.Id;
+        if (microphone is null) return;
+
+        var warnings = advice.ForMicrophone(microphone, withClass);
+        foreach (var line in warnings) lines.Add((LogLevel.Warning, line.Text));
+        if (warnings.Count > 0)
+            Notice("MicrophoneWarnings", $"{RecordingMonitor.Count(warnings.Count, "warning")} about the microphone", string.Join(" ", warnings.Select(line => line.Text)), now);
+        else
+            Forget("MicrophoneWarnings");
+    }
+
+    /// <summary>Vantage's mode read again: a change to on, or to another mode, is a warning and a Notice; a change to off is said plainly and clears the Notice.</summary>
+    private void PollVantage(long now, List<(LogLevel Level, string Text)> lines)
+    {
+        if (advice.VantageNow() is not { } line) return;
+
+        if (line.Contains(VantageWentOff, StringComparison.Ordinal))
+        {
+            lines.Add((LogLevel.Information, line));
+            Forget("Vantage");
+            return;
+        }
+
+        lines.Add((LogLevel.Warning, line));
+        Notice("Vantage", "Vantage noise cancelling on", line, now);
+    }
+
+    /// <summary>
+    /// The echo checked again for the device the class plays on now: a warning and a Notice when the room hears it, and
+    /// the Notice cleared when it does not. A device that cannot be looked up now is looked up again at the next look,
+    /// with a Debug line once per stretch of failures.
+    /// </summary>
+    private void CheckTheClassDevice(TrackSnapshot main, MonitorContext context, long now, List<(LogLevel Level, string Text)> lines)
+    {
+        if (main.Source.Length == 0) return;
+
+        var (device, heard, failure) = ClassDevice(main, context.Request.Source.Class);
+        NoteTheListing(failure, lines);
+        if (device is null || (device == _classDevice && heard == _classHeard)) return;
+
+        _classDevice = device;
+        _classHeard = heard;
+        if (advice.ForClassDevice(device, heard) is { } echo)
+        {
+            lines.Add((LogLevel.Warning, echo));
+            Notice("Echo", "echo: use headphones", echo, now);
+        }
+        else
+        {
+            Forget("Echo");
+        }
+    }
+
+    /// <summary>
+    /// The device the class plays on, by name, and whether the room hears it: in app mode the device the app plays
+    /// through, found among the apps Windows lists; otherwise the recorded device itself. The name is null when the
+    /// class's source has no name yet, when the app is not playing, or when Windows' lists cannot be read now, which
+    /// <c>Failure</c> says in words (null otherwise).
+    /// </summary>
+    private (string? Name, bool HeardInTheRoom, string? Failure) ClassDevice(TrackSnapshot main, ClassSource? source)
+    {
+        if (main.Source.Length == 0) return (null, false, null);
+
+        try
+        {
+            if (source is ClassSource.App)
+            {
+                if (outputs.GetPlayingApps().FirstOrDefault(app => app.Name.Equals(main.Source, StringComparison.OrdinalIgnoreCase)) is not { } playing)
+                    return (null, false, null);
+
+                var devices = outputs.GetOutputDevices();
+                var device = devices.FirstOrDefault(candidate => playing.DeviceId.Length > 0 && candidate.Id == playing.DeviceId)
+                    ?? devices.FirstOrDefault(candidate => candidate.Name == playing.DeviceName);
+                return (playing.DeviceName.Length > 0 ? playing.DeviceName : device?.Name, device?.HeardInTheRoom ?? false, null);
+            }
+
+            return (main.Source, outputs.GetOutputDevices().FirstOrDefault(candidate => candidate.Name == main.Source)?.HeardInTheRoom ?? false, null);
+        }
+        catch (Exception ex) when (ex is COMException or InvalidOperationException)
+        {
+            // Deliberately not rethrown: the echo check only words a warning, and a look at Windows' lists that fails, as
+            // while its audio service restarts, must not keep the other checks, the heartbeat and the state from the
+            // window. The failure goes back to the caller, which gives it a Debug line once per stretch (NoteTheListing),
+            // and this check looks again at the next look.
+            return (null, false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Notes a listing that failed, as <see cref="ClassDevice"/> reports it, at Debug once per stretch of failures: the
+    /// echo check only words a warning, so the failure is a trace, not a warning. A listing that was read ends the stretch.
+    /// </summary>
+    private void NoteTheListing(string? failure, List<(LogLevel Level, string Text)> lines)
+    {
+        if (failure is null)
+        {
+            _listingFailing = false;
+            return;
+        }
+
+        if (_listingFailing) return;
+
+        _listingFailing = true;
+        lines.Add((LogLevel.Debug, $"The echo check could not read Windows' device list, so it looks again at the next second: {failure}"));
+    }
+
+    /// <summary>
+    /// The gate watched: a state that has held for a second is logged with the position it began at (the first state is
+    /// the start's, said by the advice); the app not opening the microphone for 5 minutes is said once and a Notice while
+    /// it lasts; its sessions unreadable for 10 seconds are said once and an Alert while they are.
+    /// </summary>
+    private void WatchTheGate(MicrophoneGateState state, string? why, FollowRule? follows, RecordingSnapshot snapshot, long now, long began,
+        List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
+    {
+        var app = MicrophoneWords.App(follows);
+        if (_pending is null)
+        {
+            _pending = _logged = state;
+            _pendingSince = now;
+        }
+        else if (state != _pending)
+        {
+            _pending = state;
+            _pendingSince = now;
+            _pendingPosition = snapshot.Position;
+        }
+        else if (state != _logged && time.GetElapsedTime(_pendingSince, now) >= HeldFor)
+        {
+            _logged = state;
+            if (GateLine(state, why, app, _pendingPosition) is { } line) lines.Add((LogLevel.Information, line));
+        }
+
+        if (state == MicrophoneGateState.NotOpened)
+        {
+            _notOpenedSince ??= began;
+            if (time.GetElapsedTime(_notOpenedSince.Value, now) >= NotOpenedNoticeAfter)
+            {
+                var whom = follows is FollowRule.Named ? $"{app} has not opened the microphone" : "no app has opened the microphone";
+                var text = $"{whom} for {RecordingMonitor.DescribeLength(NotOpenedNoticeAfter)}; your voice is not recorded until it does. Join the class, or check that the page may use the microphone";
+                if (!_notOpenedSaid)
+                {
+                    _notOpenedSaid = true;
+                    lines.Add((LogLevel.Warning, text));
+                }
+
+                conditions.Add(("MicrophoneNotOpened", AttentionLevel.Notice, whom, text));
+            }
+        }
+        else
+        {
+            _notOpenedSince = null;
+            _notOpenedSaid = false;
+        }
+
+        if (state == MicrophoneGateState.Unreadable)
+        {
+            _unreadableSince ??= began;
+            if (time.GetElapsedTime(_unreadableSince.Value, now) >= UnreadableAlertAfter)
+            {
+                if (!_unreadableSaid)
+                {
+                    _unreadableSaid = true;
+                    _unreadableText = $"{Capitalised(why ?? "cannot read the microphone's sessions")}; your voice is not recorded until the sessions can be read again";
+                    lines.Add((LogLevel.Warning, _unreadableText));
+                }
+
+                conditions.Add(("MicrophoneUnreadable", AttentionLevel.Alert, "CANNOT READ THE MICROPHONE SESSIONS", _unreadableText));
+            }
+        }
+        else
+        {
+            _unreadableSince = null;
+            _unreadableSaid = false;
+        }
+    }
+
+    /// <summary>The line for a state of the gate that has held, from the position it began at; none for the microphone switched off, which V says, and for no app followed.</summary>
+    private static string? GateLine(MicrophoneGateState state, string? why, string app, TimeSpan position)
+    {
+        var from = Durations.Format(position);
+        return state switch
+        {
+            MicrophoneGateState.Recording => $"Microphone: {app} is listening; your voice is being recorded from {from}",
+            MicrophoneGateState.Off or MicrophoneGateState.Unfollowed => null,
+            _ => $"Microphone: {why ?? state.ToString()}; your voice is not recorded from {from}"
+        };
+    }
+
+    /// <summary>A microphone missing beside the class: said every 30 seconds, and a Notice while it lasts. In person the class's own checks say that nothing is recorded.</summary>
+    private void WatchAMissingMicrophone(TrackSnapshot track, bool withClass, long now, List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
+    {
+        if (!withClass || track.Off || track.WaitingFor is not { } waitingFor)
+        {
+            _lastMissingWarning = null;
+            return;
+        }
+
+        var text = $"Waiting for {waitingFor}; the class is being recorded";
+        if (_lastMissingWarning is not { } last || time.GetElapsedTime(last, now) >= MissingReminderEvery)
+        {
+            _lastMissingWarning = now;
+            lines.Add((LogLevel.Warning, text));
+        }
+
+        conditions.Add(("MicrophoneMissing", AttentionLevel.Notice, "no microphone", text));
+    }
+
+    /// <summary>
+    /// Only exact zeros from the microphone while it should be heard (on, capturing, not paused, and the gate open when
+    /// there is one), as the recording reports them once they have lasted <see cref="OnlyZerosLength"/>: said once, at
+    /// the look that finds them, with what to check, and a Notice with the class or an Alert in person, where the whole
+    /// recording is then silence. Where no gate has read the mute, the recording is asked once, at that look, whether
+    /// Windows mutes the microphone, so that the line can say so outright. Anything but zeros ends it.
+    /// </summary>
+    private void WatchOnlyZeros(TrackSnapshot track, MicrophoneGateState? state, bool paused, bool withClass, string app, IMicrophoneRecording? details,
+        List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
+    {
+        var heard = state is null or MicrophoneGateState.Recording or MicrophoneGateState.Unfollowed;
+        if (paused || track.Off || !track.Capturing || !track.OnlyZeros || !heard)
+        {
+            _zerosSaid = false;
+            return;
+        }
+
+        if (!_zerosSaid)
+        {
+            _zerosSaid = true;
+            _zerosText = OnlyZerosText(track, state, app, details);
+            lines.Add((LogLevel.Warning, _zerosText));
+        }
+
+        conditions.Add(withClass
+            ? ("MicrophoneSilent", AttentionLevel.Notice, "only silence from the microphone", _zerosText)
+            : ("MicrophoneSilent", AttentionLevel.Alert, "ONLY SILENCE FROM THE MICROPHONE", _zerosText));
+    }
+
+    /// <summary>
+    /// The words for only zeros from the microphone: with the followed app listening, the gate's looks have read the mute,
+    /// so the privacy settings and the microphone itself are what to check; otherwise that it is muted in Windows, when
+    /// Windows says so, or what to check when it does not say.
+    /// </summary>
+    private static string OnlyZerosText(TrackSnapshot track, MicrophoneGateState? state, string app, IMicrophoneRecording? details)
+    {
+        // The words give the length the recording's flag stands for, rather than a count that grows.
+        var length = RecordingMonitor.Count((long)OnlyZerosLength.TotalMinutes, "minute");
+        var silence = $"Only silence from the microphone \"{track.Source}\" for {length}";
+        if (state is MicrophoneGateState.Recording)
+            return $"{silence} although {app} is listening and Windows is not muting it. Check Settings > Privacy & security > Microphone (Let desktop apps access your microphone), and the microphone itself";
+        if (details?.MutedInWindows == true)
+            return $"{silence}: it is muted in Windows (the microphone key, or Sound settings > Input)";
+        return $"{silence}. Check that it is not muted in Windows (the microphone key, or Sound settings > Input) and that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)";
+    }
+
+    /// <summary>The evidence the gate reported since the last look: each a warning and a Notice.</summary>
+    private void ReportEvidence(string app, long now, List<(LogLevel Level, string Text)> lines)
+    {
+        while (_evidence.TryDequeue(out var text))
+        {
+            lines.Add((LogLevel.Warning, text));
+            Notice("Evidence", $"{app} let go of the microphone (see the log)", text, now);
+        }
+    }
+
+    /// <summary>Keeps the gate's evidence, from the watch's thread, for the next look.</summary>
+    private void OnEvidence(object? sender, string text) => _evidence.Enqueue(text);
+
+    /// <summary>Makes a warning a Notice from now, in place of any earlier one of the same name.</summary>
+    private void Notice(string name, string shortWords, string text, long now)
+    {
+        _noticed.RemoveAll(notice => notice.Name == name);
+        _noticed.Add(new Noticed(name, shortWords, text, now));
+    }
+
+    /// <summary>Ends the Notice of that name, when there is one.</summary>
+    private void Forget(string name) => _noticed.RemoveAll(notice => notice.Name == name);
+
+    /// <summary>The words with their first letter in upper case, for the start of a sentence.</summary>
+    private static string Capitalised(string words) => words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
+
+    /// <summary>A warning that is a Notice: its name, its words for the title and the log, and when it was given.</summary>
+    private sealed record Noticed(string Name, string Short, string Text, long At);
+
+    /// <summary>The ear for the gate's evidence; disposing it stops listening.</summary>
+    private sealed class Ear(Action? stop) : IDisposable
+    {
+        /// <summary>Stops listening, once.</summary>
+        public void Dispose() => Interlocked.Exchange(ref stop, null)?.Invoke();
+    }
 }

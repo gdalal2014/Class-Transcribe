@@ -434,10 +434,11 @@ public class ClassRecordingTests
     }
 
     /// <summary>
-    /// The app's own services make recordings in a run's scope: the factory is the one for the class alone, the record
-    /// command resolves beside it, and a session the factory makes from what is chosen when the run begins, here an app
-    /// picked in menu 6, records that app. Nothing is opened until the session starts, and the stand-in devices replace
-    /// Windows' own. (No session is registered by itself any more: the run makes its recording through the factory.)
+    /// The app's own services make recordings in a run's scope: the factory is the track-set factory, which makes the
+    /// class alone a recording of the class as ClassScribe has always recorded it; the record command resolves beside it;
+    /// and the recording the factory makes from what is chosen when the run begins, here an app picked in menu 6, records
+    /// that app. Nothing is opened until the recording starts, and the stand-in devices replace Windows' own. (No session
+    /// is registered by itself any more: the run makes its recording through the factory.)
     /// </summary>
     [Test]
     public void The_app_s_services_make_recordings_in_a_run_s_scope()
@@ -453,16 +454,49 @@ public class ClassRecordingTests
 
         var factory = scope.ServiceProvider.GetRequiredService<IRecordingFactory>();
         var command = scope.ServiceProvider.GetRequiredService<RecordCommand>();
-        var session = ((ClassRecordingFactory)factory).CreateSession(choice.Current);
+        using var recording = factory.Create(choice.Current);
         var nothingLookedAt = _provider.DeviceQueries == 0;
-        session.Start(_files);
-        var waitingFor = session.GetStatus().WaitingFor;
-        session.Stop();
+        recording.Start(_files, TimeSpan.Zero);
+        var waitingFor = recording.GetSnapshot().Main.WaitingFor;
+        recording.Stop();
 
-        Assert.That(factory, Is.InstanceOf<ClassRecordingFactory>());
+        Assert.That(factory, Is.InstanceOf<TrackSetFactory>());
+        Assert.That(recording, Is.InstanceOf<ClassRecording>(), "the class alone is recorded as it always was");
         Assert.That(command, Is.Not.Null);
         Assert.That(() => scope.ServiceProvider.GetService<RecordingSession>(), Is.Null, "no session is registered by itself");
         Assert.That(nothingLookedAt, Is.True);
-        Assert.That(waitingFor, Is.EqualTo("\"chrome\" to play sound"), "the session follows the app picked in menu 6");
+        Assert.That(waitingFor, Is.EqualTo("\"chrome\" to play sound"), "the recording follows the app picked in menu 6");
     }
+
+    /// <summary>
+    /// A long stretch with nothing playing, which the session leaves out of a recording of the class alone, reaches the
+    /// recording's <see cref="IRecording.NoteWorthy"/> at the recording's position: the length the run continued at plus
+    /// where the session left it out, so that a continued recording's heading lands at the right place. The session gets
+    /// the setting as the factory passes it, in its track spec.
+    /// </summary>
+    [Test]
+    public void A_long_stretch_with_nothing_playing_is_noted_at_the_recordings_position()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        var source = new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog));
+        var session = new RecordingSession(source, new TrackSpec(Track.Main, TrackPlacement.Contiguous, TimeSpan.FromSeconds(60)), null,
+            TestOptions.Create(new RecordingOptions()), _time, _sessionLog);
+        using var recording = new ClassRecording(session, _log);
+        var notes = new List<TimelineNote>();
+        recording.NoteWorthy += (_, note) => notes.Add(note);
+
+        recording.Start(_files, offset: TimeSpan.FromMinutes(30));      // continuing a recording half an hour long
+        capture.Deliver(Samples(8000, 1), Stamp(10));                   // half a second, ending at 10.5 s
+        capture.Deliver(Samples(8000, 2), Stamp(201));                  // 190.5 s later: about 3 minutes left out
+        var summary = recording.Stop();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(summary.Length, Is.EqualTo(TimeSpan.FromSeconds(1)), "nothing was written for the gap");
+            Assert.That(notes, Is.EqualTo(new[] { new TimelineNote(TimeSpan.FromMinutes(30) + TimeSpan.FromSeconds(0.5), "About 3 minutes with nothing playing were left out here") }));
+        });
+    }
+
+    /// <summary>A packet's stamp <paramref name="seconds"/> after the test clock's zero, in its units of 100 nanoseconds.</summary>
+    private static long Stamp(double seconds) => (long)Math.Round(seconds * TimeSpan.TicksPerSecond);
 }

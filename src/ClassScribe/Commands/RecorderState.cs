@@ -1,3 +1,5 @@
+using ClassScribe.Audio.Microphones;
+
 namespace ClassScribe.Commands;
 
 /// <summary>Where a run is, as the window's title, its taskbar button and the view of the run show it.</summary>
@@ -67,12 +69,19 @@ public sealed record Attention(AttentionLevel Level, string Short, string Text, 
     public static Attention None { get; } = new(AttentionLevel.None, "", "", 0);
 }
 
-/// <summary>Your microphone in a run.</summary>
+/// <summary>
+/// Your microphone in a run. The last three fields came with the gate that follows the class app; a state from a build
+/// without them reads with their defaults, and a build without them passes them over.
+/// </summary>
 /// <param name="Name">The microphone's name, as Windows shows it.</param>
 /// <param name="On">False while it is switched off with V.</param>
 /// <param name="Capturing">True while its capture is open and hands over audio.</param>
 /// <param name="Problem">What is wrong with it, in words, such as that it is muted in Windows; null when nothing is.</param>
-public sealed record MicrophoneState(string Name, bool On, bool Capturing, string? Problem);
+/// <param name="Follows">The app whose microphone use the track follows, by the name part, such as chrome; null when none is followed, as in person.</param>
+/// <param name="Gate">Why the microphone is or is not being recorded now; <see cref="MicrophoneGateState.Unfollowed"/> when no app is followed.</param>
+/// <param name="Why">The status line's words for <paramref name="Gate"/>, such as "chrome is not listening"; null while recording, and when no app is followed.</param>
+public sealed record MicrophoneState(string Name, bool On, bool Capturing, string? Problem,
+    string? Follows = null, MicrophoneGateState Gate = MicrophoneGateState.Unfollowed, string? Why = null);
 
 /// <summary>A run as a window shows it: sent to every window on every change and once a second.</summary>
 /// <param name="Phase">Where the run is.</param>

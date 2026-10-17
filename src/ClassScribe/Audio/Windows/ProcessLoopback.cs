@@ -7,7 +7,8 @@ namespace ClassScribe.Audio.Windows;
 
 /// <summary>
 /// Opens Windows' process loopback: an audio client that delivers the sound of one process and its
-/// child processes, whatever output device they play through. Windows 10 version 2004 and later.
+/// child processes, whatever output device they play through. Windows 10 build 20348 and later, so
+/// Windows 11 and Windows Server 2022, not Windows 10 version 2004 as the SDK's headers first said.
 /// </summary>
 /// <remarks>
 /// NAudio 2.2.1 declares the activation parameters but has no public way to pass them, so the call to

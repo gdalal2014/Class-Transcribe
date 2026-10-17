@@ -1,5 +1,6 @@
 using System.Globalization;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -29,6 +30,7 @@ public sealed class RecordCommand(
     IResultShower results,
     IRecorderStatusSink status,
     SourceChoice choice,
+    IOptionsSnapshot<RecordingOptions> recording,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TimeProvider time,
     ILogger<RecordCommand> logger) : IRecordRun
@@ -81,6 +83,7 @@ public sealed class RecordCommand(
             RecordingFiles files;
             TimeSpan offset;
             RecordingSummary summary;
+            GateSummary? microphone = null;
             RecorderState stopping;
             try
             {
@@ -111,9 +114,11 @@ public sealed class RecordCommand(
                     }
                     finally
                     {
-                        // 7. The stop: the capture is released and the files finished.
+                        // 7. The stop: the capture is released and the files finished. The microphone's numbers are taken
+                        // now, at the stop, for the summary.
                         if (!windows.Ended) run?.SetState(RunState.Stopping);
                         summary = started.Stop();
+                        microphone = (started as IMicrophoneRecording)?.Gate?.Summary();
                         sofar.Summary = summary;
                     }
                 }
@@ -128,7 +133,8 @@ public sealed class RecordCommand(
             held.Dispose();
             if (windows.Ended) return EndedByWindows(files);
 
-            return await FinishAsync(request, files, offset, summary, stopping, audio.GetSnapshot().Main.Source);
+            return await FinishAsync(request, files, offset, summary, stopping, audio.GetSnapshot().Main.Source,
+                microphone, (audio as IMicrophoneRecording)?.Follows);
         }
         finally
         {
@@ -144,18 +150,35 @@ public sealed class RecordCommand(
     /// transcribed from disk. What is sent follows the upload's own rule alone, as transcribe does: only exact zeros count as
     /// silence there (see <see cref="AudioPreparer"/>), so a class that is merely quiet still goes up, and digital silence is
     /// refused before anything is sent (<see cref="NoAudioException"/>). A continued recording whose new part heard nothing
-    /// still has its earlier parts, so it goes on to them.
+    /// still has its earlier parts, so it goes on to them. With the class and your microphone, the main track is the
+    /// class's: the microphone's numbers (<paramref name="microphone"/>, from the gate that follows <paramref name="follows"/>)
+    /// are summed up after the length, a microphone track that was not written is said so, and the class's audio missing
+    /// ends the run with the microphone's kept.
     /// </summary>
-    private async Task<int> FinishAsync(RecordRequest request, RecordingFiles files, TimeSpan offset, RecordingSummary summary, RecorderState stopping, string source)
+    private async Task<int> FinishAsync(RecordRequest request, RecordingFiles files, TimeSpan offset, RecordingSummary summary, RecorderState stopping, string source,
+        GateSummary? microphone, FollowRule? follows)
     {
         var continued = offset > TimeSpan.Zero;
+        var withMicrophone = request.Source.Mode == RecordingMode.ClassAndMicrophone;
         if (summary.MainSegments.Count == 0 && !continued)
-            return NothingRecorded(request, files, stopping, "No audio was captured. Was anything playing?");
+        {
+            // Your microphone's files alone are a recording the transcribe command takes by one of them (a folder is read by its .wav files).
+            return NothingRecorded(request, files, stopping, withMicrophone && summary.MicrophoneSegments.Count > 0
+                ? $"No audio was captured from the class. Was anything playing? Your microphone's audio is kept in {files.Folder}. To transcribe it on its own, run: {CommandLine.Transcribe(files.Segment(1, Track.Microphone))}"
+                : "No audio was captured. Was anything playing?");
+        }
 
         if (continued)
             logger.LogInformation("Recorded {Part} in this part, {Total} in all", Durations.Format(summary.Length), Durations.Format(offset + summary.Length));
         else
             logger.LogInformation("Recorded {Duration} of audio", Durations.Format(summary.Length));
+
+        if (microphone is { } numbers) logger.LogInformation("{Summary}", MicrophoneSummary(numbers, follows));
+        if (withMicrophone && summary.MicrophoneSegments.Count == 0)
+        {
+            logger.LogWarning("Your microphone was not recorded in this run: no microphone file was written. The class was recorded and {Fate}",
+                request.Transcribe && HasKey() ? "goes on to the transcript" : "is kept");
+        }
 
         var command = CommandLine.Transcribe(files.Segment(1));
         if (!request.Transcribe)
@@ -192,6 +215,32 @@ public sealed class RecordCommand(
     /// <summary>What to check when nothing audible reached a recording.</summary>
     private const string WhatToCheck =
         "Check that the class plays through that device or app (menu choice 6 picks another) and that Windows is not muted";
+
+    /// <summary>
+    /// The end-of-class summary of your microphone, from the gate's numbers: with an app followed, how long your voice was
+    /// heard and in how many stretches, how long the microphone was muted by the app, off with V, and muted in Windows;
+    /// then how often the app let go of the microphone (what an app whose mute Windows can see does on mute, so it is left
+    /// out when the settings say Visible, and told against the settings when they say Invisible), and how often the app's
+    /// session changed for under a second. With no app followed, how long the microphone was on and off.
+    /// </summary>
+    private string MicrophoneSummary(GateSummary numbers, FollowRule? follows)
+    {
+        if (follows is null or FollowRule.None)
+            return $"Microphone: on for {Durations.Format(numbers.Heard)}, off (V) for {Durations.Format(numbers.Off)}";
+
+        var app = MicrophoneWords.App(follows);
+        var summary = $"Microphone: heard for {Durations.Format(numbers.Heard)} in {RecordingMonitor.Count(numbers.Stretches, "stretch", "stretches")} while {app} listened, " +
+            $"muted for {Durations.Format(numbers.Muted)}, off (V) for {Durations.Format(numbers.Off)}, muted in Windows for {Durations.Format(numbers.MutedInWindows)}";
+        var appMute = recording.Value.ClassAppMute;
+        if (numbers.Cycles > 0 && appMute != ClassAppMute.Visible)
+        {
+            summary += $"; {app} let go of the microphone {RecordingMonitor.Count(numbers.Cycles, "time")}";
+            if (appMute == ClassAppMute.Invisible) summary += " although Recording:ClassAppMute says Invisible";
+        }
+
+        if (numbers.Flickers > 0) summary += $"; {app}'s microphone session changed {RecordingMonitor.Count(numbers.Flickers, "time")} for under a second";
+        return summary;
+    }
 
     /// <summary>
     /// Transcribes the whole recording from disk, every part of it, while the laptop is still kept awake, showing how far it
@@ -465,8 +514,10 @@ public sealed class RecordCommand(
     }
 
     /// <summary>
-    /// The start lines: where the recording goes, or which recording it continues; what it records; the keys, and what
-    /// closing the window does; the lid; and, with --minutes, when it stops by itself, by the local time of day.
+    /// The start lines: where the recording goes, or which recording it continues; what it records; the keys (V among them
+    /// with your microphone), and what closing the window does; the lid; and, with --minutes, when it stops by itself, by
+    /// the local time of day. The lines about your microphone itself, from the privacy line to the warnings, come from the
+    /// checks' first look, right after these (see <see cref="RecordingMonitor"/>).
     /// </summary>
     private void LogTheStart(RecordRequest request, RecordingFiles files, TimeSpan offset)
     {
@@ -476,10 +527,11 @@ public sealed class RecordCommand(
             logger.LogInformation("Recording \"{Name}\" to {Folder}", files.Name, files.Folder);
 
         logger.LogInformation("Recording from {Source}", Describe(request.Source));
-        logger.LogInformation("{Keys}. {Closing}",
+        logger.LogInformation("{Keys}{Microphone}. {Closing}",
             request.Transcribe
                 ? "Press Q twice (or Ctrl+C twice) to stop and transcribe, P to pause or resume, M to mark a moment"
                 : "Press Q twice (or Ctrl+C twice) to stop, P to pause or resume, M to mark a moment",
+            request.Source.Mode == RecordingMode.Class ? "" : ", V to switch your microphone off or on",
             bookkeeping.Home == RunHome.InWindow
                 ? "If the window is closed instead, the recording ends and the audio so far is kept"
                 : "Closing a window that shows this recording does not stop it");
@@ -492,8 +544,20 @@ public sealed class RecordCommand(
         }
     }
 
-    /// <summary>What a run records, in words for the start line.</summary>
-    private static string Describe(SourcePlan source) => source.Class switch
+    /// <summary>What a run records, in words for the start line: the class's source, and your microphone with the class or alone in person, named by its name part when one was given.</summary>
+    private static string Describe(SourcePlan source)
+    {
+        var microphone = source.Microphone?.NamePart is { Length: > 0 } namePart ? $"your microphone \"{namePart}\"" : "your microphone";
+        return source.Mode switch
+        {
+            RecordingMode.Microphone => microphone,
+            RecordingMode.ClassAndMicrophone => $"{DescribeClass(source.Class)}, and {microphone}",
+            _ => DescribeClass(source.Class)
+        };
+    }
+
+    /// <summary>Where the class's sound comes from, in words for the start line.</summary>
+    private static string DescribeClass(ClassSource? source) => source switch
     {
         ClassSource.App app => $"the app \"{app.ProcessName}\"",
         ClassSource.Device device => $"the output device \"{device.NamePart}\"",

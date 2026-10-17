@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using Moq;
@@ -22,6 +23,7 @@ public class CommandLineTreeTests
     private TempFolder _settingsFolder = null!;
     private Mock<ICommandRunner> _commands = null!;
     private List<(RecordRequest Request, StartOrigin Origin)> _recorded = null!;
+    private List<MicCheckRequest> _checked = null!;
     private FakeConsoleUi _ui = null!;
     private TestCommandLine _line = null!;
 
@@ -35,6 +37,7 @@ public class CommandLineTreeTests
         _folder = new TempFolder();
         _settingsFolder = new TempFolder();
         _recorded = [];
+        _checked = [];
         _commands = new Mock<ICommandRunner>();
         _commands.Setup(c => c.RecordAsync(It.IsAny<RecordRequest>(), It.IsAny<StartOrigin>()))
             .Callback((RecordRequest request, StartOrigin origin) => _recorded.Add((request, origin)))
@@ -44,6 +47,10 @@ public class CommandLineTreeTests
         _commands.Setup(c => c.ListAsync(It.IsAny<string?>())).ReturnsAsync(0);
         _commands.Setup(c => c.DevicesAsync()).ReturnsAsync(0);
         _commands.Setup(c => c.AttachAsync(It.IsAny<string?>(), It.IsAny<bool>())).ReturnsAsync(0);
+        _commands.Setup(c => c.ChooseMicrophoneAsync()).ReturnsAsync(0);
+        _commands.Setup(c => c.MicCheckAsync(It.IsAny<MicCheckRequest>()))
+            .Callback((MicCheckRequest request) => _checked.Add(request))
+            .ReturnsAsync(0);
         CreateLine();
     }
 
@@ -69,6 +76,16 @@ public class CommandLineTreeTests
     private static RecordRequest Expected(string name, bool transcribe, ClassSource source, string outputRoot,
         ContinueChoice continueChoice = ContinueChoice.Ask, double? minutes = null, bool open = true) =>
         new("", name, transcribe, new SourcePlan(RecordingMode.Class, source, Microphone: null), outputRoot, continueChoice, ContinueBaseName: null, minutes, open);
+
+    /// <summary>The source of the one recording asked for.</summary>
+    private SourcePlan OnlySource() => OnlyRecording().Source;
+
+    /// <summary>The plan that records the class from <paramref name="source"/> and the microphone <paramref name="microphone"/>, which follows <paramref name="follows"/>.</summary>
+    private static SourcePlan WithMicrophone(ClassSource source, string? microphone = null, FollowRule? follows = null) =>
+        new(RecordingMode.ClassAndMicrophone, source, new MicrophoneChoice(microphone, follows));
+
+    /// <summary>The plan that records the microphone <paramref name="microphone"/> alone, in person.</summary>
+    private static SourcePlan InPerson(string? microphone = null) => new(RecordingMode.Microphone, null, new MicrophoneChoice(microphone));
 
     /// <summary>What transcribing <paramref name="path"/> from the command line asks for, with the options given.</summary>
     private static TranscribeRequest FromCommandLine(string path, bool open = true, bool again = false) =>
@@ -126,6 +143,133 @@ public class CommandLineTreeTests
         await RunAsync("record", "Kalam", "--app", given, "--output", Classes);
 
         Assert.That(OnlyRecording().Source.Class, Is.EqualTo(new ClassSource.App(process)));
+    }
+
+    /// <summary>
+    /// --in-person is a source of its own: the microphone alone, for a class in the room, with nothing of the class. Part of
+    /// a microphone's name after it picks that microphone; nothing after it leaves the microphone to Recording:Microphone,
+    /// and when that is empty too, to Windows' default microphone.
+    /// </summary>
+    [Test]
+    public async Task In_person_records_the_microphone_alone_with_or_without_a_name()
+    {
+        Assert.That(await RunAsync("record", "Kalam", "--in-person", "--output", Classes), Is.EqualTo(0));
+        Assert.That(await RunAsync("record-only", "Kalam", "--in-person", "OBSBOT", "--output", Classes), Is.EqualTo(0));
+
+        Assert.That(_recorded.Select(run => (run.Request.Transcribe, run.Request.Source)), Is.EqualTo(new[]
+        {
+            (true, InPerson()),
+            (false, InPerson("OBSBOT"))
+        }));
+    }
+
+    /// <summary>
+    /// --mic adds the microphone to the class, from --device or --app, as a second track: with nothing after it, the
+    /// microphone is Recording:Microphone's, or Windows' default; with part of a name, that microphone. Without --mic-follows,
+    /// which app the microphone follows is left to the run: the app recorded, or else Recording:MicrophoneFollows.
+    /// </summary>
+    [Test]
+    public async Task Mic_adds_the_microphone_to_the_device_or_the_app()
+    {
+        await RunAsync("record", "Kalam", "--device", "auto", "--mic", "--output", Classes);
+        await RunAsync("record", "Kalam", "--app", "chrome", "--mic", "Microphone Array", "--output", Classes);
+        await RunAsync("record", "Kalam", "--mic", "--device", "Pixel Buds", "--output", Classes);
+
+        Assert.That(_recorded.Select(run => run.Request.Source), Is.EqualTo(new[]
+        {
+            WithMicrophone(new ClassSource.Automatic()),
+            WithMicrophone(new ClassSource.App("chrome"), "Microphone Array"),
+            WithMicrophone(new ClassSource.Device("Pixel Buds"))
+        }));
+    }
+
+    /// <summary>
+    /// --mic-follows names the app whose microphone use the microphone follows: part of its process name, chrome.exe
+    /// meaning chrome, or auto for any app that holds the microphone, or none to record whenever V is on; each in any case.
+    /// </summary>
+    [TestCase("chrome", "named", "chrome")]
+    [TestCase("Chrome.exe", "named", "Chrome")]
+    [TestCase("ms-teams", "named", "ms-teams")]
+    [TestCase("auto", "any", null)]
+    [TestCase("AUTO", "any", null)]
+    [TestCase("none", "none", null)]
+    [TestCase("None", "none", null)]
+    public async Task Mic_follows_names_the_app_the_microphone_follows(string given, string kind, string? namePart)
+    {
+        Assert.That(await RunAsync("record", "Kalam", "--app", "chrome", "--mic", "--mic-follows", given, "--output", Classes), Is.EqualTo(0));
+
+        FollowRule expected = kind switch
+        {
+            "named" => new FollowRule.Named(namePart!),
+            "any" => new FollowRule.Any(),
+            _ => new FollowRule.None()
+        };
+        Assert.That(OnlySource(), Is.EqualTo(WithMicrophone(new ClassSource.App("chrome"), follows: expected)));
+    }
+
+    /// <summary>--mic-follows means nothing without --mic, which is said; the microphone is not recorded by it alone.</summary>
+    [Test]
+    public async Task Mic_follows_without_mic_is_refused()
+    {
+        AssertRefused(await RunAsync("record", "Kalam", "--device", "auto", "--mic-follows", "chrome", "--output", Classes));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--mic-follows goes with --mic: it names the app whose microphone use your microphone follows" }));
+    }
+
+    /// <summary>In person there is no class app to follow, so --mic-follows with --in-person is refused.</summary>
+    [Test]
+    public async Task Mic_follows_with_in_person_is_refused()
+    {
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--mic-follows", "chrome", "--output", Classes));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--mic-follows cannot go with --in-person: in person there is no class app" }));
+    }
+
+    /// <summary>
+    /// --mic-follows needs part of an app's name, or auto or none: an empty value names no app, and any part of ClassScribe's
+    /// own name, whose own recording holds the microphone for the whole class, would follow ClassScribe and record everything.
+    /// </summary>
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("ClassScribe")]
+    [TestCase("classscribe.exe")]
+    [TestCase("Scribe")]
+    public async Task Mic_follows_needs_part_of_an_apps_name(string given)
+    {
+        AssertRefused(await RunAsync("record", "Kalam", "--app", "chrome", "--mic", "--mic-follows", given, "--output", Classes));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--mic-follows needs part of an app's name, such as chrome, or auto or none" }));
+    }
+
+    /// <summary>--mic-follows left without its value, so that it took the next option, says which.</summary>
+    [Test]
+    public async Task Mic_follows_that_took_an_option_says_which()
+    {
+        AssertRefused(await RunAsync("record", "Kalam", "--app", "chrome", "--mic", "--mic-follows", "--output", Classes));
+
+        Assert.That(_line.Mistakes, Does.Contain("--mic-follows needs part of an app's name, such as chrome, or auto or none; it took the option --output instead"));
+    }
+
+    /// <summary>With --in-person the microphone is already the source, so --mic beside it is refused.</summary>
+    [Test]
+    public async Task Mic_with_in_person_is_refused()
+    {
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--mic", "--output", Classes));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--mic adds the microphone to --device or --app; with --in-person the microphone is already the source" }));
+    }
+
+    /// <summary>
+    /// --in-person and --mic may take a microphone's name, so a recording's name right after them is taken as the
+    /// microphone's; the message says so, so that the name is moved to right after the word record.
+    /// </summary>
+    [TestCase(new[] { "record", "--in-person", "Kalam", "--output", "{0}" }, "--in-person")]
+    [TestCase(new[] { "record", "--device", "auto", "--mic", "Kalam", "--output", "{0}" }, "--mic")]
+    public async Task A_name_taken_as_the_microphones_name_is_pointed_out(string[] args, string taker)
+    {
+        AssertRefused(await RunAsync([.. args.Select(arg => string.Format(arg, Classes))]));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"record needs a name, right after the word record: ClassScribe record \"Kalam\" ... ({taker} took \"Kalam\" as the microphone's name)" }));
     }
 
     /// <summary>--minutes, --no-open, --continue and --new travel with the request; without them it records until stopped, opens what the settings say and asks.</summary>
@@ -258,6 +402,67 @@ public class CommandLineTreeTests
         _commands.VerifyNoOtherCalls();
     }
 
+    /// <summary>
+    /// mic-check watches what the programs do with the microphone until it is stopped, or for --seconds, writing its log
+    /// under the recordings folder, or under --log-folder as a full path.
+    /// </summary>
+    [Test]
+    public async Task Mic_check_watches_until_stopped_or_for_the_seconds_given()
+    {
+        Assert.That(await RunAsync("mic-check"), Is.EqualTo(0));
+        Assert.That(await RunAsync("mic-check", "--seconds", "600", "--log-folder", "Classes"), Is.EqualTo(0));
+
+        Assert.That(_checked, Is.EqualTo(new[]
+        {
+            new MicCheckRequest(StopAfter: null, LogFolder: null),
+            new MicCheckRequest(TimeSpan.FromSeconds(600), Path.GetFullPath("Classes"))
+        }));
+        _commands.Verify(c => c.MicCheckAsync(It.IsAny<MicCheckRequest>()), Times.Exactly(2));
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>--seconds takes a whole number of seconds from 1 to a day; anything else is refused with the reason.</summary>
+    [TestCase("0", "--seconds takes from 1 to 86400 seconds (a day)")]
+    [TestCase("86401", "--seconds takes from 1 to 86400 seconds (a day)")]
+    [TestCase("99999999999", "--seconds takes from 1 to 86400 seconds (a day)")]
+    [TestCase("1.5", "--seconds takes a whole number of seconds, such as 600")]
+    [TestCase("abc", "--seconds takes a whole number of seconds, such as 600")]
+    [TestCase("", "--seconds takes a whole number of seconds, such as 600")]
+    public async Task Mic_check_seconds_that_are_not_a_whole_number_in_range_are_refused(string given, string mistake)
+    {
+        AssertRefused(await RunAsync("mic-check", "--seconds", given));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { mistake }));
+    }
+
+    /// <summary>--seconds without a number is refused the same way.</summary>
+    [Test]
+    public async Task Mic_check_seconds_without_a_number_are_refused()
+    {
+        AssertRefused(await RunAsync("mic-check", "--seconds"));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--seconds takes a whole number of seconds, such as 600" }));
+    }
+
+    /// <summary>--log-folder is checked as --output is: a value, no character Windows refuses in a path, and not a file.</summary>
+    [Test]
+    public async Task Mic_check_log_folder_that_cannot_be_a_folder_is_refused()
+    {
+        var file = _folder.File("notes.txt");
+        File.WriteAllText(file, "notes");
+
+        AssertRefused(await RunAsync("mic-check", "--log-folder"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--log-folder needs a folder after it, such as \"D:\\Classes\"" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("mic-check", "--log-folder", @"D:\Classes|Logs"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--log-folder takes a folder, such as \"D:\\Classes\"; \"D:\\Classes|Logs\" has a character Windows does not allow in a path: < > \" | ? *" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("mic-check", "--log-folder", file));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--log-folder names a file, not a folder: {file}" }));
+    }
+
     /// <summary>The hidden attach shows the recording in progress, or, with --alert and a run id, that run in a window the recorder opened.</summary>
     [Test]
     public async Task Attach_shows_the_recording_in_progress()
@@ -372,7 +577,7 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[]
         {
             $"{command} needs a name, right after the word {command}: ClassScribe {command} \"Kalam\" ...",
-            $"{command} needs a source: --device \"<part of its name>\", --device auto or --app <process>",
+            $"{command} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person",
             $"{command} needs --output \"<folder>\", the folder the recording goes to"
         }));
         Assert.That(_line.Output.ToString(), Does.Contain("--device").And.Contain("--minutes").And.Not.Contain("Commands:"), "the help is record's own");
@@ -380,8 +585,9 @@ public class CommandLineTreeTests
 
     /// <summary>Each piece, missing on its own, is named on its own.</summary>
     [TestCase(new[] { "record", "--device", "auto", "--output", @"D:\Classes" }, "record needs a name, right after the word record: ClassScribe record \"Kalam\" ...")]
-    [TestCase(new[] { "record", "Kalam", "--output", @"D:\Classes" }, "record needs a source: --device \"<part of its name>\", --device auto or --app <process>")]
+    [TestCase(new[] { "record", "Kalam", "--output", @"D:\Classes" }, "record needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person")]
     [TestCase(new[] { "record", "Kalam", "--app", "chrome" }, "record needs --output \"<folder>\", the folder the recording goes to")]
+    [TestCase(new[] { "record", "Kalam", "--in-person" }, "record needs --output \"<folder>\", the folder the recording goes to")]
     public async Task A_single_missing_piece_is_named(string[] args, string mistake)
     {
         AssertRefused(await RunAsync(args));
@@ -389,13 +595,16 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[] { mistake }));
     }
 
-    /// <summary>One source at a time: --device and --app together are refused.</summary>
-    [Test]
-    public async Task Two_sources_are_refused()
+    /// <summary>One source at a time: --device, --app and --in-person are refused together, in any pair and all three.</summary>
+    [TestCase(new[] { "--device", "auto", "--app", "chrome" }, "--device and --app")]
+    [TestCase(new[] { "--device", "auto", "--in-person" }, "--device and --in-person")]
+    [TestCase(new[] { "--app", "chrome", "--in-person" }, "--app and --in-person")]
+    [TestCase(new[] { "--in-person", "--device", "auto", "--app", "chrome" }, "--device, --app and --in-person")]
+    public async Task Two_sources_are_refused(string[] sources, string given)
     {
-        AssertRefused(await RunAsync("record", "Kalam", "--device", "auto", "--app", "chrome", "--output", Classes));
+        AssertRefused(await RunAsync(["record", "Kalam", .. sources, "--output", Classes]));
 
-        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "record takes one source; you gave --device and --app" }));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"record takes one source; you gave {given}" }));
     }
 
     /// <summary>
@@ -486,7 +695,7 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[]
         {
             "record needs a name, right after the word record: ClassScribe record \"Kalam\" ...",
-            "record needs a source: --device \"<part of its name>\", --device auto or --app <process>",
+            "record needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person",
             "record needs --output \"<folder>\", the folder the recording goes to",
             "--minutes takes a number of minutes written with a dot, such as 1.5"
         }));
@@ -593,18 +802,21 @@ public class CommandLineTreeTests
     [Test]
     public async Task Names_are_taken_in_any_case()
     {
-        await RunAsync("RECORD-ONLY", "Kalam", "--DEVICE", "Pixel Buds", "--Output", Classes, "--No-Open", "--MINUTES", "45");
+        await RunAsync("RECORD-ONLY", "Kalam", "--DEVICE", "Pixel Buds", "--Output", Classes, "--No-Open", "--MINUTES", "45", "--MIC", "--Mic-Follows", "chrome");
         await RunAsync("Transcribe", "--AGAIN", @"C:\Classes\Kalam");
         await RunAsync("REBUILD", @"C:\Classes\Kalam", "--NO-OPEN");
         await RunAsync("List");
         await RunAsync("DEVICES");
+        await RunAsync("MIC-CHECK", "--SECONDS", "5");
 
-        Assert.That(OnlyRecording(), Is.EqualTo(Expected("Kalam", false, new ClassSource.Device("Pixel Buds"), Classes, minutes: 45, open: false)));
+        Assert.That(OnlyRecording(), Is.EqualTo(Expected("Kalam", false, new ClassSource.Device("Pixel Buds"), Classes, minutes: 45, open: false)
+            with { Source = WithMicrophone(new ClassSource.Device("Pixel Buds"), follows: new FollowRule.Named("chrome")) }));
         var again = FromCommandLine(@"C:\Classes\Kalam", again: true);
         _commands.Verify(c => c.TranscribeAsync(again), Times.Once);
         _commands.Verify(c => c.RebuildAsync(@"C:\Classes\Kalam", false), Times.Once);
         _commands.Verify(c => c.ListAsync(null), Times.Once);
         _commands.Verify(c => c.DevicesAsync(), Times.Once);
+        _commands.Verify(c => c.MicCheckAsync(new MicCheckRequest(TimeSpan.FromSeconds(5), null)), Times.Once);
     }
 
     /// <summary>
@@ -648,6 +860,7 @@ public class CommandLineTreeTests
     [TestCase("rebuild")]
     [TestCase("list")]
     [TestCase("devices")]
+    [TestCase("mic-check")]
     [TestCase("attach")]
     public async Task Every_command_has_its_help(string command)
     {
@@ -674,16 +887,29 @@ public class CommandLineTreeTests
         _commands.VerifyNoOtherCalls();
     }
 
-    /// <summary>The help of record names every option, says what is needed, and gives examples.</summary>
+    /// <summary>The help of record names every option, the microphone's among them, says what is needed, and gives examples, the microphone's among them.</summary>
     [Test]
     public async Task The_help_of_record_names_its_options()
     {
         await RunAsync("record", "--help");
 
         Assert.That(_line.Output.ToString(),
-            Does.Contain("--device").And.Contain("--app").And.Contain("--output").And.Contain("--minutes").And.Contain("--no-open")
-                .And.Contain("--continue").And.Contain("--new")
-                .And.Contain("ClassScribe record \"Kalam\" --device auto --output \"D:\\Classes\""));
+            Does.Contain("--device").And.Contain("--app").And.Contain("--in-person").And.Contain("--mic").And.Contain("--mic-follows")
+                .And.Contain("--output").And.Contain("--minutes").And.Contain("--no-open").And.Contain("--continue").And.Contain("--new")
+                .And.Contain("ClassScribe record \"Kalam\" --device auto --output \"D:\\Classes\"")
+                .And.Contain("ClassScribe record \"Kalam\" --app chrome --mic --mic-follows chrome --output \"D:\\Classes\"")
+                .And.Contain("ClassScribe record \"Kalam\" --in-person --output \"D:\\Classes\""));
+    }
+
+    /// <summary>The help of mic-check says what it does, that it opens no microphone, and gives examples with its options.</summary>
+    [Test]
+    public async Task The_help_of_mic_check_says_what_it_does()
+    {
+        await RunAsync("mic-check", "--help");
+
+        var help = Regex.Replace(_line.Output.ToString(), @"\s+", " ");
+        Assert.That(help, Does.Contain("--seconds").And.Contain("--log-folder").And.Contain("Opens no microphone")
+            .And.Contain("ClassScribe mic-check --seconds 600 --log-folder \"D:\\Classes\""));
     }
 
     /// <summary>The help of the app as a whole lists the commands, though not the hidden one, and examples.</summary>
@@ -695,7 +921,7 @@ public class CommandLineTreeTests
         Assert.That(await RunAsync(ask), Is.EqualTo(0));
 
         var help = _line.Output.ToString();
-        foreach (var command in new[] { "record", "record-only", "transcribe", "rebuild", "list", "devices" })
+        foreach (var command in new[] { "record", "record-only", "transcribe", "rebuild", "list", "devices", "mic-check" })
             Assert.That(help, Does.Contain(command));
         Assert.That(help, Does.Not.Contain("attach"), "the hidden command");
         Assert.That(help, Does.Contain("Examples:").And.Contain("ELEVENLABS_API_KEY"));
@@ -720,6 +946,8 @@ public class CommandLineTreeTests
         Assert.That(_line.KindOf("rebuild", @"C:\Classes\Kalam"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("list"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("devices"), Is.EqualTo(CommandKind.Command));
+        Assert.That(_line.KindOf("mic-check", "--seconds", "5"), Is.EqualTo(CommandKind.Command), "the log goes under Recording:OutputFolder, so the settings are read first");
+        Assert.That(_line.KindOf("record", "Kalam", "--in-person", "--output", Classes), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf(_folder.File("Lecture.mp4")), Is.EqualTo(CommandKind.Command));
     }
 

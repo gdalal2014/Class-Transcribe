@@ -1,3 +1,6 @@
+using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
+
 namespace ClassScribe.Settings;
 
 /// <summary>When the screen is kept on while ClassScribe records and uploads (see <see cref="RecordingOptions.KeepScreenOn"/>).</summary>
@@ -120,4 +123,45 @@ public sealed class RecordingOptions
     /// turns the stop off; at most 9.5.
     /// </summary>
     public double StopAfterHours { get; init; } = 9;
+
+    /// <summary>
+    /// What a recording holds: <see cref="RecordingMode.Class"/> (the default), <see cref="RecordingMode.ClassAndMicrophone"/>,
+    /// or <see cref="RecordingMode.Microphone"/>, your microphone alone for a class in person. The names are taken in any
+    /// case; a number is refused.
+    /// </summary>
+    public RecordingMode Mode { get; init; } = RecordingMode.Class;
+
+    /// <summary>
+    /// Part of the name of the microphone to record, such as "OBSBOT", in any case. Empty means Windows' default
+    /// microphone, never a Bluetooth one or an input that records what the computer plays (Stereo Mix): then the
+    /// laptop's own microphone array, then another microphone that is neither.
+    /// </summary>
+    public string Microphone { get; init; } = "";
+
+    /// <summary>
+    /// <see cref="Audio.Microphones.MicrophoneProcessing.Raw"/> (the default) asks Windows for the microphone's audio without
+    /// Windows' sound processing, and takes <see cref="Audio.Microphones.MicrophoneProcessing.Default"/> when that is not
+    /// available; <see cref="Audio.Microphones.MicrophoneProcessing.Default"/> takes the processed audio, as any app gets it.
+    /// The names are taken in any case; a number is refused.
+    /// </summary>
+    public MicrophoneProcessing MicrophoneProcessing { get; init; } = MicrophoneProcessing.Raw;
+
+    /// <summary>
+    /// With the class and your microphone, when the class is recorded from a device: the app whose microphone use the
+    /// microphone track follows, by part of its process name in any case, chrome unless changed. Your voice is recorded
+    /// only while that app has the microphone open and taking sound. "auto" follows any app that holds the recorded
+    /// microphone; "none" records whenever V is on. In app mode the app recorded with --app or Recording:App is followed,
+    /// and this setting is not read; --mic-follows and menu choice 7 can name another for a run. Empty, or naming
+    /// ClassScribe itself, is refused when ClassScribe starts (see <see cref="SettingsCheck"/>).
+    /// </summary>
+    public string MicrophoneFollows { get; init; } = "chrome";
+
+    /// <summary>
+    /// Whether the class app lets go of the microphone when you mute in it: <see cref="Audio.Microphones.ClassAppMute.Visible"/>
+    /// (it does, and ClassScribe follows your mute by itself), <see cref="Audio.Microphones.ClassAppMute.Invisible"/> (it keeps
+    /// the microphone open, so your voice is recorded only after you press V, and only while the app holds the microphone),
+    /// or <see cref="Audio.Microphones.ClassAppMute.Unknown"/> (the default: as Invisible, and ClassScribe reports what it sees).
+    /// The names are taken in any case; a number is refused.
+    /// </summary>
+    public ClassAppMute ClassAppMute { get; init; } = ClassAppMute.Unknown;
 }

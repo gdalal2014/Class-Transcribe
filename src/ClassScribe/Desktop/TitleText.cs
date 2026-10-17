@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 
 namespace ClassScribe.Desktop;
@@ -13,7 +14,9 @@ namespace ClassScribe.Desktop;
 /// window rather than in the background:</para>
 /// <list type="bullet">
 /// <item>recording: <c>REC 01:12:40 Kalam</c>, with <c>MIC OFF</c> before the name while the microphone is switched
-/// off; paused: <c>PAUSED 01:12:40 Kalam</c>; a green bar, or a yellow one while paused;</item>
+/// off, <c>MIC MUTED</c> while the class app it follows is not listening or Windows mutes it, and <c>MIC WAITING</c>
+/// while that app has not opened it, uses another, or cannot be read; paused: <c>PAUSED 01:12:40 Kalam</c>; a green
+/// bar, or a yellow one while paused;</item>
 /// <item>a Notice: its words in brackets after the name, <c>REC 01:12:40 Kalam (no sound 2 min)</c>; a yellow bar;</item>
 /// <item>an Alert: "!" and its words before the name, <c>! NOT RECORDING (waiting for "chrome") Kalam</c>; a red bar;</item>
 /// <item>uploading: <c>UPLOADING 40% Kalam</c>, a green bar at 40%; transcribing: <c>TRANSCRIBING Kalam</c>, a running bar;</item>
@@ -156,6 +159,18 @@ public static class TitleText
         _ => state.Phase.ToString().ToUpperInvariant()
     };
 
-    /// <summary>" MIC OFF" while the run's microphone is switched off with V; empty otherwise.</summary>
-    private static string MicrophoneOff(RecorderState state) => state.Microphone is { On: false } ? " MIC OFF" : "";
+    /// <summary>
+    /// The microphone's words before the name: " MIC OFF" while it is switched off with V, or not yet switched on where the
+    /// class app's mute cannot be seen; " MIC MUTED" while the app is not listening or Windows mutes the microphone;
+    /// " MIC WAITING" while the app has not opened the microphone, uses another, or its sessions cannot be read; empty
+    /// while your voice is recorded, when no app is followed, and when the run has no microphone.
+    /// </summary>
+    private static string MicrophoneOff(RecorderState state) => state.Microphone switch
+    {
+        null => "",
+        { On: false } => " MIC OFF",
+        { Gate: MicrophoneGateState.NotListening or MicrophoneGateState.MutedInWindows } => " MIC MUTED",
+        { Gate: MicrophoneGateState.NotOpened or MicrophoneGateState.OtherMicrophone or MicrophoneGateState.Unreadable } => " MIC WAITING",
+        _ => ""
+    };
 }

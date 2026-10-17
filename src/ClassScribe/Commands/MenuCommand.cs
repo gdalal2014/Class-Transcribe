@@ -15,8 +15,8 @@ namespace ClassScribe.Commands;
 /// the menu only acts on a key pressed after it is shown. Each choice reads the settings again first, and runs only once
 /// they have passed the check (see <see cref="RunGate"/>); showing the recording in progress never waits for the settings.
 /// The menu reaches every command through the runner (<see cref="ICommandRunner"/>), which runs each in a scope of its
-/// own, and the runs only through the report, so that it is made before the services of the background recorder are
-/// registered.
+/// own, the microphone menu of choice 7 and the microphone check of choice 8 among them, and the runs only through the
+/// report, so that it is made before the services of the background recorder are registered.
 /// </summary>
 public sealed class MenuCommand(
     ICommandRunner commands,
@@ -164,6 +164,12 @@ public sealed class MenuCommand(
                 case '6':
                     await ChooseSourceAsync();
                     break;
+                case '7':
+                    await commands.ChooseMicrophoneAsync();
+                    break;
+                case '8':
+                    await commands.MicCheckAsync(new MicCheckRequest(StopAfter: null, LogFolder: null));
+                    break;
             }
         }
         catch (OperationCanceledException)
@@ -181,7 +187,8 @@ public sealed class MenuCommand(
     }
 
     /// <summary>
-    /// Lists the choices, the settings file read, where the files go, which device is recorded and the runs going on now.
+    /// Lists the choices, the settings file read, where the files go, what is recorded, the microphone included, and the
+    /// runs going on now.
     /// Under the file's name it points out a copy of the settings that a build has not brought up to date, and settings
     /// that could not be used when they were last read, at start or for the last choice: each problem, and that no choice
     /// runs until the file is fixed, so the folder and the source shown below are not taken for the file's. A recordings
@@ -213,6 +220,8 @@ public sealed class MenuCommand(
         ui.WriteLine("  4  Transcribe a file");
         ui.WriteLine("  5  Open the recordings folder");
         ui.WriteLine("  6  Choose what to record: a device or an app");
+        ui.WriteLine("  7  Microphone: none, with the class, or in person");
+        ui.WriteLine("  8  Check the microphone: watch what apps do with it (opens nothing)");
         if (report.RecordingNow() is { Home: RunHome.Separate }) ui.WriteLine($"  {ShowKey}  Show the recording in progress");
         ui.WriteLine("  Q  Quit");
         ui.WriteLine();
@@ -304,7 +313,7 @@ public sealed class MenuCommand(
     private sealed record SourceEntry(string Line, string Name, string Setting, Action Pick);
 
     /// <summary>
-    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 6, or A, which comes back as
+    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 8, or A, which comes back as
     /// <see cref="ShowKey"/>. Returns null for Q, for Ctrl+C, or when nobody can type.
     /// </summary>
     private async Task<char?> ReadChoiceAsync()
@@ -313,7 +322,7 @@ public sealed class MenuCommand(
         {
             var key = await ui.ReadKeyAsync(CancellationToken.None);
             if (key is not { } pressed || IsQuit(pressed)) return null;
-            if (pressed.KeyChar is >= '1' and <= '6') return pressed.KeyChar;
+            if (pressed.KeyChar is >= '1' and <= '8') return pressed.KeyChar;
             if (pressed.Key == ConsoleKey.A && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return ShowKey;
         }
     }

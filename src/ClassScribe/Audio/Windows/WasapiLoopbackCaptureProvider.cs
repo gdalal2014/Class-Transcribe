@@ -33,6 +33,7 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     private readonly Func<IMMDeviceEnumeratorRaw> _createListingEnumerator;
     private readonly Func<string, string> _readDeviceName;
     private readonly Func<int, string?> _readProcessName;
+    private readonly Func<IMMDeviceRaw, uint?> _readFormFactor;
 
     /// <summary>Releases an object Windows handed out: <see cref="CoreAudio.Release"/>, or a test's account of what was released.</summary>
     private readonly Action<object?> _release;
@@ -50,6 +51,9 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
 
     /// <summary>Device names by identifier. Windows takes up to half a second to give a Bluetooth device's name, so each is read once.</summary>
     private readonly Dictionary<string, string> _names = [];
+
+    /// <summary>Whether each device is heard in the room, by identifier: its form factor never changes, so it is read once.</summary>
+    private readonly Dictionary<string, bool> _heardInTheRoom = [];
 
     /// <summary>
     /// The enumerator the listings use: made at the first listing, or at the next one when Windows would not make
@@ -76,21 +80,24 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     /// <summary>
     /// Creates the provider with the listings' enumerator made by <paramref name="createListingEnumerator"/> at the
     /// first listing, and at each following listing until making it succeeds. Device and process names come from
-    /// <paramref name="readDeviceName"/> and <paramref name="readProcessName"/>, and objects are released with
-    /// <paramref name="release"/>, when given; otherwise Windows answers and <see cref="CoreAudio.Release"/>
-    /// releases. Tests pass fakes, and a release that keeps account.
+    /// <paramref name="readDeviceName"/> and <paramref name="readProcessName"/>, a device's form factor from
+    /// <paramref name="readFormFactor"/>, and objects are released with <paramref name="release"/>, when given;
+    /// otherwise Windows answers and <see cref="CoreAudio.Release"/> releases. Tests pass fakes, and a release that
+    /// keeps account.
     /// </summary>
     internal WasapiLoopbackCaptureProvider(
         ILogger<WasapiLoopbackCaptureProvider> logger,
         Func<IMMDeviceEnumeratorRaw> createListingEnumerator,
         Func<string, string>? readDeviceName = null,
         Func<int, string?>? readProcessName = null,
-        Action<object?>? release = null)
+        Action<object?>? release = null,
+        Func<IMMDeviceRaw, uint?>? readFormFactor = null)
     {
         _logger = logger;
         _createListingEnumerator = createListingEnumerator;
         _readDeviceName = readDeviceName ?? ReadDeviceName;
         _readProcessName = readProcessName ?? ReadProcessName;
+        _readFormFactor = readFormFactor ?? ReadFormFactor;
         _release = release ?? CoreAudio.Release;
         _ownName = _readProcessName(Environment.ProcessId);
 
@@ -136,7 +143,7 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
             var client = ProcessLoopback.Activate(processId);
             try
             {
-                return new WasapiLoopbackAudioCapture(client, target.Id, target.Name, _logger);
+                return WasapiAudioCapture.ForApp(client, target.Id, target.Name, _logger);
             }
             catch
             {
@@ -157,7 +164,7 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
 
         try
         {
-            return new WasapiLoopbackAudioCapture(device, NameOf(device.ID), _logger);
+            return WasapiAudioCapture.ForOutputDevice(device, NameOf(device.ID), _logger);
         }
         catch
         {
@@ -179,10 +186,15 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     /// <summary>Called by Windows when a device appears. Only raises the event.</summary>
     public void OnDeviceAdded(string pwstrDeviceId) => DevicesChanged?.Invoke(this, EventArgs.Empty);
 
-    /// <summary>Called by Windows when a device is gone for good. Forgets its name and raises the event.</summary>
+    /// <summary>Called by Windows when a device is gone for good. Forgets its name and its form factor, and raises the event.</summary>
     public void OnDeviceRemoved(string deviceId)
     {
-        lock (_gate) _names.Remove(deviceId);
+        lock (_gate)
+        {
+            _names.Remove(deviceId);
+            _heardInTheRoom.Remove(deviceId);
+        }
+
         DevicesChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -269,18 +281,44 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
         }
     }
 
-    /// <summary>The active output devices, each with its name, whether it is the default, and how loud it is playing.</summary>
+    /// <summary>The active output devices, each with its name, whether it is the default, how loud it is playing, and whether the room hears it.</summary>
     private List<OutputDevice> ListOutputDevices(IMMDeviceEnumeratorRaw enumerator)
     {
         var defaultId = DefaultDeviceId(enumerator);
         var devices = new List<OutputDevice>();
-        ForEachActiveDevice(enumerator, (id, device) => devices.Add(new OutputDevice(id, NameOf(id), id == defaultId, ReadLevel(device))));
+        ForEachActiveDevice(enumerator, (id, device) => devices.Add(new OutputDevice(id, NameOf(id), id == defaultId, ReadLevel(device), HeardInTheRoomOf(id, device))));
         return devices;
     }
 
     /// <summary>
-    /// The apps with sound open on an active output device. An app with sound open on several devices, or several
-    /// times on one, is listed once, at its loudest.
+    /// Whether a device is heard in the room, by its form factor (PKEY_AudioEndpoint_FormFactor): speakers, a line-level
+    /// output, S/PDIF and a display's own audio over HDMI or DisplayPort are, so a microphone recording beside them records
+    /// the class a second time; headphones, a headset and a form factor Windows does not give are not.
+    /// </summary>
+    internal static bool IsHeardInTheRoom(uint? formFactor) => formFactor is
+        (uint)EndpointFormFactor.Speakers or (uint)EndpointFormFactor.LineLevel or (uint)EndpointFormFactor.Spdif or (uint)EndpointFormFactor.DigitalAudioDisplayDevice;
+
+    /// <summary>
+    /// Whether the device is heard in the room, read from its form factor the first time and remembered; a device whose
+    /// form factor Windows does not give is asked again at the next listing, and is not heard in the room meanwhile.
+    /// </summary>
+    private bool HeardInTheRoomOf(string deviceId, IMMDeviceRaw device)
+    {
+        lock (_gate)
+        {
+            if (_heardInTheRoom.TryGetValue(deviceId, out var known)) return known;
+        }
+
+        if (_readFormFactor(device) is not { } formFactor) return false;
+
+        var heard = IsHeardInTheRoom(formFactor);
+        lock (_gate) _heardInTheRoom[deviceId] = heard;
+        return heard;
+    }
+
+    /// <summary>
+    /// The apps with sound open on an active output device, each with the device it plays through. An app with sound
+    /// open on several devices, or several times on one, is listed once, at its loudest, with the device it is loudest on.
     /// </summary>
     private List<PlayingApp> ListPlayingApps(IMMDeviceEnumeratorRaw enumerator)
     {
@@ -292,14 +330,17 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
         ForEachActiveDevice(enumerator, (id, device) =>
         {
             var deviceName = NameOf(id);
-            ForEachSession(device, session => AddApp(session, deviceName, apps, processNames));
+            ForEachSession(device, session => AddApp(session, id, deviceName, apps, processNames));
         });
 
         return [.. apps.Values];
     }
 
-    /// <summary>Adds the app behind one audio session to <paramref name="apps"/>, unless the session is to be left out.</summary>
-    private void AddApp(object sessionObject, string deviceName, Dictionary<int, PlayingApp> apps, Dictionary<int, string?> processNames)
+    /// <summary>
+    /// Adds the app behind one audio session on the device <paramref name="deviceId"/>, named <paramref name="deviceName"/>,
+    /// to <paramref name="apps"/>, unless the session is to be left out.
+    /// </summary>
+    private void AddApp(object sessionObject, string deviceId, string deviceName, Dictionary<int, PlayingApp> apps, Dictionary<int, string?> processNames)
     {
         var session = (IAudioSessionControl2Raw)sessionObject;
         var result = session.GetState(out var state);
@@ -327,7 +368,7 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
 
         var level = ReadLevel(sessionObject);
         if (!apps.TryGetValue(processId, out var known) || level > known.Level)
-            apps[processId] = new PlayingApp(processId, name, deviceName, level);
+            apps[processId] = new PlayingApp(processId, name, deviceName, level, deviceId);
     }
 
     /// <summary>Identifier of the default output device, or null when there is none.</summary>
@@ -439,6 +480,42 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     {
         using var device = _enumerator.GetDevice(deviceId);
         return device.FriendlyName;
+    }
+
+    /// <summary>
+    /// Reads the device's form factor from its property store, through ClassScribe's own declarations, and releases the
+    /// store; null when the device lacks the property, or will not open its store, as one that went away during the
+    /// listing will not. That is an answer, not a failure: the listing goes on. It happens once per device that has one.
+    /// </summary>
+    private uint? ReadFormFactor(IMMDeviceRaw device)
+    {
+        var result = device.OpenPropertyStore(CoreAudio.ReadOnlyStore, out var pointer);
+        if (result < 0)
+        {
+            _logger.LogDebug("Could not open the properties of an output device (0x{Code:X8})", result);
+            return null;
+        }
+
+        IPropertyStoreRaw store;
+        try
+        {
+            // A wrapper of its own, as CoreAudio.OpenPropertyStore makes: NAudio wraps the same store with a class of its own.
+            store = (IPropertyStoreRaw)Marshal.GetUniqueObjectForIUnknown(pointer);
+        }
+        finally
+        {
+            // The wrapper holds its own reference; this one came from OpenPropertyStore.
+            Marshal.Release(pointer);
+        }
+
+        try
+        {
+            return CoreAudio.ReadUInt(store, PropertyKeys.FormFactor);
+        }
+        finally
+        {
+            _release(store);
+        }
     }
 
     /// <summary>The name of the process, such as chrome, or null when it has already ended.</summary>

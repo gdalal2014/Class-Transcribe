@@ -421,23 +421,29 @@ public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fa
         if (DisposeFailure is not null) throw DisposeFailure;
     }
 
-    /// <summary>Hands audio to whoever is listening, as the capture thread would.</summary>
-    public void Deliver(byte[] audio) => DataAvailable?.Invoke(this, new AudioDataEventArgs(audio, audio.Length));
+    /// <summary>
+    /// Hands audio to whoever is listening, as the capture thread would: with the stamp Windows gives the packet's first
+    /// frame, in 100-nanosecond units on the test clock's count, and Windows' flags; or, as before, with neither. The
+    /// frame count follows from the audio's length and the format.
+    /// </summary>
+    public void Deliver(byte[] audio, long? qpc100ns = null, PacketFlags flags = PacketFlags.None) =>
+        DataAvailable?.Invoke(this, new AudioDataEventArgs(audio, audio.Length, Format.BytesPerFrame > 0 ? audio.Length / Format.BytesPerFrame : 0, qpc100ns, flags));
 
     /// <summary>Ends the capture with an error, as a device that disappears would.</summary>
     public void Fail(Exception error) => Stopped?.Invoke(this, new CaptureStoppedEventArgs(error));
 }
 
 /// <summary>
-/// The output devices a test connects, each with the level Windows' meter would show for it, the apps
-/// with sound open on them, and the fake captures handed out in order. The first device connected is
-/// the default one until a test says otherwise. A capture's device name doubles as its identifier.
+/// The output devices a test connects, each with the level Windows' meter would show for it and whether it is heard
+/// in the room, the apps with sound open on them, and the fake captures handed out in order. The first device
+/// connected is the default one until a test says otherwise. A capture's device name doubles as its identifier.
 /// </summary>
 public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
 {
     private readonly Lock _gate = new();
     private readonly List<string> _connected = [];
     private readonly Dictionary<string, float> _levels = [];
+    private readonly HashSet<string> _heardInTheRoom = [];
     private readonly Dictionary<int, PlayingApp> _apps = [];
     private readonly Dictionary<string, Queue<FakeAudioCapture>> _queued = [];
     private readonly List<FakeAudioCapture> _created = [];
@@ -489,10 +495,17 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
         return capture;
     }
 
-    /// <summary>Connects a device with no capture prepared for it, so every attempt to open it fails. The first device connected becomes the default one.</summary>
-    public void ConnectDevice(string deviceId, float level = 0)
+    /// <summary>
+    /// Connects a device with no capture prepared for it, so every attempt to open it fails. The first device connected
+    /// becomes the default one. A device heard in the room, as speakers are, is one the microphone would record a second time.
+    /// </summary>
+    public void ConnectDevice(string deviceId, float level = 0, bool heardInTheRoom = false)
     {
-        lock (_gate) Connect(deviceId, level);
+        lock (_gate)
+        {
+            Connect(deviceId, level);
+            if (heardInTheRoom) _heardInTheRoom.Add(deviceId);
+        }
     }
 
     /// <summary>Sets what Windows' meter shows for a device: 0 for silence, more while sound plays on it.</summary>
@@ -501,12 +514,25 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
         lock (_gate) _levels[deviceId] = level;
     }
 
-    /// <summary>Gives an app sound open on a device, playing at the given level, and queues the capture made for it, if one is given.</summary>
-    public FakeAudioCapture? AddApp(int processId, string name, string deviceName, float level = 0, FakeAudioCapture? capture = null)
+    /// <summary>Sets whether a device is heard in the room, as speakers are and headphones are not.</summary>
+    public void SetHeardInTheRoom(string deviceId, bool heard)
     {
         lock (_gate)
         {
-            _apps[processId] = new PlayingApp(processId, name, deviceName, level);
+            if (heard) _heardInTheRoom.Add(deviceId);
+            else _heardInTheRoom.Remove(deviceId);
+        }
+    }
+
+    /// <summary>
+    /// Gives an app sound open on a device, playing at the given level, and queues the capture made for it, if one is
+    /// given. The device's identifier is its name unless <paramref name="deviceId"/> says otherwise.
+    /// </summary>
+    public FakeAudioCapture? AddApp(int processId, string name, string deviceName, float level = 0, FakeAudioCapture? capture = null, string? deviceId = null)
+    {
+        lock (_gate)
+        {
+            _apps[processId] = new PlayingApp(processId, name, deviceName, level, deviceId ?? deviceName);
             if (capture is not null) Queue(capture);
         }
 
@@ -567,6 +593,7 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
         lock (_gate)
         {
             _connected.Clear();
+            _heardInTheRoom.Clear();
             _defaultDeviceId = null;
         }
 
@@ -584,7 +611,7 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
         }
 
         if (Volatile.Read(ref _listingFailure) is { } failure) throw failure;
-        lock (_gate) return [.. _connected.Select(id => new OutputDevice(id, id, id == _defaultDeviceId, _levels.GetValueOrDefault(id)))];
+        lock (_gate) return [.. _connected.Select(id => new OutputDevice(id, id, id == _defaultDeviceId, _levels.GetValueOrDefault(id), _heardInTheRoom.Contains(id)))];
     }
 
     /// <inheritdoc />

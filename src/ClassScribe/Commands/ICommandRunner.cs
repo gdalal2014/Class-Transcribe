@@ -41,14 +41,41 @@ public interface ICommandRunner
     /// is one the recorder opened by itself, which ignores every key until Enter. Returns the exit code.
     /// </summary>
     Task<int> AttachAsync(string? runId, bool alert);
+
+    /// <summary>
+    /// Menu choice 7: asks whether to record your microphone, with the class or alone in person, which one, and which app
+    /// it follows, and keeps the answer for the session (see <see cref="MicrophoneMenu"/>). Returns the exit code.
+    /// </summary>
+    Task<int> ChooseMicrophoneAsync();
+
+    /// <summary>
+    /// Watches what the programs on this computer do with the microphone, as <paramref name="request"/> says, writing a line
+    /// for each change to a log, in this window, until it is stopped there. Opens no microphone. Returns the exit code.
+    /// </summary>
+    Task<int> MicCheckAsync(MicCheckRequest request);
+}
+
+/// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>
+/// <param name="StopAfter">Stop by itself after this long (--seconds); null to watch until Q or Ctrl+C.</param>
+/// <param name="LogFolder">The folder the log goes to, as a full path (--log-folder); null for the mic-check folder under Recording:OutputFolder.</param>
+public sealed record MicCheckRequest(TimeSpan? StopAfter, string? LogFolder);
+
+/// <summary>
+/// One microphone check, resolved in a scope of its own by the runner, as <see cref="IRecordRun"/> is for a recording: the
+/// check command implements it, and reads Ctrl+C through the signals of its scope.
+/// </summary>
+public interface IMicCheckRun
+{
+    /// <summary>Runs the check <paramref name="request"/> describes and returns the exit code.</summary>
+    Task<int> RunAsync(MicCheckRequest request);
 }
 
 /// <summary>
 /// Runs each command in a new scope of the service container, made when the command starts and disposed when it ends. A
 /// recording goes to the starter (<see cref="IRecordStarter"/>), which chooses between a recorder in the background and this
 /// window. Showing a run goes to the attach command (<see cref="AttachCommand"/>), which finds the run in the run files and
-/// shows it through the view of runs; list and devices go to their commands. A command whose services are not registered
-/// in the container it runs over says so, before it makes a scope.
+/// shows it through the view of runs; list, devices, the microphone menu and the microphone check go to their commands. A
+/// command whose services are not registered in the container it runs over says so, before it makes a scope.
 /// </summary>
 public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderIsService registered, ILogger<CommandRunner> logger) : ICommandRunner
 {
@@ -120,6 +147,22 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         Require<AttachCommand>("Showing a recording in the background is not part of this build yet: this build records in its own window.");
         await using var scope = scopes.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<AttachCommand>().RunAsync(runId, alert);
+    }
+
+    /// <summary>Asks about the microphone with the microphone menu (<see cref="MicrophoneMenu"/>), in a scope of its own. Returns the exit code.</summary>
+    public async Task<int> ChooseMicrophoneAsync()
+    {
+        Require<MicrophoneMenu>("Choosing the microphone from the menu is not part of this build yet; set Recording:Mode and Recording:Microphone in appsettings.json instead.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<MicrophoneMenu>().RunAsync();
+    }
+
+    /// <summary>Runs the microphone check (<see cref="IMicCheckRun"/>) with <paramref name="request"/>, in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> MicCheckAsync(MicCheckRequest request)
+    {
+        Require<IMicCheckRun>("The microphone check is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IMicCheckRun>().RunAsync(request);
     }
 
     /// <summary>

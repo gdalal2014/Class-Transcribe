@@ -1,6 +1,8 @@
 using System.Runtime.Versioning;
 using System.Text.Json.Nodes;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
+using ClassScribe.Audio.Windows;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
@@ -69,6 +71,31 @@ public class ServiceRegistrationTests
     /// <summary>The app's capture provider, as registered: the one made only when it is first used.</summary>
     private static LazyLoopbackCaptureProvider CaptureProvider(IServiceProvider provider) =>
         (LazyLoopbackCaptureProvider)provider.GetRequiredService<ILoopbackCaptureProvider>();
+
+    /// <summary>The app's microphone provider, as registered: the one made only when it is first used.</summary>
+    private static LazyMicrophoneProvider MicrophoneProvider(IServiceProvider provider) =>
+        (LazyMicrophoneProvider)provider.GetRequiredService<IMicrophoneProvider>();
+
+    /// <summary>
+    /// Puts stand-ins in place of everything a recording reaches Windows through, so that a run's recording can be
+    /// made through the real factory without a device, a microphone or the registry: the devices, the microphones, the
+    /// apps' microphone sessions, Windows' usage record, the process names, ClassScribe's own processes, the registry,
+    /// the power, the clocks and Windows' end of the session.
+    /// </summary>
+    private static void ReplaceWindowsWithFakes(IServiceCollection services, TimeProvider time)
+    {
+        services.Replace(ServiceDescriptor.Singleton<ILoopbackCaptureProvider>(new FakeCaptureProvider()));
+        services.Replace(ServiceDescriptor.Singleton<IMicrophoneProvider>(new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array)));
+        services.Replace(ServiceDescriptor.Singleton<IMicrophoneSessions>(new FakeMicrophoneSessions()));
+        services.Replace(ServiceDescriptor.Singleton<IMicrophoneUsageRecord>(new FakeMicrophoneUsageRecord()));
+        services.Replace(ServiceDescriptor.Singleton<IProcessNames>(new FakeProcessNames()));
+        services.Replace(ServiceDescriptor.Singleton<IOwnProcesses>(new FakeOwnProcesses(Environment.ProcessId)));
+        services.Replace(ServiceDescriptor.Singleton<IRegistryValues>(new FakeRegistryValues()));
+        services.Replace(ServiceDescriptor.Singleton<IPowerRequests>(new FakePowerRequests()));
+        services.Replace(ServiceDescriptor.Singleton<IPowerSource>(new FakePowerSource()));
+        services.Replace(ServiceDescriptor.Singleton<ISystemTimes>(new FakeSystemTimes(time)));
+        services.Replace(ServiceDescriptor.Scoped<ISessionEvents>(_ => new FakeSessionEvents()));
+    }
 
     /// <summary>
     /// Every setting section binds, and settings that are not given keep their defaults. (The API key is
@@ -245,10 +272,70 @@ public class ServiceRegistrationTests
     }
 
     /// <summary>
-    /// The audio provider is made only when something first uses it, so that transcribe, rebuild, list and the app itself
-    /// never touch Windows audio: the app, with its menu and command line, resolves; the three commands resolve and run
-    /// through the real services; and the provider has still not been made. The devices command takes the provider as
-    /// something to make when it runs.
+    /// The window's role has the microphone registered: for the process, the microphone provider, made only when it is
+    /// first used, the factory that opens a microphone's capture, the reader of the apps' microphone sessions, Windows'
+    /// microphone usage record, the process names and ClassScribe's own processes; in a run's scope, the track-set factory
+    /// as the factory of recordings, the microphone menu of choice 7, and the microphone check of choice 8 as the run the
+    /// runner resolves. Resolving all of it touches no microphone.
+    /// </summary>
+    [Test]
+    public void The_window_has_the_microphone_registered_and_makes_the_provider_only_when_used()
+    {
+        using var app = BuildApp([]);
+        var provider = app.Services;
+        using var scope = provider.CreateScope();
+        var run = scope.ServiceProvider;
+
+        Assert.That(provider.GetRequiredService<IMicrophoneProvider>(), Is.SameAs(provider.GetRequiredService<IMicrophoneProvider>()), "one provider for the process");
+        Assert.That(provider.GetRequiredService<IMicrophoneProvider>(), Is.SameAs(provider.GetRequiredService<Lazy<IMicrophoneProvider>>().Value), "one provider, however it is reached");
+        Assert.That(provider.GetRequiredService<Lazy<IMicrophoneSessions>>().Value, Is.SameAs(provider.GetRequiredService<IMicrophoneSessions>()), "one reader, however it is reached");
+        Assert.That(provider.GetRequiredService<IOwnProcesses>(), Is.InstanceOf<OwnProcesses>());
+        Assert.That(run.GetRequiredService<IRecordingFactory>(), Is.InstanceOf<TrackSetFactory>());
+        Assert.That(run.GetRequiredService<MicrophoneMenu>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<IMicCheckRun>(), Is.InstanceOf<MicCheckCommand>());
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.That(provider.GetRequiredService<IMicrophoneCaptureFactory>(), Is.InstanceOf<MicrophoneActivation>());
+            Assert.That(provider.GetRequiredService<IMicrophoneCaptureFactory>(), Is.SameAs(provider.GetRequiredService<IMicrophoneCaptureFactory>()), "one factory, which remembers where RAW failed");
+            Assert.That(provider.GetRequiredService<IMicrophoneSessions>(), Is.InstanceOf<WasapiMicrophoneSessions>());
+            Assert.That(provider.GetRequiredService<IMicrophoneUsageRecord>(), Is.InstanceOf<MicrophoneUsageRecord>());
+            Assert.That(provider.GetRequiredService<IProcessNames>(), Is.InstanceOf<ProcessNames>());
+        }
+
+        Assert.That(MicrophoneProvider(provider).IsMade, Is.False, "nothing has touched a microphone");
+    }
+
+    /// <summary>
+    /// The recorder's role makes a run's recording through the track-set factory, which records the class and your
+    /// microphone on one clock: with stand-ins for everything that reaches Windows, the run resolves, the factory it
+    /// records with is the track-set factory, and a plan for the class and your microphone gives a track set, which opens
+    /// nothing until it starts.
+    /// </summary>
+    [Test]
+    public void The_recorder_makes_recordings_through_the_track_set_factory()
+    {
+        var runId = TestRuns.Id();
+        var time = new ManualTimeProvider(TestRuns.Start);
+        using var log = new RecorderLog(time);
+        using var host = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, time,
+            recorder => ReplaceWindowsWithFakes(recorder, time));
+        using var scope = host.Services.CreateScope();
+        var run = scope.ServiceProvider;
+
+        var factory = run.GetRequiredService<IRecordingFactory>();
+        using var recording = factory.Create(new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null)));
+
+        Assert.That(run.GetRequiredService<IRecordRun>(), Is.InstanceOf<RecordCommand>());
+        Assert.That(factory, Is.InstanceOf<TrackSetFactory>());
+        Assert.That(recording, Is.InstanceOf<TrackSet>());
+        Assert.That(((FakeMicrophoneProvider)host.Services.GetRequiredService<IMicrophoneProvider>()).Opened, Is.Empty, "nothing is opened before the recording starts");
+    }
+
+    /// <summary>
+    /// The audio provider and the microphone provider are made only when something first uses them, so that transcribe,
+    /// rebuild, list and the app itself never touch Windows audio: the app, with its menu and command line, resolves; the
+    /// three commands resolve and run through the real services; and neither provider has been made. The devices command
+    /// takes the providers as something to make when it runs.
     /// </summary>
     [Test]
     public async Task Transcribe_rebuild_list_and_the_app_resolve_and_run_without_Windows_audio()
@@ -272,25 +359,31 @@ public class ServiceRegistrationTests
 
         Assert.That(CaptureProvider(provider).IsMade, Is.False, "nothing has touched Windows audio");
         Assert.That(provider.GetRequiredService<Lazy<ILoopbackCaptureProvider>>().IsValueCreated, Is.False);
+        Assert.That(MicrophoneProvider(provider).IsMade, Is.False, "nothing has touched a microphone");
+        Assert.That(provider.GetRequiredService<Lazy<IMicrophoneProvider>>().IsValueCreated, Is.False);
+        Assert.That(provider.GetRequiredService<Lazy<IMicrophoneSessions>>().IsValueCreated, Is.False);
     }
 
     /// <summary>
-    /// The devices command makes the audio provider when it runs, and only then: it lists the real output devices and the
-    /// apps with sound, which opens no device and records nothing, and ends with exit code 0.
+    /// The devices command makes the audio provider and the microphone provider when it runs, and only then: it lists the
+    /// real output devices, the apps with sound and the microphones with the apps that hold them, which opens no device
+    /// and no microphone and records nothing, and ends with exit code 0.
     /// </summary>
     [Test, Platform("Win"), Category("WindowsAudio")]
     [SupportedOSPlatform("windows")]
-    public async Task The_devices_command_makes_the_audio_provider_when_it_runs()
+    public async Task The_devices_command_makes_the_audio_providers_when_it_runs()
     {
         using var app = BuildApp([]);
         var provider = app.Services;
-        var made = CaptureProvider(provider).IsMade;
+        var made = CaptureProvider(provider).IsMade || MicrophoneProvider(provider).IsMade;
 
         var exitCode = await provider.GetRequiredService<App>().RunAsync(["devices"]);
 
         Assert.That(made, Is.False, "not before the command ran");
         Assert.That(exitCode, Is.EqualTo(0));
         Assert.That(CaptureProvider(provider).IsMade, Is.True);
+        Assert.That(MicrophoneProvider(provider).IsMade, Is.True);
+        Assert.That(provider.GetRequiredService<Lazy<IMicrophoneSessions>>().IsValueCreated, Is.True, "the apps that hold each microphone were read");
         Assert.That(provider.GetRequiredService<ILoopbackCaptureProvider>(), Is.SameAs(provider.GetRequiredService<Lazy<ILoopbackCaptureProvider>>().Value), "one provider, however it is reached");
     }
 

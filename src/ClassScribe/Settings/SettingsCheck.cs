@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
@@ -25,6 +26,12 @@ public sealed class SettingsCheck
 
     /// <summary>The most Recording:ContinueWithinMinutes may be: a day.</summary>
     private const int LongestContinueWithinMinutes = 1440;
+
+    /// <summary>The name of ClassScribe's own process, which the microphone must never follow.</summary>
+    private const string OwnProcessName = "ClassScribe";
+
+    /// <summary>What Recording:MicrophoneFollows takes, for its messages.</summary>
+    private const string FollowsAdvice = $"it must be part of the class app's name, such as chrome, or {FollowRule.AnyWord} (any app that holds the microphone) or {FollowRule.NoneWord} (V alone).";
 
     /// <summary>The environment variables in which Windows names the OneDrive folders.</summary>
     private static readonly string[] OneDriveVariables = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"];
@@ -58,6 +65,15 @@ public sealed class SettingsCheck
         if (!double.IsFinite(stopAfter) || stopAfter < 0 || stopAfter > latestStop)
             problems.Add(string.Create(CultureInfo.InvariantCulture,
                 $"{Name(recordingSection, nameof(RecordingOptions.StopAfterHours))} is {stopAfter}; it must be from 0 to {latestStop} (hours), such as 9. ElevenLabs takes at most 10 hours of audio in one file; 0 turns the safety stop off."));
+
+        // The microphone track follows the app named here. Empty, it would follow nothing and record nothing; naming
+        // ClassScribe, whose own capture holds the microphone for the whole class, it would follow ClassScribe and record
+        // everything. A name part matches any app whose process name contains it, so any part of "ClassScribe" names it.
+        var follows = Name(recordingSection, nameof(RecordingOptions.MicrophoneFollows));
+        if (!FollowRule.TryParse(recording.MicrophoneFollows, out var rule))
+            problems.Add($"{follows} is \"{recording.MicrophoneFollows}\"; {FollowsAdvice}");
+        else if (rule is FollowRule.Named named && named.Matches(OwnProcessName))
+            problems.Add($"{follows} is \"{recording.MicrophoneFollows}\", which names ClassScribe itself; {FollowsAdvice}");
 
         const string elevenLabsSection = ElevenLabsOptions.SectionName;
         var elevenLabs = Bind<ElevenLabsOptions>(configuration, elevenLabsSection, problems);
@@ -95,6 +111,11 @@ public sealed class SettingsCheck
         var length = transcript.MaxParagraphCharacters;
         if (length < 0)
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"{Name(transcriptSection, nameof(TranscriptOptions.MaxParagraphCharacters))} is {length}; it must be 0 or more, such as 900. 0 turns the splitting of long paragraphs off."));
+
+        // 0 writes no heading for silence left out, as the transcript reads it; below 0 is a slip, as above.
+        var gap = transcript.ShowGapsLongerThanSeconds;
+        if (gap < 0)
+            problems.Add(string.Create(CultureInfo.InvariantCulture, $"{Name(transcriptSection, nameof(TranscriptOptions.ShowGapsLongerThanSeconds))} is {gap}; it must be 0 or more, such as 60. 0 turns the headings for silence left out off."));
 
         CheckLogging(configuration, problems);
         return problems;

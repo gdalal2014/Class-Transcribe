@@ -5,6 +5,7 @@ using System.CommandLine.Parsing;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Desktop;
 using ClassScribe.Storage;
 
@@ -36,13 +37,16 @@ public enum CommandKind
 /// <code>
 /// ClassScribe                                     the menu
 /// ClassScribe &lt;path&gt;                              as transcribe &lt;path&gt;; a file dropped on the exe
-/// ClassScribe record "&lt;name&gt;" SOURCE --output "&lt;folder&gt;" [--minutes &lt;n&gt;] [--no-open] [--continue | --new]
+/// ClassScribe record "&lt;name&gt;" SOURCE --output "&lt;folder&gt;" [--mic ["&lt;microphone&gt;"] [--mic-follows &lt;app&gt;|auto|none]]
+///                                                     [--minutes &lt;n&gt;] [--no-open] [--continue | --new]
 /// ClassScribe record-only "&lt;name&gt;" ...          the same options
-///     SOURCE is --device "&lt;part of its name&gt;", --device auto or --app &lt;process&gt;
+///     SOURCE is --device "&lt;part of its name&gt;", --device auto, --app &lt;process&gt; or --in-person ["&lt;microphone&gt;"]
+///     --mic adds your microphone to --device or --app; --in-person records it alone
 /// ClassScribe transcribe &lt;path&gt; [--output "&lt;folder&gt;"] [--no-open] [--again]
 /// ClassScribe rebuild &lt;path&gt; [--no-open]
 /// ClassScribe list [--output "&lt;folder&gt;"]
 /// ClassScribe devices
+/// ClassScribe mic-check [--seconds &lt;n&gt;] [--log-folder "&lt;folder&gt;"]
 /// ClassScribe &lt;command&gt; --help                    also -h, -?, /? and help &lt;command&gt;
 /// hidden: ClassScribe attach [--alert &lt;run id&gt;]
 /// </code>
@@ -50,7 +54,9 @@ public enum CommandKind
 /// help to standard output, and the exit code is 2 (System.CommandLine's own would be 1). For record and record-only one
 /// validator names each missing piece, because once a validator has found a mistake, System.CommandLine reports neither
 /// its own missing pieces nor the values it cannot read. --minutes is read with a dot and the invariant culture, so 1,5
-/// is refused rather than read as 15. An argument that starts with @ stays a path, and Ctrl+C stays with ClassScribe.
+/// is refused rather than read as 15. --mic and --in-person may take a microphone's name, so a recording's name right
+/// after them is taken as the microphone's, which the message points out. An argument that starts with @ stays a path,
+/// and Ctrl+C stays with ClassScribe.
 /// </summary>
 public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand menu, IConsoleUi ui, TimeProvider time, TextWriter output, TextWriter errors)
 {
@@ -84,8 +90,20 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// <summary>What --app says without a value.</summary>
     private const string AppNeedsValue = "--app needs an app's process name after it, such as chrome";
 
-    /// <summary>What --output says without a value.</summary>
-    private const string OutputNeedsValue = "--output needs a folder after it, such as \"D:\\Classes\"";
+    /// <summary>What --mic-follows says without a value, or with one that names no app, or ClassScribe itself.</summary>
+    private const string FollowsNeedsValue = $"--mic-follows needs part of an app's name, such as chrome, or {FollowRule.AnyWord} or {FollowRule.NoneWord}";
+
+    /// <summary>The name of ClassScribe's own process, which the microphone must never follow: its own recording holds the microphone for the whole class.</summary>
+    private const string OwnProcessName = "ClassScribe";
+
+    /// <summary>The most seconds --seconds takes: a day.</summary>
+    private const int MostSeconds = 86400;
+
+    /// <summary>What --seconds says about a value not written as a whole number.</summary>
+    private const string SecondsFormat = "--seconds takes a whole number of seconds, such as 600";
+
+    /// <summary>What --seconds says about a number outside its range.</summary>
+    private const string SecondsRange = "--seconds takes from 1 to 86400 seconds (a day)";
 
     /// <summary>The characters, besides control characters, that Windows does not allow anywhere in a path.</summary>
     private static readonly char[] NotInPaths = ['<', '>', '"', '|', '?', '*'];
@@ -213,6 +231,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(RebuildCommand(examples));
         root.Add(ListCommand(optionNames, examples));
         root.Add(DevicesCommand(examples));
+        root.Add(MicCheckCommand(optionNames, examples));
         root.Add(AttachCommand(examples));
 
         var help = new HelpWithExamples(examples);
@@ -230,8 +249,9 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     }
 
     /// <summary>
-    /// record, which records and then transcribes, or record-only, which records only: a name, one source, --output, and
-    /// the options that shape the run. Every missing piece and every value that cannot be used is named in one run.
+    /// record, which records and then transcribes, or record-only, which records only: a name, one source, --output, the
+    /// microphone, and the options that shape the run. Every missing piece and every value that cannot be used is named in
+    /// one run.
     /// </summary>
     private Command RecordCommand(string word, bool transcribe, HashSet<string> optionNames, Dictionary<Command, string> examples)
     {
@@ -246,6 +266,23 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             {
                 HelpName = "process",
                 Description = "Record one app's sound, whatever device it plays on, by the app's process name, such as chrome."
+            },
+            new Option<string>("--in-person")
+            {
+                HelpName = "microphone",
+                Arity = ArgumentArity.ZeroOrOne,
+                Description = "Record your microphone alone, for a class in the room: part of its name, such as \"OBSBOT\", or nothing for Recording:Microphone, else Windows' default microphone (never a Bluetooth one)."
+            },
+            new Option<string>("--mic")
+            {
+                HelpName = "microphone",
+                Arity = ArgumentArity.ZeroOrOne,
+                Description = "Record your microphone too, beside --device or --app, as a second track mixed into one transcript: part of its name, or nothing for Recording:Microphone, else Windows' default microphone (never a Bluetooth one)."
+            },
+            new Option<string>("--mic-follows")
+            {
+                HelpName = "app",
+                Description = $"With --mic: the app whose microphone use your microphone follows, by part of its process name, such as chrome; {FollowRule.AnyWord} follows any app that holds the microphone; {FollowRule.NoneWord} records whenever V is on. Without it, the app recorded with --app, else Recording:MicrophoneFollows."
             },
             new Option<string>("--output")
             {
@@ -270,7 +307,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             ? "Record now under that name, then transcribe the recording."
             : "Record now under that name; transcribe it later with transcribe, or from the menu.")
         {
-            symbols.Name, symbols.Device, symbols.App, symbols.Output, symbols.Minutes, symbols.NoOpen, symbols.Continue, symbols.New
+            symbols.Name, symbols.Device, symbols.App, symbols.InPerson, symbols.Mic, symbols.MicFollows, symbols.Output, symbols.Minutes, symbols.NoOpen, symbols.Continue, symbols.New
         };
         command.Validators.Add(result =>
         {
@@ -283,25 +320,39 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// What keeps a record or record-only command line from running, one sentence each, in the order its pieces go: the
-    /// name, the source, --output, --minutes, then --continue with --new.
+    /// name, the source, the microphone and the app it follows, --output, --minutes, then --continue with --new.
     /// </summary>
     private static IEnumerable<string> RecordProblems(string word, CommandResult result, RecordSymbols symbols, HashSet<string> optionNames)
     {
         var name = TokenOf(result.GetResult(symbols.Name));
         if (string.IsNullOrWhiteSpace(name))
-            yield return $"{word} needs a name, right after the word {word}: ClassScribe {word} \"Kalam\" ...{NameTakenBy(result)}";
+            yield return $"{word} needs a name, right after the word {word}: ClassScribe {word} \"Kalam\" ...{NameTakenBy(result, symbols)}";
         else if (ClassFolders.SafeName(name).Length == 0)
             yield return $"{word} cannot use \"{name}\" as a name: nothing is left of it once the characters Windows does not allow in a folder's name are taken out";
 
         var device = result.GetResult(symbols.Device);
         var app = result.GetResult(symbols.App);
-        if (device is null && app is null) yield return $"{word} needs a source: --device \"<part of its name>\", --device auto or --app <process>";
-        if (device is not null && app is not null) yield return $"{word} takes one source; you gave --device and --app";
+        var inPerson = result.GetResult(symbols.InPerson);
+        var sources = new (OptionResult? Given, string Name)[] { (device, symbols.Device.Name), (app, symbols.App.Name), (inPerson, symbols.InPerson.Name) }
+            .Where(source => source.Given is not null)
+            .Select(source => source.Name)
+            .ToList();
+        if (sources.Count == 0) yield return $"{word} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person";
+        if (sources.Count > 1) yield return $"{word} takes one source; you gave {Listed(sources)}";
         if (device is not null && ValueProblem(TokenOf(device), DeviceNeedsValue, optionNames) is { } deviceProblem) yield return deviceProblem;
         if (app is not null && ValueProblem(TokenOf(app) is { } process ? ProcessName(process) : null, AppNeedsValue, optionNames) is { } appProblem) yield return appProblem;
 
+        var mic = result.GetResult(symbols.Mic);
+        if (mic is not null && inPerson is not null) yield return "--mic adds the microphone to --device or --app; with --in-person the microphone is already the source";
+        if (result.GetResult(symbols.MicFollows) is { } follows)
+        {
+            if (inPerson is not null) yield return "--mic-follows cannot go with --in-person: in person there is no class app";
+            else if (mic is null) yield return "--mic-follows goes with --mic: it names the app whose microphone use your microphone follows";
+            if (FollowProblem(TokenOf(follows), optionNames) is { } followProblem) yield return followProblem;
+        }
+
         if (result.GetResult(symbols.Output) is not { } output) yield return $"{word} needs --output \"<folder>\", the folder the recording goes to";
-        else if (FolderProblem(TokenOf(output), optionNames) is { } outputProblem) yield return outputProblem;
+        else if (FolderProblem(symbols.Output.Name, TokenOf(output), optionNames) is { } outputProblem) yield return outputProblem;
 
         if (result.GetResult(symbols.Minutes) is { } minutes && ReadMinutes(TokenOf(minutes), out _) is { } minutesProblem) yield return minutesProblem;
 
@@ -310,27 +361,41 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// When an option whose value may be left out took the word meant as the recording's name, says so, after a space, in
-    /// brackets: record --new True gives (--new took "True" as its value). Empty otherwise.
+    /// brackets: record --new True gives (--new took "True" as its value), and record --in-person Kalam gives (--in-person
+    /// took "Kalam" as the microphone's name). Empty otherwise.
     /// </summary>
-    private static string NameTakenBy(CommandResult result)
+    private static string NameTakenBy(CommandResult result, RecordSymbols symbols)
     {
         var taken = result.Command.Options
             .Where(option => option.Arity is { MinimumNumberOfValues: 0, MaximumNumberOfValues: > 0 })
-            .Select(option => (option.Name, Token: TokenOf(result.GetResult(option))))
+            .Select(option => (option.Name, Token: TokenOf(result.GetResult(option)), Microphone: option == symbols.Mic || option == symbols.InPerson))
             .Where(taker => taker.Token is not null)
-            .Select(taker => $"{taker.Name} took \"{taker.Token}\" as its value")
+            .Select(taker => $"{taker.Name} took \"{taker.Token}\" as {(taker.Microphone ? "the microphone's name" : "its value")}")
             .ToList();
         return taken.Count > 0 ? $" ({string.Join("; ", taken)})" : "";
     }
 
-    /// <summary>Starts the recording a record or record-only command line describes, as a request from the command line.</summary>
+    /// <summary>The options given, in words: "--device and --app", or "--device, --app and --in-person".</summary>
+    private static string Listed(IReadOnlyList<string> options) =>
+        options.Count == 2 ? $"{options[0]} and {options[1]}" : $"{string.Join(", ", options.Take(options.Count - 1))} and {options[^1]}";
+
+    /// <summary>
+    /// Starts the recording a record or record-only command line describes, as a request from the command line: the class
+    /// alone, the class and the microphone, or the microphone alone in person. A microphone without a name, and the app it
+    /// follows without --mic-follows, are left to the run, which reads Recording:Microphone and Recording:MicrophoneFollows,
+    /// or follows the app it records.
+    /// </summary>
     private Task<int> RecordAsync(ParseResult parsed, RecordSymbols symbols, bool transcribe)
     {
-        ClassSource source = parsed.GetValue(symbols.App) is { } app
-            ? new ClassSource.App(ProcessName(app))
-            : parsed.GetValue(symbols.Device) is { } device && !device.Equals(Automatic, StringComparison.OrdinalIgnoreCase)
-                ? new ClassSource.Device(device)
-                : new ClassSource.Automatic();
+        var inPerson = parsed.GetResult(symbols.InPerson) is not null;
+        var mic = parsed.GetResult(symbols.Mic) is not null;
+        ClassSource? source = inPerson ? null
+            : parsed.GetValue(symbols.App) is { } app ? new ClassSource.App(ProcessName(app))
+            : parsed.GetValue(symbols.Device) is { } device && !device.Equals(Automatic, StringComparison.OrdinalIgnoreCase) ? new ClassSource.Device(device)
+            : new ClassSource.Automatic();
+        var plan = inPerson ? new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice(NamePart(parsed.GetValue(symbols.InPerson))))
+            : mic ? new SourcePlan(RecordingMode.ClassAndMicrophone, source, new MicrophoneChoice(NamePart(parsed.GetValue(symbols.Mic)), FollowRuleOf(parsed.GetValue(symbols.MicFollows))))
+            : new SourcePlan(RecordingMode.Class, source, Microphone: null);
         var continueChoice = parsed.GetValue(symbols.Continue) ? ContinueChoice.Continue
             : parsed.GetValue(symbols.New) ? ContinueChoice.New
             : ContinueChoice.Ask;
@@ -339,13 +404,31 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             RunIds.New(time.GetUtcNow()),
             ClassFolders.SafeName(parsed.GetValue(symbols.Name)!),
             transcribe,
-            new SourcePlan(RecordingMode.Class, source, Microphone: null),
+            plan,
             Path.GetFullPath(parsed.GetValue(symbols.Output)!),
             continueChoice,
             ContinueBaseName: null,
             parsed.GetValue(symbols.Minutes),
             Open: !parsed.GetValue(symbols.NoOpen));
         return commands.RecordAsync(request, StartOrigin.CommandLine);
+    }
+
+    /// <summary>Part of a microphone's name as --mic or --in-person gave it, trimmed; null when none was given, which leaves the microphone to the settings.</summary>
+    private static string? NamePart(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>The rule --mic-follows spells, already checked (see <see cref="FollowProblem"/>); null when it was not given.</summary>
+    private static FollowRule? FollowRuleOf(string? value) => FollowRule.TryParse(value, out var rule) ? rule : null;
+
+    /// <summary>
+    /// What is wrong with <paramref name="value"/> as the app --mic-follows names: no value, or an option taken as the
+    /// value, or a value that names no app, or part of ClassScribe's own name. Null when it spells a rule.
+    /// </summary>
+    private static string? FollowProblem(string? value, HashSet<string> optionNames)
+    {
+        if (ValueProblem(value, FollowsNeedsValue, optionNames) is { } missing) return missing;
+        if (!FollowRule.TryParse(value, out var rule)) return FollowsNeedsValue;
+
+        return rule is FollowRule.Named named && named.Matches(OwnProcessName) ? FollowsNeedsValue : null;
     }
 
     /// <summary>
@@ -369,7 +452,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         {
             if (string.IsNullOrWhiteSpace(TokenOf(result.GetResult(path))))
                 result.AddError("transcribe needs a path: a recording's folder, one of its files, or any audio or video file, such as ClassScribe transcribe \"D:\\Classes\\Kalam\"");
-            if (result.GetResult(outputFolder) is { } given && FolderProblem(TokenOf(given), optionNames) is { } problem) result.AddError(problem);
+            if (result.GetResult(outputFolder) is { } given && FolderProblem(outputFolder.Name, TokenOf(given), optionNames) is { } problem) result.AddError(problem);
         });
         command.SetAction(parsed => commands.TranscribeAsync(new TranscribeRequest(
             parsed.GetValue(path)!,
@@ -406,7 +489,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         var command = new Command("list", "List the recordings, newest first, with the ones being recorded or transcribed now.") { outputFolder };
         command.Validators.Add(result =>
         {
-            if (result.GetResult(outputFolder) is { } given && FolderProblem(TokenOf(given), optionNames) is { } problem) result.AddError(problem);
+            if (result.GetResult(outputFolder) is { } given && FolderProblem(outputFolder.Name, TokenOf(given), optionNames) is { } problem) result.AddError(problem);
         });
         command.SetAction(parsed => commands.ListAsync(parsed.GetValue(outputFolder) is { } folder ? Path.GetFullPath(folder) : null));
         examples[command] = ListExamples;
@@ -419,6 +502,42 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         var command = new Command("devices", "List the output devices and the apps with sound, each with the option that records it.");
         command.SetAction(_ => commands.DevicesAsync());
         examples[command] = DevicesExamples;
+        return command;
+    }
+
+    /// <summary>
+    /// mic-check: watches what the programs on this computer do with the microphone and writes a line for each change,
+    /// until Q, Ctrl+C or --seconds, to a log under the recordings folder or under --log-folder, as a full path. It opens
+    /// no microphone and records nothing.
+    /// </summary>
+    private Command MicCheckCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
+    {
+        var seconds = new Option<int?>("--seconds")
+        {
+            HelpName = "n",
+            Description = "Stop by itself after this many seconds, from 1 to 86400 (a day), such as 600. Without it, Q or Ctrl+C stops the check.",
+            CustomParser = ParseSeconds
+        };
+        var logFolder = new Option<string>("--log-folder")
+        {
+            HelpName = "folder",
+            Description = "The folder the log goes to, such as \"D:\\Classes\", instead of the mic-check folder under Recording:OutputFolder."
+        };
+
+        var command = new Command("mic-check",
+            "Watch what the programs on this computer do with the microphone and write a line for each change, until Q, Ctrl+C or --seconds. Opens no microphone. M writes a numbered mark.")
+        {
+            seconds, logFolder
+        };
+        command.Validators.Add(result =>
+        {
+            if (result.GetResult(seconds) is { } given && ReadSeconds(TokenOf(given), out _) is { } problem) result.AddError(problem);
+            if (result.GetResult(logFolder) is { } folder && FolderProblem(logFolder.Name, TokenOf(folder), optionNames) is { } folderProblem) result.AddError(folderProblem);
+        });
+        command.SetAction(parsed => commands.MicCheckAsync(new MicCheckRequest(
+            parsed.GetValue(seconds) is { } after ? TimeSpan.FromSeconds(after) : null,
+            parsed.GetValue(logFolder) is { } folder ? Path.GetFullPath(folder) : null)));
+        examples[command] = MicCheckExamples;
         return command;
     }
 
@@ -466,17 +585,18 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         : null;
 
     /// <summary>
-    /// What is wrong with <paramref name="value"/> as the folder --output names: no value, a character Windows does not allow
-    /// in a path, or a file where the folder should be. Null for a folder that can be used, or made.
+    /// What is wrong with <paramref name="value"/> as the folder the option <paramref name="option"/>, --output or
+    /// --log-folder, names: no value, a character Windows does not allow in a path, or a file where the folder should be.
+    /// Null for a folder that can be used, or made.
     /// </summary>
-    private static string? FolderProblem(string? value, HashSet<string> optionNames)
+    private static string? FolderProblem(string option, string? value, HashSet<string> optionNames)
     {
-        if (ValueProblem(value, OutputNeedsValue, optionNames) is { } missing) return missing;
+        if (ValueProblem(value, $"{option} needs a folder after it, such as \"D:\\Classes\"", optionNames) is { } missing) return missing;
         if (value!.IndexOfAny(NotInPaths) >= 0 || value.Any(char.IsControl))
-            return $"--output takes a folder, such as \"D:\\Classes\"; \"{value}\" has a character Windows does not allow in a path: < > \" | ? *";
+            return $"{option} takes a folder, such as \"D:\\Classes\"; \"{value}\" has a character Windows does not allow in a path: < > \" | ? *";
 
         var folder = Path.GetFullPath(value);
-        return File.Exists(folder) ? $"--output names a file, not a folder: {folder}" : null;
+        return File.Exists(folder) ? $"{option} names a file, not a folder: {folder}" : null;
     }
 
     /// <summary>An app's process name as Windows gives it: chrome.exe, as Task Manager shows it, is chrome.</summary>
@@ -513,6 +633,31 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     [GeneratedRegex(@"^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)\z", RegexOptions.CultureInvariant)]
     private static partial Regex MinutesShape();
 
+    /// <summary>Reads --seconds with <see cref="ReadSeconds"/>; a value it cannot take is a mistake of the command line.</summary>
+    private static int? ParseSeconds(ArgumentResult result)
+    {
+        if (ReadSeconds(TokenOf(result), out var seconds) is not { } problem) return seconds;
+
+        result.AddError(problem);
+        return null;
+    }
+
+    /// <summary>
+    /// Reads a number of seconds: digits only, from 1 to a day. Returns what is wrong with <paramref name="text"/>, or null
+    /// when <paramref name="seconds"/> holds the number.
+    /// </summary>
+    private static string? ReadSeconds(string? text, out int seconds)
+    {
+        seconds = 0;
+        if (text is null || !SecondsShape().IsMatch(text)) return SecondsFormat;
+
+        return int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out seconds) && seconds is >= 1 and <= MostSeconds ? null : SecondsRange;
+    }
+
+    /// <summary>The shape of a number of seconds: digits, 0 to 9 only, and \z ends the match at the very end.</summary>
+    [GeneratedRegex(@"^[0-9]+\z", RegexOptions.CultureInvariant)]
+    private static partial Regex SecondsShape();
+
     /// <summary>
     /// An argument without the quotes and spaces around it. When a quote is left inside it and an option follows that quote,
     /// a stray quote joined what follows to a path (see <see cref="Tidy"/>): the argument is split at the quote, and the
@@ -533,12 +678,15 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         Examples:
           ClassScribe record "Kalam" --device auto --output "D:\Classes"
           ClassScribe record-only "Kalam" --app chrome --output "D:\Classes" --minutes 90
+          ClassScribe record "Kalam" --app chrome --mic --output "D:\Classes"
+          ClassScribe record "Kalam" --in-person --output "D:\Classes"
           ClassScribe transcribe "D:\Classes\Kalam"
           ClassScribe "D:\Lectures\Lecture 5.mp4"
+          ClassScribe mic-check
 
         Without a command, ClassScribe shows its menu. A path alone is transcribed, as when a file is dropped on ClassScribe.exe.
         Add --help after a command for its options, such as: ClassScribe record --help
-        While recording, Q twice or Ctrl+C twice stops, P pauses or resumes, and M marks a moment.
+        While recording, Q twice or Ctrl+C twice stops, P pauses or resumes, M marks a moment, and V switches your microphone off and on.
         The API key is read from the ELEVENLABS_API_KEY environment variable.
         Exit codes: 0 done; 1 failed or refused; 2 a mistake on the command line; 130 cancelled with Ctrl+C.
         """;
@@ -549,9 +697,12 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
           ClassScribe {word} "Kalam" --device auto --output "D:\Classes"
           ClassScribe {word} "Kalam" --device "Pixel Buds" --output "D:\Classes" --minutes 90
           ClassScribe {word} "Kalam" --app chrome --output "D:\Classes" --continue
+          ClassScribe {word} "Kalam" --app chrome --mic --mic-follows chrome --output "D:\Classes"
+          ClassScribe {word} "Kalam" --in-person --output "D:\Classes"
 
-        The name, one source (--device or --app) and --output are needed, and nothing is asked.
-        While recording, Q twice or Ctrl+C twice stops, P pauses or resumes, and M marks a moment; Esc leaves the view of a recording in the background, which carries on.
+        The name, one source (--device, --app or --in-person) and --output are needed, and nothing is asked.
+        --mic adds your microphone to --device or --app, as a second track mixed into one transcript; --in-person records it alone. Either takes part of a microphone's name, or nothing for Recording:Microphone.
+        While recording, Q twice or Ctrl+C twice stops, P pauses or resumes, M marks a moment, and V switches your microphone off and on; Esc leaves the view of a recording in the background, which carries on.
         """;
 
     /// <summary>The examples and notes under the help of transcribe.</summary>
@@ -586,6 +737,16 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
           ClassScribe devices
         """;
 
+    /// <summary>The examples and notes under the help of mic-check.</summary>
+    private const string MicCheckExamples = """
+        Examples:
+          ClassScribe mic-check
+          ClassScribe mic-check --seconds 600 --log-folder "D:\Classes"
+
+        Nothing is recorded and no microphone is opened: it only reads which programs hold the microphone, and whether it is muted in Windows, and writes a line for each change.
+        The log's path is printed at the start and at the end. Q stops the check; M writes a numbered mark.
+        """;
+
     /// <summary>The examples under the help of the hidden attach.</summary>
     private const string AttachExamples = """
         Examples:
@@ -597,13 +758,16 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// <param name="Name">The recording's name.</param>
     /// <param name="Device">--device: part of a device's name, or auto.</param>
     /// <param name="App">--app: an app's process name.</param>
+    /// <param name="InPerson">--in-person: the microphone alone, with part of its name or nothing.</param>
+    /// <param name="Mic">--mic: the microphone beside the class, with part of its name or nothing.</param>
+    /// <param name="MicFollows">--mic-follows: the app the microphone follows, or auto or none.</param>
     /// <param name="Output">--output: the recordings folder for this run.</param>
     /// <param name="Minutes">--minutes: stop by itself after this many minutes.</param>
     /// <param name="NoOpen">--no-open: open nothing at the end.</param>
     /// <param name="Continue">--continue: continue a recent recording of this name.</param>
     /// <param name="New">--new: start a new recording without a word.</param>
-    private sealed record RecordSymbols(Argument<string> Name, Option<string> Device, Option<string> App, Option<string> Output,
-        Option<double?> Minutes, Option<bool> NoOpen, Option<bool> Continue, Option<bool> New);
+    private sealed record RecordSymbols(Argument<string> Name, Option<string> Device, Option<string> App, Option<string> InPerson, Option<string> Mic,
+        Option<string> MicFollows, Option<string> Output, Option<double?> Minutes, Option<bool> NoOpen, Option<bool> Continue, Option<bool> New);
 
     /// <summary>The tree as built, with what tidying, parsing and the kind of a command line need from it.</summary>
     /// <param name="Root">The root command.</param>

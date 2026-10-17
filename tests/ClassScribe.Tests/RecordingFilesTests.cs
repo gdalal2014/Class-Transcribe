@@ -63,7 +63,8 @@ public class RecordingFilesTests
 
     /// <summary>
     /// A file that is no recording's does not pass for one, even beside a recording and named after it: a file without a
-    /// time stamp, a note of one's own, and a file of a kind ClassScribe never writes.
+    /// time stamp, a note of one's own, a file of a kind ClassScribe never writes, and the microphone check's log, whose
+    /// time stamp carries no Z, so that the mic-check folder under the recordings folder never lists a recording.
     /// </summary>
     [TestCase(@"C:\Downloads\Lecture 5.wav")]
     [TestCase(@"C:\Downloads\Lecture 5.md")]
@@ -74,8 +75,27 @@ public class RecordingFilesTests
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z_part2.md")]
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z (2).wav")]
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.mic.json")]
+    [TestCase(@"C:\Classes\mic-check\mic-check_2026-10-17_19-00-12.log")]
     public void Other_files_do_not_pass_for_a_recordings(string path) =>
         Assert.That(RecordingFiles.TryParse(path), Is.Null);
+
+    /// <summary>
+    /// Each track has segment files of its own: the main track's carry the recording's plain names, the microphone's end
+    /// in .mic.wav, and both number their parts from the second segment. The main track is the one meant when none is named.
+    /// </summary>
+    [Test]
+    public void Each_track_has_segment_names_of_its_own()
+    {
+        var files = RecordingFiles.ForNew(@"C:\Classes\Kalam", "Kalam", Started);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(files.Segment(1, Track.Main), Is.EqualTo(files.Segment(1)));
+            Assert.That(files.Segment(2, Track.Main), Is.EqualTo(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z_part2.wav"));
+            Assert.That(files.Segment(1, Track.Microphone), Is.EqualTo(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.mic.wav"));
+            Assert.That(files.Segment(3, Track.Microphone), Is.EqualTo(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z_part3.mic.wav"));
+        }
+    }
 
     /// <summary>The log of everything the recording's runs logged is named after the recording, beside its other files.</summary>
     [Test]
@@ -84,15 +104,16 @@ public class RecordingFilesTests
 
     /// <summary>
     /// The microphone's segments, whose names end in .mic.wav, are found apart from the main track's, each track in the
-    /// order of its parts, and neither track takes the other's files.
+    /// order of its parts, and neither track takes the other's files: the segments a track is written to are the ones
+    /// found for it, and none of the other's.
     /// </summary>
     [Test]
     public void The_microphones_segments_are_found_apart_from_the_main_tracks()
     {
         using var folder = new TempFolder();
         var files = RecordingFiles.ForNew(folder.Path, "Kalam", Started);
-        var micFirst = folder.File("Kalam_2026-10-15_20-55-27Z.mic.wav");
-        var micThird = folder.File("Kalam_2026-10-15_20-55-27Z_part3.mic.wav");
+        var micFirst = files.Segment(1, Track.Microphone);
+        var micThird = files.Segment(3, Track.Microphone);
         foreach (var path in new[] { micThird, files.Segment(2), micFirst, files.Segment(1), files.Upload })
             File.WriteAllBytes(path, [0]);
 

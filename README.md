@@ -1,10 +1,10 @@
 # ClassScribe
 
-Records the sound your computer plays during a class. When you stop it, it can send the recording
-to ElevenLabs (Scribe v2) and save the transcript.
-
-ClassScribe does not record the microphone yet, so your own voice in an online class is not
-captured, and neither is a class held in a room. Microphone support is being built.
+Records a class and, when you stop it, can send the recording to ElevenLabs (Scribe v2) and save
+the transcript. It records in one of three ways: the sound your computer plays, which is an online
+class as you hear it; that sound and your microphone together, so that what you say in the class is
+in the transcript too; or your microphone alone, for a class held in a room. See
+[Your microphone](#your-microphone).
 
 ## Set up once
 
@@ -41,6 +41,14 @@ captured, and neither is a class held in a room. Microphone support is being bui
    themselves without a window, which is what the background recorder is. If ATD ends the recorder
    anyway, ClassScribe continues the recording by itself while a window shows it, and the next start
    reports it with C to continue it (see [If a recording was interrupted](#if-a-recording-was-interrupted)).
+6. If you will record your microphone, change two settings once; ClassScribe warns at the start of
+   a recording with your microphone while they are not. In Lenovo Vantage, set Device Settings >
+   Sound > Input to Off:
+   its noise cancelling can cut out a lecturer across the room. In Windows, open Sound > More sound
+   settings > Communications and choose "Do nothing": otherwise Windows lowers other sounds by 80%
+   while a microphone is open, which makes the class quieter, in the recording too. Bitdefender's
+   Microphone Monitor may tell you that `ClassScribe.exe` is using the microphone; that is the
+   recording, and nothing to act on.
 
 ## Use it
 
@@ -57,6 +65,8 @@ ClassScribe starts with a menu. Press the number of what you want:
   4  Transcribe a file
   5  Open the recordings folder
   6  Choose what to record: a device or an app
+  7  Microphone: none, with the class, or in person
+  8  Check the microphone: watch what apps do with it (opens nothing)
   A  Show the recording in progress        (only while one records)
   Q  Quit
 ```
@@ -97,11 +107,19 @@ A to show it again. Above the choices, the header names what runs in the backgro
   sent while it is being recorded.
 - **5 Open the recordings folder** shows it in Explorer.
 - **6 Choose what to record** lists the output devices and the apps with sound; see below.
+- **7 Microphone** asks whether to record your microphone with the class (W), alone for a class in the
+  room (I) or not at all (N), then which microphone, and with the class which app it follows; see
+  [Your microphone](#your-microphone). The pick holds until ClassScribe is closed.
+- **8 Check the microphone** watches what the programs on your computer do with the microphone and
+  writes a line for each change, without opening it; see
+  [Checking what your class page does with your microphone](#checking-what-your-class-page-does-with-your-microphone).
 
 When a choice is done, the menu comes back, after an error too. Q or Ctrl+C leaves it.
 
 Above the choices, the menu shows the settings file it reads (`Settings: ...`), where recordings go
-and what is recorded. Each choice reads the settings again first, so an edit counts from the next
+and what is recorded (`Recording from: the device the class plays on`, or with the microphone
+`..., and Windows' default microphone (following chrome)`, or `your microphone "OBSBOT", in person`).
+Each choice reads the settings again first, so an edit counts from the next
 choice, without a restart (see [Settings](#settings)). When the file cannot be used, `ERROR` lines
 under its name say why. ClassScribe starts all the same, but a choice then starts nothing: it says
 what to fix, and the menu comes back. Once the file is fixed, the next choice runs.
@@ -113,7 +131,9 @@ it says `No recordings found.` with the same reason. Fix the setting before you 
 
 ### What is recorded
 
-ClassScribe records what your computer plays, not the microphone. By default it records whichever
+By default ClassScribe records what your computer plays, and not the microphone; menu choice 7, the
+settings or the command line add your microphone, or record it alone (see
+[Your microphone](#your-microphone)). For the class it records whichever
 output device the class is playing through. It starts on the device with sound, or else on
 Windows' default device, and looks at every output device once a second. When the recorded device
 has been quiet for two seconds while sound has been playing elsewhere for a second, it moves there
@@ -138,6 +158,181 @@ after it, or leave both empty for automatic.
 The sound is saved in mono. On a surround device the centre channel, where films and players often
 put the voice, and the surround channels are mixed in with the front ones.
 
+### Your microphone
+
+ClassScribe can record your microphone beside the class, or your microphone alone for a class held
+in a room:
+
+- **With the class**: your microphone is a second track beside the class, on the same clock, so the
+  two line up in the files themselves. At upload the two are mixed into one track, and the transcript
+  carries both without saying who spoke, at the usual price. A microphone track that never rose above
+  a very low level (100 on a scale of 32,767) is left out, the upload is then exactly the class's, and
+  the log says `Your microphone stayed silent; only the class is sent.` The microphone's files stay on
+  disk either way (`.mic.wav`, see [Where things go](#where-things-go)).
+- **In person**: your microphone alone, as the recording's main track. There is no class app, so
+  nothing is followed: the microphone is recorded whenever it is on, and V switches it off and on.
+- **None**: the class alone, as before.
+
+Choose with menu choice 7: W (with the class), I (in person) or N (none); then a numbered list of the
+microphones Windows can record from, each with notes (`built in`, `default`, `USB`, `raw`, and for a
+Bluetooth one `never chosen unless picked here; call-quality sound`), for a number, or Enter for
+Windows' default microphone (or the one `Recording:Microphone` names); then, with the class, which app
+the microphone follows: `Follow the class app: Enter keeps "chrome", type another app's name, A follows
+any app that holds the microphone, N follows none (V only).` Listing the microphones opens nothing.
+The pick holds until ClassScribe is closed, whatever the settings say, and the menu prints the settings
+that would keep it: `Recording:Mode` (`Class`, `ClassAndMicrophone` or `Microphone`),
+`Recording:Microphone` and `Recording:MicrophoneFollows`. On the command line, `--mic` beside
+`--device` or `--app` adds your microphone, `--in-person` records it alone, and `--mic-follows` names
+the app (see [Without the menu](#without-the-menu)).
+
+**Which microphone.** With no name, ClassScribe takes Windows' default microphone, unless that is a
+Bluetooth microphone (using it switches earbuds to call quality, for the class too) or an input that
+records what the computer plays (Stereo Mix, which would record the class twice); then the laptop's
+own microphone array; then another microphone that is neither. A Bluetooth microphone is recorded
+only when you name it, with a warning; Stereo Mix never. The choice is kept for the whole recording,
+so earbuds that connect mid-class and become Windows' default are not followed. If the chosen
+microphone is unplugged, another stands in after 10 seconds (`The microphone "..." has been gone for
+10 s; recording "..." instead until it returns`), and the recording moves back when it is plugged in
+again, each time in a new file. With the class, when the class app is found listening on another
+microphone than the one ClassScribe picked, ClassScribe switches to the app's microphone, so that your
+voice is recorded as the class hears it: `Recording the microphone "OBSBOT ...", the microphone the
+class app uses, instead of "Microphone Array ..."`. The microphones are looked at every 10 seconds, and
+at once when Windows reports a change among them; a look opens nothing. ClassScribe asks Windows for
+the microphone's audio without Windows' sound processing (RAW) while `Recording:MicrophoneProcessing`
+is `Raw`, the default; when the microphone does not offer it, or Windows refuses it, the processed
+audio is used and the log says why: `Microphone: "Microphone Array (...)", with Windows' sound
+processing (RAW was not available: 0x88890027)`. `Microphone: "...", without Windows' sound processing
+(RAW)` confirms RAW.
+
+**The start lines.** Before the first audio, with the class: `Your microphone is recorded too, and
+uploaded to ElevenLabs with the class.`, then the line that says how your mute in the class app is
+followed (below), then `Following: chrome (Recording:MicrophoneFollows)` (or `Following: chrome, the
+app being recorded`, `Following: chrome (chosen for this run)`, or `Following: any app that holds the
+microphone (Recording:MicrophoneFollows auto)`), then the microphone line with why that microphone was
+chosen, such as `Microphone: "Microphone Array (...)" (Windows' default microphone), without Windows'
+sound processing (RAW)`. Then the warnings, which are also a Notice in the title (`3 warnings at the
+start`) for five minutes:
+
+- `Lenovo Vantage's microphone noise cancelling is on (mode 1, probably "Multiple Voices"); it can cut
+  out a lecturer across the room. Set Vantage > Device Settings > Sound > Input to Off.` The labels
+  are inferred, so the number is shown too. While the laptop's own array is recorded, the mode is read
+  again every 30 seconds, because Vantage's scenes can switch it mid-class: `... has switched on (mode
+  4, probably "Only My Voice") ...`, `... has changed to mode ...`, and `... is now off.` when you turn
+  it off.
+- `Windows lowers other sounds by 80% while a microphone is open, which can make the class quieter, in
+  the recording too. Set Sound > More sound settings > Communications to Do nothing.` (with the class
+  only; `by 50%` or `Windows mutes other sounds` for the other settings).
+- `The microphone "Headset (...)" is Bluetooth: using it switches the earbuds to call quality, for the
+  class too. The laptop's microphone array avoids that.`
+- `The class plays on "Speakers (Realtek(R) Audio)", so the microphone records it a second time (an
+  echo). Use headphones.` Use headphones whenever your microphone records with the class. The check is
+  made again whenever the class moves to another device; in app mode the app's device is looked at
+  every 30 seconds.
+
+In person the lines are `Your microphone records the room, and the recording is uploaded to
+ElevenLabs. Ask before recording others.`, the microphone line, the Vantage and Bluetooth warnings when
+they apply, and `Plug in and keep the lid open; the screen stays on while on battery. For a break
+press P; V switches the microphone off but keeps the clock running, and that silence is uploaded.`
+
+**Your mute in the class app.** With the class, ClassScribe records your voice only while the class
+app is listening. Four times a second it looks, in Windows' own lists, whether the app has the
+recorded microphone open and taking sound from it, and whether the microphone is muted in Windows;
+every ten seconds it also looks at the other microphones, to find the app listening on another one.
+While the app is not listening, nothing from the microphone goes into the recording: that stretch is
+silence in the file, so positions and marks do not move. Each packet from the microphone is judged by
+the looks on both sides of it, so nothing from after a mute and nothing from before an unmute gets
+through, at the price of up to a quarter of a second at each edge, which is nearly always the silence
+around a click. The watch only reads Windows' lists; it never opens the microphone itself.
+
+Which app is followed: in app mode (`--app chrome`, `Recording:App` or menu choice 6) the app being
+recorded; otherwise `Recording:MicrophoneFollows`, `chrome` unless you change it (`auto` follows any
+app that has the microphone open; `none` records whenever V is on, as in person). Menu choice 7 and
+`--mic-follows` can name another app for a run. Chrome takes the microphone in a helper process of its
+own, so the app is matched by its process name, as `--app` matches it.
+
+One thing Windows cannot see: many apps keep the microphone open while you are muted and only stop
+sending your voice. Chrome pages usually do, and so do Zoom and Teams. Windows then shows the app as
+listening the whole time, and ClassScribe cannot tell your mute from your unmute, so muting yourself
+in the class page may not keep your voice out of the recording. `Recording:ClassAppMute` says which
+kind your class app is:
+
+- `Unknown`, the default until your class page has been measured: your microphone starts switched
+  off, and V switches it on. The start says so: `ClassScribe has not been told whether chrome lets go
+  of the microphone when you mute (most class apps and pages keep it open), so it cannot follow your
+  mute yet: your voice is recorded only after you press V, and only while chrome holds the microphone.
+  Muting the microphone in Windows (the microphone key) stops it too. Run the microphone check (menu
+  choice 8) during a class, or set Recording:ClassAppMute.` When ClassScribe sees the app let go of
+  the microphone and take it again, it tells you once: `chrome let go of the microphone at 19:12:03
+  and took it again at 19:12:40. If that was you muting and unmuting in the class page, your mute is
+  visible to Windows: set Recording:ClassAppMute to Visible and ClassScribe will follow it by itself.`
+  The summary at the end counts those: `chrome let go of the microphone 7 times`.
+- `Visible`: the app lets go of the microphone when you mute, so ClassScribe follows your mute by
+  itself; the microphone starts on, and V switches it off by hand. The start says `Your voice is
+  recorded while chrome is listening: when you mute in chrome, ClassScribe stops too. V switches it
+  off by hand.`
+- `Invisible`: the app keeps the microphone open while you are muted. The microphone starts off, V
+  switches it on, and your voice is then recorded while the app holds the microphone. The summary
+  still counts the times the app let go of the microphone, `although Recording:ClassAppMute says
+  Invisible`, so a wrong setting is noticed.
+
+The setting describes your class app, not a run, so it has no command-line option. To measure your
+class page once, run the microphone check during a class and set the setting from its log (see
+[Checking what your class page does with your microphone](#checking-what-your-class-page-does-with-your-microphone)).
+
+Whatever the setting, two hard stops hold while the microphone is on: nothing is written while the
+followed app has not got the microphone open, and nothing while the microphone is muted in Windows.
+That Windows mute is the one mute to use: the laptop's microphone key (the F key with the microphone
+picture), or Sound settings > Input > Mute. It silences the class app too, ClassScribe reads it at
+every look, and so follows it exactly. It mutes one microphone, so the app and ClassScribe must use
+the same one, which is why ClassScribe switches to the app's microphone. If you set `Visible` and still
+find your own voice in a recording from a stretch when you were muted, the app does not let go of the
+microphone after all: set `Invisible` and use the microphone key or V.
+
+**V** switches your microphone off and on by hand, in any mode. Off releases the microphone, so
+Windows' microphone icon goes out unless the class app holds it, and the recording keeps its place:
+the time off is silence in the microphone's file. On opens it again within a moment, after a fresh
+look at the class app, so that the first packets are judged by it. The log says `Switching the
+microphone off (V); its capture is released and the track keeps its place on the clock` and
+`Microphone off; V switches it on again`, then `Microphone on`, with what it still waits for when it
+does (`Microphone on; waiting for chrome to open the microphone`). Where the app's mute cannot be
+seen, the microphone starts off: `The microphone starts switched off (V switches it on)` as the
+recording starts, then among the start lines `Microphone: "..." (Windows' default microphone),
+switched off until you press V; RAW will be asked for`, and the title says `MIC OFF` until you press
+it.
+
+**What you see while it records.** The title shows `REC 01:12:40 Kalam` while your voice is being
+recorded, `REC 01:12:40 MIC OFF Kalam` while the microphone is switched off, `MIC MUTED` while the
+class app is not listening or Windows mutes the microphone, and `MIC WAITING` while the app has not
+opened the microphone, uses another one, or its sessions cannot be read; the taskbar colour does not
+change for these. The status line, every minute, ends with the microphone's state: `; microphone:
+following chrome, recording`, `..., muted (chrome is not listening)`, `..., muted in Windows`, `...,
+waiting for chrome to open the microphone`, `; microphone: chrome uses "OBSBOT ..."; ClassScribe
+records "Microphone Array ..."`, `; microphone: cannot read chrome's microphone session: ...`,
+`; microphone: off (V records your voice while chrome holds the microphone)` or `off (V switches it
+on)`, `; microphone: waiting for the microphone "OBSBOT"`, or, with no app followed, `; microphone:
+recording "Microphone Array ..."`. The log gets a line when a state has held for a second:
+`Microphone: chrome is listening; your voice is being recorded from 00:12:03` and `Microphone: chrome
+is not listening; your voice is not recorded from 00:12:40`; shorter changes are counted, not logged,
+and the summary says `chrome's microphone session changed 14 times for under a second` when there
+were any. Nothing about mutes, V or the Windows mute goes into the marks file or the transcript.
+
+At the end, after `Recorded 01:58:10 of audio`, comes the microphone's sentence: `Microphone: heard
+for 00:12:40 in 9 stretches while chrome listened, muted for 01:40:10, off (V) for 00:05:00, muted in
+Windows for 00:00:00`, with the counts above when there are any; with no app followed, `Microphone: on
+for 01:50:00, off (V) for 00:05:00`.
+
+**In person.** Plug the laptop in and keep the lid open; the screen stays on while on battery (dim it
+by hand). Sit near the front, or put a USB or lapel microphone near the lecturer and name it
+(`Recording:Microphone`, `--in-person "OBSBOT"`, or menu choice 7). For a break press P: V's silence
+is uploaded and billed, a pause is not. ClassScribe warns after a minute without sound (`No sound from
+the microphone "..." for 60 seconds. Check that it is not muted in Windows (the microphone key) and
+that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)`), and when the
+microphone hands over nothing but exact zeros for 2 minutes it says so, with `ONLY SILENCE FROM THE
+MICROPHONE` in red in the title (`Only silence from the microphone "..." for 2 minutes: it is muted in
+Windows (the microphone key, or Sound settings > Input)` when Windows says it is muted). Everyone in
+the room is recorded and uploaded to ElevenLabs, so ask before recording others, and keep to what your
+teacher and your institution allow.
+
 ### While recording
 
 Start recording before the class and leave the window in the background. Play the class as usual,
@@ -150,18 +345,25 @@ These keys work in the ClassScribe window:
 | Ctrl+C, twice | Stops, like Q: the first press only shows `Press Ctrl+C again within 5 seconds to stop`. After the stop, one Ctrl+C cancels the preparation and the upload that follow (within 2 seconds of a stop with Ctrl+C it still counts as part of the stop). The recording is kept either way. |
 | P | Pauses, for a break. Nothing is recorded until you press P again. |
 | M | Marks the moment. The mark shows in the transcript at that point, as a heading `## [00:42:13] Mark 1`. |
+| V | Switches your microphone off and on by hand (see [Your microphone](#your-microphone)). With the class, your voice is normally recorded only while the class app is listening; V off keeps it out whatever the app does, and V on is needed first where the app's mute cannot be seen. In a recording of the class alone it only says `There is no microphone in this recording`. |
 | Esc | Leaves the view of a recording that runs in the background, without stopping or pausing anything: from the menu, the menu comes back; from a command, ClassScribe exits 0 and says `The recording carries on in the background. Start ClassScribe to see it.` In a recording that runs in the window, Esc only says that Q twice stops it. |
 
 The first lines of a recording say where it goes (`Recording "Kalam" to D:\Classes\Kalam`, or
 `Continuing "Kalam" as its next part (Kalam_2026-10-15_23-00-02Z, 00:47:10 recorded so far), in ...`),
-what is recorded (`Recording from the app "chrome"`, or `the device the class plays on`), the keys
-and what closing a window does, the reminder about the lid, and, with `--minutes`,
-`This recording stops by itself at 20:30 (--minutes 90); Q twice stops it sooner`. At the end they
-say how much was recorded: `Recorded 01:58:10 of audio`, or for a continued recording
-`Recorded 00:30:00 in this part, 01:17:10 in all`.
+what is recorded (`Recording from the app "chrome"`, `the device the class plays on`, `the device
+the class plays on, and your microphone "OBSBOT"`, or in person `your microphone`), the keys (V among
+them with your microphone) and what closing a window does, the reminder about the lid, and, with
+`--minutes`, `This recording stops by itself at 20:30 (--minutes 90); Q twice stops it sooner`. With
+your microphone, the lines about it follow at once (see [Your microphone](#your-microphone)). At the
+end they say how much was recorded: `Recorded 01:58:10 of audio`, or for a continued recording
+`Recorded 00:30:00 in this part, 01:17:10 in all`. With your microphone, a line comes first that sums
+the clock up: `Recorded 01:58:10 in this run: 00:06:12 paused, 00:00:21 left out while the laptop
+slept or ClassScribe was held up, 3 parts and 3 microphone files, 4 corrections for drift`, and the
+microphone's own sentence follows the length.
 
 The window's title shows the state at a glance, such as `REC 01:12:40 Kalam | ClassScribe`,
 `PAUSED ...`, `! NOT RECORDING (waiting for "chrome") Kalam`, `REC 01:12:40 Kalam (no sound 2 min)`,
+`REC 01:12:40 MIC MUTED Kalam` with your microphone (see [Your microphone](#your-microphone)),
 `UPLOADING 40% Kalam`, `TRANSCRIBING Kalam`, then `DONE Kalam`, `! FAILED Kalam` or
 `CANCELLED Kalam`, with `(stops 20:30)` while `--minutes` or the safety stop will end it, and
 `(in this window)` when the recording runs in that window. The taskbar button is green while
@@ -329,6 +531,8 @@ a recording carries the name and the time the recording started, in UTC (the `Z`
     Kalam\                                       one folder per name, shared by its recordings
         Kalam_2026-10-14_19-30-00Z.wav           the audio as captured (kept)
         Kalam_2026-10-14_19-30-00Z_part2.wav     only after a device switch, a failure or 1500 MB
+        Kalam_2026-10-14_19-30-00Z.mic.wav       your microphone, when recorded with the class (kept)
+        Kalam_2026-10-14_19-30-00Z_part2.mic.wav the microphone's next file, after a microphone change, a failure or 1500 MB
         Kalam_2026-10-14_19-30-00Z.marks.txt     the marks set with M, and ClassScribe's own notes, if any
         Kalam_2026-10-14_19-30-00Z.log           everything the recording's runs logged
         Kalam_2026-10-14_19-30-00Z.md            the transcript
@@ -338,7 +542,13 @@ a recording carries the name and the time the recording started, in UTC (the `Z`
     Lecture 5\                                   a transcribed file; the file itself stays where it is
         Lecture 5_2026-10-15_09-00-00Z.md
         Lecture 5_2026-10-15_09-00-00Z.json
+    mic-check\                                   the microphone check's logs (menu choice 8, mic-check)
+        mic-check_2026-10-17_19-00-12.log        one per run, named by the local start time
 ```
+
+In person your microphone is the recording itself, so its files carry the plain names (`.wav`,
+`_part2.wav`). With the class, the upload copy is the class and your microphone mixed into one track
+(see [Your microphone](#your-microphone)).
 
 The transcript is a Markdown file: the name as its title, when it was recorded, then paragraphs
 that start with their `[hh:mm:ss]` position, and the marks as headings, so they show in the outline
@@ -372,9 +582,15 @@ A name is made safe for Windows: characters Windows does not allow in a file nam
 a name Windows keeps for a device, such as `NUL` or `COM1`, gets an underscore (`NUL_`). A file with
 nothing usable in its name, such as `.mp3`, gets an `Untitled` folder.
 
-The positions are positions in the recording. While nothing at all is playing (a paused video,
-for instance) Windows usually hands over no audio, so a pause can be shorter in the recording
-than it was in the room. Time paused with P is left out too.
+The positions are positions in the recording. In a recording of the class alone, while nothing at
+all is playing (a paused video, for instance) Windows usually hands over no audio, so a pause can be
+shorter in the recording than it was in the room; where a minute or more of that was left out
+(`Transcript:ShowGapsLongerThanSeconds`), the transcript says so with a heading such as
+`## [00:41:02] About 3 minutes with nothing playing were left out here`. Time paused with P is left
+out too, in every mode, and so is a time the laptop slept. With your microphone nothing else is
+left out: both tracks follow one clock, with the pauses and the sleeps taken out of it, so a
+position is time on that clock, a mark gets that time, and the tracks line up in the files
+themselves.
 
 The `.log` beside a recording holds every line its runs logged, from the first line to the
 transcript, in the background or in the window alike; a run that continues the recording adds to
@@ -404,10 +620,13 @@ The recorder also runs in this folder, so it holds nothing under OneDrive or in 
 ```powershell
 ClassScribe record "Kalam" --device auto --output "D:\Classes"          # record, then transcribe
 ClassScribe record-only "Kalam" --app chrome --output "D:\Classes"      # record only
+ClassScribe record "Kalam" --app chrome --mic --output "D:\Classes"     # the class and your microphone
+ClassScribe record "Kalam" --in-person --output "D:\Classes"            # your microphone alone, in person
 ClassScribe transcribe "C:\path\to\recording folder or file"
 ClassScribe rebuild "C:\path\to\recording folder or file"
 ClassScribe list                                                        # the recordings, newest first
-ClassScribe devices                                                     # the devices and apps with sound
+ClassScribe devices                                                     # the devices, apps with sound and microphones
+ClassScribe mic-check                                                   # watch what apps do with the microphone
 ClassScribe --help                                                      # the commands; also record --help and so on
 ```
 
@@ -417,12 +636,13 @@ ClassScribe --help                                                      # the co
 `dotnet run --project src/ClassScribe -- record ...` the same lines work, but the recording then
 runs in the window, and closing the window ends it.
 
-In short: `record "<name>" SOURCE --output "<folder>" [--minutes <n>] [--no-open] [--continue | --new]`,
-`record-only` with the same options, `transcribe <path> [--output "<folder>"] [--again] [--no-open]`,
-`rebuild <path> [--no-open]`, `list [--output "<folder>"]` and `devices`, where the parts in
-brackets may be left out, and SOURCE is `--device "<part of its name>"`, `--device auto` or
-`--app <process>`. `<command> --help` (also `-h`, `-?`, `/?` or `help <command>`) lists a command's
-options with examples.
+In short: `record "<name>" SOURCE --output "<folder>" [--mic ["<microphone>"] [--mic-follows <app>|auto|none]]
+[--minutes <n>] [--no-open] [--continue | --new]`, `record-only` with the same options,
+`transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
+`list [--output "<folder>"]`, `devices` and `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
+where the parts in brackets may be left out, and SOURCE is `--device "<part of its name>"`,
+`--device auto`, `--app <process>` or `--in-person ["<microphone>"]`. `<command> --help` (also `-h`,
+`-?`, `/?` or `help <command>`) lists a command's options with examples.
 
 For `record` and `record-only` the name, a source and `--output` are required, and nothing is ever
 asked: every missing piece and every value ClassScribe cannot use is named at once, followed by that
@@ -440,7 +660,9 @@ record.
 A recording of the same name that is running already is shown instead of started; another name
 gives `Only one recording at a time: ...` and exit code 1. `record` with a name that stopped within
 `Recording:ContinueWithinMinutes` without a transcript starts a new recording at once and says how
-to continue the other one instead (`--continue`); it never asks and never waits.
+to continue the other one instead (`--continue`); it never asks and never waits. Only a recording
+made with the same tracks is offered: one of the class alone is never continued with your
+microphone, nor the other way round.
 
 On the command line nothing is asked, so `transcribe` refuses two kinds of recording, with exit
 code 1 and a message that says what to do instead:
@@ -456,13 +678,18 @@ A file dropped on `ClassScribe.exe` counts as the command line too.
 | Option | With | What it does |
 | --- | --- | --- |
 | `--device "<part of its name>"` | `record`, `record-only` | Records that output device and no other, found by part of its name, such as `"Pixel Buds"`. `--device auto` records whichever device the class plays on. |
-| `--app <process>` | `record`, `record-only` | Records one app's sound, whatever device it plays on, by the app's process name, such as `chrome` (`chrome.exe` works too). One source only: `--device` and `--app` cannot go together. |
+| `--app <process>` | `record`, `record-only` | Records one app's sound, whatever device it plays on, by the app's process name, such as `chrome` (`chrome.exe` works too). One source only: `--device`, `--app` and `--in-person` cannot go together. |
+| `--in-person ["<microphone>"]` | `record`, `record-only` | Records your microphone alone, for a class in the room: part of its name, such as `"OBSBOT"`, or nothing for `Recording:Microphone`, else Windows' default microphone (never a Bluetooth one). It is the third kind of source. The recording's name must come right after the word `record`, before `--in-person` or `--mic`, which would otherwise take it as the microphone's name. |
+| `--mic ["<microphone>"]` | `record`, `record-only` | Records your microphone too, beside `--device` or `--app`, as a second track mixed into one transcript; it takes a microphone's name the same way. Not with `--in-person`, where the microphone is already the source. |
+| `--mic-follows <app>` | `record`, `record-only` | With `--mic`: the app whose microphone use your microphone follows, by part of its process name, such as `chrome`; `auto` follows any app that holds the microphone; `none` records whenever V is on. Without it, the app recorded with `--app`, else `Recording:MicrophoneFollows`. Not with `--in-person`, and never ClassScribe itself. |
 | `--output "<folder>"` | `record`, `record-only`, `transcribe`, `list` | The recordings folder: the recording gets a folder of its name inside it. Required for `record` and `record-only`. For `transcribe` it is used only for a file that is not a recording's; a recording's transcript goes beside the recording. |
 | `--minutes <n>` | `record`, `record-only` | Stops by itself after that many minutes, counted from the start with pauses included, such as `90` or `1.5` (a dot, never a comma; more than 0 and at most 1440). Q twice still stops it earlier. |
 | `--continue` | `record`, `record-only` | Continues, as its next part, the recording of that name that stopped within `Recording:ContinueWithinMinutes` without a transcript; when there is none, says so and starts a new one. |
 | `--new` | `record`, `record-only` | Starts a new recording without a word about one that could be continued. Not with `--continue`. |
 | `--again` | `transcribe` | Transcribes a recording that already has a transcript or a paid answer. This is billed again. |
 | `--no-open` | `record`, `record-only`, `transcribe`, `rebuild` | Opens nothing at the end, whatever `Recording:OpenFolderWhenDone` and `Recording:OpenTranscriptWhenDone` say. |
+| `--seconds <n>` | `mic-check` | Stops the check by itself after that many seconds, a whole number from 1 to 86400 (a day), such as `600`. Without it, Q or Ctrl+C stops it. |
+| `--log-folder "<folder>"` | `mic-check` | Puts the check's log there, instead of the `mic-check` folder under `Recording:OutputFolder`. |
 
 An option may come before or after the path or the name, in any letter case; `--` ends the options,
 for a name that starts with `--`. An argument that starts with `@` is a path, not a file of
@@ -473,22 +700,29 @@ script, ClassScribe says so, shows the help and exits 2.
 
 `list` prints every recording under the recordings folder, newest first, one line each
 (`Recordings in D:\Classes, newest first (times are local):`): its name, when it started in local
-time, its length, `2 parts` when it was continued, `transcript`, `transcript (2)` for one made twice,
-`answer kept` or `no transcript yet`, and `RECORDING NOW`, `TRANSCRIBING` or `ENDED UNEXPECTEDLY`
-where that applies; then a line for each recording being transcribed in the background. It changes
-nothing. `devices` prints the output devices, marked `default` or `playing`, then the apps with
-sound (`chrome  (app on Speakers (Realtek(R) Audio), playing)`), each with the `--device` or `--app`
-option that records it, leaving out ClassScribe itself; it opens no device, and ends with an
-example `record` line.
+time, its length, `2 parts` when it was continued, `class + microphone` when your microphone was
+recorded with the class, `transcript`, `transcript (2)` for one made twice, `answer kept` or
+`no transcript yet`, and `RECORDING NOW`, `TRANSCRIBING` or `ENDED UNEXPECTEDLY` where that applies;
+then a line for each recording being transcribed in the background. It changes nothing. `devices`
+prints the output devices, marked `default` or `playing`, then the apps with sound
+(`chrome  (app on Speakers (Realtek(R) Audio), playing)`), each with the `--device` or `--app`
+option that records it, leaving out ClassScribe itself; then `Microphones:`, each with what it is
+(`built in`, `default`, `USB`, `raw`, `Bluetooth: never chosen unless named; call-quality sound`, or
+`records what the computer plays; never recorded`), `muted in Windows` when it is, and which apps hold
+it now (`chrome is listening`, `vibe holds it without listening`), with the `--mic "<its name>"` option
+that picks it (`--in-person` takes the same name), then the row `Windows' default microphone, never a
+Bluetooth one  --mic`, or `None is connected now.` when there is none. It opens nothing
+(`Nothing was opened or recorded to list these.`), and ends with example lines for `--device auto`,
+`--app chrome --mic` and `--in-person`.
 
 At the end, ClassScribe hands Windows an exit code, which a script can check (in PowerShell,
 `$LASTEXITCODE` holds it):
 
 | Exit code | Meaning |
 | --- | --- |
-| 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on. |
-| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded, a transcript that failed (the audio is kept), another recording running, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer. |
-| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, a value that cannot be used, an unknown word, or a path that is not there. Nothing was started. |
+| 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, and when `mic-check` stopped normally. |
+| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log. |
+| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a value that cannot be used, an unknown word, or a path that is not there. Nothing was started. |
 | 130 | Cancelled with Ctrl+C. |
 | none | The window was closed while the recording ran in the background; the next start reports how it ended. |
 
@@ -542,7 +776,11 @@ file, the marks go on, and the transcript says `Recorded 15 October 2026, 23:00 
 with a heading `## [00:47:10] Resumed at 23:51 UTC, about 4 minutes not recorded` at the join. A
 recording that can no longer be continued, such as one whose audio was moved, costs nothing: the
 run warns (`Could not continue ...; recording "Kalam" as a new recording instead`) and records a
-new one.
+new one. Only a recording made with the same tracks is continued: one of the class alone is never
+continued with your microphone, nor the other way round, and the report and the menu then offer
+nothing to continue. With your microphone, each track carries on from its own length on disk, and
+the shorter one (cut short by a crash) is first padded with silence up to the recording's length, so
+the tracks stay in step.
 
 While a window shows a recording whose background process ends unexpectedly, the window continues
 the recording by itself within a few seconds (`The recorder ended unexpectedly at 19:47:12;
@@ -587,6 +825,88 @@ place, is used only when you give `rebuild` that very file: given the recording,
 and gives the command. The words are ElevenLabs' answer as it was: to use a changed glossary, the
 recording has to be transcribed again, which is billed again.
 
+### Checking what your class page does with your microphone
+
+Menu choice 8, or `ClassScribe mic-check`, watches what the programs on your computer do with the
+microphone and writes a line for each change, until you press Q (or Ctrl+C once), or until
+`--seconds` runs out. It only reads Windows' own lists: which microphones there are, which programs
+have a session on them, and Windows' record of which program used the microphone and when (the same
+record as Settings > Privacy & security > Microphone > Recent activity). It never opens a microphone,
+records no sound, sends nothing anywhere, needs no administrator rights, takes no lock, and may run
+beside a recording. One run of it during a real class, with you muting and unmuting in the class
+page, tells what the page does to the microphone when you mute, which is what `Recording:ClassAppMute`
+needs (see [Your microphone](#your-microphone)).
+
+The log goes to the `mic-check` folder under the recordings folder, as
+`mic-check_2026-10-17_19-00-12.log` (the local start time; `--log-folder` puts it elsewhere), and its
+path is printed at the start and at the end. Every line reaches the file as it is written, so the
+file is complete even if the window is closed, and the window's title shows
+`MIC CHECK 00:12:40, 23 lines  Q stops`. M writes a numbered `MARK` line.
+
+The steps, before or during a class:
+
+1. Start the check: choice 8, or `ClassScribe mic-check` in a terminal. It prints a few lines about
+   how things are right now, then waits. Leave it open; it is fine behind Chrome, for the whole class.
+2. Join the class as usual, with headphones, and start muted. If the page asks for microphone
+   permission, answer as you normally do. Note which microphone you expect to be used; the first `MIC`
+   lines say which is Windows' default.
+3. Unmute with the page's own button, say a few words (five seconds is plenty), mute again, and wait
+   about ten seconds. Do that three times. Before each click, if you can, press M in the check's
+   window and go back to Chrome; otherwise note the clock time of each click.
+4. During one unmuted stretch, press the keyboard's microphone-mute key once, wait five seconds, and
+   press it again, with M before each press if you can. That is a different kind of mute from the
+   page's button, and it shows whether the key flips Windows' own mute.
+5. If you leave and rejoin the class, press M before and after, so a rejoin is not read as a mute.
+6. At the end press Q in the check's window. It prints why it stopped, how many looks it made, what
+   it cost the laptop, and where the log is.
+
+The log holds the names of your microphones and of the programs that touched the microphone, with
+times. It holds no sound and nothing that was said.
+
+**What the lines mean.** The first lines are a header: the build, when the check started, its own
+process id, what it reads, and the log's path. After that every line starts with the local time to
+the millisecond and a word for its kind. Nothing is written while nothing changes, so a quiet class
+page gives a quiet log, which is a result in itself.
+
+- `MIC` lines are about one microphone: `at start` for how things were at the start, later `became
+  active` (plugged in or enabled), `changed`, or `no longer active`. `Windows default` lists the
+  roles for which it is Windows' default (Console for most programs, Multimedia, and Communications
+  for calls, or `no`); `muted in Windows` is the switch a microphone key or the Sound settings flip,
+  `YES` when muted; `input volume` is its level in Windows. A changed value is followed by `(was ...)`.
+- `SESSION` lines are about one program's session on one microphone, which is what Windows gives a
+  program when it opens the microphone: `#4 chrome (pid 24800) on Microphone Array (...): appeared:
+  state: Active; session muted: no; program C:\...\chrome.exe; session id ...`, later `changed:
+  state: Inactive (was Active)` or `gone (Windows no longer lists it)`. `Active` means the program is
+  taking sound from the microphone right now, `Inactive` that it holds the microphone open but takes
+  none, `Expired` that it has closed it. The sessions of `Windows' system sounds` are always there;
+  ignore them. A ClassScribe recording running beside the check shows as `ClassScribe, a recording in
+  progress (pid ...)`, which is expected.
+- `PRIVACY` lines come from Windows' usage record: `Windows settings: microphone access: Allow;
+  desktop apps: Allow`, each program's state at the start, then `STARTED using the microphone at ...`
+  and `STOPPED using the microphone at ..., after 21.8 s`, with Windows' own times; `used the
+  microphone briefly between two checks` for a use shorter than a look; `listed with no use recorded`
+  names the programs that have an entry but never used the microphone.
+- `MARK` lines are your M presses, numbered. `NOTE` lines are the check's own remarks, such as `no
+  check for 18.0 s: the laptop slept or the check was held up, so a change that came and went in that
+  time is not in the log.`, or that a list can be read again. `ERROR` lines mean something could not be
+  read (`Windows' list of microphones could not be read: ... The check keeps trying.`). `SELF` lines
+  should never appear: they would mean ClassScribe's own process was seen using the microphone.
+
+**What the log decides.** At your mute and unmute clicks:
+
+- A `SESSION` line for chrome going `Inactive`, `Expired` or `gone` on mute and back to `Active` (or
+  `appeared`) on unmute, with `PRIVACY` lines `STOPPED` and `STARTED` to match: the page lets go of the
+  microphone when you mute. Set `Recording:ClassAppMute` to `Visible`, and ClassScribe follows your
+  mute by itself.
+- Nothing between your `MARK` lines (chrome's session stays `Active`): the page keeps the microphone
+  open while you are muted. Set `Invisible`: the microphone starts off, V switches it on, and the
+  Windows mute is the one ClassScribe follows exactly.
+- A `MIC` line with `muted in Windows: YES` at the key press and `no` at the next: the microphone key
+  flips Windows' own mute, so it is the one mute to use. No `MIC` line at the press: the key is handled
+  by the laptop's own software; use Sound settings > Input > Mute, or V.
+- A `SESSION` line naming a different microphone than you expected: the page and ClassScribe may not
+  agree on the microphone; ClassScribe switches to the page's when they do not.
+
 ## Dry run before the first real class
 
 Take two minutes to check the whole path on your machine:
@@ -594,6 +914,11 @@ Take two minutes to check the whole path on your machine:
 1. Start ClassScribe, press 2 and type a name, such as `Dry run`.
 2. Play any video with speech for 30 seconds.
 3. Press Q twice and read the transcript when it opens.
+4. If you will use your microphone: press 7, W, Enter, then Enter again to follow `chrome`; press 2
+   and a name; press V when the start lines say the microphone starts switched off; say a few words
+   while the video plays; press Q twice and check that the transcript holds both. For a class in the
+   room, 7 then I, then 1: speak, stop, and play the `.wav` file back. Run the microphone check once
+   during your first real class, as above.
 
 ## How the recording is protected
 
@@ -629,6 +954,14 @@ Take two minutes to check the whole path on your machine:
 - It warns when it has heard nothing for 60 seconds, except while paused.
 - A recording of pure digital silence (nothing but exact zeros, as Windows hands over while muted)
   is not uploaded, so it costs nothing.
+- With your microphone, the class and the microphone are recorded by separate sessions with their
+  own files: a microphone that fails never stops the class, nor the other way round. A track whose
+  device sends sound in a form ClassScribe cannot read is left out at the start (`The microphone
+  cannot be recorded: ...; the class is still being recorded`, or the reverse), and only when neither
+  can be recorded does the start fail. Both tracks follow one clock and are padded with silence where
+  nothing arrives, so a reopened capture, a device move or a disk pause stays as silence at its true
+  place, the tracks end together, and a microphone whose own clock runs fast or slow is corrected in
+  small steps, counted in the summary as `corrections for drift`.
 - An existing recording is never overwritten.
 
 ## The glossary
@@ -696,6 +1029,11 @@ The ones you are most likely to change:
 | `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where recordings and transcripts go, one folder per name. Environment variables work, and quotes around the path are ignored. A relative path is taken from your user folder, so `Classes` means `%USERPROFILE%\Classes`. A folder inside OneDrive brings a warning. |
 | `Recording:Device` | empty | Part of the name of the output device to record, such as `Pixel Buds`. Empty means the device the class plays on. |
 | `Recording:App` | empty | The app whose sound to record, by its process name, such as `chrome`. Overrides `Recording:Device`. |
+| `Recording:Mode` | `Class` | What a recording holds: `Class` (the sound the computer plays), `ClassAndMicrophone` (that and your microphone, mixed into one transcript) or `Microphone` (your microphone alone, in person). The names are taken in any letter case; a number is refused. Menu choice 7 overrides it until ClassScribe is closed. See [Your microphone](#your-microphone). |
+| `Recording:Microphone` | empty | Part of the name of the microphone to record, such as `OBSBOT`. Empty means Windows' default microphone, never a Bluetooth one or an input that records what the computer plays (Stereo Mix): then the laptop's own microphone array, then another microphone. A Bluetooth microphone is used only when named here. |
+| `Recording:MicrophoneProcessing` | `Raw` | `Raw` asks Windows for the microphone's audio without its sound processing, and takes `Default` when that is not available; `Default` takes the processed audio, as any app gets it. |
+| `Recording:MicrophoneFollows` | `chrome` | With the class and your microphone, when the class is recorded from a device: the app whose microphone use your microphone follows, by part of its process name. Your voice is recorded only while that app has the microphone open and taking sound. `auto` follows any app that holds the microphone; `none` records whenever V is on. In app mode the recorded app is followed and this is not read; `--mic-follows` and menu choice 7 can name another for a run. Empty, or naming ClassScribe itself, is refused. |
+| `Recording:ClassAppMute` | `Unknown` | Whether the class app lets go of the microphone when you mute in it: `Visible` (it does; ClassScribe follows your mute by itself), `Invisible` (it keeps the microphone open; your voice is recorded only after you press V, and only while the app holds the microphone) or `Unknown` (as `Invisible`, and ClassScribe reports when it sees the app let go of the microphone). Measure your class page with the microphone check before setting `Visible`. |
 | `Recording:SilenceWarningSeconds` | 60 | Warn after this much silence. At least 1. |
 | `Recording:KeepUploadFile` | false | Keep the 16 kHz copy that was uploaded, after a failed or cancelled try as well. When off, the copy is removed after every try, whether it worked or not. |
 | `Recording:OpenFolderWhenDone` | true | Open the folder in Explorer when the recording or transcript is ready. |
@@ -714,6 +1052,7 @@ The ones you are most likely to change:
 | `Transcript:IncludeTimestamps` | true | Start paragraphs with `[hh:mm:ss]`. |
 | `Transcript:ParagraphPauseSeconds` | 2.0 | A pause between words this long, in seconds, starts a new paragraph. 0 or more; 0 turns these breaks off. |
 | `Transcript:MaxParagraphCharacters` | 900 | A longer paragraph is split at the next sentence end. 0 or more; 0 turns this off. |
+| `Transcript:ShowGapsLongerThanSeconds` | 60 | In a recording of the class alone, a heading in the transcript where at least this much time with nothing playing was left out (`About 3 minutes with nothing playing were left out here`). 0 writes no such heading; below 0 is refused. Recordings with your microphone leave nothing out. |
 | `Logging:Console:FormatterName` | `plain` | One line per message. Set to `simple` to see full stack traces. |
 
 The file has a few more that rarely need changing, checked the same way: `Recording:FlushSeconds`
@@ -782,6 +1121,12 @@ Windows audio through COM interop.
 - Making a transcript again from ElevenLabs' saved answer (R in the menu, or `rebuild`) is free:
   nothing is sent (see [A transcript again, for free](#a-transcript-again-for-free)).
 - The audio is uploaded to ElevenLabs. Keep transcripts for your own study, in line with what your teacher allows.
+- Your microphone, when recorded, is uploaded with the class, mixed into one track at the same
+  price. Only what the class app was listening to is recorded from it, unless
+  `Recording:MicrophoneFollows` is `none`, or you press V where the app's mute cannot be seen; muting
+  yourself in the class page may not keep your voice out, the Windows mute does (see
+  [Your microphone](#your-microphone)). In person everyone in the room is recorded and uploaded: ask
+  before recording others, and check what your institution allows.
 
 ## If something goes wrong
 
@@ -802,6 +1147,15 @@ words you see.
 | `ClassScribe could not start.` and `An environment variable sets a value ClassScribe cannot use` | Change or remove the variable the message names (the setting's name, with `__` for each colon), then start ClassScribe again. |
 | `ClassScribe shows its menu only when someone can type into its window` | ClassScribe was started without a command from a script, or with its input redirected. Give it a command, such as `record` or `list`; the help follows the message. |
 | `Recording:StopAfterHours is 10; it must be from 0 to 9.5 (hours)`, `Recording:ContinueWithinMinutes is -5; it must be from 0 to 1440 (a day)` | The new settings are checked like the others: the message gives the range and an example. Fix the value, then choose again. |
+| `Recording:MicrophoneFollows is ""; it must be part of the class app's name, such as chrome, or auto (any app that holds the microphone) or none (V alone).`, `Recording:MicrophoneFollows is "scribe", which names ClassScribe itself; ...` | Name the class app (`chrome`), or write `auto` or `none`. ClassScribe's own recording holds the microphone for the whole class, so following it would record everything. |
+| `Recording:Mode is "Klass", which is not Class, ClassAndMicrophone or Microphone.` (likewise `Recording:MicrophoneProcessing`, `Raw` or `Default`, and `Recording:ClassAppMute`, `Visible`, `Invisible` or `Unknown`) | Write one of the names, in any letter case; a number is refused. |
+| `Transcript:ShowGapsLongerThanSeconds is -1; it must be 0 or more, such as 60. 0 turns the headings for silence left out off.` | Fix the value. |
+| `"..." is not part of an app's name. Keeping "chrome".`, `"..." names ClassScribe itself, whose own recording holds the microphone for the whole class; following it would record everything. Keeping "chrome".` | Menu choice 7 kept the app in force. Type the class app's process name, such as `chrome`, or press Enter. |
+| `record needs a source: --device "<part of its name>", --device auto, --app <process> or --in-person`, `record takes one source; you gave --device and --in-person` | Give exactly one source. |
+| `--mic adds the microphone to --device or --app; with --in-person the microphone is already the source` | Drop `--mic`, or `--in-person`. |
+| `--mic-follows goes with --mic: it names the app whose microphone use your microphone follows`, `--mic-follows cannot go with --in-person: in person there is no class app`, `--mic-follows needs part of an app's name, such as chrome, or auto or none` | Give `--mic-follows` only with `--mic`, and a value that names an app (not ClassScribe), or `auto` or `none`. |
+| `record needs a name, right after the word record: ... (--in-person took "Kalam" as the microphone's name)` | Put the name right after `record`, before `--in-person` or `--mic`, which may take a name themselves. |
+| `--seconds takes a whole number of seconds, such as 600`, `--seconds takes from 1 to 86400 seconds (a day)`, `--log-folder needs a folder after it, such as "D:\Classes"` | `mic-check`'s refusals; fix the value. |
 | `ElevenLabs:ApiKey is set in the settings` | Remove the key from `appsettings.json` (or an `ElevenLabs__ApiKey` variable). It is not used: ClassScribe reads the key only from `ELEVENLABS_API_KEY`. This warning comes once, at the first choice or command. |
 | `Recording:OutputFolder is inside OneDrive` | OneDrive uploads a recording again and again while it grows, and can hold files ClassScribe needs to delete. Choose a folder outside OneDrive, such as `%USERPROFILE%\ClassScribe`. This warning, too, comes once, at the first choice or command, and refuses nothing. |
 | A `WARNING` line under `Recordings and transcripts` in the menu | `The drive X:\ is not available`: plug the drive in, or change `Recording:OutputFolder`. `... is a file, so recordings cannot go there`: change `Recording:OutputFolder`. `Recording:OutputFolder uses %NAME%, which is not set`: set that variable, or write the folder out in full. |
@@ -835,6 +1189,52 @@ words you see.
 | `Only one recording at a time: ...` | Another recording is running. Start ClassScribe (or press A in the menu) to see it, or stop it first. For one in another ClassScribe window, that window shows it; closing that window ends it. |
 | `The recording "..." ended unexpectedly at about ...` | The report at the start: the background process is gone. C continues the recording, T transcribes what was recorded, F forgets it. If you did not stop it, look at Bitdefender's Notifications, or at the cause the report names. |
 | `Press Enter to control the recording from this window.`, `ClassScribe opened this window by itself. Keys do nothing here until you press Enter.` | This window was opened by ClassScribe itself, so keys do nothing in it until you press Enter. |
+
+### The microphone, while recording
+
+| What you see | What to do |
+| --- | --- |
+| `Microphone: waiting for the microphone "OBSBOT"`, then `Waiting for the microphone "OBSBOT"; the class is being recorded` every 30 seconds, with `(no microphone)` in the title | The named microphone is not connected, or Windows lists no microphone that may be used by itself. Plug it in, or name another (menu choice 7, `Recording:Microphone`); the class is recorded meanwhile. In person the title says `NOT RECORDING` instead. |
+| `waiting for a microphone that is not Bluetooth ("..." is used only when named in Recording:Microphone)` | Only a Bluetooth microphone is connected. Name it to use it, knowing that it switches the earbuds to call quality, or plug in another. |
+| `waiting for a microphone other than "Stereo Mix ...", which records what the computer plays` | The name you gave matches an input that records the computer's own sound, which is never recorded. Name a real microphone. |
+| `The microphone "..." has been gone for 10 s; recording "..." instead until it returns`, `The microphone "..." is back; recording it again` | The chosen microphone was unplugged; another stands in, and the recording moves back when it returns, each time in a new file. |
+| `Recording the microphone "OBSBOT ...", the microphone the class app uses, instead of "Microphone Array ..."` | The class app listens on another microphone than the one ClassScribe picked, so ClassScribe moved to it, which is what the Windows mute needs. Nothing to do. |
+| `The class app uses "Stereo Mix ...", which records what the computer plays; recording "..." still` | The class app listens on an input that would record the class twice, so ClassScribe keeps its own microphone. Pick a real microphone in the class page. |
+| `Could not start capturing the microphone yet; trying again every 10 seconds`, `Cannot capture the microphone right now; trying again every 10 seconds` | Windows is still setting up the microphone, or another program holds it exclusively. ClassScribe tries again by itself. |
+| `The microphone "..." could not be opened without Windows' sound processing (0x...); the next attempt opens it with Windows' sound processing` | RAW was asked for, but the stream would not open with it; within 10 seconds ClassScribe opens the microphone with Windows' sound processing. Nothing to do; `Recording:MicrophoneProcessing` set to `Default` skips the try. |
+| `The microphone cannot be recorded: ... uses an audio format this app cannot read (...); the class is still being recorded`, or `The class cannot be recorded: ...; the microphone is still being recorded` | That track's device sends sound in a form ClassScribe cannot read, so it is left out of this run; the other track is recorded. Choose another device or microphone before the next class. When neither can be recorded the run fails with the second line, without `; ... is still being recorded`. |
+| `Your microphone was not recorded in this run: no microphone file was written. The class was recorded and goes on to the transcript` (or `... and is kept`) | The microphone's track was left out, or never opened. The class is transcribed on its own, with exit code 0. |
+| `No audio was captured from the class. Was anything playing? Your microphone's audio is kept in ... To transcribe it on its own, run: ...` | The class track holds nothing, but the microphone's does. The command on the line transcribes the microphone's files alone. |
+| `Lenovo Vantage's microphone noise cancelling is on (mode 1, probably "Multiple Voices")`, `... has switched on ...`, `... has changed to mode ...` | Set Vantage > Device Settings > Sound > Input to Off: it can cut out a lecturer across the room. `Lenovo Vantage's microphone noise cancelling is now off.` follows within 30 seconds when you do. |
+| `Windows lowers other sounds by 80% while a microphone is open ...` (or `by 50%`, or `Windows mutes other sounds ...`) | Set Sound > More sound settings > Communications to Do nothing, or the class gets quieter whenever a microphone is open. |
+| `Lenovo Vantage's microphone mode could not be read from the registry, so it is not checked: ...`, `Windows' ducking setting could not be read ...` | The registry refused. That setting is not checked this run, and nothing else changes. |
+| `The microphone "..." is Bluetooth: using it switches the earbuds to call quality, for the class too. The laptop's microphone array avoids that.` | You named a Bluetooth microphone, or the class app uses one. Name the laptop's own array, or accept the call quality. |
+| `The class plays on "Speakers (...)", so the microphone records it a second time (an echo). Use headphones.` (`echo: use headphones` in the title) | Plug in headphones, or the transcript gets the class twice. |
+| `The microphone starts switched off (V switches it on)` | `Recording:ClassAppMute` is `Unknown` or `Invisible`: your voice is recorded after you press V, and only while the class app holds the microphone. |
+| `chrome has not opened the microphone for 5 minutes; your voice is not recorded until it does. Join the class, or check that the page may use the microphone` (`MIC WAITING`) | Join the class, or allow the microphone in the page. The class is recorded meanwhile. |
+| `chrome uses "OBSBOT ..."; ClassScribe records "Microphone Array ..."` in the status line | The class app and ClassScribe use different microphones for a moment; ClassScribe moves to the app's at its next look. |
+| `Cannot read chrome's microphone session: ...; your voice is not recorded until the sessions can be read again` (`CANNOT READ THE MICROPHONE SESSIONS` in red after 10 seconds) | Windows' audio service is restarting, or refused the look. ClassScribe keeps looking four times a second, and the class is recorded all the while. |
+| `The microphone watch stopped: ...; your voice is not recorded for the rest of this run` | The watch failed in a way it did not expect. The class is still recorded; start the next run as usual. |
+| `Could not look at the class app's microphone sessions now; the looks so far decide` | A last look failed, at V or at the stop; the watch's own line says why. |
+| `chrome let go of the microphone at 19:12:03 and took it again at 19:12:40. If that was you muting and unmuting in the class page ...` | If those were your clicks, your mute is visible to Windows: set `Recording:ClassAppMute` to `Visible`. If it was a rejoin or a device change, leave it. |
+| `Only silence from the microphone "..." for 2 minutes although chrome is listening and Windows is not muting it. Check Settings > Privacy & security > Microphone (Let desktop apps access your microphone), and the microphone itself` | The app listens and nothing is muted, yet the microphone hands over exact zeros: Windows' privacy switch, or the microphone itself. |
+| `Only silence from the microphone "..." for 2 minutes: it is muted in Windows (the microphone key, or Sound settings > Input)`, or `... Check that it is not muted in Windows ... and that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)` | Unmute it with the microphone key, or check the privacy switch. In person this is `ONLY SILENCE FROM THE MICROPHONE` in red, since the whole recording is then silence. |
+| `No sound from the microphone "..." for 60 seconds. Check that it is not muted in Windows (the microphone key) and that Windows lets desktop apps use it ...` | In person, a minute without anything audible. Check the microphone, its mute and the privacy switch. |
+| `No audio has arrived from "Microphone Array ..." for 5 seconds although it should; ... Reopening it` (`(no audio from the microphone)` in the title) | The microphone's capture stopped handing over audio and was reopened in a new file. If it keeps coming back, try another microphone. |
+| `A packet arrived ... s ahead of the track, further than expected, and no time ClassScribe did not run was found; it is written as it comes` | Not expected; the next second's padding catches the track up. |
+| `Could not keep the microphone on the clock this second; trying again at the next` | The computer's clocks could not be read for a moment; the next second pads the track. |
+| `Writing ... s of silence before a packet that arrived that far ahead of the track; no time ClassScribe did not run was found` | After the 30-second pause of a disk failure, the gap is written as silence at its place. Nothing to do. |
+| `There is no microphone in this recording` | V was pressed in a recording of the class alone. |
+| My voice is in the recording although I was muted in the class page | The app does not let go of the microphone when you mute, and `Recording:ClassAppMute` says `Visible`: set it to `Invisible`, and mute with the microphone key, or press V. |
+
+### The microphone check
+
+| What you see | What to do |
+| --- | --- |
+| `The microphone check cannot create its log in ...` (exit code 1) | The folder cannot be made or written. Give another with `--log-folder`, or free some space. |
+| `ERROR    Windows' list of microphones could not be read: ...`, `ERROR    Windows' microphone usage record could not be read: ...` | Windows' audio service is restarting, or the registry refused. The check keeps trying, and a `NOTE` says when it reads again. |
+| `NOTE     no check for ... s: the laptop slept or the check was held up` | A change that came and went in that time is not in the log. |
+| `SELF     ClassScribe's own process has a session on this microphone.` | Should never appear; it would mean ClassScribe itself opened the microphone during the check. |
 
 ### The background recorder and its windows
 
@@ -891,7 +1291,11 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `... is being recorded now; transcribe it once it has stopped` | That recording is still being recorded, in this window or another. Stop it first, then transcribe it. |
 | `Also in this folder, without a transcript: ...` | The folder holds other recordings without a transcript, such as the first half of a class split by a crash. The command after each transcribes it, or lays out its kept answer for free. |
 | `There is no ClassScribe recording in ...` | The folder holds no `.wav` file named as ClassScribe names its recordings. Give the recording's own folder, or the file itself. |
-| `... holds ... of audio, and ElevenLabs takes at most 10 hours per file` | Nothing was prepared or sent. Copy some of its `.wav` files into a folder of their own and transcribe that folder, then the rest the same way. |
+| `... holds ... of audio, and ElevenLabs takes at most 10 hours per file` | Nothing was prepared or sent. Copy some of its `.wav` files into a folder of their own and transcribe that folder, then the rest the same way. With your microphone, copy the matching `.mic.wav` files beside them under the same names, or only the class is sent; the length counted is the class track's alone, so a five-hour class with its microphone track is sent as it is. |
+| `Preparing the recording for upload (2 segment(s) of the class and 1 of your microphone)`, then `Prepared 01:58:10 of audio for upload: the class and your microphone mixed into one track` | Normal for a recording with your microphone: the two are mixed into one track. |
+| `Your microphone stayed silent; only the class is sent.` | The microphone's track never rose above a very low level: you never unmuted, the class app never listened, or the microphone heard nothing. The summary line at the end of the recording says which. The upload is then the class's alone. |
+| `Only your microphone was recorded (N segment(s)); it is sent on its own` | The recording has no class track (the class could not be recorded, or its files were removed), so the microphone's files are sent alone. |
+| `Skipping ...: it is not a readable WAV file` | A damaged part of either track is left out and the rest is sent; with the microphone heard, a damaged microphone part is reported twice. |
 | `If the connection breaks like this on every try` | ElevenLabs may be turning the upload down before it has read all of it. Check the API key and the account's credits before uploading again. |
 | The upload fails in another way | The audio is safe. Transcribe the recording again with menu choice 3, or, after `record` or menu choice 2, paste the command at the end of the `The audio is safe in ...` line into PowerShell. |
 | `ElevenLabs' answer is kept in ...`, `The transcript could not be made, but ElevenLabs' answer is saved in ...` | ElevenLabs answered, and charged, but no transcript was made from it. Open that file: its `"text"` is the transcript's text. Transcribing again is charged again. |
@@ -931,32 +1335,44 @@ src/ClassScribe/
     Program.cs, AppHost.cs, App.cs    start-up: the settings read and checked, then a command or the menu
     Settings/         the settings, the API key from the environment, and the file read again and
                       checked before each choice and command
-    Audio/            capture, WAV writing, resampling
-    Audio/Windows/    WASAPI loopback through NAudio, and the once-a-second device check
+    Audio/            capture, the recording as one or two tracks on one clock, WAV writing, the
+                      upload copy (the two tracks mixed)
+    Audio/Microphone/ choosing the microphone, the advice about it, the watch on the class app's
+                      microphone use and the gate that follows it, the microphone check's lines
+    Audio/Timeline/   the recording clock and where each packet goes on a track
+    Audio/Windows/    WASAPI loopback through NAudio, the once-a-second device check, the
+                      microphone listing and capture, and the reader of the apps' microphone sessions
     Desktop/          keeping the laptop awake, the computer's clocks, the window's title, taskbar and
-                      flash, starting processes, the job check and Windows' end of the session
-                      (Windows' own calls in Desktop/Windows/)
+                      flash, starting processes, the job check, Windows' end of the session, the
+                      registry, process names and Windows' microphone usage record (Windows' own
+                      calls in Desktop/Windows/)
     Recorder/         the background recorder: its host, run files, lock, logs, the watch for times
                       when ClassScribe did not run, and the window it brings back by itself
     Link/             the named pipe between the recorder and the windows that show its run
     Transcription/    ElevenLabs client (Refit), glossary, transcript layout, the upload's time limit
-    Storage/          recording folders, file names, numbered transcript copies and marks
-    Commands/         the menu, the command line (record, transcribe, rebuild, list, devices), the
-                      report at the start, the view of a recording, and the settings check before each
+    Storage/          recording folders, file names, numbered transcript copies, marks, and the
+                      microphone check's log
+    Commands/         the menu, the microphone menu, the command line (record, transcribe, rebuild,
+                      list, devices, mic-check), the report at the start, the view of a recording,
+                      the microphone check, and the settings check before each
 tests/ClassScribe.Tests/    NUnit and Moq
 ```
 
 In the tests, the transcription service, the upload preparation, the command runner and the desktop
-are Moq mocks. The audio device, the keyboard, the clock, the power requests and the HTTP transport
-are small hand-written stand-ins (`TestDoubles.cs` and the `TestDoubles.*.cs` beside it), because the
-tests drive those step by step: deliver this audio, press P, fail now, switch device, sleep. A few
-tests (the `WindowsAudio` and `WindowsPower` categories) read Windows' real device list, level
-meters, power source and clocks, and make one power request that is let go at once; nothing is
-played or recorded, and the computer's power settings are never changed. The `WindowsProcess`
-tests reach Windows for the background recorder: they start at most a hidden `cmd.exe` that ends
-at once, open named pipes and stop events named after fresh run ids, make hidden windows of the
-test's own, and read the test process's own job; the end-to-end tests run the window and the
-recorder in one process over temporary folders, with a simulated device and a stub standing in for
-ElevenLabs. No test ever starts ClassScribe itself, records, opens a device, plays a sound or
-sends anything to ElevenLabs. A test run that hangs is stopped after 10 minutes and reported as
-failed (`ClassScribe.Tests.runsettings`).
+are Moq mocks. The audio device, the microphones, the apps' microphone sessions, the keyboard, the
+clock, the power requests and the HTTP transport are small hand-written stand-ins (`TestDoubles.cs`
+and the `TestDoubles.*.cs` beside it), because the tests drive those step by step: deliver this
+audio, press P, fail now, switch device, sleep, let chrome go of the microphone. A few tests (the
+`WindowsAudio`, `WindowsPower` and `WindowsRegistry` categories) read Windows' real device list,
+microphone list, level meters, the apps' microphone sessions, the microphone usage record, two
+registry values, the power source and the clocks, and make one power request that is let go at
+once; nothing is played or recorded, no microphone is opened, and the computer's settings are never
+changed. The `WindowsProcess` tests reach Windows for the background recorder: they start at most a
+hidden `cmd.exe` that ends at once, open named pipes and stop events named after fresh run ids,
+make hidden windows of the test's own, and read the test process's own job; the end-to-end tests
+run the window and the recorder in one process over temporary folders, with simulated devices and
+microphones and a stub standing in for ElevenLabs, in person, with the class and the microphone,
+and for the microphone check. A simulated class of twelve minutes with the microphone runs with the
+suite, and one of four hours on request. No test ever starts ClassScribe itself, records, opens a
+device or a microphone, plays a sound or sends anything to ElevenLabs. A test run that hangs is
+stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).

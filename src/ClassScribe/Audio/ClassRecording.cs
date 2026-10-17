@@ -10,7 +10,8 @@ namespace ClassScribe.Audio;
 /// A recording of the class alone, as the record command and the recording loop drive it: one session, which writes the
 /// class's audio as it arrives and skips the time when nothing plays, as ClassScribe has always recorded. Its position is
 /// the length the recording had when this run started it, when continuing one, plus what this run has written; a mark
-/// set now gets it. It owns its session.
+/// set now gets it. A long stretch skipped is noted (<see cref="NoteWorthy"/>), so the transcript gets a heading for it.
+/// It owns its session.
 /// </summary>
 public sealed class ClassRecording(RecordingSession session, ILogger<ClassRecording> logger) : IRecording
 {
@@ -29,14 +30,12 @@ public sealed class ClassRecording(RecordingSession session, ILogger<ClassRecord
     }
 
     /// <summary>
-    /// Never raised yet: a recording of the class alone has nothing of its own to note. A long stretch with nothing playing,
-    /// left out of the recording, is to be noted from a later build on.
+    /// Raised, from the session's capture thread, when a long stretch with nothing playing was left out of the recording,
+    /// at the recording's position: the offset this run started at plus where the session left it out. How long a stretch
+    /// must be is the session's track spec's (Transcript:ShowGapsLongerThanSeconds, as the factory passes it); zero notes
+    /// nothing.
     /// </summary>
-    public event EventHandler<TimelineNote>? NoteWorthy
-    {
-        add { }
-        remove { }
-    }
+    public event EventHandler<TimelineNote>? NoteWorthy;
 
     /// <summary>
     /// Starts recording into <paramref name="files"/>, its next free part when the recording has parts already, at
@@ -52,6 +51,7 @@ public sealed class ClassRecording(RecordingSession session, ILogger<ClassRecord
             _offset = offset;
         }
 
+        session.NoteWorthy += OnNoteWorthy;
         session.Start(files);
     }
 
@@ -88,9 +88,9 @@ public sealed class ClassRecording(RecordingSession session, ILogger<ClassRecord
             RecordedLevel: status.RecordedLevel,
             SoundWhilePaused: status.SoundWhilePaused,
             Capturing: status.WaitingFor is null,
-            Off: false,
+            Off: status.Off,
             WriteFailing: status.WriteFailing,
-            OnlyZeros: false);
+            OnlyZeros: status.OnlyZeros);
         return new RecordingSnapshot(offset + status.Captured, status.Paused, main, Microphone: null);
     }
 
@@ -113,7 +113,19 @@ public sealed class ClassRecording(RecordingSession session, ILogger<ClassRecord
     public void Flush() => session.Flush();
 
     /// <summary>Stops the recording if it still runs, and lets go of its session.</summary>
-    public void Dispose() => session.Dispose();
+    public void Dispose()
+    {
+        session.NoteWorthy -= OnNoteWorthy;
+        session.Dispose();
+    }
+
+    /// <summary>Hands a note of the session on at the recording's position: the offset this run started at plus the session's.</summary>
+    private void OnNoteWorthy(object? sender, TimelineNote note)
+    {
+        TimeSpan offset;
+        lock (_gate) offset = _offset;
+        NoteWorthy?.Invoke(this, note with { Position = offset + note.Position });
+    }
 }
 
 /// <summary>

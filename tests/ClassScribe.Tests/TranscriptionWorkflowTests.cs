@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Net;
 using System.Text;
 using ClassScribe.Audio;
@@ -24,15 +25,26 @@ public class TranscriptionWorkflowTests
     /// </summary>
     private const string Answer = """{"language_code":"en","language_probability":0.99,"text":"Hello world. Goodbye.","words":[{"text":"Hello","start":0.0,"end":0.4,"type":"word","speaker_id":"speaker_0"},{"text":" ","start":0.4,"end":0.5,"type":"spacing","speaker_id":"speaker_0"},{"text":"world.","start":0.5,"end":1.0,"type":"word","speaker_id":"speaker_0"},{"text":" ","start":1.0,"end":4.0,"type":"spacing","speaker_id":"speaker_0"},{"text":"Goodbye.","start":4.0,"end":4.6,"type":"word","speaker_id":"speaker_0"}],"transcription_id":"id-answer"}""";
 
+    /// <summary>The line the preparer logs when it leaves a microphone track out of the upload because it never rose above the sound threshold.</summary>
+    private const string StayedSilent = "Your microphone stayed silent; only the class is sent.";
+
+    /// <summary>Any request to mix the tracks of a recording into an upload file, as a recording with a microphone track is prepared.</summary>
+    private static readonly Expression<Action<IAudioPreparer>> AnyTrackPreparation =
+        preparer => preparer.Prepare(It.IsAny<UploadTracks>(), It.IsAny<string>(), It.IsAny<CancellationToken>());
+
     private TempFolder _folder = null!;
     private string _recordings = null!;
     private RecordingFiles _files = null!;
     private Mock<IAudioPreparer> _preparer = null!;
     private Mock<ITranscriptionClient> _client = null!;
 
+    /// <summary>What the mocked preparer was given to mix, one entry per request with both tracks and the token, in order.</summary>
+    private List<(UploadTracks Tracks, string OutputPath, CancellationToken Token)> _trackPreparations = null!;
+
     /// <summary>
     /// Creates a temporary folder, a recordings folder with one recording's folder inside it, the recording's first
-    /// segment on disk, and the mocks.
+    /// segment on disk, and the mocks. The mocked preparer answers a request to mix the tracks as it answers one to
+    /// prepare files: it writes the placeholder upload file, and keeps what it was given in <see cref="_trackPreparations"/>.
     /// </summary>
     [SetUp]
     public void SetUp()
@@ -43,6 +55,14 @@ public class TranscriptionWorkflowTests
         Directory.CreateDirectory(_files.Folder);
         WriteSegment(1);
         _preparer = Mocks.AudioPreparer();
+        _trackPreparations = [];
+        _preparer.Setup(AnyTrackPreparation)
+            .Callback((UploadTracks tracks, string outputPath, CancellationToken token) =>
+            {
+                _trackPreparations.Add((tracks, outputPath, token));
+                using var upload = new FileStream(outputPath, FileMode.CreateNew, FileAccess.Write);
+                upload.Write([1, 2, 3]);
+            });
         _client = Mocks.TranscriptionClient();
     }
 
@@ -100,20 +120,35 @@ public class TranscriptionWorkflowTests
     /// <summary>The bytes of <paramref name="text"/> in UTF-8, without the byte order mark, which <see cref="Encoding.GetBytes(string)"/> never adds.</summary>
     private static byte[] Utf8(string text) => Encoding.UTF8.GetBytes(text);
 
-    /// <summary>Writes segment <paramref name="number"/> of the recording: a fifth of a second of tone, as the recorder writes it.</summary>
+    /// <summary>Writes segment <paramref name="number"/> of the recording's main track: a fifth of a second of tone, as the recorder writes it.</summary>
     private void WriteSegment(int number) =>
         TestAudio.WriteWav(_files.Segment(number), 16000, TestAudio.Tone(16000, seconds: 0.2, frequency: 440, amplitude: 0.5));
 
+    /// <summary>Writes segment <paramref name="number"/> of the microphone's track as the samples given, at 16 kHz, as the recorder writes it.</summary>
+    private void WriteMicrophoneSegment(int number, short[] samples) =>
+        TestAudio.WriteWav(_files.Segment(number, Track.Microphone), 16000, samples);
+
     /// <summary>
-    /// Writes segment <paramref name="number"/> of the recording as <paramref name="length"/> of audio, with the recorder's
-    /// own writer, at ten samples a second, so that hours of it take less than a megabyte.
+    /// Writes segment <paramref name="number"/> of <paramref name="track"/> as <paramref name="length"/> of audio, with the
+    /// recorder's own writer, at ten samples a second, so that hours of it take less than a megabyte.
     /// </summary>
-    private void WriteLongSegment(int number, TimeSpan length)
+    private void WriteLongSegment(int number, TimeSpan length, Track track = Track.Main)
     {
-        File.Delete(_files.Segment(number));
-        using var writer = new WavSegmentWriter(_files.Segment(number), 10);
+        File.Delete(_files.Segment(number, track));
+        using var writer = new WavSegmentWriter(_files.Segment(number, track), 10);
         writer.Write(new byte[(int)Math.Round(length.TotalSeconds * 10) * 2]);
     }
+
+    /// <summary>The samples of the file the mocked service was last given to transcribe (see <see cref="KeepTheUploadedSamples"/>).</summary>
+    private short[] _uploaded = [];
+
+    /// <summary>Has the mocked service keep the samples of the file it is given to transcribe in <see cref="_uploaded"/>, and answer as usual.</summary>
+    private void KeepTheUploadedSamples() =>
+        _client.Setup(Calls.AnyTranscription).ReturnsAsync((string path, IReadOnlyList<string> _, CancellationToken _) =>
+        {
+            _uploaded = TestAudio.ReadWav(path).Samples;
+            return Mocks.Transcript;
+        });
 
     /// <summary>Has the mocked service answer with <see cref="Answer"/>, read as the client reads it.</summary>
     private void AnswerWithTimedWords() =>
@@ -156,16 +191,136 @@ public class TranscriptionWorkflowTests
         _preparer.Verify(p => p.Prepare(new[] { _files.Segment(1), _files.Segment(2), _files.Segment(3) }, _files.Upload, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    /// <summary>The overload that is given the segments, which the record command still uses, prepares those it is given.</summary>
+    /// <summary>
+    /// A recording made with the class and your microphone has the segments of both tracks on disk, and both are handed
+    /// to the preparer together to be mixed, each track's segments in recording order and neither taking the other's
+    /// files, with the run's token; the mixed file is what is sent, and it is removed afterwards as any upload copy is.
+    /// </summary>
     [Test]
-    public async Task The_overload_given_the_segments_prepares_those_it_is_given()
+    public async Task Both_tracks_on_disk_are_handed_to_the_preparer_together_to_be_mixed()
+    {
+        using var cancellation = new CancellationTokenSource();
+        WriteSegment(3);
+        WriteSegment(2);
+        WriteMicrophoneSegment(2, [500, 500]);
+        WriteMicrophoneSegment(1, [500, 500]);
+
+        await CreateWorkflow().TranscribeRecordingAsync(_files, cancellation.Token);
+
+        Assert.That(_trackPreparations, Has.Count.EqualTo(1));
+        var (tracks, outputPath, token) = _trackPreparations[0];
+        Assert.That(tracks.Main, Is.EqualTo(new[] { _files.Segment(1), _files.Segment(2), _files.Segment(3) }));
+        Assert.That(tracks.Microphone, Is.EqualTo(new[] { _files.Segment(1, Track.Microphone), _files.Segment(2, Track.Microphone) }));
+        Assert.That(outputPath, Is.EqualTo(_files.Upload));
+        Assert.That(token, Is.EqualTo(cancellation.Token), "Ctrl+C reaches the mix");
+        _preparer.Verify(Calls.AnyPreparation, Times.Never, "the main track is not prepared on its own as well");
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
+        Assert.That(File.Exists(_files.Upload), Is.False, "the upload copy is removed after success");
+    }
+
+    /// <summary>
+    /// A recording without microphone files, as in person, where your microphone is the main track under the recording's
+    /// plain names, or with the class alone, is prepared from its main track alone, as before: there is nothing to mix.
+    /// </summary>
+    [Test]
+    public async Task Without_microphone_files_the_main_track_is_prepared_alone_as_in_person_or_with_the_class_alone()
     {
         WriteSegment(2);
-        string[] given = [_files.Segment(1)];
 
-        await CreateWorkflow().TranscribeRecordingAsync(_files, given, CancellationToken.None);
+        await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
 
-        _preparer.Verify(p => p.Prepare(given, _files.Upload, It.IsAny<CancellationToken>()), Times.Once);
+        _preparer.Verify(p => p.Prepare(new[] { _files.Segment(1), _files.Segment(2) }, _files.Upload, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.That(_trackPreparations, Is.Empty);
+    }
+
+    /// <summary>
+    /// Preparing a recording with a microphone track is announced with the segments of both tracks, so the wait for the
+    /// mix of a long class is not taken for a hang.
+    /// </summary>
+    [Test]
+    public async Task Preparing_a_recording_with_a_microphone_track_is_announced_with_both_tracks()
+    {
+        var log = new RecordingLogger<TranscriptionWorkflow>();
+        WriteSegment(2);
+        WriteMicrophoneSegment(1, [500, 500]);
+
+        await CreateWorkflow(logger: log).TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        Assert.That(log.Messages, Has.Some.EqualTo("Preparing the recording for upload (2 segment(s) of the class and 1 of your microphone); this takes a moment for a long class"));
+    }
+
+    /// <summary>
+    /// With the real preparer, the class and your microphone are mixed into the one file that is uploaded: each sample
+    /// of the upload is the sum of the two tracks' samples at that moment.
+    /// </summary>
+    [Test]
+    public async Task The_class_and_the_microphone_are_mixed_into_the_upload()
+    {
+        File.Delete(_files.Segment(1));
+        TestAudio.WriteWav(_files.Segment(1), 16000, [1000, 1000, 1000]);
+        WriteMicrophoneSegment(1, [500, 500, 500]);
+        KeepTheUploadedSamples();
+
+        await CreateWorkflow(preparer: RealPreparer()).TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        Assert.That(_uploaded, Is.EqualTo(new short[] { 1500, 1500, 1500 }));
+    }
+
+    /// <summary>
+    /// A microphone track that never rose above the sound threshold, as when the microphone stayed off or muted all
+    /// class, is left out: the upload is the class's alone, and the preparer's log says so, in plain words, at the level
+    /// of the other lines of a normal run.
+    /// </summary>
+    [Test]
+    public async Task A_microphone_that_stayed_silent_is_left_out_of_the_upload_and_the_log_says_so()
+    {
+        var preparerLog = new RecordingLogger<AudioPreparer>();
+        File.Delete(_files.Segment(1));
+        TestAudio.WriteWav(_files.Segment(1), 16000, [1000, 1000, 1000]);
+        WriteMicrophoneSegment(1, [0, 50, -50]);
+        KeepTheUploadedSamples();
+
+        await CreateWorkflow(preparer: new AudioPreparer(preparerLog)).TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        Assert.That(_uploaded, Is.EqualTo(new short[] { 1000, 1000, 1000 }));
+        Assert.That(preparerLog.Entries, Has.Some.EqualTo((LogLevel.Information, StayedSilent)));
+        Assert.That(File.Exists(_files.Segment(1, Track.Microphone)), Is.True, "the microphone's files stay on disk whatever happens");
+    }
+
+    /// <summary>
+    /// A recording with only your microphone's files, which a class whose device could not be read leaves behind, is sent
+    /// on its own, as in person: the .mic.wav files are prepared as the one track, nothing is mixed, the transcript goes
+    /// under the recording's name, and the log says so.
+    /// </summary>
+    [Test]
+    public async Task A_recording_with_only_the_microphones_files_is_sent_on_its_own()
+    {
+        var log = new RecordingLogger<TranscriptionWorkflow>();
+        File.Delete(_files.Segment(1));
+        WriteMicrophoneSegment(2, [500, 500]);
+        WriteMicrophoneSegment(1, [500, 500]);
+
+        var files = await CreateWorkflow(logger: log).TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        _preparer.Verify(p => p.Prepare(new[] { _files.Segment(1, Track.Microphone), _files.Segment(2, Track.Microphone) }, _files.Upload, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.That(_trackPreparations, Is.Empty, "nothing to mix");
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
+        Assert.That(files.TranscriptPath, Is.EqualTo(_files.Transcript()));
+        Assert.That(log.Messages, Has.Some.EqualTo("Only your microphone was recorded (2 segment(s)); it is sent on its own"));
+    }
+
+    /// <summary>A recording of the microphone's files alone is measured by them, and refused when too long, with advice that names the .mic.wav files, since a folder is read by its .wav files.</summary>
+    [Test]
+    public void A_recording_with_only_the_microphones_files_is_measured_by_them()
+    {
+        File.Delete(_files.Segment(1));
+        WriteLongSegment(1, new TimeSpan(9, 30, 1), Track.Microphone);
+        var workflow = CreateWorkflow();
+
+        var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
+
+        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("copy some of its .mic.wav files into a folder of their own"));
+        _preparer.Verify(Calls.AnyPreparation, Times.Never);
     }
 
     /// <summary>A recording with no audio on disk is refused, by its name, before anything is prepared or sent.</summary>
@@ -196,21 +351,65 @@ public class TranscriptionWorkflowTests
         var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("at most 10 hours per file").And.Contain("Nothing was prepared or sent"));
+        Assert.That(error.Message, Does.Contain("copy some of its .wav files into a folder of their own and transcribe that folder").And.Not.Contain(".mic.wav"),
+            "a recording without a microphone track gets the plain advice");
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
         _client.Verify(Calls.AnyTranscription, Times.Never);
         Assert.That(File.Exists(_files.Upload), Is.False);
     }
 
-    /// <summary>The overload given the segments refuses a recording that is too long in the same way.</summary>
+    /// <summary>
+    /// The length check reads the main track alone: your microphone's track runs on the same clock as the class, so it
+    /// is as long, and adding the two would refuse a class of five hours. Here each track holds five hours, and the
+    /// recording is mixed and sent.
+    /// </summary>
     [Test]
-    public void The_overload_given_the_segments_refuses_a_recording_that_is_too_long_too()
+    public async Task The_length_check_reads_the_main_track_alone_and_never_adds_the_microphones()
+    {
+        WriteLongSegment(1, TimeSpan.FromHours(5));
+        WriteLongSegment(1, TimeSpan.FromHours(5), Track.Microphone);
+
+        await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        Assert.That(_trackPreparations, Has.Count.EqualTo(1));
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
+    }
+
+    /// <summary>A recording with a microphone track whose main track is too long is refused the same way, before either track is read for the mix.</summary>
+    [Test]
+    public void A_recording_with_a_microphone_track_that_is_too_long_is_refused_before_anything_is_prepared()
     {
         WriteLongSegment(1, new TimeSpan(9, 30, 1));
+        WriteLongSegment(1, TimeSpan.FromSeconds(1), Track.Microphone);
         var workflow = CreateWorkflow();
 
-        Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, [_files.Segment(1)], CancellationToken.None));
+        Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
+        Assert.That(_trackPreparations, Is.Empty);
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+    }
+
+    /// <summary>
+    /// The advice in the refusal of a recording with a microphone track names the .mic.wav files: a folder holding only
+    /// the copied .wav files looks like a class-only recording, so following the plain advice would drop your microphone
+    /// from every piece without a word. The message says to copy the matching .mic.wav files beside them under the same
+    /// names, and that without them only the class is sent.
+    /// </summary>
+    [Test]
+    public void The_refusal_of_a_recording_with_a_microphone_track_says_to_copy_the_mic_wav_files_with_the_pieces()
+    {
+        WriteLongSegment(1, new TimeSpan(9, 30, 1));
+        WriteLongSegment(1, TimeSpan.FromSeconds(1), Track.Microphone);
+        var workflow = CreateWorkflow();
+
+        var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
+
+        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("Nothing was prepared or sent"));
+        Assert.That(error.Message, Does.Contain("copy some of its .wav files into a folder of their own")
+            .And.Contain("the matching .mic.wav files")
+            .And.Contain("under the same names")
+            .And.Contain("only the class is sent"));
     }
 
     /// <summary>A recording of exactly nine and a half hours is still sent.</summary>
@@ -327,7 +526,7 @@ public class TranscriptionWorkflowTests
         var video = _folder.File("class.mp4");
         File.WriteAllBytes(video, [1, 2, 3]);
 
-        var files = await CreateWorkflow().TranscribeFileAsync(video, CancellationToken.None);
+        var files = await CreateWorkflow().TranscribeFileAsync(video, outputRoot: null, CancellationToken.None);
 
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
         _client.Verify(Calls.TranscriptionOf(video), Times.Once);
@@ -345,8 +544,8 @@ public class TranscriptionWorkflowTests
         File.WriteAllBytes(video, [1, 2, 3]);
         var workflow = CreateWorkflow();
 
-        var first = await workflow.TranscribeFileAsync(video, CancellationToken.None);
-        var second = await workflow.TranscribeFileAsync(video, CancellationToken.None);
+        var first = await workflow.TranscribeFileAsync(video, outputRoot: null, CancellationToken.None);
+        var second = await workflow.TranscribeFileAsync(video, outputRoot: null, CancellationToken.None);
 
         Assert.That(second.TranscriptPath, Is.Not.EqualTo(first.TranscriptPath));
         Assert.That(File.Exists(first.TranscriptPath) && File.Exists(second.TranscriptPath), Is.True);
@@ -360,7 +559,7 @@ public class TranscriptionWorkflowTests
         var upload = Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.upload.wav");
         File.WriteAllBytes(wav, [1, 2, 3]);
 
-        await CreateWorkflow().TranscribeFileAsync(wav, CancellationToken.None);
+        await CreateWorkflow().TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None);
 
         _preparer.Verify(p => p.Prepare(new[] { wav }, upload, It.IsAny<CancellationToken>()), Times.Once);
         _client.Verify(Calls.TranscriptionOf(upload), Times.Once);
@@ -376,7 +575,7 @@ public class TranscriptionWorkflowTests
         var wav = _folder.File("class.wav");
         File.WriteAllBytes(wav, [1, 2, 3]);
 
-        await CreateWorkflow(logger: log).TranscribeFileAsync(wav, CancellationToken.None);
+        await CreateWorkflow(logger: log).TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None);
 
         Assert.That(log.Messages, Has.Some.StartsWith("Preparing class.wav for upload"));
     }
@@ -389,7 +588,7 @@ public class TranscriptionWorkflowTests
         File.WriteAllBytes(wav, [1, 2, 3]);
         _preparer.Setup(Calls.AnyPreparation).Throws(new NotSupportedException("six channels"));
 
-        await CreateWorkflow().TranscribeFileAsync(wav, CancellationToken.None);
+        await CreateWorkflow().TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None);
 
         _client.Verify(Calls.TranscriptionOf(wav), Times.Once);
     }
@@ -408,7 +607,7 @@ public class TranscriptionWorkflowTests
             return Mocks.Transcript;
         });
 
-        await CreateWorkflow(preparer: RealPreparer()).TranscribeFileAsync(wav, CancellationToken.None);
+        await CreateWorkflow(preparer: RealPreparer()).TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None);
 
         Assert.That(uploaded, Is.EqualTo(new short[] { 2000, -2000 }));
     }
@@ -422,7 +621,7 @@ public class TranscriptionWorkflowTests
         _preparer.Setup(Calls.AnyPreparation).Throws(new NoAudioException("Nothing in it."));
         var workflow = CreateWorkflow();
 
-        Assert.ThrowsAsync<NoAudioException>(async () => await workflow.TranscribeFileAsync(wav, CancellationToken.None));
+        Assert.ThrowsAsync<NoAudioException>(async () => await workflow.TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None));
         _client.Verify(Calls.AnyTranscription, Times.Never);
     }
 
@@ -509,7 +708,7 @@ public class TranscriptionWorkflowTests
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
         var workflow = CreateWorkflow();
 
-        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeFileAsync(wav, CancellationToken.None));
+        Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None));
 
         _client.Verify(Calls.TranscriptionOf(upload), Times.Once);
         Assert.That(File.Exists(upload), Is.False);
@@ -546,7 +745,7 @@ public class TranscriptionWorkflowTests
         var workflow = CreateWorkflow();
 
         await workflow.TranscribeRecordingAsync(_files, cancellation.Token);
-        await workflow.TranscribeFileAsync(wav, cancellation.Token);
+        await workflow.TranscribeFileAsync(wav, outputRoot: null, cancellation.Token);
 
         _preparer.Verify(p => p.Prepare(It.IsAny<IReadOnlyList<string>>(), _files.Upload, cancellation.Token), Times.Once);
         _preparer.Verify(p => p.Prepare(new[] { wav }, It.IsAny<string>(), cancellation.Token), Times.Once);
@@ -651,7 +850,7 @@ public class TranscriptionWorkflowTests
 
         try
         {
-            var files = await CreateWorkflow(logger: log).TranscribeFileAsync(wav, CancellationToken.None);
+            var files = await CreateWorkflow(logger: log).TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None);
 
             Assert.That(File.Exists(files.TranscriptPath), Is.True);
             Assert.That(holder?.Name, Is.EqualTo(Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.upload.wav")), "the upload copy was sent");
@@ -909,7 +1108,7 @@ public class TranscriptionWorkflowTests
         File.WriteAllBytes(audio, [1, 2, 3]);
         var folder = Path.Combine(_recordings, savedAs);
 
-        var files = await CreateWorkflow().TranscribeFileAsync(audio, CancellationToken.None);
+        var files = await CreateWorkflow().TranscribeFileAsync(audio, outputRoot: null, CancellationToken.None);
 
         _client.Verify(Calls.AnyTranscription, Times.Once);
         _client.Verify(Calls.TranscriptionOf(audio), Times.Once);
@@ -958,7 +1157,7 @@ public class TranscriptionWorkflowTests
         File.WriteAllBytes(video, [1, 2, 3]);
         AnswerWithTimedWords();
         var workflow = CreateWorkflow();
-        var transcribed = await workflow.TranscribeFileAsync(video, CancellationToken.None);
+        var transcribed = await workflow.TranscribeFileAsync(video, outputRoot: null, CancellationToken.None);
         var files = new RecordingFiles(Path.GetDirectoryName(transcribed.TranscriptPath)!, Path.GetFileNameWithoutExtension(transcribed.TranscriptPath));
 
         var rebuilt = await workflow.RebuildAsync(files, answerPath: null, CancellationToken.None);
@@ -1004,6 +1203,22 @@ public class TranscriptionWorkflowTests
         if (left != "transcript") File.Delete(_files.Transcript());
 
         var rebuilt = await workflow.RebuildAsync(_files, answerPath: null, CancellationToken.None);
+
+        Assert.That(File.ReadAllText(rebuilt), Does.StartWith($"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC.{Blank}"));
+    }
+
+    /// <summary>
+    /// Your microphone's track counts as the recording's audio too: with the main track, the marks and every transcript
+    /// gone, a rebuild still keeps the recording time while a .mic.wav file is left beside the answer.
+    /// </summary>
+    [Test]
+    public async Task A_rebuild_keeps_the_recording_time_while_the_microphones_track_is_left()
+    {
+        File.Delete(_files.Segment(1));
+        WriteMicrophoneSegment(1, [500, 500]);
+        File.WriteAllText(_files.Json(), Answer);
+
+        var rebuilt = await CreateWorkflow().RebuildAsync(_files, answerPath: null, CancellationToken.None);
 
         Assert.That(File.ReadAllText(rebuilt), Does.StartWith($"# Kalam{Blank}Recorded 15 October 2026, 20:55 UTC.{Blank}"));
     }

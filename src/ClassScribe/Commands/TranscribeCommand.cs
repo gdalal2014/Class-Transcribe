@@ -1,4 +1,5 @@
 using System.Globalization;
+using ClassScribe.Audio;
 using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -64,7 +65,8 @@ public sealed class TranscribeCommand(
 
         if (File.Exists(fullPath))
         {
-            return RecordingFiles.TryParse(fullPath) is { } recorded && recorded.FindSegments().Count > 0
+            // A recording with audio of either track: the class's .wav files, or your microphone's .mic.wav files alone when the class could not be recorded.
+            return RecordingFiles.TryParse(fullPath) is { } recorded && (recorded.FindSegments().Count > 0 || recorded.FindSegments(Track.Microphone).Count > 0)
                 ? await TranscribeRecordingAsync(recorded, request)
                 : await TranscribeFileAsync(fullPath, request);
         }

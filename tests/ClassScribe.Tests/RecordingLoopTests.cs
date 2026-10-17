@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.Versioning;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
@@ -42,6 +43,7 @@ public class RecordingLoopTests
     private FakeConsoleUi _ui = null!;
     private FakeStatusSink _status = null!;
     private FakeFreeSpace _space = null!;
+    private FakeRegistryValues _registry = null!;
     private RecordingLogger<RecordingLoop> _log = null!;
     private RecordingFiles _files = null!;
     private RecordRequest _request = null!;
@@ -69,6 +71,9 @@ public class RecordingLoopTests
         _ui = new FakeConsoleUi();
         _status = new FakeStatusSink();
         _space = new FakeFreeSpace();
+        _registry = new FakeRegistryValues()
+            .Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "0")
+            .Set(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue, 3);
         _log = new RecordingLogger<RecordingLoop>();
         _files = new RecordingFiles(_folder.Path, "Kalam_2026-10-15_23-00-02Z");
         var runId = TestRuns.Id();
@@ -99,10 +104,14 @@ public class RecordingLoopTests
     private static RecordingOptions Settings(int silenceWarningSeconds = 60, double stopAfterHours = 9) =>
         new() { StatusIntervalSeconds = 1, SilenceWarningSeconds = silenceWarningSeconds, StopAfterHours = stopAfterHours };
 
-    /// <summary>The loop under test, with the checks made once a second on the test's clocks, free space and <paramref name="settings"/>.</summary>
+    /// <summary>
+    /// The loop under test, with the checks made once a second on the test's clocks, free space and <paramref name="settings"/>,
+    /// a registry with Vantage off and ducking set to Do nothing, and the simulated output devices.
+    /// </summary>
     private RecordingLoop CreateLoop(TestOptions<RecordingOptions> settings, IUserSignals signals) =>
         new(_ui, signals, new ClassMarks(NullLogger<ClassMarks>.Instance),
-            new RecordingMonitor(new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance), _space, settings, _time),
+            new RecordingMonitor(new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance), _space, settings,
+                new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _provider, _time),
             _status, _time, _log);
 
     /// <summary>
@@ -605,7 +614,8 @@ public class RecordingLoopTests
 
     /// <summary>
     /// A device whose meter has shown sound for 10 seconds while no audio arrived from its capture is warned about, and its
-    /// capture is reopened: a device's capture hands over audio whenever something plays on it.
+    /// capture is reopened: a device's capture hands over audio whenever something plays on it. The checks' first look
+    /// comes at the start, so the meter has shown sound for 10 seconds at the tenth second.
     /// </summary>
     [Test]
     public async Task A_device_that_plays_for_10_seconds_while_no_audio_arrives_is_warned_about_and_reopened()
@@ -614,7 +624,7 @@ public class RecordingLoopTests
         var reopened = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));   // the same device, ready for the reopening
         await StartAsync();
 
-        await TickAsync(10);
+        await TickAsync(9);
         Assert.That(ArrivalWarnings(), Is.Empty, "not before the meter has shown sound for 10 seconds");
         await TickAsync(1);
         Assert.That(ArrivalWarnings(), Is.EqualTo(new[]
@@ -1208,5 +1218,93 @@ public class RecordingLoopTests
         using var second = app.Services.CreateScope();
 
         Assert.That(first.ServiceProvider.GetRequiredService<RecordingLoop>(), Is.Not.SameAs(second.ServiceProvider.GetRequiredService<RecordingLoop>()));
+    }
+
+    // ------------------------------------------------------------------ the microphone: the start, the state and V
+
+    /// <summary>A recording of the class and your microphone that follows chrome through a gate for an app whose mute is <paramref name="appMute"/>, started into the tests' files.</summary>
+    private FakeMicrophoneRecording FollowingChrome(ClassAppMute appMute)
+    {
+        var recording = new FakeMicrophoneRecording();
+        recording.Follow(new FollowRule.Named("chrome"), appMute, _time);
+        recording.Start(_files, TimeSpan.Zero);
+        return recording;
+    }
+
+    /// <summary>The checks' first look comes at the start, so the privacy line is in the log before the first second.</summary>
+    [Test]
+    public async Task The_first_look_comes_at_the_start()
+    {
+        await RunAsync(FollowingChrome(ClassAppMute.Visible), request: _request with { Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null)) });
+
+        Assert.That(_log.Messages, Does.Contain("Your microphone is recorded too, and uploaded to ElevenLabs with the class."));
+        Assert.That(_status.Count, Is.EqualTo(1));
+    }
+
+    /// <summary>The state carries your microphone with the app it follows and the gate's state and words, for the title and the windows.</summary>
+    [Test]
+    public async Task The_state_carries_the_microphone_the_app_it_follows_and_the_gates_words()
+    {
+        var recording = FollowingChrome(ClassAppMute.Visible);
+        await RunAsync(recording, request: _request with { Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null)) });
+        recording.Gate!.Record(Looks.NotListening(TimeSpan.FromTicks(_time.GetTimestamp())));
+
+        await TickAsync();
+
+        Assert.That(_status.Last!.Microphone, Is.EqualTo(new MicrophoneState("Microphone Array", On: true, Capturing: true, Problem: null,
+            Follows: "chrome", Gate: MicrophoneGateState.NotListening, Why: "chrome is not listening")));
+    }
+
+    /// <summary>
+    /// When the app's mute cannot be seen the microphone starts off, and V arms it: the line says what it then waits
+    /// for, the state shows the gate's words, and V again switches it off.
+    /// </summary>
+    [Test]
+    public async Task V_arms_the_gate_and_says_what_the_microphone_waits_for()
+    {
+        var recording = FollowingChrome(ClassAppMute.Unknown);
+        await RunAsync(recording, request: _request with { Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null)) });
+        Assert.That(_status.Last!.Microphone, Is.EqualTo(new MicrophoneState("Microphone Array", On: false, Capturing: true, Problem: null,
+            Follows: "chrome", Gate: MicrophoneGateState.Off, Why: "off (V records your voice while chrome holds the microphone)")));
+
+        _ui.Type('v');
+        await Wait.UntilAsync(() => _status.Last?.Microphone is { On: true });
+        _ui.Type('v');
+        await Wait.UntilAsync(() => _status.Last?.Microphone is { On: false });
+
+        Assert.That(_log.Messages, Does.Contain("Microphone on; waiting for chrome to open the microphone").And.Contain("Microphone off; V switches it on again"));
+        Assert.That(_status.States.Select(state => state.Microphone?.Gate), Does.Contain(MicrophoneGateState.NotOpened));
+        Assert.That(recording.Gate!.Armed, Is.False);
+    }
+
+    /// <summary>
+    /// Without a gate the microphone is unfollowed: recorded whenever it is on, and off when switched off with V. A
+    /// recording that says no more about its microphone than its snapshot still has it named at the start, not waited for.
+    /// </summary>
+    [Test]
+    public async Task Without_a_gate_the_microphone_is_unfollowed()
+    {
+        var recording = new FakeRecording(hasMicrophone: true);
+        await RunAsync(recording, request: _request with { Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null)) });
+        Assert.That(_status.Last!.Microphone, Is.EqualTo(new MicrophoneState("Microphone Array", On: true, Capturing: true, Problem: null,
+            Follows: null, Gate: MicrophoneGateState.Unfollowed, Why: null)));
+        Assert.That(_log.Messages, Has.One.EqualTo("Microphone: \"Microphone Array\", without Windows' sound processing (RAW)"));
+        Assert.That(_log.Messages, Has.None.StartsWith("Microphone: waiting for"));
+
+        _ui.Type('v');
+        await Wait.UntilAsync(() => _status.Last?.Microphone is { On: false });
+
+        Assert.That(_status.Last!.Microphone!.Gate, Is.EqualTo(MicrophoneGateState.Off));
+    }
+
+    /// <summary>A microphone that cannot be recorded names what it waits for as its problem.</summary>
+    [Test]
+    public async Task A_missing_microphone_names_what_it_waits_for_as_its_problem()
+    {
+        var recording = new FakeRecording(hasMicrophone: true) { Microphone = FakeRecording.Track("", waitingFor: "the microphone \"OBSBOT\"", capturing: false) };
+        await RunAsync(recording, request: _request with { Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice("OBSBOT")) });
+
+        Assert.That(_status.Last!.Microphone, Is.EqualTo(new MicrophoneState("", On: true, Capturing: false, Problem: "the microphone \"OBSBOT\"",
+            Follows: null, Gate: MicrophoneGateState.Unfollowed, Why: null)));
     }
 }

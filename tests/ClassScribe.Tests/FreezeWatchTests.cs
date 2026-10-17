@@ -1,3 +1,4 @@
+using ClassScribe.Audio.Timeline;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -241,5 +242,190 @@ public class FreezeWatchTests
         _ = new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance);
 
         Assert.That(_time.ActiveTimers, Is.Zero);
+    }
+
+    /// <summary>
+    /// A capture thread that sees a packet far ahead of its track asks for a look at once, and gets the freeze the look
+    /// finds; the loop's next tick still hands that freeze on, once, for the log and the transcript.
+    /// </summary>
+    [Test]
+    public void A_look_from_a_capture_thread_finds_a_freeze_and_the_next_tick_still_hands_it_on_once()
+    {
+        _watch.Tick();
+        _times.Sleep(TimeSpan.FromSeconds(18));
+
+        var found = _watch.CheckNow();
+
+        Assert.That(found, Is.Not.Null);
+        Assert.That((found!.FromUtc, found.ToUtc, found.Slept), Is.EqualTo((Start, Start.AddSeconds(18), true)));
+        Assert.That(_watch.Tick(), Is.EqualTo(new[] { found }), "handed on by the next tick");
+        Assert.That(_watch.Tick(), Is.Empty, "handed on once");
+        Assert.That(_watch.CheckNow(), Is.Null, "found once");
+    }
+
+    /// <summary>A look between two ticks a second apart finds nothing, and does not keep the ticks from finding a freeze after it.</summary>
+    [Test]
+    public void A_look_between_ticks_finds_nothing_and_hides_nothing_from_the_ticks()
+    {
+        _watch.Tick();
+        _time.Advance(TimeSpan.FromSeconds(0.5));
+
+        Assert.That(_watch.CheckNow(), Is.Null);
+
+        _time.Advance(TimeSpan.FromSeconds(0.5));
+        Assert.That(_watch.Tick(), Is.Empty);
+
+        _time.Advance(TimeSpan.FromSeconds(18));
+        Assert.That(_watch.Tick(), Has.Count.EqualTo(1));
+    }
+
+    /// <summary>
+    /// Frozen is raised once for a freeze, by whichever of a tick and a look finds it first, so that the recording clock
+    /// cuts it out once; the other finds nothing more.
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public void Frozen_is_raised_once_whichever_of_a_tick_and_a_look_finds_the_freeze(bool lookFirst)
+    {
+        List<Freeze> raised = [];
+        _watch.Frozen += (_, freeze) => raised.Add(freeze);
+        _watch.Tick();
+        _time.Advance(TimeSpan.FromSeconds(18));
+
+        Freeze? found;
+        IReadOnlyList<Freeze> handedOn;
+        if (lookFirst)
+        {
+            found = _watch.CheckNow();
+            handedOn = _watch.Tick();
+        }
+        else
+        {
+            handedOn = _watch.Tick();
+            found = _watch.CheckNow();
+        }
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(raised, Has.Count.EqualTo(1));
+            Assert.That(raised[0].Slept, Is.False);
+            Assert.That(handedOn, Is.EqualTo(new[] { raised[0] }));
+            Assert.That(found, Is.EqualTo(lookFirst ? raised[0] : null));
+        }
+    }
+
+    /// <summary>
+    /// A freeze the timer finds first is raised by the next tick or look, on that caller's thread, never on the timer's:
+    /// the look then answers with the freeze, so that the capture thread knows the clock has just been cut.
+    /// </summary>
+    [Test]
+    public void A_freeze_the_timer_finds_is_raised_by_the_next_look_or_tick_not_on_the_timer()
+    {
+        List<Freeze> raised = [];
+        _watch.Frozen += (_, freeze) => raised.Add(freeze);
+        using var everySecond = _watch.Start();
+        _time.Advance(TimeSpan.FromSeconds(1));
+
+        _times.Sleep(TimeSpan.FromSeconds(18));
+        Assert.That(raised, Is.Empty, "the timer's tick found it and kept it");
+
+        var found = _watch.CheckNow();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(raised, Has.Count.EqualTo(1));
+            Assert.That(found, Is.EqualTo(raised[0]));
+            Assert.That(_watch.Tick(), Is.EqualTo(new[] { raised[0] }), "the tick still hands it on");
+            Assert.That(raised, Has.Count.EqualTo(1), "raised once");
+        }
+    }
+
+    /// <summary>
+    /// A look and a tick on one freeze give the recording clock one cut and one event: the time asleep is left out of the
+    /// positions once, with a second and a half kept at each edge for the audio Windows held there.
+    /// </summary>
+    [Test]
+    public void A_look_and_a_tick_on_one_freeze_give_the_clock_one_cut_and_one_event()
+    {
+        var clock = new RecordingClock(_time);
+        var events = 0;
+        _watch.Frozen += (_, freeze) =>
+        {
+            events++;
+            clock.Cut(freeze);
+        };
+        clock.Begin(_time.GetTimestamp());
+        _watch.Tick();
+        _time.Advance(TimeSpan.FromSeconds(1));
+        _watch.Tick();
+
+        _times.Sleep(TimeSpan.FromSeconds(18));
+        _watch.CheckNow();
+        _watch.Tick();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(events, Is.EqualTo(1));
+            Assert.That(clock.TimeCut, Is.EqualTo(TimeSpan.FromSeconds(15)));
+            Assert.That(clock.Now(), Is.EqualTo(TimeSpan.FromSeconds(4)));
+            Assert.That(clock.IsExcluded(TimeSpan.FromSeconds(2.5).Ticks), Is.True);
+            Assert.That(clock.IsExcluded(TimeSpan.FromSeconds(17.5).Ticks), Is.False);
+        }
+    }
+
+    /// <summary>
+    /// Both capture threads wake from one sleep within microseconds of each other, and each asks for a look. The freeze
+    /// is raised, and so cut from the clock, while the first look still holds the watch, so the second look answers only
+    /// once the cut has landed, whichever thread makes it: its track is then placed about three seconds ahead, the margins
+    /// of the cut, and never the whole sleep. Here the Frozen handler starts the second look on another thread and gives it
+    /// a moment before it cuts the clock, as the window between the look and the cut would.
+    /// </summary>
+    [Test]
+    public void A_look_on_another_thread_while_a_freeze_is_being_cut_answers_after_the_cut()
+    {
+        var packet = TimeSpan.FromMilliseconds(10);
+        var clock = new RecordingClock(_time);
+        var firstTrack = new TrackPlacer(clock, _time);
+        var secondTrack = new TrackPlacer(clock, _time);
+        using var looking = new ManualResetEventSlim();
+        Task<(Freeze? Found, Placement Placed)>? secondLook = null;
+        var finishedBeforeTheCut = false;
+        _watch.Frozen += (_, freeze) =>
+        {
+            var wake = _time.GetTimestamp();
+            secondLook = Task.Run(() =>
+            {
+                looking.Set();
+                var found = _watch.CheckNow();
+                return (found, secondTrack.Place(wake, packet, freezeChecked: true));
+            });
+            looking.Wait();
+            finishedBeforeTheCut = secondLook.Wait(TimeSpan.FromMilliseconds(100));
+            clock.Cut(freeze);
+        };
+        _watch.Tick();
+        var first = _time.GetTimestamp();
+        firstTrack.Place(first, packet);
+        firstTrack.Wrote(480, 48_000);
+        secondTrack.Place(first, packet);
+        secondTrack.Wrote(480, 48_000);
+
+        _times.Sleep(TimeSpan.FromSeconds(18));
+        var wake = _time.GetTimestamp();
+        Assert.That(firstTrack.Place(wake, packet).Kind, Is.EqualTo(PlacementKind.CheckFreeze));
+        var firstLook = _watch.CheckNow();
+        var firstPlaced = firstTrack.Place(wake, packet, freezeChecked: true);
+        Assert.That(secondLook, Is.Not.Null, "the freeze was raised");
+        Assert.That(secondLook!.Wait(TimeSpan.FromSeconds(5)), Is.True, "the second look finished");
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(firstLook, Is.Not.Null);
+            Assert.That(finishedBeforeTheCut, Is.False, "the second look waited for the cut");
+            Assert.That(secondLook.Result.Found, Is.Null, "found once");
+            Assert.That(clock.TimeCut, Is.EqualTo(TimeSpan.FromSeconds(15)));
+            Assert.That(firstPlaced, Is.EqualTo(new Placement(PlacementKind.LongGap, TimeSpan.FromSeconds(3) - packet)));
+            Assert.That(secondLook.Result.Placed, Is.EqualTo(firstPlaced), "placed the same, not the whole sleep");
+        }
     }
 }

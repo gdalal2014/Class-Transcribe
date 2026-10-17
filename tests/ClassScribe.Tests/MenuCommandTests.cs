@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.Text.Json;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
@@ -54,6 +55,8 @@ public class MenuCommandTests
         _commands.Setup(c => c.TranscribeAsync(It.IsAny<TranscribeRequest>())).ReturnsAsync(0);
         _commands.Setup(c => c.RebuildAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
         _commands.Setup(c => c.AttachAsync(It.IsAny<string?>(), It.IsAny<bool>())).ReturnsAsync(0);
+        _commands.Setup(c => c.ChooseMicrophoneAsync()).ReturnsAsync(0);
+        _commands.Setup(c => c.MicCheckAsync(It.IsAny<MicCheckRequest>())).ReturnsAsync(0);
         _report = new Mock<IStartupReport>();
         _report.Setup(r => r.ShowAsync(It.IsAny<bool>())).ReturnsAsync((StartupChoice?)null);
         _report.Setup(r => r.HeaderLines()).Returns([]);
@@ -180,6 +183,8 @@ public class MenuCommandTests
             .And.Contain("4  Transcribe a file")
             .And.Contain("5  Open the recordings folder")
             .And.Contain("6  Choose what to record: a device or an app")
+            .And.Contain("7  Microphone: none, with the class, or in person")
+            .And.Contain("8  Check the microphone: watch what apps do with it (opens nothing)")
             .And.Contain("Recording from: the device the class plays on")
             .And.Contain(_folder.Path));
         Assert.That(Lines(), Has.Member($"Settings: {_settings.File.Path}"));
@@ -396,15 +401,15 @@ public class MenuCommandTests
         BreakTheSettings();
         _ui.TypeLine("Kalam");
         _ui.TypeLine("Kalam");
-        _ui.Type('1', '2', '3', '4', '5', '6', 'q');
+        _ui.Type('1', '2', '3', '4', '5', '6', '7', '8', 'q');
 
         Assert.That(await RunMenuAsync(), Is.EqualTo(0));
 
         _commands.VerifyNoOtherCalls();
         _desktop.VerifyNoOtherCalls();
         Assert.That(_ui.Screen, Does.Not.Contain("Name for this recording").And.Not.Contain("Recent recordings"));
-        Assert.That(_gateLog.Problems.Count(problem => problem.EndsWith("then choose again", StringComparison.Ordinal)), Is.EqualTo(6));
-        Assert.That(MenusShown(), Is.EqualTo(7), "the menu came back after each refused choice");
+        Assert.That(_gateLog.Problems.Count(problem => problem.EndsWith("then choose again", StringComparison.Ordinal)), Is.EqualTo(8));
+        Assert.That(MenusShown(), Is.EqualTo(9), "the menu came back after each refused choice");
     }
 
     /// <summary>
@@ -1006,6 +1011,57 @@ public class MenuCommandTests
         Assert.That(_ui.Screen, Does.Contain("No output device is connected"));
     }
 
+    /// <summary>
+    /// 7 hands the choice of microphone to the runner, which runs the microphone menu in a scope of its own, as the other
+    /// commands run; the menu itself asks nothing about it.
+    /// </summary>
+    [Test]
+    public async Task Seven_hands_the_choice_of_microphone_to_the_runner()
+    {
+        _ui.Type('7', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.Verify(c => c.ChooseMicrophoneAsync(), Times.Once);
+        _commands.VerifyNoOtherCalls();
+        Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back afterwards");
+    }
+
+    /// <summary>
+    /// 8 runs the microphone check through the runner, in this window, until it is stopped there: no seconds and no folder
+    /// of its own, so the log goes under the recordings folder.
+    /// </summary>
+    [Test]
+    public async Task Eight_runs_the_microphone_check_in_this_window()
+    {
+        _ui.Type('8', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.Verify(c => c.MicCheckAsync(new MicCheckRequest(StopAfter: null, LogFolder: null)), Times.Once);
+        _commands.VerifyNoOtherCalls();
+        Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back afterwards");
+    }
+
+    /// <summary>
+    /// The header names the microphone beside the class, with the app it follows, as menu 7 or the settings have it: with
+    /// the class, the microphone and the app followed; in person, the microphone alone.
+    /// </summary>
+    [Test]
+    public async Task The_header_names_the_microphone()
+    {
+        _choice.PickMicrophone(RecordingMode.ClassAndMicrophone, "Microphone Array", new FollowRule.Named("chrome"));
+        _ui.Type('q');
+        await RunMenuAsync();
+        Assert.That(Lines(), Has.Member("Recording from: the device the class plays on, and your microphone \"Microphone Array\" (following chrome)"));
+
+        _ui = new FakeConsoleUi();
+        _choice.PickMicrophone(RecordingMode.Microphone, "Microphone Array", null);
+        _ui.Type('q');
+        await RunMenuAsync();
+        Assert.That(Lines(), Has.Member("Recording from: your microphone \"Microphone Array\", in person"));
+    }
+
     /// <summary>A choice that fails is reported, and the menu carries on.</summary>
     [Test]
     public async Task A_failed_choice_returns_to_the_menu()
@@ -1207,6 +1263,7 @@ public class CommandRunnerTests
     private Mock<ITranscriptionClient> _client = null!;
     private PlayedRuns _played = null!;
     private List<IServiceProvider> _resolvedIn = null!;
+    private List<MicCheckRequest> _checked = null!;
     private RecordingLogger<CommandRunner> _log = null!;
     private RecordingLogger<TranscribeCommand> _transcribeLog = null!;
     private WatchedScopes _scopes = null!;
@@ -1226,8 +1283,23 @@ public class CommandRunnerTests
         _client = Mocks.TranscriptionClient();
         _played = new PlayedRuns();
         _resolvedIn = [];
+        _checked = [];
         _log = new RecordingLogger<CommandRunner>();
         _transcribeLog = new RecordingLogger<TranscribeCommand>();
+    }
+
+    /// <summary>The microphone check as a test plays it: it notes the request it is handed and ends with <see cref="ExitCode"/>.</summary>
+    private sealed class FakeMicCheckRun(List<MicCheckRequest> checks) : IMicCheckRun
+    {
+        /// <summary>The exit code every check ends with: 0 unless the test sets another.</summary>
+        public int ExitCode { get; init; }
+
+        /// <inheritdoc />
+        public Task<int> RunAsync(MicCheckRequest request)
+        {
+            lock (checks) checks.Add(request);
+            return Task.FromResult(ExitCode);
+        }
     }
 
     /// <summary>Disposes the container and deletes the folders.</summary>
@@ -1246,7 +1318,7 @@ public class CommandRunnerTests
     /// view (which turns Ctrl+C on through the test, not through Windows), list, devices and transcribe, each made once per
     /// scope, which notes the scope it was made in. <paramref name="more"/> adds or replaces services.
     /// </summary>
-    private CommandRunner CreateRunner(bool withCommands = true, Action<IServiceCollection>? more = null)
+    private CommandRunner CreateRunner(bool withCommands = true, Action<IServiceCollection>? more = null, int micCheckExitCode = 0)
     {
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_runtime.Time);
@@ -1258,8 +1330,10 @@ public class CommandRunnerTests
             services.AddScoped(provider => new AttachCommand(_runtime.Journal, provider.GetRequiredService<IRunViewer>(), _runner!, _ui, new FakeWindowSignals(), _runtime.Time,
                 NullLogger<AttachCommand>.Instance) { TurnOnCtrlC = () => 0 });
             services.AddScoped(provider => Noted(provider, new ListCommand(Folders(), _runtime.Journal, _ui, ZonedTimeProvider.EasternSummer)));
-            services.AddScoped(provider => Noted(provider, new DevicesCommand(new Lazy<ILoopbackCaptureProvider>(() => _devices), _ui)));
+            services.AddScoped(provider => Noted(provider, new DevicesCommand(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => new FakeMicrophoneProvider()), new Lazy<IMicrophoneSessions>(() => new FakeMicrophoneSessions()), _ui)));
             services.AddScoped(provider => Noted(provider, CreateTranscribeCommand()));
+            services.AddScoped(provider => Noted(provider, CreateMicrophoneMenu()));
+            services.AddScoped<IMicCheckRun>(provider => Noted(provider, new FakeMicCheckRun(_checked) { ExitCode = micCheckExitCode }));
         }
 
         more?.Invoke(services);
@@ -1296,6 +1370,16 @@ public class CommandRunnerTests
             ZonedTimeProvider.EasternSummer, _transcribeLog);
     }
 
+    /// <summary>
+    /// The microphone menu over this laptop's microphones, the choice of what to record and settings of the test's own,
+    /// reading the console the test scripts.
+    /// </summary>
+    private MicrophoneMenu CreateMicrophoneMenu()
+    {
+        var recording = TestOptions.Create(new RecordingOptions());
+        return new MicrophoneMenu(new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array), new SourceChoice(recording), new TestSettings(_settingsFolder.Path).File, recording, _ui);
+    }
+
     /// <summary>Writes a recording of <paramref name="name"/>, a second of audio, started at the tests' class, into the folder of its name under the recordings folder.</summary>
     private RecordingFiles WriteRecording(string name = "Kalam")
     {
@@ -1319,17 +1403,22 @@ public class CommandRunnerTests
     [TestCase("list")]
     [TestCase("devices")]
     [TestCase("attach")]
+    [TestCase("microphone")]
+    [TestCase("mic-check")]
     public async Task Each_command_runs_in_a_scope_of_its_own_made_when_it_starts_and_disposed_when_it_ends(string command)
     {
         var runner = CreateRunner();
         var inProgress = _runtime.WriteRun(1, WriteRecording(), RunState.Recording, alive: true);
         var stopped = WriteRecording("Fiqh");
+        _ui.Type('\u001b', '\u001b');   // Esc leaves the microphone menu at once, each time
         Task<int> Run() => command switch
         {
             "record" => runner.RecordAsync(Request(), StartOrigin.Menu),
             "transcribe" => runner.TranscribeAsync(new TranscribeRequest(stopped.Segment(1))),
             "list" => runner.ListAsync(null),
             "devices" => runner.DevicesAsync(),
+            "microphone" => runner.ChooseMicrophoneAsync(),
+            "mic-check" => runner.MicCheckAsync(new MicCheckRequest(null, null)),
             _ => runner.AttachAsync(inProgress.RunId, alert: false)
         };
 
@@ -1410,7 +1499,23 @@ public class CommandRunnerTests
         Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.ListAsync(null))!.Message, Does.Contain("list"));
         Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.DevicesAsync())!.Message, Does.Contain("devices"));
         Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.AttachAsync(null, alert: false))!.Message, Does.Contain("background"));
+        Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.ChooseMicrophoneAsync())!.Message, Does.Contain("microphone"));
+        Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.MicCheckAsync(new MicCheckRequest(null, null)))!.Message, Does.Contain("microphone check"));
         Assert.That(_scopes.Made, Is.Empty);
+    }
+
+    /// <summary>The microphone check gets the request as it was made, in a scope of its own, and its exit code comes back.</summary>
+    [Test]
+    public async Task The_microphone_check_gets_its_request_and_its_exit_code_comes_back()
+    {
+        var runner = CreateRunner(micCheckExitCode: 1);
+        var request = new MicCheckRequest(TimeSpan.FromSeconds(600), _recordings.File("logs"));
+
+        var exitCode = await runner.MicCheckAsync(request);
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_checked, Is.EqualTo(new[] { request }));
+        Assert.That(_scopes.Made.Select(scope => scope.Disposed), Is.EqualTo(new[] { true }));
     }
 
     /// <summary>

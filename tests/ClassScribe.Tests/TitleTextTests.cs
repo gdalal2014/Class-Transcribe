@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
@@ -130,6 +131,51 @@ public class TitleTextTests
         var state = State(RecorderPhase.Paused, microphone: new MicrophoneState("Microphone Array", On: false, Capturing: true, null));
 
         Assert.That(TitleText.For(state), Is.EqualTo("PAUSED 01:12:40 MIC OFF Kalam | ClassScribe"));
+    }
+
+    /// <summary>Your microphone following chrome, in the gate's state <paramref name="gate"/>, switched on unless <paramref name="on"/> says otherwise.</summary>
+    private static MicrophoneState Following(MicrophoneGateState gate, bool on = true) =>
+        new("Microphone Array", on, Capturing: true, Problem: null, Follows: "chrome", gate, Why: gate == MicrophoneGateState.Recording ? null : "the gate's words");
+
+    /// <summary>The titles while the microphone follows the class app: MIC MUTED while the app is not listening or Windows mutes, MIC WAITING while the app has not opened the microphone, uses another or cannot be read, MIC OFF while switched off, and nothing while your voice is recorded.</summary>
+    private static IEnumerable<TestCaseData> MicrophoneRows()
+    {
+        yield return new TestCaseData(Following(MicrophoneGateState.Recording), "REC 01:12:40 Kalam | ClassScribe").SetName("Microphone: recording");
+        yield return new TestCaseData(Following(MicrophoneGateState.NotListening), "REC 01:12:40 MIC MUTED Kalam | ClassScribe").SetName("Microphone: the app is not listening");
+        yield return new TestCaseData(Following(MicrophoneGateState.MutedInWindows), "REC 01:12:40 MIC MUTED Kalam | ClassScribe").SetName("Microphone: muted in Windows");
+        yield return new TestCaseData(Following(MicrophoneGateState.NotOpened), "REC 01:12:40 MIC WAITING Kalam | ClassScribe").SetName("Microphone: the app has not opened it");
+        yield return new TestCaseData(Following(MicrophoneGateState.OtherMicrophone), "REC 01:12:40 MIC WAITING Kalam | ClassScribe").SetName("Microphone: the app uses another");
+        yield return new TestCaseData(Following(MicrophoneGateState.Unreadable), "REC 01:12:40 MIC WAITING Kalam | ClassScribe").SetName("Microphone: the sessions cannot be read");
+        yield return new TestCaseData(Following(MicrophoneGateState.Off, on: false), "REC 01:12:40 MIC OFF Kalam | ClassScribe").SetName("Microphone: off");
+        yield return new TestCaseData(Following(MicrophoneGateState.Unfollowed), "REC 01:12:40 Kalam | ClassScribe").SetName("Microphone: no app followed");
+    }
+
+    /// <summary>Every title while the microphone follows the class app (addendum 3.3).</summary>
+    [TestCaseSource(nameof(MicrophoneRows))]
+    public void Every_title_while_the_microphone_follows_the_class_app(MicrophoneState microphone, string title)
+    {
+        Assert.That(TitleText.For(State(RecorderPhase.Recording, microphone: microphone)), Is.EqualTo(title));
+    }
+
+    /// <summary>A paused recording whose microphone is muted says both; a Notice still follows the name.</summary>
+    [Test]
+    public void A_paused_recording_with_its_microphone_muted_says_MIC_MUTED_too()
+    {
+        var state = State(RecorderPhase.Paused, Notice("no sound 2 min"), microphone: Following(MicrophoneGateState.NotListening));
+
+        Assert.That(TitleText.For(state), Is.EqualTo("PAUSED 01:12:40 MIC MUTED Kalam (no sound 2 min) | ClassScribe"));
+    }
+
+    /// <summary>A microphone state written by a build without the gate reads with no app followed, and the title shows nothing for it.</summary>
+    [Test]
+    public void A_microphone_state_read_without_the_gate_shows_nothing_for_it()
+    {
+        var state = JsonSerializer.Deserialize(
+            """{"phase":"Recording","name":"Kalam","position":"01:12:40","inWindow":false,"microphone":{"name":"Microphone Array","on":true,"capturing":true}}""",
+            RecorderJson.Default.RecorderState)!;
+
+        Assert.That(state.Microphone!.Gate, Is.EqualTo(MicrophoneGateState.Unfollowed));
+        Assert.That(TitleText.For(state), Is.EqualTo("REC 01:12:40 Kalam | ClassScribe"));
     }
 
     /// <summary>A run that has ended shows how it ended, whatever needed attention before.</summary>

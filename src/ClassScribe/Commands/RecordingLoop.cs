@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Recorder;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -12,9 +13,11 @@ namespace ClassScribe.Commands;
 /// pressed twice stops, P pauses or resumes, M marks the moment, V switches the microphone off or on, and Esc, in a run
 /// recording in the window, says how to stop it. Once a second it has the recording checked (see
 /// <see cref="RecordingMonitor"/>) and acts on what the checks find: it logs their lines, writes their notes into the
-/// marks file, has a stalled capture replaced, and stops the recording when it stops by itself. At the start, once a
-/// second, and at once on P, V and the stop, it publishes the run's state, for the window's title and taskbar or for the
-/// windows that show the run; every 10 seconds it writes the run file's heartbeat. Ctrl+C is the signals' to act on (see
+/// marks file, has a stalled capture replaced, and stops the recording when it stops by itself; the checks' first look
+/// comes at the start, so that their lines about the microphone lead. At the start, once a second, and at once on P, V
+/// and the stop, it publishes the run's state, for the window's title and taskbar or for the windows that show the run,
+/// with your microphone's state and the words of the gate that follows the class app when the recording has one (see
+/// <see cref="IMicrophoneRecording"/>); every 10 seconds it writes the run file's heartbeat. Ctrl+C is the signals' to act on (see
 /// <see cref="ConsoleUserSignals"/>), which apply the same two presses as Q. The loop ends when the stop is asked for,
 /// whoever asks, and the run file then says what ended the recording. Each run has a loop of its own.
 /// </summary>
@@ -109,16 +112,18 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
         _request = request;
         _run = run;
         _inWindow = run?.Current.Home != RunHome.Separate;
-        _context = new MonitorContext(request, files.Folder, time.GetUtcNow(), time.GetTimestamp(), offset);
+        _context = new MonitorContext(request, files.Folder, time.GetUtcNow(), time.GetTimestamp(), offset, recording as IMicrophoneRecording);
         _lastHeartbeat = _context.StartedTimestamp;
         _stopsAt = request.Minutes is { } minutes ? _context.StartedUtc + TimeSpan.FromMinutes(minutes) : null;
 
         recording.NoteWorthy += OnNoteWorthy;
         try
         {
-            using (monitor.Start())
+            using (monitor.Start(_context))
             {
-                Safely(() => Publish(recording.GetSnapshot()), TickFailure, ref _tickFailing);
+                // The first second's work comes at once: the checks' first look gives the lines about the microphone, and
+                // the state goes to the window before anyone waits a second for it.
+                Safely(Tick, TickFailure, ref _tickFailing);
                 await WaitForStopAsync();
             }
         }
@@ -283,7 +288,11 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
         }
     }
 
-    /// <summary>Switches the microphone off when it is on and on when it is off, and shows that at once; says so when the recording has none.</summary>
+    /// <summary>
+    /// Switches the microphone off when it is on and on when it is off, and shows that at once; says so when the recording
+    /// has none. Switched on with the class app followed, the line adds what the gate says the microphone still waits for,
+    /// when it does: on arms the gate, and your voice is recorded only while the app holds the microphone.
+    /// </summary>
     private void ToggleMicrophone()
     {
         if (_recording.SetMicrophone(MicrophoneTrack(_recording.GetSnapshot()) is { Off: true }) is not { } on)
@@ -292,10 +301,12 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
             return;
         }
 
-        if (on)
-            logger.LogInformation("Microphone on");
-        else
+        if (!on)
             logger.LogInformation("Microphone off; V switches it on again");
+        else if (_context.Microphone?.Gate?.Why is { } why)
+            logger.LogInformation("Microphone on; {Why}", why);
+        else
+            logger.LogInformation("Microphone on");
         Publish(_recording.GetSnapshot());
     }
 
@@ -343,12 +354,26 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
             snapshot.Position,
             string.IsNullOrEmpty(main.Source) ? null : main.Source,
             main.Capturing ? null : main.WaitingFor,
-            microphone is null ? null : new MicrophoneState(microphone.Source, On: !microphone.Off, microphone.Capturing, Problem: null),
+            microphone is null ? null : MicrophoneStateOf(microphone),
             UploadPercent: null,
             _stopsAt,
             _attention,
             _inWindow,
             _stopsAt is { } stopsAt ? TimeZoneInfo.ConvertTime(stopsAt, time.LocalTimeZone).ToString("HH:mm", CultureInfo.InvariantCulture) : null);
+    }
+
+    /// <summary>
+    /// Your microphone's state, from its <paramref name="track"/>: its name, whether it is on and capturing, what it waits
+    /// for while it cannot be recorded, and, when the recording follows the class app, which app and the gate's state and
+    /// words; without a gate the microphone is unfollowed, or off when switched off with V.
+    /// </summary>
+    private MicrophoneState MicrophoneStateOf(TrackSnapshot track)
+    {
+        var details = _context.Microphone;
+        var described = details?.Gate?.Describe();   // the state and its words under one lock, so they belong together
+        var state = described?.State ?? (track.Off ? MicrophoneGateState.Off : MicrophoneGateState.Unfollowed);
+        return new MicrophoneState(track.Source, On: !track.Off, track.Capturing, Problem: track.Capturing || track.Off ? null : track.WaitingFor,
+            MicrophoneWords.Followed(details?.Follows), state, described?.Why);
     }
 
     /// <summary>Your microphone's track: the main track in person, the microphone's own beside the class, or null when the recording has none.</summary>

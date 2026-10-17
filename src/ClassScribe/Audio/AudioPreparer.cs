@@ -5,9 +5,36 @@ using NAudio.Wave;
 
 namespace ClassScribe.Audio;
 
+/// <summary>
+/// The tracks of a recording as they go into the upload: the main track, which is the class, or your microphone in
+/// person, and your microphone's track when it was recorded with the class; each as its segment files in recording
+/// order, and the microphone's empty when the recording has no such track.
+/// </summary>
+/// <param name="Main">The segments of the main track, in recording order.</param>
+/// <param name="Microphone">The segments of your microphone's track, in recording order; empty when there is none.</param>
+public sealed record UploadTracks(IReadOnlyList<string> Main, IReadOnlyList<string> Microphone);
+
 /// <summary>Builds the file that gets uploaded.</summary>
 public interface IAudioPreparer
 {
+    /// <summary>
+    /// Mixes the tracks of a recording into one 16 kHz mono 16-bit WAV at <paramref name="outputPath"/>: the class and
+    /// your microphone summed sample for sample from their common start, the shorter padded with silence at its end, so
+    /// that both are heard where the recording placed them. A microphone track with no files is left out without a
+    /// word; one with files that never rose above <see cref="AudioPreparer.MicrophoneSoundThreshold"/> is left out and
+    /// the log says that your microphone stayed silent. Either way the main track is then prepared exactly as
+    /// <see cref="Prepare(IReadOnlyList{string}, string, CancellationToken)"/> prepares it. A preparation that fails
+    /// or is cancelled leaves no file behind.
+    /// </summary>
+    /// <param name="tracks">The segments of each track, in the order they are joined.</param>
+    /// <param name="outputPath">Where the upload file goes. Nothing may be there yet.</param>
+    /// <param name="cancellationToken">Checked after every second of audio, so Ctrl+C stops even a long class at once.</param>
+    /// <exception cref="NoAudioException">The microphone's track was left out, and the main track holds no samples, or nothing but digital silence.</exception>
+    /// <exception cref="FormatException">The microphone's track was left out, and none of the main track's files is a WAV file this app can read.</exception>
+    /// <exception cref="IOException">A file is already at <paramref name="outputPath"/>. It is left as it is.</exception>
+    /// <exception cref="OperationCanceledException">The token was cancelled.</exception>
+    void Prepare(UploadTracks tracks, string outputPath, CancellationToken cancellationToken);
+
     /// <summary>
     /// Joins the WAV files into one 16 kHz mono 16-bit WAV at <paramref name="outputPath"/>. A preparation
     /// that fails or is cancelled leaves no file behind.
@@ -26,8 +53,8 @@ public interface IAudioPreparer
 public sealed class NoAudioException(string message) : Exception(message);
 
 /// <summary>
-/// Resamples recorded segments to 16 kHz mono and joins them. That is the format speech models
-/// work in, and it makes a two-hour class a 230 MB upload.
+/// Resamples recorded segments to 16 kHz mono and joins them, and mixes your microphone's track into the class's
+/// where there is one. That is the format speech models work in, and it makes a two-hour class a 230 MB upload.
 /// </summary>
 public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPreparer
 {
@@ -40,6 +67,22 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
     /// <summary>The WAVE_FORMAT_EXTENSIBLE sub-format of floating-point samples.</summary>
     private static readonly Guid FloatSubFormat = new("00000003-0000-0010-8000-00aa00389b71");
 
+    /// <summary>
+    /// The level, in 16-bit sample values of 32,767, that a microphone's track has to rise above once to be mixed into
+    /// the upload. Below it the track is taken to have heard nothing: the microphone was off, muted or never opened.
+    /// </summary>
+    public const int MicrophoneSoundThreshold = 100;
+
+    /// <summary>The logger, for the reader of a track's segments, which reports the ones it skips.</summary>
+    private ILogger<AudioPreparer> Logger => logger;
+
+    /// <inheritdoc />
+    public void Prepare(UploadTracks tracks, string outputPath, CancellationToken cancellationToken)
+    {
+        if (tracks.Microphone.Count > 0 && TryMix(tracks, outputPath, cancellationToken)) return;
+        Prepare(tracks.Main, outputPath, cancellationToken);
+    }
+
     /// <inheritdoc />
     public void Prepare(IReadOnlyList<string> wavPaths, string outputPath, CancellationToken cancellationToken)
     {
@@ -48,24 +91,18 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
         {
             using var writer = new WavSegmentWriter(outputPath, TargetSampleRate);
             created = true;
+            using var track = new TrackSamples(this, wavPaths, mono16Khz: true);
             var samples = new float[TargetSampleRate];
             var bytes = new byte[samples.Length * 2];
-            var unreadable = 0;
             var audible = false;
 
-            foreach (var path in wavPaths)
+            while (true)
             {
+                // Once per buffer, a second of audio: often enough for Ctrl+C to stop even a long file at once.
                 cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    audible |= Append(path, writer, samples, bytes, cancellationToken);
-                }
-                catch (Exception ex) when (ex is FormatException or EndOfStreamException or InvalidDataException)
-                {
-                    // Deliberately not rethrown: one damaged file must not cost the transcript of the others.
-                    unreadable++;
-                    logger.LogWarning(ex, "Skipping {File}: it is not a readable WAV file", Path.GetFileName(path));
-                }
+                var read = track.Read(samples);
+                if (read == 0) break;
+                audible |= WritePcm(writer, samples.AsSpan(0, read), bytes);
             }
 
             var what = wavPaths.Count == 1 ? Path.GetFileName(wavPaths[0]) : $"the {wavPaths.Count} files of the recording";
@@ -73,7 +110,7 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
             {
                 // Two different dead ends: a caller may still upload a file this app merely cannot read,
                 // but there is no point in uploading nothing.
-                throw unreadable > 0 && unreadable == wavPaths.Count
+                throw track.Unreadable > 0 && track.Unreadable == wavPaths.Count
                     ? new FormatException("None of the files is a WAV file this app can read.")
                     : new NoAudioException($"No audio samples could be read from {what}, so there is nothing to transcribe.");
             }
@@ -87,18 +124,112 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
         }
         catch (OperationCanceledException)
         {
-            if (created) DeleteUnfinished(outputPath);
-            logger.LogInformation("Stopped preparing the upload file: cancelled");
+            Cancelled(outputPath, created);
             throw;
         }
         catch (Exception ex)
         {
-            // A warning, not an error: the caller decides what the failure means. A single WAV file this app
-            // cannot reduce is still uploaded as it is.
-            logger.LogWarning(ex, "Could not prepare the upload file {Path}", outputPath);
-            if (created) DeleteUnfinished(outputPath);
+            Failed(ex, outputPath, created);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Mixes the class and your microphone into the upload file and returns true. Returns false, having written nothing,
+    /// when the microphone's track never rose above <see cref="MicrophoneSoundThreshold"/>: the main track is then
+    /// prepared on its own, exactly as it is when the recording has no microphone track at all.
+    /// </summary>
+    private bool TryMix(UploadTracks tracks, string outputPath, CancellationToken cancellationToken)
+    {
+        var created = false;
+        try
+        {
+            if (!HeardAnything(tracks.Microphone, out var unreadable, cancellationToken))
+            {
+                logger.LogInformation("Your microphone stayed silent; only the class is sent.");
+                return false;
+            }
+
+            using var writer = new WavSegmentWriter(outputPath, TargetSampleRate);
+            created = true;
+            using var main = new TrackSamples(this, tracks.Main, mono16Khz: true);
+            // The sound check has already reported the microphone files it could not read; they are passed over here
+            // without a word, so that one damaged file is named once in the log, not twice.
+            using var microphone = new TrackSamples(this, tracks.Microphone, mono16Khz: true, reported: unreadable);
+            var samples = new float[TargetSampleRate];
+            var voice = new float[TargetSampleRate];
+            var bytes = new byte[samples.Length * 2];
+
+            while (true)
+            {
+                // Once per buffer, a second of audio, as when a track is prepared alone.
+                cancellationToken.ThrowIfCancellationRequested();
+                var fromMain = main.Read(samples);
+                var fromMicrophone = microphone.Read(voice);
+                var count = Math.Max(fromMain, fromMicrophone);
+                if (count == 0) break;
+
+                // Both tracks start at the recording's start and stay on its clock, so they are summed sample for sample
+                // from the first, and the one that ends first is padded with silence until the other ends. No gain is
+                // applied; the sum is clamped where the two together go past full scale.
+                Array.Clear(samples, fromMain, count - fromMain);
+                Array.Clear(voice, fromMicrophone, count - fromMicrophone);
+                for (var i = 0; i < count; i++) samples[i] += voice[i];
+                WritePcm(writer, samples.AsSpan(0, count), bytes);
+            }
+
+            logger.LogInformation("Prepared {Duration} of audio for upload: the class and your microphone mixed into one track", Durations.Format(writer.Duration));
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            Cancelled(outputPath, created);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Failed(ex, outputPath, created);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// True when any sample in the microphone's files rises above <see cref="MicrophoneSoundThreshold"/>. The files are
+    /// read as they are, at their own rate, and only until the first such sample: a track that was heard costs a moment,
+    /// and one that stayed silent one pass without resampling. The files found unreadable on the way, each reported
+    /// with a warning, come back in <paramref name="unreadable"/>, so that the mix can pass over them in silence.
+    /// </summary>
+    private bool HeardAnything(IReadOnlyList<string> microphone, out IReadOnlySet<string> unreadable, CancellationToken cancellationToken)
+    {
+        // NAudio reads a 16-bit sample as its value over 32,768, so for the recorder's own files the threshold is exact.
+        const float threshold = MicrophoneSoundThreshold / 32768f;
+        using var track = new TrackSamples(this, microphone, mono16Khz: false);
+        unreadable = track.Skipped;
+        var samples = new float[TargetSampleRate];
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var read = track.Read(samples);
+            if (read == 0) return false;
+            if (samples.AsSpan(0, read).IndexOfAnyExceptInRange(-threshold, threshold) >= 0) return true;
+        }
+    }
+
+    /// <summary>What a cancel leaves: no unfinished upload file, when one was started, and a line in the log.</summary>
+    private void Cancelled(string outputPath, bool created)
+    {
+        if (created) DeleteUnfinished(outputPath);
+        logger.LogInformation("Stopped preparing the upload file: cancelled");
+    }
+
+    /// <summary>
+    /// What a failure leaves: a warning, not an error, because the caller decides what the failure means (a single WAV
+    /// file this app cannot reduce is still uploaded as it is), and no unfinished upload file, when one was started.
+    /// </summary>
+    private void Failed(Exception ex, string outputPath, bool created)
+    {
+        logger.LogWarning(ex, "Could not prepare the upload file {Path}", outputPath);
+        if (created) DeleteUnfinished(outputPath);
     }
 
     /// <summary>
@@ -118,34 +249,116 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
     }
 
     /// <summary>
-    /// Converts one WAV file to 16 kHz mono 16-bit and appends it to the upload file. Returns true when any
-    /// sample it wrote is not zero.
+    /// Writes samples to the upload file as 16-bit values, clamped at full scale, through <paramref name="bytes"/>, which
+    /// holds at least two bytes per sample. Returns true when any value written is not zero.
     /// </summary>
-    private bool Append(string path, WavSegmentWriter writer, float[] samples, byte[] bytes, CancellationToken cancellationToken)
+    private static bool WritePcm(WavSegmentWriter writer, ReadOnlySpan<float> samples, byte[] bytes)
     {
-        // Shared for writing as well, so a segment that a recorder still holds open can be read.
-        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        if (file.Length == 0) return false;   // nothing was ever written to it: empty, not damaged
-
-        using var wave = OpenWave(file, path);
-        var source = ToMono16Khz(wave);
-
         var audible = false;
-        while (true)
+        for (var i = 0; i < samples.Length; i++)
         {
-            // Once per buffer, a second of audio: often enough for Ctrl+C to stop even a long file at once.
-            cancellationToken.ThrowIfCancellationRequested();
-            var read = source.Read(samples, 0, samples.Length);
-            if (read == 0) return audible;
+            var value = (short)MathF.Round(Math.Clamp(samples[i], -1f, 1f) * short.MaxValue);
+            audible |= value != 0;
+            BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), value);
+        }
 
-            for (var i = 0; i < read; i++)
+        writer.Write(bytes.AsSpan(0, samples.Length * 2));
+        return audible;
+    }
+
+    /// <summary>
+    /// The audio of one track as one stream of samples: its segments opened one after the other as they are read, each
+    /// converted to 16 kHz mono, or left at its own rate and channels for the sound check, with empty files passed over
+    /// and damaged ones skipped with a warning, so that one damaged part costs the transcript of none of the others.
+    /// A segment in <paramref name="reported"/> was found unreadable by an earlier pass over the same track and is
+    /// skipped without opening it or warning again.
+    /// </summary>
+    private sealed class TrackSamples(AudioPreparer preparer, IReadOnlyList<string> segments, bool mono16Khz, IReadOnlySet<string>? reported = null) : IDisposable
+    {
+        private readonly HashSet<string> _skipped = [];
+        private int _next;
+        private FileStream? _file;
+        private ISampleProvider? _source;
+
+        /// <summary>How many segments were skipped because they are not WAV files this app can read.</summary>
+        public int Unreadable { get; private set; }
+
+        /// <summary>The segments skipped so far because they are not WAV files this app can read; it grows as the track is read.</summary>
+        public IReadOnlySet<string> Skipped => _skipped;
+
+        /// <summary>
+        /// Reads samples into <paramref name="buffer"/>, filling it across segment boundaries, and returns how many: fewer
+        /// than the buffer holds only at the end of the track, and none after it.
+        /// </summary>
+        public int Read(float[] buffer)
+        {
+            var total = 0;
+            while (total < buffer.Length && (_source is not null || OpenNext()))
             {
-                var value = (short)MathF.Round(Math.Clamp(samples[i], -1f, 1f) * short.MaxValue);
-                audible |= value != 0;
-                BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), value);
+                var read = _source!.Read(buffer, total, buffer.Length - total);
+                if (read == 0) Close();
+                else total += read;
             }
 
-            writer.Write(bytes.AsSpan(0, read * 2));
+            return total;
+        }
+
+        /// <inheritdoc />
+        public void Dispose() => Close();
+
+        /// <summary>Opens the next segment that can be read, and returns false when none is left.</summary>
+        private bool OpenNext()
+        {
+            while (_next < segments.Count)
+            {
+                var path = segments[_next++];
+                if (reported?.Contains(path) == true)
+                {
+                    Skip(path);   // already found unreadable, and reported, by the earlier pass
+                    continue;
+                }
+
+                // Shared for writing as well, so a segment that a recorder still holds open can be read.
+                var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var opened = false;
+                try
+                {
+                    if (file.Length == 0) continue;   // nothing was ever written to it: empty, not damaged
+
+                    var wave = preparer.OpenWave(file, path);
+                    _source = mono16Khz ? ToMono16Khz(wave) : new FiniteSamples(wave.ToSampleProvider());
+                    _file = file;
+                    opened = true;
+                    return true;
+                }
+                catch (Exception ex) when (ex is FormatException or EndOfStreamException or InvalidDataException)
+                {
+                    // Deliberately not rethrown: one damaged file must not cost the transcript of the others.
+                    Skip(path);
+                    preparer.Logger.LogWarning(ex, "Skipping {File}: it is not a readable WAV file", Path.GetFileName(path));
+                }
+                finally
+                {
+                    if (!opened) file.Dispose();
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>Counts <paramref name="path"/> among the segments skipped as unreadable.</summary>
+        private void Skip(string path)
+        {
+            Unreadable++;
+            _skipped.Add(path);
+        }
+
+        /// <summary>Closes the open segment, when one is.</summary>
+        private void Close()
+        {
+            _file?.Dispose();
+            _file = null;
+            _source = null;
         }
     }
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Runtime.Versioning;
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
@@ -136,7 +137,7 @@ public class RecordCommandTests
     private RecordCommand CreateCommand(
         string apiKey = "test-key", TimeProvider? time = null, bool openWhenDone = false, string? outputFolder = null, KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
         bool blockShutdown = true, IRecordingFactory? recordings = null, RuntimeFolder? runtimeFolder = null, ILogger<RecordCommand>? logger = null,
-        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null)
+        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown)
     {
         time ??= TimeProvider.System;
         var recording = TestOptions.Create(new RecordingOptions
@@ -145,7 +146,8 @@ public class RecordCommandTests
             OpenFolderWhenDone = openWhenDone,
             OpenTranscriptWhenDone = openWhenDone,
             KeepScreenOn = keepScreenOn,
-            BlockShutdown = blockShutdown
+            BlockShutdown = blockShutdown,
+            ClassAppMute = classAppMute
         });
         var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = _folder.File("no-glossary.txt") });
         var folders = new ClassFolders(recording, time, NullLogger<ClassFolders>.Instance);
@@ -164,7 +166,11 @@ public class RecordCommandTests
 
         _times = new FakeSystemTimes(time);
         status ??= _status;
-        var monitor = new RecordingMonitor(new FreezeWatch(_times, time, NullLogger<FreezeWatch>.Instance), new FakeFreeSpace(), recording, time);
+        var registry = new FakeRegistryValues()
+            .Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "0")
+            .Set(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue, 3);
+        var monitor = new RecordingMonitor(new FreezeWatch(_times, time, NullLogger<FreezeWatch>.Instance), new FakeFreeSpace(), recording,
+            new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _provider, time);
         var loop = new RecordingLoop(_ui, _signals, marks, monitor, status, time, _loopLog);
 
         var ownFolder = runtimeFolder ?? _runtime.Folder;
@@ -181,7 +187,7 @@ public class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance),
-            loop, workflow, _progress, _signals, folders, marks, _bookkeeping, _results, status, _choice, elevenLabs, time, logger ?? _log);
+            loop, workflow, _progress, _signals, folders, marks, _bookkeeping, _results, status, _choice, recording, elevenLabs, time, logger ?? _log);
     }
 
     /// <summary>
@@ -1863,5 +1869,129 @@ public class RecordCommandTests
         Assert.That(process.GetRequiredService<ICrashWarnings>(), Is.InstanceOf<AppDomainCrashWarnings>());
         Assert.That(process.GetRequiredService<RecorderLog>().StartupFile, Is.Null, "a window keeps the lines between runs in memory only");
         Assert.That(process.GetServices<ILoggerProvider>().OfType<RecorderLogProvider>().Count(), Is.EqualTo(1));
+        Assert.That(run.GetRequiredService<MicrophoneAdvice>(), Is.SameAs(run.GetRequiredService<MicrophoneAdvice>()), "one advice per run, for the checks");
+    }
+
+    // ------------------------------------------------------------------ the microphone modes
+
+    /// <summary>A request to record the class from the device it plays on and your microphone, or your microphone alone in person, with <paramref name="namePart"/> naming it.</summary>
+    private RecordRequest WithMicrophone(RecordingMode mode, string? namePart = null, bool transcribe = false) =>
+        Request(transcribe: transcribe) with
+        {
+            Source = new SourcePlan(mode, mode == RecordingMode.Microphone ? null : new ClassSource.Automatic(), new MicrophoneChoice(namePart))
+        };
+
+    /// <summary>With the class and your microphone, the start lines name both and V among the keys.</summary>
+    [Test]
+    public async Task With_the_class_and_the_microphone_the_start_lines_name_both_and_V()
+    {
+        var recordings = new FakeRecordingFactory();
+        var run = CreateCommand(recordings: recordings).RunAsync(WithMicrophone(RecordingMode.ClassAndMicrophone, transcribe: true));
+        await Wait.UntilAsync(() => recordings.Created is [{ Started: true }]);
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(_log.Messages, Has.One.EqualTo("Recording from the device the class plays on, and your microphone"));
+        Assert.That(_log.Messages, Has.One.EqualTo(
+            "Press Q twice (or Ctrl+C twice) to stop and transcribe, P to pause or resume, M to mark a moment, V to switch your microphone off or on. If the window is closed instead, the recording ends and the audio so far is kept"));
+    }
+
+    /// <summary>In person the start line names your microphone alone, by the name part when one is given.</summary>
+    [TestCase(null, "Recording from your microphone")]
+    [TestCase("OBSBOT", "Recording from your microphone \"OBSBOT\"")]
+    public async Task In_person_the_start_line_names_the_microphone_alone(string? namePart, string line)
+    {
+        var recordings = new FakeRecordingFactory();
+        var run = CreateCommand(recordings: recordings).RunAsync(WithMicrophone(RecordingMode.Microphone, namePart));
+        await Wait.UntilAsync(() => recordings.Created is [{ Started: true }]);
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(recordings.Plans.Single().Mode, Is.EqualTo(RecordingMode.Microphone));
+        Assert.That(_log.Messages, Has.One.EqualTo(line));
+        Assert.That(_log.Messages, Has.One.EqualTo("Press Q twice (or Ctrl+C twice) to stop, P to pause or resume, M to mark a moment, V to switch your microphone off or on. If the window is closed instead, the recording ends and the audio so far is kept"));
+    }
+
+    /// <summary>
+    /// The end-of-class summary gives the microphone's numbers from the gate: heard, in how many stretches, muted, off,
+    /// muted in Windows, and how often the app let go of the microphone, which a setting of Invisible is told about.
+    /// </summary>
+    [Test]
+    public async Task The_end_of_class_summary_gives_the_microphones_numbers()
+    {
+        var time = new ManualTimeProvider(TestRuns.Start);
+        var recording = new FakeMicrophoneRecording();
+        var gate = recording.Follow(new FollowRule.Named("chrome"), ClassAppMute.Invisible, time);
+        recording.SetMicrophone(true);
+        var run = CreateCommand(time: time, recordings: new FakeMicrophoneRecordingFactory(recording), classAppMute: ClassAppMute.Invisible)
+            .RunAsync(WithMicrophone(RecordingMode.ClassAndMicrophone));
+        await Wait.UntilAsync(() => recording.Inner.Started && _status.Count > 0);
+        recording.Inner.MainSegments = [recording.Inner.Files!.Segment(1)];
+
+        gate.Record(Looks.Open(TimeSpan.FromTicks(time.GetTimestamp())));
+        time.Advance(TimeSpan.FromSeconds(10));
+        gate.Record(Looks.NotListening(TimeSpan.FromTicks(time.GetTimestamp())));
+        time.Advance(TimeSpan.FromSeconds(10));
+        gate.Record(Looks.Open(TimeSpan.FromTicks(time.GetTimestamp())));
+        time.Advance(TimeSpan.FromSeconds(5));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(_log.Messages, Has.One.EqualTo(
+            "Microphone: heard for 00:00:15 in 2 stretches while chrome listened, muted for 00:00:10, off (V) for 00:00:00, muted in Windows for 00:00:00; chrome let go of the microphone 1 time although Recording:ClassAppMute says Invisible"));
+    }
+
+    /// <summary>With the class recorded and the microphone not, the run says so, in full, and goes on: exit code 0, the class kept.</summary>
+    [Test]
+    public async Task Exit_0_when_only_the_microphone_failed()
+    {
+        var recordings = new FakeRecordingFactory();
+        var run = CreateCommand(recordings: recordings).RunAsync(WithMicrophone(RecordingMode.ClassAndMicrophone));
+        await Wait.UntilAsync(() => recordings.Created is [{ Started: true }]);
+        var recording = recordings.Created[0];
+        recording.MainSegments = [recording.Files!.Segment(1)];
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(_log.Problems, Has.One.EqualTo("Your microphone was not recorded in this run: no microphone file was written. The class was recorded and is kept"));
+        Assert.That(RunFile().Outcome!.Kind, Is.EqualTo(OutcomeKind.Recorded));
+    }
+
+    /// <summary>With a transcript asked for, the same words say that the class goes on to it without the microphone, and it does.</summary>
+    [Test]
+    public async Task The_class_goes_on_to_the_transcript_when_only_the_microphone_failed()
+    {
+        var recordings = new FakeRecordingFactory();
+        var run = CreateCommand(recordings: recordings).RunAsync(WithMicrophone(RecordingMode.ClassAndMicrophone, transcribe: true));
+        await Wait.UntilAsync(() => recordings.Created is [{ Started: true }]);
+        var recording = recordings.Created[0];
+        var segment = recording.Files!.Segment(1);
+        TestAudio.WriteWav(segment, 16000, TestAudio.Tone(16000, seconds: 0.5, frequency: 440, amplitude: 0.5));
+        recording.MainSegments = [segment];
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(_log.Problems, Has.One.EqualTo("Your microphone was not recorded in this run: no microphone file was written. The class was recorded and goes on to the transcript"));
+        Assert.That(RunFile().Outcome!.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+    }
+
+    /// <summary>
+    /// With the microphone recorded and the class not, nothing is sent, and the words say the microphone's audio is kept
+    /// and how to transcribe it on its own: by one of its .mic.wav files, since a folder is read by its .wav files.
+    /// </summary>
+    [Test]
+    public async Task Nothing_from_the_class_says_the_microphones_audio_is_kept_and_how_to_transcribe_it()
+    {
+        var recordings = new FakeRecordingFactory();
+        var run = CreateCommand(recordings: recordings).RunAsync(WithMicrophone(RecordingMode.ClassAndMicrophone, transcribe: true));
+        await Wait.UntilAsync(() => recordings.Created is [{ Started: true }]);
+        var recording = recordings.Created[0];
+        var microphoneFile = recording.Files!.Segment(1, Track.Microphone);
+        recording.MicrophoneSegments = [microphoneFile];
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(1));
+        Assert.That(_log.Problems, Has.One.EqualTo($"No audio was captured from the class. Was anything playing? Your microphone's audio is kept in {KalamFolder()}. To transcribe it on its own, run: {CommandLine.Transcribe(microphoneFile)}"));
+        Assert.That(RunFile().Outcome!.Kind, Is.EqualTo(OutcomeKind.NothingRecorded));
     }
 }

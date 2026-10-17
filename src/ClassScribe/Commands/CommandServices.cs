@@ -6,9 +6,10 @@ using Microsoft.Extensions.Logging;
 namespace ClassScribe.Commands;
 
 /// <summary>
-/// Registers the console, the desktop, the gate, the commands, the menu, the command line, the report at the start and
-/// the app that puts them together; and what a run needs to record in this window or in a recorder: the run itself, its
-/// recording loop and checks, its bookkeeping, how it shows its end, and the recorder's log.
+/// Registers the console, the desktop, the gate, the commands, the menu, the microphone menu and the microphone check,
+/// the command line, the report at the start and the app that puts them together; and what a run needs to record in
+/// this window or in a recorder: the run itself, its recording loop and checks, its bookkeeping, how it shows its end,
+/// and the recorder's log.
 /// </summary>
 public static class CommandServices
 {
@@ -31,6 +32,13 @@ public static class CommandServices
         services.AddSingleton<ICommandRunner, CommandRunner>();
         services.AddSingleton<RecordingNamePrompt>();
         services.AddTransient<MenuCommand>();
+
+        // Menu choice 7, which the runner resolves in a scope of its own, as it does the other commands; and the microphone
+        // check of choice 8 and mic-check, as the run the runner resolves (see IMicCheckRun), which reads Ctrl+C through the
+        // signals of its scope, as a transcription does.
+        services.AddTransient<MicrophoneMenu>();
+        services.AddTransient<MicCheckCommand>();
+        services.AddTransient<IMicCheckRun>(provider => provider.GetRequiredService<MicCheckCommand>());
 
         // Reports nothing until the real report at the start is registered; added only when no report is there yet.
         services.TryAddSingleton<IStartupReport, NoStartupReport>();

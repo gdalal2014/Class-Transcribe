@@ -1,3 +1,5 @@
+using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Configuration;
 
@@ -42,6 +44,11 @@ public class SettingsCheckTests
     [TestCase("Recording:ContinueWithinMinutes", "an hour", "a whole number")]
     [TestCase("Recording:ContinueWithinMinutes", "60.5", "a whole number")]
     [TestCase("Recording:StopAfterHours", "9,5", "a number written with a dot")]
+    [TestCase("Recording:Mode", "Both", "Class, ClassAndMicrophone or Microphone")]
+    [TestCase("Recording:Mode", "1", "Class, ClassAndMicrophone or Microphone")]
+    [TestCase("Recording:MicrophoneProcessing", "raw mode", "Raw or Default")]
+    [TestCase("Recording:ClassAppMute", "Maybe", "Visible, Invisible or Unknown")]
+    [TestCase("Transcript:ShowGapsLongerThanSeconds", "1 minute", "a whole number")]
     public void A_value_that_cannot_be_read_is_reported_by_its_setting(string setting, string value, string expected)
     {
         var problems = Problems(new() { [setting] = value });
@@ -169,6 +176,111 @@ public class SettingsCheckTests
     }
 
     /// <summary>
+    /// The settings added for the microphone have these defaults when the file leaves them out: the class alone is
+    /// recorded; the microphone is Windows' default one; unprocessed audio (RAW) is asked for; with the class, the
+    /// microphone follows chrome; and whether the class app lets go of the microphone on mute is not known. A heading
+    /// marks 60 seconds or more of silence left out of a class-only recording. The defaults pass the check.
+    /// </summary>
+    [Test]
+    public void The_microphones_settings_have_their_defaults()
+    {
+        var recording = new RecordingOptions();
+        var transcript = new TranscriptOptions();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(recording.Mode, Is.EqualTo(RecordingMode.Class));
+            Assert.That(recording.Microphone, Is.Empty);
+            Assert.That(recording.MicrophoneProcessing, Is.EqualTo(MicrophoneProcessing.Raw));
+            Assert.That(recording.MicrophoneFollows, Is.EqualTo("chrome"));
+            Assert.That(recording.ClassAppMute, Is.EqualTo(ClassAppMute.Unknown));
+            Assert.That(transcript.ShowGapsLongerThanSeconds, Is.EqualTo(60));
+            Assert.That(Problems([]), Is.Empty);
+        }
+    }
+
+    /// <summary>Each setting added for the microphone is bound from the file as written: the names in any case, the name parts as they are, and the seconds.</summary>
+    [Test]
+    public void The_microphones_settings_are_taken_from_the_file()
+    {
+        var settings = Settings(new()
+        {
+            ["Recording:Mode"] = "classandmicrophone",
+            ["Recording:Microphone"] = "OBSBOT",
+            ["Recording:MicrophoneProcessing"] = "DEFAULT",
+            ["Recording:MicrophoneFollows"] = "msedge",
+            ["Recording:ClassAppMute"] = "visible",
+            ["Transcript:ShowGapsLongerThanSeconds"] = "0"
+        });
+
+        var recording = settings.GetSection(RecordingOptions.SectionName).Get<RecordingOptions>()!;
+        var transcript = settings.GetSection(TranscriptOptions.SectionName).Get<TranscriptOptions>()!;
+
+        Assert.That(new SettingsCheck().FindProblems(settings), Is.Empty);
+        Assert.That(
+            (recording.Mode, recording.Microphone, recording.MicrophoneProcessing, recording.MicrophoneFollows, recording.ClassAppMute, transcript.ShowGapsLongerThanSeconds),
+            Is.EqualTo((RecordingMode.ClassAndMicrophone, "OBSBOT", MicrophoneProcessing.Default, "msedge", ClassAppMute.Visible, 0)));
+    }
+
+    /// <summary>
+    /// The app the microphone follows is part of an app's name, or auto or none. Empty, it would follow nothing and
+    /// record nothing; naming ClassScribe itself, whose own capture holds the microphone for the whole class, it would
+    /// follow ClassScribe and record everything. Both are refused, with what is taken instead. A name part matches an app
+    /// whose process name contains it, so any part of "classscribe" names ClassScribe, with or without .exe.
+    /// </summary>
+    [TestCase("chrome", true)]
+    [TestCase(" Zoom ", true)]
+    [TestCase("auto", true)]
+    [TestCase("none", true)]
+    [TestCase("", false)]
+    [TestCase("   ", false)]
+    [TestCase("ClassScribe", false)]
+    [TestCase("classscribe.exe", false)]
+    [TestCase("scribe", false)]
+    public void The_app_the_microphone_follows_must_name_an_app_other_than_ClassScribe(string value, bool usable)
+    {
+        var problems = Problems(new() { ["Recording:MicrophoneFollows"] = value });
+
+        if (usable)
+        {
+            Assert.That(problems, Is.Empty);
+            return;
+        }
+
+        Assert.That(problems, Has.Count.EqualTo(1));
+        Assert.That(problems[0], Does.StartWith($"Recording:MicrophoneFollows is \"{value}\"").And.Contain("such as chrome").And.Contain("auto").And.Contain("none"));
+        if (value.Trim().Length > 0) Assert.That(problems[0], Does.Contain("ClassScribe itself"));
+    }
+
+    /// <summary>
+    /// The appsettings.json that ships passes the check, and holds each setting added for the microphone at the value the
+    /// code gives it when the file leaves it out, so that the file shows every setting there is.
+    /// </summary>
+    [Test]
+    public void The_shipped_settings_hold_the_microphones_settings_at_their_defaults()
+    {
+        var shipped = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false, reloadOnChange: false)
+            .AddApiKeyFromEnvironment("test-key")
+            .Build();
+        var recording = shipped.GetSection(RecordingOptions.SectionName).Get<RecordingOptions>()!;
+        var transcript = shipped.GetSection(TranscriptOptions.SectionName).Get<TranscriptOptions>()!;
+        var defaults = new RecordingOptions();
+        string[] added =
+        [
+            $"{RecordingOptions.SectionName}:{nameof(RecordingOptions.Mode)}", $"{RecordingOptions.SectionName}:{nameof(RecordingOptions.Microphone)}",
+            $"{RecordingOptions.SectionName}:{nameof(RecordingOptions.MicrophoneProcessing)}", $"{RecordingOptions.SectionName}:{nameof(RecordingOptions.MicrophoneFollows)}",
+            $"{RecordingOptions.SectionName}:{nameof(RecordingOptions.ClassAppMute)}", $"{TranscriptOptions.SectionName}:{nameof(TranscriptOptions.ShowGapsLongerThanSeconds)}"
+        ];
+
+        Assert.That(new SettingsCheck().FindProblems(shipped), Is.Empty);
+        Assert.That(added.Where(setting => shipped[setting] is null), Is.Empty, "every added setting is in the file");
+        Assert.That(
+            (recording.Mode, recording.Microphone, recording.MicrophoneProcessing, recording.MicrophoneFollows, recording.ClassAppMute, transcript.ShowGapsLongerThanSeconds),
+            Is.EqualTo((defaults.Mode, defaults.Microphone, defaults.MicrophoneProcessing, defaults.MicrophoneFollows, defaults.ClassAppMute, new TranscriptOptions().ShowGapsLongerThanSeconds)));
+    }
+
+    /// <summary>
     /// The appsettings.json that ships passes the check, and holds each setting added for the background recorder at the
     /// value the code gives it when the file leaves it out, so that the file shows every setting there is.
     /// </summary>
@@ -214,6 +326,8 @@ public class SettingsCheckTests
     [TestCase("ElevenLabs:SlowestUploadMbps", "-1")]
     [TestCase("ElevenLabs:SlowestUploadMbps", "NaN")]
     [TestCase("ElevenLabs:SlowestUploadMbps", "100000")]
+    [TestCase("Transcript:ShowGapsLongerThanSeconds", "-1")]
+    [TestCase("Recording:MicrophoneFollows", "")]
     public void A_value_out_of_range_is_reported_by_its_setting(string setting, string value)
     {
         var problems = Problems(new() { [setting] = value });
@@ -250,6 +364,21 @@ public class SettingsCheckTests
 
         Assert.That(problems, Has.Count.EqualTo(1));
         Assert.That(problems[0], Does.StartWith($"{setting} is {value};").And.Contain("0 or more").And.Contain("0 turns"));
+    }
+
+    /// <summary>
+    /// The silence a heading marks in a class-only recording is a number of seconds, 0 or more; 0 writes no such heading.
+    /// A negative value is refused, with the setting's name, an example and what 0 does.
+    /// </summary>
+    [TestCase("0", true)]
+    [TestCase("60", true)]
+    [TestCase("-1", false)]
+    public void The_silence_a_heading_marks_is_0_seconds_or_more(string value, bool usable)
+    {
+        var problems = Problems(new() { ["Transcript:ShowGapsLongerThanSeconds"] = value });
+
+        Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo(
+            $"Transcript:ShowGapsLongerThanSeconds is {value}; it must be 0 or more, such as 60. 0 turns the headings for silence left out off."));
     }
 
     /// <summary>
@@ -315,16 +444,20 @@ public class SettingsCheckTests
             ["Recording:FlushSeconds"] = "0",
             ["Recording:KeepUploadFile"] = "no",
             ["Recording:KeepScreenOn"] = "Sometimes",
+            ["Recording:MicrophoneFollows"] = "",
+            ["Recording:ClassAppMute"] = "Maybe",
             ["ElevenLabs:MaxAttempts"] = "0",
             ["Transcript:ParagraphPauseSeconds"] = "1,5",
             ["Transcript:MaxParagraphCharacters"] = "-1",
+            ["Transcript:ShowGapsLongerThanSeconds"] = "-1",
             ["Logging:LogLevel:Default"] = "Loud"
         });
 
         Assert.That(problems.Select(problem => problem.Split(' ')[0]), Is.EquivalentTo(new[]
         {
-            "Recording:FlushSeconds", "Recording:KeepUploadFile", "Recording:KeepScreenOn", "ElevenLabs:MaxAttempts",
-            "Transcript:ParagraphPauseSeconds", "Transcript:MaxParagraphCharacters", "Logging:LogLevel:Default"
+            "Recording:FlushSeconds", "Recording:KeepUploadFile", "Recording:KeepScreenOn", "Recording:MicrophoneFollows", "Recording:ClassAppMute",
+            "ElevenLabs:MaxAttempts", "Transcript:ParagraphPauseSeconds", "Transcript:MaxParagraphCharacters", "Transcript:ShowGapsLongerThanSeconds",
+            "Logging:LogLevel:Default"
         }));
     }
 

@@ -48,8 +48,9 @@ public static class CommandLine
     /// <summary>
     /// The PowerShell command that continues, as its next part, the recording <paramref name="request"/>'s run made, with
     /// this very program: record, or record-only for a run that was not to be transcribed, with the run's name, its source
-    /// (and, from phase 3, its microphone), its recordings folder, --no-open when the run was to open nothing, and
-    /// --continue. Nothing else: --minutes counted from the run's own start, so the continued part records until stopped.
+    /// (and, from phase 3, its microphone, with the app it was chosen to follow for the run), its recordings folder,
+    /// --no-open when the run was to open nothing, and --continue. Nothing else: --minutes counted from the run's own
+    /// start, so the continued part records until stopped.
     /// </summary>
     public static string Record(RecordRequest request) => Record(request, Environment.ProcessPath, AppContext.BaseDirectory);
 
@@ -69,7 +70,13 @@ public static class CommandLine
                 ClassSource.App app => $" --app {Quote(app.ProcessName)}",
                 _ => " --device auto"
             });
-            if (request.Source.Mode == RecordingMode.ClassAndMicrophone) arguments.Append(" --mic").Append(Named(request.Source.Microphone));
+            if (request.Source.Mode == RecordingMode.ClassAndMicrophone)
+            {
+                arguments.Append(" --mic").Append(Named(request.Source.Microphone));
+
+                // A rule chosen for the run (--mic-follows, or menu choice 7) is kept; without one the continued part follows the recorded app or the setting, as the run did.
+                if (request.Source.Microphone?.Follows is { } follows) arguments.Append(" --mic-follows ").Append(Quote(follows.Word));
+            }
         }
 
         arguments.Append(" --output ").Append(Quote(request.OutputRoot));

@@ -1,3 +1,4 @@
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -6,7 +7,8 @@ namespace ClassScribe.Audio;
 
 /// <summary>
 /// Registers what records: Windows audio, made only when something first uses it; the choice of what to record; the
-/// recordings a run makes from its source plan; and the upload preparation.
+/// recordings a run makes from its source plan; the advice about the microphone; and the upload preparation. The
+/// microphone itself is registered apart (see <see cref="MicrophoneServices"/>).
 /// </summary>
 public static class AudioServices
 {
@@ -25,9 +27,15 @@ public static class AudioServices
         services.AddSingleton(provider => new Lazy<ILoopbackCaptureProvider>(provider.GetRequiredService<ILoopbackCaptureProvider>));
         services.AddSingleton<SourceChoice>();
 
-        // One per use, inside a run's scope, with that run's settings: each recording it makes has a session of its own.
-        services.AddTransient<ClassRecordingFactory>();
-        services.AddTransient<IRecordingFactory>(provider => provider.GetRequiredService<ClassRecordingFactory>());
+        // One per use, inside a run's scope, with that run's settings and its freeze watch: the recording it makes is the
+        // class alone, the class and your microphone on one clock, or your microphone alone in person, as the plan says,
+        // each with sessions of its own.
+        services.AddTransient<TrackSetFactory>();
+        services.AddTransient<IRecordingFactory>(provider => provider.GetRequiredService<TrackSetFactory>());
+
+        // The advice about the microphone, one per run: it remembers Vantage's mode from the start, so that the run can
+        // say when the mode changes.
+        services.AddScoped<MicrophoneAdvice>();
 
         services.AddSingleton<IAudioPreparer, AudioPreparer>();
         return services;

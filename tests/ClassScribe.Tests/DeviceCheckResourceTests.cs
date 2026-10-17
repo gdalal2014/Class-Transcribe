@@ -68,10 +68,14 @@ public sealed class DeviceCheckResourceTests
     /// <summary>
     /// Runs <paramref name="check"/> the given number of times with garbage collection held off, and returns how
     /// many handles the process gained and how much its private memory grew. The no-GC region reserves the
-    /// managed heap's room before the first reading, so the growth is memory outside the managed heap.
+    /// managed heap's room before the first reading, so the growth is memory outside the managed heap. The first
+    /// checks pay for caches of COM and the C runtime, whose size moves with what else the machine is doing (a
+    /// full test run beside other builds), so <paramref name="warmUp"/> checks are made before the baseline is
+    /// read, and the growth is measured over the checks after them.
     /// </summary>
-    private static (int Handles, long NativeBytes) Measure(Action check, int times)
+    private static (int Handles, long NativeBytes) Measure(Action check, int times, int warmUp = 100)
     {
+        for (var i = 0; i < warmUp; i++) check();
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
@@ -187,7 +191,7 @@ public sealed class DeviceCheckListingTests
             new FakeAudioSession(Environment.ProcessId, 0.5f), new FakeAudioSession(4242, 0.9f), new FakeAudioSession(5150, 0.3f));
         using var provider = Provider(() => new FakeDeviceEnumerator(speakers), processes.GetValueOrDefault);
 
-        Assert.That(provider.GetPlayingApps(), Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f) }));
+        Assert.That(provider.GetPlayingApps(), Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
     }
 
     /// <summary>An app is listed once, at its loudest; expired sessions, Windows' own sounds and processes that have ended are left out.</summary>
@@ -204,8 +208,8 @@ public sealed class DeviceCheckListingTests
 
         Assert.That(provider.GetPlayingApps(), Is.EquivalentTo(new[]
         {
-            new PlayingApp(5150, "chrome", "Speakers", 0.6f),
-            new PlayingApp(5151, "msedge", "Headphones", 0.2f)
+            new PlayingApp(5150, "chrome", "Speakers", 0.6f, SpeakersId),
+            new PlayingApp(5151, "msedge", "Headphones", 0.2f, HeadphonesId)
         }));
     }
 
@@ -227,7 +231,7 @@ public sealed class DeviceCheckListingTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(apps, Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f) }));
+            Assert.That(apps, Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
             Assert.That(_log.At(LogLevel.Debug), Is.EqualTo(new[]
             {
                 "Left out an audio session whose state Windows did not give (0x88890004)",
