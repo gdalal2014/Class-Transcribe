@@ -85,15 +85,18 @@ public static class TestOptions
 public sealed class TestSettings
 {
     /// <summary>
-    /// Writes <paramref name="json"/> as the appsettings.json in <paramref name="folder"/> and reads it in once, as the app
-    /// does at start. <paramref name="pause"/>, when given, plays each wait of a read before it tries again, so that a test
-    /// can act at that moment, as another program would; otherwise the read sleeps.
+    /// Writes <paramref name="json"/> as the appsettings.json that is read, in <paramref name="folder"/> as the program's
+    /// own, and reads it in once, as the app does at start. <paramref name="pause"/>, when given, plays each wait of a read
+    /// before it tries again, so that a test can act at that moment, as another program would; otherwise the read sleeps.
+    /// <paramref name="userFolder"/>, when given, is the user's folder, whose own appsettings.json is the one read, and
+    /// written here, when it is there already (see <see cref="SettingsPlaces"/>).
     /// </summary>
-    public TestSettings(string folder, string json = "{}", Action<TimeSpan>? pause = null)
+    public TestSettings(string folder, string json = "{}", Action<TimeSpan>? pause = null, string? userFolder = null)
     {
+        var places = new SettingsPlaces(folder, userFolder);
         File = pause is null
-            ? new SettingsFile(folder, NullLogger<SettingsFile>.Instance)
-            : new SettingsFile(folder, NullLogger<SettingsFile>.Instance, pause);
+            ? new SettingsFile(places, NullLogger<SettingsFile>.Instance)
+            : new SettingsFile(places, NullLogger<SettingsFile>.Instance, pause);
         Write(json);
         var accepted = new CheckedSettingsSource();
         Configuration = new ConfigurationManager();

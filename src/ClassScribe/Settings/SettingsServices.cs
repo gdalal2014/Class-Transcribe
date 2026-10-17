@@ -25,16 +25,17 @@ public static class SettingsServices
     }
 
     /// <summary>
-    /// Adds the settings file in <paramref name="contentRoot"/> and what reads it again into <paramref name="configuration"/>,
+    /// Adds <paramref name="places"/>, the settings file they name, and what reads it again into <paramref name="configuration"/>,
     /// through <paramref name="accepted"/>, which must be one of its sources. AppHost adds them, since it builds that configuration.
     /// </summary>
-    public static IServiceCollection AddSettingsReload(this IServiceCollection services, ConfigurationManager configuration, CheckedSettingsSource accepted, string contentRoot)
+    public static IServiceCollection AddSettingsReload(this IServiceCollection services, ConfigurationManager configuration, CheckedSettingsSource accepted, SettingsPlaces places)
     {
         if (!configuration.Sources.Contains(accepted))
             throw new InvalidOperationException("The settings to reload must take appsettings.json through the CheckedSettingsSource given; see AppHost.Build.");
 
         services.AddSingleton(accepted);
-        services.AddSingleton(provider => new SettingsFile(contentRoot, provider.GetRequiredService<ILogger<SettingsFile>>()));
+        services.AddSingleton(places);
+        services.AddSingleton(provider => new SettingsFile(places, provider.GetRequiredService<ILogger<SettingsFile>>()));
         services.AddSingleton(provider => new SettingsReloader(
             configuration,
             accepted,

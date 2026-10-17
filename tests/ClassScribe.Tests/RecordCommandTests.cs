@@ -163,7 +163,7 @@ public partial class RecordCommandTests
         var workflow = new TranscriptionWorkflow(
             new AudioPreparer(NullLogger<AudioPreparer>.Instance),
             _client.Object,
-            new KeytermLoader(NullLogger<KeytermLoader>.Instance),
+            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             marks,
@@ -2031,7 +2031,7 @@ public partial class RecordCommandTests
     public void A_run_resolves_in_a_scope_of_its_own_with_what_it_needs_in_this_window()
     {
         File.WriteAllText(_folder.File("appsettings.json"), "{}");
-        using var app = AppHost.Build(_folder.Path, "dummy-key-for-a-local-test", services => services
+        using var app = AppHost.Build(new SettingsPlaces(_folder.Path, userFolder: null), "dummy-key-for-a-local-test", services => services
             .AddSingleton<ILoopbackCaptureProvider>(_provider)
             .AddSingleton(_runtime.Folder)                               // never the real %LOCALAPPDATA%\ClassScribe
             .AddSingleton(new RoamingFolder(_folder.File("Roaming"))));  // nor the real %APPDATA%\ClassScribe

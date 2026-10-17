@@ -199,7 +199,9 @@ public sealed class MenuCommand(
 
     /// <summary>
     /// Lists the choices under a header: the build (see <see cref="BuildInfo"/>), the settings file read, where the files
-    /// go, what is recorded, the microphone included, and the runs going on now.
+    /// go, what is recorded, the microphone included, and the runs going on now. When the file read is the shipped one
+    /// beside the installed program because the user's own copy is missing, the file's line says so and where that copy
+    /// belongs (see <see cref="SettingsPlaces.DescribeTemplateInUse"/>).
     /// Under the file's name it points out a copy of the settings that a build has not brought up to date, and settings
     /// that could not be used when they were last read, at start or for the last choice: each problem, and that no choice
     /// runs until the file is fixed, so the folder and the source shown below are not taken for the file's. Then, when
@@ -212,7 +214,7 @@ public sealed class MenuCommand(
     {
         ui.WriteLine();
         ui.WriteLine($"ClassScribe {BuildInfo.Describe()}");
-        ui.WriteLine($"Settings: {settings.Path}");
+        ui.WriteLine(settings.Places.DescribeTemplateInUse() is { } template ? $"Settings: {settings.Path} ({template})" : $"Settings: {settings.Path}");
         _staleCopyShown = settings.DescribeStaleCopy();
         if (_staleCopyShown is { } stale) ui.WriteLine($"WARNING  {stale}.");
         if (gate.Problems is [_, ..] settingsProblems)

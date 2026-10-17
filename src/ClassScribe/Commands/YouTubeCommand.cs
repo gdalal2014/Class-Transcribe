@@ -214,7 +214,7 @@ public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.C
     private async Task<bool?> AskTranscribeAsync()
     {
         var settings = elevenLabs.Value;
-        var glossary = keyterms.Load(Transcription.KeytermLoader.ResolvePath(settings.KeytermsFile)).Count > 0;
+        var glossary = keyterms.Load(keyterms.ResolvePath(settings.KeytermsFile)).Count > 0;
         var hour = settings.PricePerHourUsd + (glossary ? settings.KeytermsPricePerHourUsd : 0);
         ui.WriteLine(System.FormattableString.Invariant(
             $"Then transcribe each one? T transcribes (about ${hour:0.00} an hour of audio{(glossary ? " with the glossary" : "")}), O only fetches the audio, Esc goes back."));

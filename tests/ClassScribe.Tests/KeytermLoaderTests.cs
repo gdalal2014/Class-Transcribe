@@ -1,9 +1,10 @@
 using System.Text;
+using ClassScribe.Settings;
 using ClassScribe.Transcription;
 
 namespace ClassScribe.Tests;
 
-/// <summary>Reading and validating the glossary file.</summary>
+/// <summary>Reading and validating the glossary file, and finding it: beside the program as before, or in the user's own folder first.</summary>
 [TestFixture]
 public class KeytermLoaderTests
 {
@@ -11,13 +12,16 @@ public class KeytermLoaderTests
     private RecordingLogger<KeytermLoader> _log = null!;
     private KeytermLoader _loader = null!;
 
-    /// <summary>Creates a temporary folder and the loader under test, with a logger that keeps what it is told.</summary>
+    /// <summary>
+    /// Creates a temporary folder and the loader under test, reading beside the program with no user folder, as before,
+    /// with a logger that keeps what it is told.
+    /// </summary>
     [SetUp]
     public void SetUp()
     {
         _folder = new TempFolder();
         _log = new RecordingLogger<KeytermLoader>();
-        _loader = new KeytermLoader(_log);
+        _loader = new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), _log);
     }
 
     /// <summary>Deletes the temporary folder. That fails if a test left a file open, which is the point.</summary>
@@ -186,11 +190,11 @@ public class KeytermLoaderTests
         Assert.That(KeytermLoader.Validate("one two three four five six"), Does.Not.Contain("zero width space"));
     }
 
-    /// <summary>A relative glossary path is found next to the app, whatever folder the app was started from.</summary>
+    /// <summary>A relative glossary path is found next to the app, whatever folder the app was started from, when the settings are read there.</summary>
     [Test]
     public void A_relative_glossary_path_is_found_next_to_the_app()
     {
-        Assert.That(KeytermLoader.ResolvePath("keyterms.txt"), Is.EqualTo(Path.Combine(AppContext.BaseDirectory, "keyterms.txt")));
+        Assert.That(_loader.ResolvePath("keyterms.txt"), Is.EqualTo(Path.Combine(AppContext.BaseDirectory, "keyterms.txt")));
     }
 
     /// <summary>Environment variables in the glossary path, such as %USERPROFILE%, are expanded, and quotes around it are ignored.</summary>
@@ -200,8 +204,8 @@ public class KeytermLoaderTests
         Environment.SetEnvironmentVariable("CLASSSCRIBE_TEST_GLOSSARY", _folder.Path);
         try
         {
-            Assert.That(KeytermLoader.ResolvePath(@"%CLASSSCRIBE_TEST_GLOSSARY%\terms.txt"), Is.EqualTo(_folder.File("terms.txt")));
-            Assert.That(KeytermLoader.ResolvePath(@" ""%CLASSSCRIBE_TEST_GLOSSARY%\terms.txt"" "), Is.EqualTo(_folder.File("terms.txt")));
+            Assert.That(_loader.ResolvePath(@"%CLASSSCRIBE_TEST_GLOSSARY%\terms.txt"), Is.EqualTo(_folder.File("terms.txt")));
+            Assert.That(_loader.ResolvePath(@" ""%CLASSSCRIBE_TEST_GLOSSARY%\terms.txt"" "), Is.EqualTo(_folder.File("terms.txt")));
         }
         finally
         {
@@ -213,7 +217,48 @@ public class KeytermLoaderTests
     [Test]
     public void An_empty_glossary_setting_resolves_to_no_path()
     {
-        Assert.That(KeytermLoader.ResolvePath("  "), Is.Empty);
+        Assert.That(_loader.ResolvePath("  "), Is.Empty);
+    }
+
+    /// <summary>
+    /// With the user's own settings read, a relative glossary name is taken from the user's folder first and beside the
+    /// program second, and when it is in neither place the warning names both, and says where to put the file.
+    /// </summary>
+    [Test]
+    public void With_the_users_settings_read_the_glossary_is_looked_for_in_the_users_folder_first()
+    {
+        using var program = new TempFolder();
+        File.WriteAllText(_folder.File("appsettings.json"), "{}");
+        var loader = new KeytermLoader(new SettingsPlaces(program.Path, _folder.Path), _log);
+
+        Assert.That(loader.ResolvePath("keyterms.txt"), Is.EqualTo(program.File("keyterms.txt")), "not in the user's folder, so beside the program");
+        Assert.That(loader.Load(loader.ResolvePath("keyterms.txt")), Is.Empty);
+        Assert.That(_log.Problems, Is.EqualTo(new[]
+        {
+            $"No glossary at {_folder.File("keyterms.txt")} or beside ClassScribe.exe, so the transcript is made without its terms. Put keyterms.txt in the first folder, or set ElevenLabs:KeytermsFile to where it is"
+        }));
+
+        File.WriteAllLines(program.File("keyterms.txt"), ["shipped"], Encoding.UTF8);
+        Assert.That(loader.Load(loader.ResolvePath("keyterms.txt")), Is.EqualTo(new[] { "shipped" }), "the shipped glossary, second");
+
+        File.WriteAllLines(_folder.File("keyterms.txt"), ["kalām"], Encoding.UTF8);
+        Assert.That(loader.ResolvePath("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
+        Assert.That(loader.Load(loader.ResolvePath("keyterms.txt")), Is.EqualTo(new[] { "kalām" }), "the user's own, first");
+    }
+
+    /// <summary>A glossary named by a path of its own that is not there is warned about as before, by that path alone, whichever settings file was read.</summary>
+    [Test]
+    public void A_missing_glossary_elsewhere_is_named_by_its_path()
+    {
+        using var program = new TempFolder();
+        File.WriteAllText(_folder.File("appsettings.json"), "{}");
+        var loader = new KeytermLoader(new SettingsPlaces(program.Path, _folder.Path), _log);
+        var elsewhere = _folder.File(Path.Combine("Glossaries", "terms.txt"));
+
+        Assert.That(loader.Load(loader.ResolvePath(elsewhere)), Is.Empty);
+
+        Assert.That(_log.Problems, Has.Count.EqualTo(1));
+        Assert.That(_log.Problems[0], Does.StartWith($"No glossary at {elsewhere}, so").And.Not.Contain("or beside"));
     }
 
     /// <summary>Every term in the glossary that ships with the app is valid, so none is skipped with a warning.</summary>

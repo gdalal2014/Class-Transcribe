@@ -6,11 +6,12 @@ namespace ClassScribe.Settings;
 public sealed record SettingsText(string Path, byte[]? Bytes);
 
 /// <summary>
-/// appsettings.json next to the exe, the one file ClassScribe reads its settings from. Under dotnet run that is the copy a
-/// build puts in bin\Debug\net10.0-windows10.0.19041.0, so it also says when the project's own file has changed since that
-/// copy was made.
+/// The one appsettings.json ClassScribe reads its settings from: the user's own, in the user's folder, when it was there at
+/// start, else the file next to the exe (see <see cref="SettingsPlaces"/>). Under dotnet run the latter is the copy a build
+/// puts in bin\Debug\net10.0-windows10.0.19041.0, so it also says when the project's own file has changed since that copy
+/// was made.
 /// </summary>
-public sealed class SettingsFile(string contentRoot, ILogger<SettingsFile> logger)
+public sealed class SettingsFile(SettingsPlaces places, ILogger<SettingsFile> logger)
 {
     /// <summary>The name of the settings file.</summary>
     public const string FileName = "appsettings.json";
@@ -21,21 +22,24 @@ public sealed class SettingsFile(string contentRoot, ILogger<SettingsFile> logge
     /// <summary>The pause before a read is tried again.</summary>
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(200);
 
-    /// <summary>The folder the file is in: the exe's own.</summary>
-    private readonly string _folder = System.IO.Path.TrimEndingDirectorySeparator(contentRoot);
+    /// <summary>The folder the file is in: the user's, or the exe's own.</summary>
+    private readonly string _folder = places.Folder;
 
     /// <summary>How a read waits before it tries again: the thread sleeps, unless a test plays the wait.</summary>
     private readonly Action<TimeSpan> _pause = Thread.Sleep;
 
     /// <summary>
-    /// Reads the file in <paramref name="contentRoot"/> as the public constructor does, but waits with
+    /// Reads the file <paramref name="places"/> names as the public constructor does, but waits with
     /// <paramref name="pause"/> before each new try instead of sleeping, so that a test can act at that moment, as the
     /// program that holds the file, or an editor that saves it, would.
     /// </summary>
-    internal SettingsFile(string contentRoot, ILogger<SettingsFile> logger, Action<TimeSpan> pause) : this(contentRoot, logger) => _pause = pause;
+    internal SettingsFile(SettingsPlaces places, ILogger<SettingsFile> logger, Action<TimeSpan> pause) : this(places, logger) => _pause = pause;
 
-    /// <summary>The copy of appsettings.json next to the exe, the one ClassScribe reads.</summary>
-    public string Path { get; } = System.IO.Path.Combine(contentRoot, FileName);
+    /// <summary>Where the settings and the glossary are read from, as decided when ClassScribe started.</summary>
+    public SettingsPlaces Places { get; } = places;
+
+    /// <summary>The appsettings.json ClassScribe reads: the user's own, or the copy next to the exe.</summary>
+    public string Path { get; } = places.SettingsPath;
 
     /// <summary>
     /// Reads the file as it is now, sharing it with any program that has it open. A file another program holds for a
@@ -82,10 +86,13 @@ public sealed class SettingsFile(string contentRoot, ILogger<SettingsFile> logge
     /// <summary>
     /// In the development layout, where the file read is the copy a build puts in &lt;project&gt;\bin\&lt;configuration&gt;\&lt;framework&gt;,
     /// says so when the project's own appsettings.json is newer than that copy and differs from it: an edit there does
-    /// not count until the next build. Null otherwise, and always for a published app, which has no project behind it.
+    /// not count until the next build. Null otherwise: for a published app, which has no project behind it, and whenever
+    /// the user's own file is the one read, since no build makes that copy.
     /// </summary>
     public string? DescribeStaleCopy()
     {
+        if (Places.Origin == SettingsOrigin.UserFolder) return null;
+
         var output = new DirectoryInfo(_folder);
         var bin = output.Parent?.Parent;
         var project = bin?.Parent;

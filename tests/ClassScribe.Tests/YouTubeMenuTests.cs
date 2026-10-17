@@ -33,7 +33,7 @@ public class YouTubeMenuTests
     /// <summary>The menu over the world's batch.</summary>
     private YouTubeMenu Menu() =>
         new(new YouTubeCommand(_world.Batch(), null!, new FakeUserSignals(), _world.Ui, _world.YouTube, _world.Log<YouTubeCommand>()), _world.Ui, _world.ClassFolders,
-            _memory, new KeytermLoader(NullLogger<KeytermLoader>.Instance), _world.ElevenLabs);
+            _memory, new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance), _world.ElevenLabs);
 
     /// <summary>
     /// Links pasted, a line without one named and left out, the course typed, T: the batch plans, asks YES, downloads into
@@ -138,7 +138,7 @@ public class YouTubeMenuRecordTests
     private async Task<int> RunMenuAsync()
     {
         var command = new YouTubeCommand(null!, null!, _world.Signals, _world.Ui, _world.YouTube, _world.Log<YouTubeCommand>(), _world.Batch());
-        var running = new YouTubeMenu(command, _world.Ui, _world.ClassFolders, new YouTubeMenuMemory(), new KeytermLoader(NullLogger<KeytermLoader>.Instance), _world.ElevenLabs).RunAsync();
+        var running = new YouTubeMenu(command, _world.Ui, _world.ClassFolders, new YouTubeMenuMemory(), new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance), _world.ElevenLabs).RunAsync();
         await _world.Runtime.Time.AdvanceUntilAsync(() => running.IsCompleted, TimeSpan.FromMilliseconds(500), timeoutSeconds: 60);
         return await running;
     }

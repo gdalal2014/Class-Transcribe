@@ -108,7 +108,7 @@ public sealed class DownloadBatch(
             if (video.Info is { } info) video.Verdict = guard.Judge(info, request.AllowUnlisted);
         }
 
-        var glossary = keyterms.Load(KeytermLoader.ResolvePath(elevenLabs.Value.KeytermsFile)).Count;
+        var glossary = keyterms.Load(keyterms.ResolvePath(elevenLabs.Value.KeytermsFile)).Count;
         var accountLine = request.Transcribe ? await batch.AccountLineAsync(cancellationToken) : null;
         var (audioBytes, stagingBytes) = DownloadPlan.BytesOf([.. videos.Where(video => video.IsReady)]);
         var room = Room(request.OutputRoot, audioBytes, stagingBytes);

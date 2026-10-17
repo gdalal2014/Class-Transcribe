@@ -65,7 +65,7 @@ public class DriveSecretsTests
     /// browser and listener the test plays, the console it reads, its clock, and the provider that keeps every log line.
     /// </summary>
     private IHost BuildApp() =>
-        AppHost.Build(_folder.Path, "test-key", services =>
+        AppHost.Build(new SettingsPlaces(_folder.Path, userFolder: null), "test-key", services =>
         {
             services.AddSingleton(_runtime.Folder);
             services.AddSingleton(new RoamingFolder(_folder.File("Roaming")));
