@@ -70,7 +70,10 @@ public class TranscriptionWorkflowTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Creates the workflow under test around the mocks, or around the preparer, settings, progress and loggers given.</summary>
+    /// <summary>
+    /// Creates the workflow under test around the mocks, or around the preparer, settings, progress and loggers given. The
+    /// glossary is looked for beside the program alone, unless <paramref name="places"/> says where else.
+    /// </summary>
     private TranscriptionWorkflow CreateWorkflow(
         bool keepUploadFile = false,
         string? keytermsFile = null,
@@ -79,13 +82,14 @@ public class TranscriptionWorkflowTests
         ILogger<KeytermLoader>? glossaryLogger = null,
         string apiKey = "dummy-key-for-a-local-test",
         TestOptions<TranscriptOptions>? transcript = null,
-        TranscriptionProgress? progress = null)
+        TranscriptionProgress? progress = null,
+        SettingsPlaces? places = null)
     {
         var recording = TestOptions.Create(new RecordingOptions { KeepUploadFile = keepUploadFile, OutputFolder = _recordings });
         return new(
             preparer ?? _preparer.Object,
             _client.Object,
-            new KeytermLoader(glossaryLogger ?? NullLogger<KeytermLoader>.Instance),
+            new KeytermLoader(places ?? new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), glossaryLogger ?? NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(transcript ?? TestOptions.Create(new TranscriptOptions())),
             new ClassFolders(recording, new ManualTimeProvider(Started), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
@@ -517,6 +521,28 @@ public class TranscriptionWorkflowTests
 
         _client.Verify(c => c.TranscribeAsync(It.IsAny<string>(), new[] { "kalām", "Ashʿarī" }, It.IsAny<CancellationToken>()), Times.Once);
         Assert.That(glossaryLog.Problems, Is.Empty);
+    }
+
+    /// <summary>
+    /// A relative ElevenLabs:KeytermsFile, keyterms.txt as shipped, is taken from the folder the settings were read from
+    /// first, the user's own glossary, and from the program's folder second, the shipped one.
+    /// </summary>
+    [Test]
+    public async Task A_relative_glossary_name_is_taken_from_the_users_folder_first_then_beside_the_program()
+    {
+        using var program = new TempFolder();
+        using var user = new TempFolder();
+        File.WriteAllText(user.File("appsettings.json"), "{}");
+        File.WriteAllLines(program.File("keyterms.txt"), ["shipped"]);
+        var places = new SettingsPlaces(program.Path, user.Path);
+        var sent = new List<IReadOnlyList<string>>();
+        _client.Setup(Calls.AnyTranscription).Callback((string _, IReadOnlyList<string> terms, CancellationToken _) => sent.Add(terms)).ReturnsAsync(Mocks.Transcript);
+
+        await CreateWorkflow(keytermsFile: "keyterms.txt", places: places).TranscribeRecordingAsync(_files, CancellationToken.None);
+        File.WriteAllLines(user.File("keyterms.txt"), ["kalām"]);
+        await CreateWorkflow(keytermsFile: "keyterms.txt", places: places).TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        Assert.That(sent, Is.EqualTo(new[] { new[] { "shipped" }, new[] { "kalām" } }));
     }
 
     /// <summary>A video goes up as it is, and its transcript gets a folder of its own in the recordings folder, named after it and stamped.</summary>

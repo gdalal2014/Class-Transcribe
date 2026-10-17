@@ -5,20 +5,22 @@ using ClassScribe.Settings;
 
 // A recorder, started by a window as "ClassScribe.exe --recorder <run id>" to record one class in the background: it
 // has no window, so it is handed its run before anything touches the console, and it never waits for Enter at the end,
-// which nobody could press. Its key comes from its own environment, inherited from the window, and from nowhere else.
+// which nobody could press. Its key comes from its own environment, inherited from the window, and from nowhere else;
+// its glossary from the same places as the window's.
 if (RecorderHost.IsRecorderStart(args, out var recorderRunId))
-    return await new RecorderHost().RunAsync(recorderRunId, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable));
+    return await new RecorderHost { Places = SettingsPlaces.ForThisUser(AppContext.BaseDirectory) }.RunAsync(recorderRunId, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable));
 
 // First, before anything writes to the console, so that the log shows Arabic, transliteration and
 // device names such as "Intel®" as they are.
 ConsoleUi.UseUnicode();
 
-// Settings are read from the folder the app lives in, whatever folder it is started from.
-var contentRoot = AppContext.BaseDirectory;
+// Settings are read from the user's own folder when it holds a copy, else from the folder the app lives in, whatever
+// folder it is started from. Decided here, once (see SettingsPlaces).
+var places = SettingsPlaces.ForThisUser(AppContext.BaseDirectory);
 int exitCode;
 try
 {
-    using var host = AppHost.Build(contentRoot, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable));
+    using var host = AppHost.Build(places, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable));
     exitCode = await AppHost.RunAsync(host.Services, args);
 }
 catch (Exception ex)
@@ -27,7 +29,7 @@ catch (Exception ex)
     // reports its own failures. What arrives here happened while ClassScribe was being put together,
     // mostly an appsettings.json that cannot be read, before any logger exists; a stack trace would
     // bury the one line that matters, so the reason is printed plainly and becomes exit code 1.
-    Console.Error.WriteLine(AppHost.DescribeFailure(ex, contentRoot));
+    Console.Error.WriteLine(AppHost.DescribeFailure(ex, places));
     exitCode = 1;
 }
 

@@ -6,6 +6,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.DependencyInjection;
@@ -85,6 +86,7 @@ public class RecorderHostTests
     private RecorderHost Host() => new()
     {
         Folder = _runtime.Folder,
+        Places = new SettingsPlaces(AppContext.BaseDirectory, userFolder: null),
         Time = _time,
         ConfigureServices = services =>
         {

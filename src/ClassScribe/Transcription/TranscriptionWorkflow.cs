@@ -269,7 +269,7 @@ public sealed class TranscriptionWorkflow(
     {
         // A cancel made while the upload file was prepared must not go on to "Uploading", which would look as if it had been ignored.
         cancellationToken.ThrowIfCancellationRequested();
-        var keyterms = keytermLoader.Load(KeytermLoader.ResolvePath(elevenLabs.Value.KeytermsFile));
+        var keyterms = keytermLoader.Load(keytermLoader.ResolvePath(elevenLabs.Value.KeytermsFile));
 
         TranscriptionResult result;
         try

@@ -5,6 +5,7 @@ using ClassScribe.Desktop.Windows;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -32,6 +33,9 @@ public class AppHostTests
     /// <summary>The settings file of the app under test.</summary>
     private string SettingsPath => _folder.File("appsettings.json");
 
+    /// <summary>Where the app under test reads its settings: the test's folder as the program's, and no user folder, as before this rule.</summary>
+    private SettingsPlaces Places() => new(_folder.Path, userFolder: null);
+
     /// <summary>Writes the appsettings.json the host is built from.</summary>
     private void WriteSettings(string json) => File.WriteAllText(SettingsPath, json);
 
@@ -41,7 +45,7 @@ public class AppHostTests
     {
         WriteSettings("""{ "ElevenLabs": { "ApiKey": "key-in-file" } }""");
 
-        using var host = AppHost.Build(_folder.Path, apiKey: "key-from-variable");
+        using var host = AppHost.Build(Places(),apiKey: "key-from-variable");
 
         Assert.That(host.Services.GetRequiredService<IOptionsMonitor<ElevenLabsOptions>>().CurrentValue.ApiKey, Is.EqualTo("key-from-variable"));
     }
@@ -52,7 +56,7 @@ public class AppHostTests
     {
         WriteSettings("""{ "ElevenLabs": { "ApiKey": "key-in-file" } }""");
 
-        using var host = AppHost.Build(_folder.Path, apiKey: null);
+        using var host = AppHost.Build(Places(),apiKey: null);
 
         Assert.That(host.Services.GetRequiredService<IOptionsMonitor<ElevenLabsOptions>>().CurrentValue.ApiKey, Is.Empty);
     }
@@ -63,7 +67,7 @@ public class AppHostTests
     {
         WriteSettings("""{ "Recording": { "FlushSeconds": 8 }, "Transcript": { "ParagraphPauseSeconds": 3.5 } }""");
 
-        using var host = AppHost.Build(_folder.Path, apiKey: "test-key");
+        using var host = AppHost.Build(Places(),apiKey: "test-key");
 
         Assert.That(host.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.FlushSeconds, Is.EqualTo(8));
         Assert.That(host.Services.GetRequiredService<IOptions<TranscriptOptions>>().Value.ParagraphPauseSeconds, Is.EqualTo(3.5));
@@ -86,7 +90,7 @@ public class AppHostTests
             }
             """);
 
-        using var host = AppHost.Build(_folder.Path, apiKey: null);
+        using var host = AppHost.Build(Places(),apiKey: null);
         Assert.That(host.Services.GetRequiredService<RunGate>().Problems, Has.Some.StartsWith("The mistake is on line 3:"), "kept from the first read, for the menu's header");
         var log = new RecordingLogger<RunGate>();
         var opened = new RunGate(host.Services.GetRequiredService<SettingsReloader>(), host.Services.GetRequiredService<SettingsFile>(), log).TryOpen(GateUse.Command);
@@ -106,7 +110,7 @@ public class AppHostTests
     [Test]
     public void The_shipped_settings_pass_the_check_and_hold_their_settings()
     {
-        using var host = AppHost.Build(AppContext.BaseDirectory, apiKey: "test-key");
+        using var host = AppHost.Build(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), apiKey: "test-key");
 
         var verdict = host.Services.GetRequiredService<SettingsReloader>().TryReload();
 
@@ -120,6 +124,69 @@ public class AppHostTests
     }
 
     /// <summary>
+    /// The shipped appsettings.json is a template that an update replaces: every value in it is the code's own default, so
+    /// a key missing from the user's copy keeps the shipped value, and its Logging keys, which only the file used to hold,
+    /// are exactly the defaults AppHost adds (see <see cref="DefaultSettings"/>). The template can never document a default
+    /// the code does not have, and every key in it names a setting. Recording:OutputFolder is written out as
+    /// %USERPROFILE%\ClassScribe where the code's default is empty; both mean the same folder.
+    /// </summary>
+    [Test]
+    public void The_shipped_template_equals_the_code_defaults()
+    {
+        var template = new ConfigurationBuilder().AddJsonFile(Path.Combine(AppContext.BaseDirectory, SettingsFile.FileName)).Build();
+
+        AssertEqualsDefaults(template, RecordingOptions.SectionName, new RecordingOptions(), nameof(RecordingOptions.OutputFolder));
+        AssertEqualsDefaults(template, ElevenLabsOptions.SectionName, new ElevenLabsOptions());
+        AssertEqualsDefaults(template, TranscriptOptions.SectionName, new TranscriptOptions());
+        Assert.That(ClassFolders.RootFor(template["Recording:OutputFolder"]), Is.EqualTo(ClassFolders.RootFor("")), "the same folder, written out");
+        var logging = template.GetSection("Logging").AsEnumerable().Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        Assert.That(logging, Is.EquivalentTo(DefaultSettings.Values));
+        Assert.That(template.GetChildren().Select(section => section.Key), Is.EquivalentTo(new[] { RecordingOptions.SectionName, ElevenLabsOptions.SectionName, TranscriptOptions.SectionName, "Logging" }));
+    }
+
+    /// <summary>
+    /// Asserts that section <paramref name="section"/> of <paramref name="template"/> binds to the values of
+    /// <paramref name="fresh"/>, an instance with nothing set, property by property but for <paramref name="except"/>, and
+    /// that every key in the section names a property.
+    /// </summary>
+    private static void AssertEqualsDefaults<T>(IConfiguration template, string section, T fresh, params string[] except) where T : class, new()
+    {
+        var bound = template.GetSection(section).Get<T>()!;
+        var properties = typeof(T).GetProperties().Where(property => property.CanRead && property.SetMethod is not null).ToList();
+        Assert.That(template.GetSection(section).GetChildren().Select(child => child.Key),
+            Has.All.Matches<string>(key => properties.Any(property => property.Name.Equals(key, StringComparison.OrdinalIgnoreCase))), $"every key in {section} is a setting");
+        foreach (var property in properties.Where(property => !except.Contains(property.Name)))
+            Assert.That(property.GetValue(bound), Is.EqualTo(property.GetValue(fresh)), $"{section}:{property.Name}");
+    }
+
+    /// <summary>
+    /// Without a settings file, and with one that leaves the Logging section out, the log is as the shipped file makes it:
+    /// ClassScribe's lines at Information, the Microsoft and System categories (the HttpClient's chatter among them) at
+    /// Warning, and the plain format. The file's own values win per key, from the next choice on, and the defaults reach
+    /// the recorder through the snapshot.
+    /// </summary>
+    [Test]
+    public void The_logging_defaults_apply_without_a_file_and_the_file_wins_per_key()
+    {
+        using var host = AppHost.Build(Places(), apiKey: "test-key");
+        var configuration = host.Services.GetRequiredService<IConfiguration>();
+        var loggers = host.Services.GetRequiredService<ILoggerFactory>();
+
+        foreach (var (key, value) in DefaultSettings.Values) Assert.That(configuration[key], Is.EqualTo(value), key);
+        Assert.That(loggers.CreateLogger("ClassScribe.Tests").IsEnabled(LogLevel.Information), Is.True);
+        Assert.That(loggers.CreateLogger("System.Net.Http.HttpClient.IElevenLabsApi.LogicalHandler").IsEnabled(LogLevel.Information), Is.False, "the HttpClient's chatter stays out");
+        Assert.That(loggers.CreateLogger("Microsoft.Extensions.Hosting.Internal.Host").IsEnabled(LogLevel.Information), Is.False);
+        Assert.That(host.Services.GetRequiredService<IOptionsMonitor<ConsoleLoggerOptions>>().CurrentValue.FormatterName, Is.EqualTo(PlainConsoleFormatter.FormatterName));
+        Assert.That(host.Services.GetRequiredService<SettingsReloader>().Snapshot(), Does.ContainKey("Logging:LogLevel:Microsoft").WithValue("Warning"), "the defaults reach the recorder");
+
+        WriteSettings("""{ "Logging": { "LogLevel": { "Microsoft": "Debug" } } }""");
+        Assert.That(host.Services.GetRequiredService<RunGate>().TryOpen(GateUse.MenuChoice), Is.True);
+
+        Assert.That(loggers.CreateLogger("Microsoft.Extensions.Hosting.Internal.Host").IsEnabled(LogLevel.Debug), Is.True, "the file's value, from the next choice");
+        Assert.That(configuration["Logging:LogLevel:System"], Is.EqualTo("Warning"), "the other defaults stay");
+    }
+
+    /// <summary>
     /// The settings are read again before each menu choice and each command, never in between: a value edited in
     /// appsettings.json while ClassScribe runs, as the menu stays open from class to class, is not taken until the next
     /// choice, and then only once it has passed the check. Here a comma decimal, which would otherwise stop the
@@ -129,7 +196,7 @@ public class AppHostTests
     public async Task A_setting_edited_while_ClassScribe_runs_counts_from_the_next_choice_once_checked()
     {
         WriteSettings("""{ "Transcript": { "ParagraphPauseSeconds": 3.5 } }""");
-        using var host = AppHost.Build(_folder.Path, apiKey: "test-key");
+        using var host = AppHost.Build(Places(),apiKey: "test-key");
         var monitor = host.Services.GetRequiredService<IOptionsMonitor<TranscriptOptions>>();
         var gate = host.Services.GetRequiredService<RunGate>();
 
@@ -163,7 +230,7 @@ public class AppHostTests
     public void The_log_follows_the_Logging_section_from_the_start_and_after_an_edit()
     {
         WriteSettings("""{ "Logging": { "LogLevel": { "Default": "Warning" }, "Console": { "FormatterName": "simple" } } }""");
-        using var host = AppHost.Build(_folder.Path, apiKey: "test-key");
+        using var host = AppHost.Build(Places(),apiKey: "test-key");
         var log = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ClassScribe.Tests");
         var console = host.Services.GetRequiredService<IOptionsMonitor<ConsoleLoggerOptions>>();
 
@@ -188,8 +255,8 @@ public class AppHostTests
         WriteSettings("""{ "Recording": { "FlushSeconds": 5 } }""");
         using var variable = new TemporaryVariable("Recording__FlushSeconds", "abc");
 
-        var failure = Assert.Catch(() => AppHost.Build(_folder.Path, apiKey: "test-key").Dispose())!;
-        var explanation = AppHost.DescribeFailure(failure, _folder.Path);
+        var failure = Assert.Catch(() => AppHost.Build(Places(),apiKey: "test-key").Dispose())!;
+        var explanation = AppHost.DescribeFailure(failure, Places());
 
         Assert.That(explanation, Does.StartWith("ClassScribe could not start."));
         Assert.That(explanation, Does.Contain("Recording:FlushSeconds is \"abc\", which is not a whole number").And.Contain("environment variable"));
@@ -200,7 +267,7 @@ public class AppHostTests
     [Test]
     public void A_per_run_service_cannot_be_taken_outside_a_run()
     {
-        using var host = AppHost.Build(_folder.Path, apiKey: "test-key");
+        using var host = AppHost.Build(Places(),apiKey: "test-key");
 
         Assert.That(() => host.Services.GetRequiredService<IUserSignals>(), Throws.InvalidOperationException);
     }
@@ -211,11 +278,24 @@ public class AppHostTests
     {
         var failure = new InvalidOperationException("The configuration of the console log failed.", new FormatException("Loud is not a level."));
 
-        var explanation = AppHost.DescribeFailure(failure, _folder.Path);
+        var explanation = AppHost.DescribeFailure(failure, Places());
 
         Assert.That(explanation, Does.StartWith("ClassScribe could not start."));
         Assert.That(explanation, Does.Contain("The configuration of the console log failed.").And.Contain("Loud is not a level."));
         Assert.That(explanation, Does.Contain(SettingsPath));
+    }
+
+    /// <summary>A failure at start names the settings file that was read: the user's own copy when that is the one, not the file beside the program.</summary>
+    [Test]
+    public void A_failure_at_start_names_the_settings_file_that_was_read()
+    {
+        using var user = new TempFolder();
+        File.WriteAllText(user.File(SettingsFile.FileName), "{}");
+        var failure = new InvalidOperationException("The configuration of the console log failed.");
+
+        var explanation = AppHost.DescribeFailure(failure, new SettingsPlaces(_folder.Path, user.Path));
+
+        Assert.That(explanation, Does.Contain($"Check the settings in {user.File(SettingsFile.FileName)}.").And.Not.Contain(SettingsPath));
     }
 
     // ------------------------------------------------------------------ the recorder's host
@@ -227,9 +307,9 @@ public class AppHostTests
         return new RecorderStart(runId, TestRuns.Request(runId), settings);
     }
 
-    /// <summary>Builds the recorder's host from <paramref name="settings"/> and <paramref name="apiKey"/>, over <paramref name="log"/> and the test's folder as ClassScribe's own.</summary>
+    /// <summary>Builds the recorder's host from <paramref name="settings"/> and <paramref name="apiKey"/>, over <paramref name="log"/> and the test's folder as ClassScribe's own and as the program's.</summary>
     private IHost BuildRecorder(Dictionary<string, string?> settings, string? apiKey = "test-key", RecorderLog? log = null, Action<IServiceCollection>? configureServices = null) =>
-        AppHost.BuildRecorder(Start(settings), apiKey, log ?? new RecorderLog(TimeProvider.System), new RuntimeFolder(_folder.Path), configureServices: configureServices);
+        AppHost.BuildRecorder(Start(settings), apiKey, log ?? new RecorderLog(TimeProvider.System), new RuntimeFolder(_folder.Path), Places(), configureServices: configureServices);
 
     /// <summary>
     /// The recorder's host holds the settings handed to it and the key from its own environment, and nothing else: not the
@@ -295,7 +375,7 @@ public class AppHostTests
     {
         var folder = new RuntimeFolder(_folder.Path);
         var time = new ManualTimeProvider(TestRuns.Start);
-        using var host = AppHost.BuildRecorder(Start([]), "test-key", new RecorderLog(time), folder, time, recorder =>
+        using var host = AppHost.BuildRecorder(Start([]), "test-key", new RecorderLog(time), folder, Places(), time, recorder =>
         {
             recorder.Replace(ServiceDescriptor.Scoped<ISessionEvents>(_ => new FakeSessionEvents()));
             recorder.Replace(ServiceDescriptor.Transient<IRecordingFactory>(_ => new FakeRecordingFactory()));

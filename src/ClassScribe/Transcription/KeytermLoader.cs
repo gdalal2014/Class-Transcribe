@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Transcription;
@@ -7,8 +8,9 @@ namespace ClassScribe.Transcription;
 /// <summary>
 /// Reads the glossary file: one term per line, blank lines and lines starting with # ignored.
 /// Terms that break ElevenLabs' rules are skipped with a warning instead of failing the upload.
+/// The file is looked for where the settings were read from first, then beside the program (see <see cref="ResolvePath"/>).
 /// </summary>
-public sealed class KeytermLoader(ILogger<KeytermLoader> logger)
+public sealed class KeytermLoader(SettingsPlaces places, ILogger<KeytermLoader> logger)
 {
     /// <summary>Most terms ElevenLabs accepts in one request.</summary>
     public const int MaxTerms = 1000;
@@ -31,19 +33,18 @@ public sealed class KeytermLoader(ILogger<KeytermLoader> logger)
     private static readonly char[] ForbiddenCharacters = ['<', '>', '{', '}', '[', ']', '\\'];
 
     /// <summary>
-    /// Where the configured glossary file is: environment variables such as %USERPROFILE% expanded,
-    /// quotes around the path ignored, and a relative path taken from the app's own folder. An empty
-    /// setting gives an empty path, which <see cref="Load"/> reads as no glossary.
+    /// Where the configured glossary file is: environment variables such as %USERPROFILE% expanded, quotes around the
+    /// path ignored, and a relative path taken from the folder the settings were read from when the file is there, else
+    /// from the program's own folder: the user's own glossary first, the shipped one second (see
+    /// <see cref="SettingsPlaces.ResolveFile"/>). An empty setting gives an empty path, which <see cref="Load"/> reads as
+    /// no glossary.
     /// </summary>
-    public static string ResolvePath(string configured)
-    {
-        var path = Environment.ExpandEnvironmentVariables(configured).Trim().Trim('"').Trim();
-        return path.Length == 0 ? "" : Path.GetFullPath(path, AppContext.BaseDirectory);
-    }
+    public string ResolvePath(string configured) => places.ResolveFile(configured);
 
     /// <summary>
-    /// Loads the valid, distinct terms from <paramref name="path"/>, in composed (NFC) form. A missing
-    /// file gives an empty list and a warning; an empty path means no glossary was wanted.
+    /// Loads the valid, distinct terms from <paramref name="path"/>, in composed (NFC) form. A missing file gives an
+    /// empty list and a warning, which names both places when the user's own folder was looked in first; an empty path
+    /// means no glossary was wanted.
     /// </summary>
     public IReadOnlyList<string> Load(string path)
     {
@@ -55,9 +56,20 @@ public sealed class KeytermLoader(ILogger<KeytermLoader> logger)
 
         if (!File.Exists(path))
         {
-            logger.LogWarning(
-                "No glossary at {Path}, so the transcript is made without its terms. Keep keyterms.txt next to ClassScribe.exe, or set ElevenLabs:KeytermsFile to where it is",
-                path);
+            if (places.Origin == SettingsOrigin.UserFolder && string.Equals(Path.GetDirectoryName(path), places.ProgramFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                var name = Path.GetFileName(path);
+                logger.LogWarning(
+                    "No glossary at {UserPath} or beside ClassScribe.exe, so the transcript is made without its terms. Put {Name} in the first folder, or set ElevenLabs:KeytermsFile to where it is",
+                    Path.Combine(places.UserFolder!, name), name);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "No glossary at {Path}, so the transcript is made without its terms. Keep keyterms.txt next to ClassScribe.exe, or set ElevenLabs:KeytermsFile to where it is",
+                    path);
+            }
+
             return [];
         }
 

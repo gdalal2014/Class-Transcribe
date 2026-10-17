@@ -445,7 +445,7 @@ public class ClassRecordingTests
     {
         using var settings = new TempFolder();
         File.WriteAllText(settings.File("appsettings.json"), "{}");
-        using var host = AppHost.Build(settings.Path, apiKey: null, services => services
+        using var host = AppHost.Build(new SettingsPlaces(settings.Path, userFolder: null), apiKey: null, services => services
             .AddSingleton<ILoopbackCaptureProvider>(_provider)
             .AddSingleton(_runtime.Folder));   // never the real %LOCALAPPDATA%\ClassScribe
         var choice = host.Services.GetRequiredService<SourceChoice>();

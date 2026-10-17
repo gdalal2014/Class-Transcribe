@@ -65,8 +65,11 @@ public class ServiceRegistrationTests
         }
 
         File.WriteAllText(_folder.File("appsettings.json"), json.ToJsonString());
-        return AppHost.Build(_folder.Path, apiKey, services => services.AddSingleton(_runtime.Folder));
+        return AppHost.Build(Places(), apiKey, services => services.AddSingleton(_runtime.Folder));
     }
+
+    /// <summary>Where the app under test reads its settings and its glossary: the test's folder as the program's, and no user folder.</summary>
+    private SettingsPlaces Places() => new(_folder.Path, userFolder: null);
 
     /// <summary>The app's capture provider, as registered: the one made only when it is first used.</summary>
     private static LazyLoopbackCaptureProvider CaptureProvider(IServiceProvider provider) =>
@@ -186,6 +189,31 @@ public class ServiceRegistrationTests
     }
 
     /// <summary>
+    /// Both roles resolve where the settings and the glossary are read from, as the host was given it: the window's settings
+    /// file and glossary loader work from the same places, and the recorder's glossary loader from its own. No test container
+    /// points at the real user folder, so no test reads, or could write, the real %APPDATA%\ClassScribe.
+    /// </summary>
+    [Test]
+    public void Both_roles_resolve_the_settings_places_and_none_points_at_the_real_user_folder()
+    {
+        var real = SettingsPlaces.UserFolderForThisUser;
+        using var app = BuildApp([]);
+        var runId = TestRuns.Id();
+        using var log = new RecorderLog(TimeProvider.System);
+        using var recorder = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, Places());
+
+        var window = app.Services.GetRequiredService<SettingsPlaces>();
+        var background = recorder.Services.GetRequiredService<SettingsPlaces>();
+
+        Assert.That(window.ProgramFolder, Is.EqualTo(_folder.Path));
+        Assert.That(app.Services.GetRequiredService<SettingsFile>().Places, Is.SameAs(window));
+        Assert.That(app.Services.GetRequiredService<KeytermLoader>().ResolvePath("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
+        Assert.That(recorder.Services.GetRequiredService<KeytermLoader>().ResolvePath("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
+        Assert.That(new[] { window.UserFolder, background.UserFolder },
+            Has.All.Matches<string?>(folder => folder is null || !folder.StartsWith(real, StringComparison.OrdinalIgnoreCase)), "no test container points at the real user folder");
+    }
+
+    /// <summary>
     /// The command line resolves with the app, and the report at the start is the real one, one for the process and the
     /// only one registered, in place of the report that reports nothing.
     /// </summary>
@@ -248,7 +276,7 @@ public class ServiceRegistrationTests
         var runId = TestRuns.Id();
         var time = new ManualTimeProvider(TestRuns.Start);
         using var log = new RecorderLog(time);
-        using var host = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, time, recorder =>
+        using var host = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, Places(), time, recorder =>
         {
             recorder.Replace(ServiceDescriptor.Scoped<ISessionEvents>(_ => new FakeSessionEvents()));
             recorder.Replace(ServiceDescriptor.Transient<IRecordingFactory>(_ => new FakeRecordingFactory()));
@@ -317,7 +345,7 @@ public class ServiceRegistrationTests
         var runId = TestRuns.Id();
         var time = new ManualTimeProvider(TestRuns.Start);
         using var log = new RecorderLog(time);
-        using var host = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, time,
+        using var host = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, Places(), time,
             recorder => ReplaceWindowsWithFakes(recorder, time));
         using var scope = host.Services.CreateScope();
         var run = scope.ServiceProvider;

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -500,7 +501,7 @@ public class RequestsTests
     {
         File.WriteAllText(_folder.File("appsettings.json"), "{}");
         var played = new PlayedRuns { StartExitCode = 130 };
-        using var app = AppHost.Build(_folder.Path, "dummy-key-for-a-local-test", services => services
+        using var app = AppHost.Build(new SettingsPlaces(_folder.Path, userFolder: null), "dummy-key-for-a-local-test", services => services
             .AddSingleton(_runtime.Folder)
             .AddScoped<IRecordStarter>(provider => new FakeRecordStarter(played, provider)));
         var runner = app.Services.GetRequiredService<ICommandRunner>();

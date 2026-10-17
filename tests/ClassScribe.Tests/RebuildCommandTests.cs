@@ -63,7 +63,7 @@ public class RebuildCommandTests
         var workflow = new TranscriptionWorkflow(
             _preparer.Object,
             _client.Object,
-            new KeytermLoader(NullLogger<KeytermLoader>.Instance),
+            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
@@ -427,7 +427,7 @@ public class RebuildCommandTests
         SaveAnswer(recording, "Through the app.");
         using var settings = new TempFolder();
         File.WriteAllText(settings.File("appsettings.json"), JsonSerializer.Serialize(new { Recording = new { OutputFolder = _folder.Path } }));
-        using var app = AppHost.Build(settings.Path, apiKey: null, services => services.AddSingleton(_runtime.Folder));
+        using var app = AppHost.Build(new SettingsPlaces(settings.Path, userFolder: null), apiKey: null, services => services.AddSingleton(_runtime.Folder));
 
         var exitCode = await app.Services.GetRequiredService<App>().RunAsync(["rebuild", _class, "--no-open"]);
 

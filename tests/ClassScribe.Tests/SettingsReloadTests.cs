@@ -61,11 +61,14 @@ public class SettingsReloadTests
     /// <summary>Settings as JSON, written the way a person would write them, paths included.</summary>
     private static string Json(object settings) => JsonSerializer.Serialize(settings);
 
+    /// <summary>Where the app under test reads its settings: <paramref name="programFolder"/> as the program's own, and no user folder, as before this rule.</summary>
+    private static SettingsPlaces BesideTheProgram(string programFolder) => new(programFolder, userFolder: null);
+
     /// <summary>Writes the settings and builds the app over them, as Program does, with the services changed as a test needs.</summary>
     private IHost BuildApp(string json, Action<IServiceCollection>? services = null)
     {
         WriteSettings(json);
-        return AppHost.Build(_folder.Path, Key, services);
+        return AppHost.Build(BesideTheProgram(_folder.Path), Key, services);
     }
 
     /// <summary>The menu over the app's own settings, folders, choice and gate, with a scripted keyboard and mocked commands and desktop.</summary>
@@ -525,7 +528,7 @@ public class SettingsReloadTests
     [Test]
     public void Without_a_settings_file_the_defaults_apply()
     {
-        using var app = AppHost.Build(_folder.Path, Key);
+        using var app = AppHost.Build(BesideTheProgram(_folder.Path), Key);
 
         var verdict = app.Services.GetRequiredService<SettingsReloader>().TryReload();
 
@@ -589,7 +592,7 @@ public class SettingsReloadTests
     public void A_missing_file_is_waited_for_only_when_it_was_there_before()
     {
         var pauses = new List<TimeSpan>();
-        var file = new SettingsFile(_folder.Path, NullLogger<SettingsFile>.Instance, pauses.Add);
+        var file = new SettingsFile(BesideTheProgram(_folder.Path), NullLogger<SettingsFile>.Instance, pauses.Add);
 
         var unexpected = file.Read();
         var waitedAt = pauses.Count;
@@ -611,7 +614,7 @@ public class SettingsReloadTests
         var written = File.ReadAllBytes(SettingsPath);
         using var held = new FileStream(SettingsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         var pauses = 0;
-        var file = new SettingsFile(_folder.Path, NullLogger<SettingsFile>.Instance, _ =>
+        var file = new SettingsFile(BesideTheProgram(_folder.Path), NullLogger<SettingsFile>.Instance, _ =>
         {
             pauses++;
             held.Dispose();
@@ -651,7 +654,7 @@ public class SettingsReloadTests
         WriteSettings("""{ "Recording": { "FlushSeconds": 9 } }""");
         var written = File.ReadAllBytes(SettingsPath);
         var log = new RecordingLogger<SettingsFile>();
-        var file = new SettingsFile(_folder.Path, log);
+        var file = new SettingsFile(BesideTheProgram(_folder.Path), log);
 
         SettingsText text;
         using (new FileStream(SettingsPath, FileMode.Open, FileAccess.ReadWrite, share, 4096, options))
@@ -735,7 +738,7 @@ public class SettingsReloadTests
     {
         var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", "{}");
 
-        var stale = new SettingsFile(output, NullLogger<SettingsFile>.Instance).DescribeStaleCopy();
+        var stale = new SettingsFile(BesideTheProgram(output), NullLogger<SettingsFile>.Instance).DescribeStaleCopy();
 
         Assert.That(stale, Is.EqualTo(
             @"src\ClassScribe\appsettings.json has changed since the last build; ClassScribe reads the copy in bin\Debug\net10.0. Build again, or edit the copy, for the change to count"));
@@ -749,7 +752,7 @@ public class SettingsReloadTests
     {
         var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", sameContent ? """{ "Recording": { "FlushSeconds": 9 } }""" : "{}", projectNewer, withProjectFile);
 
-        Assert.That(new SettingsFile(output, NullLogger<SettingsFile>.Instance).DescribeStaleCopy(), Is.Null);
+        Assert.That(new SettingsFile(BesideTheProgram(output), NullLogger<SettingsFile>.Instance).DescribeStaleCopy(), Is.Null);
     }
 
     /// <summary>The menu names the settings file it reads, and warns right under it when the copy dotnet run reads is out of date.</summary>
@@ -757,7 +760,7 @@ public class SettingsReloadTests
     public async Task The_menu_names_the_settings_file_and_warns_of_a_stale_copy()
     {
         var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", "{}");
-        using var app = AppHost.Build(output, Key);
+        using var app = AppHost.Build(BesideTheProgram(output), Key);
         var ui = new FakeConsoleUi();
         ui.Type('q');
 
@@ -794,7 +797,7 @@ public class SettingsReloadTests
         var output = DevelopmentLayout(settings, settings);
         var copy = Path.Combine(output, "appsettings.json");
         var project = Path.GetFullPath(Path.Combine(output, "..", "..", "..", "appsettings.json"));
-        using var app = AppHost.Build(output, Key);
+        using var app = AppHost.Build(BesideTheProgram(output), Key);
         var gateLog = new RecordingLogger<RunGate>();
         var gate = new RunGate(app.Services.GetRequiredService<SettingsReloader>(), app.Services.GetRequiredService<SettingsFile>(), gateLog);
         var ui = new FakeConsoleUi();
@@ -857,6 +860,116 @@ public class SettingsReloadTests
 
         Assert.That(log.Problems, Has.Count.EqualTo(1));
         Assert.That(log.Problems[0], Does.StartWith(@"src\ClassScribe\appsettings.json has changed since the last build"));
+    }
+
+    /// <summary>
+    /// With the user's own appsettings.json there at start, it is the file read: its settings apply, the menu names it, an
+    /// edit to it counts from the next choice, and the file beside the program is never read, so a broken template there
+    /// does not matter.
+    /// </summary>
+    [Test]
+    public async Task The_users_own_file_is_read_in_place_of_the_one_beside_the_program()
+    {
+        using var user = new TempFolder();
+        var userSettings = user.File("appsettings.json");
+        WriteSettings("{ not even JSON");
+        File.WriteAllText(userSettings, Json(new { Recording = new { FlushSeconds = 7 } }));
+        using var app = AppHost.Build(new SettingsPlaces(_folder.Path, user.Path), Key);
+        var recording = app.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>();
+        var ui = new FakeConsoleUi();
+        ui.Type('q');
+
+        Assert.That(app.Services.GetRequiredService<SettingsFile>().Path, Is.EqualTo(userSettings));
+        Assert.That(app.Services.GetRequiredService<RunGate>().Problems, Is.Empty, "the broken file beside the program was not read");
+        Assert.That(recording.CurrentValue.FlushSeconds, Is.EqualTo(7));
+
+        File.WriteAllText(userSettings, Json(new { Recording = new { FlushSeconds = 8 } }));
+        Assert.That(app.Services.GetRequiredService<RunGate>().TryOpen(GateUse.MenuChoice), Is.True);
+        Assert.That(recording.CurrentValue.FlushSeconds, Is.EqualTo(8), "an edit to the user's file counts from the next choice");
+
+        await Menu(app, ui, new Mock<ICommandRunner>(), new Mock<IDesktop>()).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.That(ui.Screen.Split(Environment.NewLine), Has.Member($"Settings: {userSettings}"), "named as it is, without the template note");
+    }
+
+    /// <summary>
+    /// The user's file deleted while ClassScribe runs refuses the next choice, as the file beside the program always has,
+    /// and keeps the settings: nothing falls back to the template mid-session. The choice of file is made at start only,
+    /// so ClassScribe started again while the file is still missing reads the file beside the program.
+    /// </summary>
+    [Test]
+    public void The_users_file_gone_while_ClassScribe_runs_is_refused_and_the_next_start_reads_the_template()
+    {
+        using var user = new TempFolder();
+        var userSettings = user.File("appsettings.json");
+        WriteSettings(Json(new { Recording = new { FlushSeconds = 4 } }));
+        File.WriteAllText(userSettings, Json(new { Recording = new { FlushSeconds = 7 } }));
+        using var app = AppHost.Build(new SettingsPlaces(_folder.Path, user.Path), Key);
+        var log = new RecordingLogger<RunGate>();
+        var gate = new RunGate(app.Services.GetRequiredService<SettingsReloader>(), app.Services.GetRequiredService<SettingsFile>(), log);
+        File.Delete(userSettings);
+
+        Assert.That(gate.TryOpen(GateUse.MenuChoice), Is.False);
+
+        Assert.That(log.Problems[0], Is.EqualTo(
+            $"{userSettings} is no longer there, so the settings stay as they were when it was last read. Put the file back, or start ClassScribe again to go back to the defaults."));
+        Assert.That(app.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.FlushSeconds, Is.EqualTo(7));
+
+        using var next = AppHost.Build(new SettingsPlaces(_folder.Path, user.Path), Key);
+        Assert.That(next.Services.GetRequiredService<SettingsFile>().Path, Is.EqualTo(SettingsPath));
+        Assert.That(next.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.FlushSeconds, Is.EqualTo(4), "the file beside the program, at the next start");
+    }
+
+    /// <summary>
+    /// Installed without the user's own copy (deleted, or the program folder copied to another laptop), the menu reads the
+    /// shipped template beside the program and says so in the settings line, with where the copy belongs and how to get
+    /// it back.
+    /// </summary>
+    [Test]
+    public async Task The_menu_says_when_the_shipped_template_stands_in_for_a_missing_user_file()
+    {
+        using var user = new TempFolder();
+        WriteSettings("{}");
+        using var app = AppHost.Build(new SettingsPlaces(_folder.Path, user.Path), Key);
+        var ui = new FakeConsoleUi();
+        ui.Type('q');
+
+        await Menu(app, ui, new Mock<ICommandRunner>(), new Mock<IDesktop>()).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.That(ui.Screen.Split(Environment.NewLine), Has.Member(
+            $"Settings: {SettingsPath} (the shipped defaults; your own copy belongs in {user.File("appsettings.json")}: run Update-ClassScribe.cmd, or copy the file there)"));
+    }
+
+    /// <summary>Under dotnet run, where the file read is the build's copy, the header is as before, user folder or not: the stale-copy warning covers that layout.</summary>
+    [Test]
+    public async Task Under_dotnet_run_the_header_is_as_before_whether_or_not_there_is_a_user_folder()
+    {
+        using var user = new TempFolder();
+        var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", "{}");
+        using var app = AppHost.Build(new SettingsPlaces(output, user.Path), Key);
+        var ui = new FakeConsoleUi();
+        ui.Type('q');
+
+        await Menu(app, ui, new Mock<ICommandRunner>(), new Mock<IDesktop>()).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+        var lines = ui.Screen.Split(Environment.NewLine);
+        var settingsLine = Array.IndexOf(lines, $"Settings: {Path.Combine(output, "appsettings.json")}");
+        Assert.That(settingsLine, Is.GreaterThanOrEqualTo(0), "named as it is, without the template note");
+        Assert.That(lines[settingsLine + 1], Does.StartWith(@"WARNING  src\ClassScribe\appsettings.json has changed since the last build"));
+    }
+
+    /// <summary>
+    /// The stale-copy warning is about the build's copy beside the program; when the user's own file is read, no build
+    /// makes it, so there is none, even under the development layout.
+    /// </summary>
+    [Test]
+    public void The_stale_copy_warning_is_silent_when_the_users_file_is_read()
+    {
+        using var user = new TempFolder();
+        File.WriteAllText(user.File("appsettings.json"), "{}");
+        var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", "{}");
+
+        Assert.That(new SettingsFile(BesideTheProgram(output), NullLogger<SettingsFile>.Instance).DescribeStaleCopy(), Is.Not.Null, "the copy is out of date");
+        Assert.That(new SettingsFile(new SettingsPlaces(output, user.Path), NullLogger<SettingsFile>.Instance).DescribeStaleCopy(), Is.Null);
     }
 
     /// <summary>A setting of a section the check does not know, for the test of a live reload that fails.</summary>
