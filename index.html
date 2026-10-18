@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClassScribe</title>
+<meta name="description" content="ClassScribe, a personal Windows program that records online classes, transcribes them and keeps a copy in the user's own Google Drive.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<h1>ClassScribe</h1>
+<p class="lead">A small Windows program, written by Gulzar Dalal for his own study, that records online classes,
+gets a written transcript of each one, and keeps a copy of every class in his own Google Drive.</p>
+
+<h2>What it does</h2>
+<ul>
+<li>During an online class it records the sound the laptop is already playing, and, when he chooses, his own
+microphone. It never downloads anything from a course website.</li>
+<li>When the class ends, it sends the recording to ElevenLabs, a speech-to-text service, and saves the transcript
+beside the recording on the laptop.</li>
+<li>It can then copy the class (the audio, the transcript and its log) to the user's own Google Drive, in folders by
+course and date, such as My Drive &gt; ClassScribe &gt; Mantiq &gt; 2026-10-17.</li>
+</ul>
+
+<h2>Google Drive</h2>
+<p>ClassScribe asks Google for one permission only, <code>https://www.googleapis.com/auth/drive.file</code>, which
+lets it see and change only the files and folders it creates itself. It cannot see any other file in the Drive. It
+reads the signed-in account's name, email address and storage figures to show which account is in use and how much
+room is left. It never deletes or trashes anything in Drive, not even its own files. The sign-in is kept only on the
+user's own computer, encrypted for the Windows account, and can be ended at any time from ClassScribe or from the
+Google Account's <a href="https://myaccount.google.com/connections">third-party connections</a> page.</p>
+
+<h2>Who it is for</h2>
+<p>ClassScribe is a personal tool with a single user. It has no accounts, no sign-up and no server: everything runs on
+the user's own computer, and nothing is sent to its author.</p>
+
+<p class="links"><a href="privacy.html">Privacy policy</a> &middot;
+<a href="https://github.com/gdalal2014/Class-Transcribe">Source code on GitHub</a></p>
+</main>
+</body>
+</html>

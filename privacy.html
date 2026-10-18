@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClassScribe privacy policy</title>
+<meta name="description" content="How ClassScribe uses Google user data.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<p><a href="index.html">ClassScribe</a></p>
+<h1>Privacy policy</h1>
+<p class="lead">Effective 18 October 2026.</p>
+
+<p>ClassScribe is a personal Windows program, written by Gulzar Dalal for his own use, that records online classes,
+transcribes them and keeps a copy of each class in the user's own Google Drive. It runs entirely on the user's computer.
+It has no server, and nothing it handles is sent to its author.</p>
+
+<h2>Google user data it accesses</h2>
+<p>ClassScribe asks for one Google permission, <code>https://www.googleapis.com/auth/drive.file</code>. With it,
+ClassScribe can access only:</p>
+<ul>
+<li>the files and folders that ClassScribe itself creates in the user's Google Drive, and their names, sizes,
+checksums (MD5) and identifiers;</li>
+<li>the signed-in account's display name and email address, and its storage limit and usage.</li>
+</ul>
+<p>It cannot see, read or change any other file in the user's Drive.</p>
+
+<h2>How it uses that data</h2>
+<ul>
+<li>To create a ClassScribe folder in the user's My Drive, with folders for each course and class date, and to upload
+the user's own class recordings, transcripts and logs into them.</li>
+<li>To check that each uploaded file arrived whole, by comparing its size and MD5 checksum with the copy on the
+laptop.</li>
+<li>To show the user which account is signed in and how much Drive storage is left.</li>
+</ul>
+<p>ClassScribe never deletes or trashes anything in Google Drive. The only change it makes to a file already there is
+a new version of one of its own text files, such as a log that has grown.</p>
+
+<h2>Storage and protection</h2>
+<p>The Google sign-in (OAuth tokens) and the app's Google client details are kept only on the user's computer, in the
+user's own Windows profile, encrypted for the user's Windows account with Windows' Data Protection API. They are sent
+only to Google, over HTTPS, and are never written to logs. A record of what was uploaded (file names, sizes,
+checksums and Drive identifiers) is kept in the user's local application data so that nothing is uploaded twice.</p>
+
+<h2>Sharing</h2>
+<p>ClassScribe does not share, sell or transfer Google user data to anyone. It does not use it for advertising, and
+does not use it to develop, improve or train artificial intelligence or machine learning models. No Google user data
+is sent to the author or to any server other than Google's.</p>
+<p>Separately from Google: to make a transcript, ClassScribe sends the class audio recorded on the user's computer to
+ElevenLabs, a speech-to-text service. That audio comes from the computer, not from Google Drive, and no data received
+from Google APIs is sent to ElevenLabs.</p>
+
+<h2>Limited Use</h2>
+<p>ClassScribe's use and transfer of information received from Google APIs adheres to the
+<a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+including the Limited Use requirements.</p>
+
+<h2>Ending access and deleting data</h2>
+<ul>
+<li>Signing out in ClassScribe (menu choice 9, then O, or <code>ClassScribe drive signout</code>) revokes its access
+with Google and deletes the sign-in from the computer.</li>
+<li>Access can also be removed at any time from the Google Account's
+<a href="https://myaccount.google.com/connections">third-party connections</a> page.</li>
+<li>Files ClassScribe uploaded belong to the user and stay in the user's Drive until the user deletes them there.</li>
+</ul>
+
+<h2>Changes and contact</h2>
+<p>Any change to this policy will be published on this page with a new effective date. Questions can be raised as an
+issue on the <a href="https://github.com/gdalal2014/Class-Transcribe/issues">project's GitHub page</a>.</p>
+</main>
+</body>
+</html>
