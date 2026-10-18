@@ -9,7 +9,7 @@ namespace ClassScribe.Settings;
 public static class SettingsServices
 {
     /// <summary>
-    /// Binds the Recording, ElevenLabs, Transcript and Drive sections of <paramref name="configuration"/>, and adds the check.
+    /// Binds the Recording, ElevenLabs, Transcript, Drive and YouTube sections of <paramref name="configuration"/>, and adds the check.
     /// Long-lived parts read them through IOptionsMonitor when they use them, and the parts of a run through
     /// IOptionsSnapshot, computed once in the run's own scope, so a change counts from the next run.
     /// </summary>
@@ -19,6 +19,7 @@ public static class SettingsServices
         services.Configure<ElevenLabsOptions>(configuration.GetSection(ElevenLabsOptions.SectionName));
         services.Configure<TranscriptOptions>(configuration.GetSection(TranscriptOptions.SectionName));
         services.Configure<DriveOptions>(configuration.GetSection(DriveOptions.SectionName));
+        services.Configure<YouTubeOptions>(configuration.GetSection(YouTubeOptions.SectionName));
         services.AddSingleton<SettingsCheck>();
         return services;
     }

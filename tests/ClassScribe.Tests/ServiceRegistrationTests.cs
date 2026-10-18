@@ -582,4 +582,45 @@ public class ServiceRegistrationTests
 
         Assert.That(exitCode, Is.EqualTo(1));
     }
+
+    /// <summary>
+    /// The YouTube feature is registered in the window's role: its command, menu and batch made in a run's scope, the
+    /// settings of the YouTube section bound (everything of a video's recording to Drive by default), its folders under
+    /// ClassScribe's own folder, and the real runner of yt-dlp, which a test run refuses to run.
+    /// </summary>
+    [Test, Platform("Win")]
+    [SupportedOSPlatform("windows")]
+    public void The_YouTube_feature_is_registered_and_the_real_runner_is_refused_in_tests()
+    {
+        using var app = BuildApp(new() { ["YouTube:MayDownloadChannels:0"] = "@yourchannel" });
+        using var scope = app.Services.CreateScope();
+
+        Assert.That(scope.ServiceProvider.GetRequiredService<YouTubeCommand>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<YouTubeMenu>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<YouTube.DownloadBatch>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<YouTube.IVideoTranscriber>(), Is.InstanceOf<YouTube.ScopedVideoTranscriber>());
+        var youTube = scope.ServiceProvider.GetRequiredService<IOptionsSnapshot<YouTubeOptions>>().Value;
+        Assert.That(youTube.MayDownloadChannels, Is.EqualTo(["@yourchannel"]));
+        Assert.That(youTube.DriveUpload, Is.EqualTo(DriveUploadScope.Everything));
+        Assert.That(app.Services.GetRequiredService<YouTube.YouTubeFolders>().Root, Is.EqualTo(Path.Combine(_runtime.Folder.Root, "youtube")));
+
+        var runner = app.Services.GetRequiredService<YouTube.IToolRunner>();
+        Assert.That(runner, Is.InstanceOf<YouTube.ProcessToolRunner>());
+        Assert.That(async () => await runner.RunAsync(new YouTube.ToolCall(@"C:\Tools\yt-dlp.exe", ["--version"], _folder.Path), null, CancellationToken.None),
+            Throws.InvalidOperationException.With.Message.Contains("FakeToolRunner"));
+    }
+
+    /// <summary>A transcript of a batch is made in a scope of its own, with the workflow, the run files and the usage report of that scope.</summary>
+    [Test]
+    public void A_batchs_transcript_is_made_in_a_scope_of_its_own()
+    {
+        using var app = BuildApp([]);
+        using var first = app.Services.CreateScope();
+        using var second = app.Services.CreateScope();
+
+        var one = first.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>();
+
+        Assert.That(one, Is.SameAs(first.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>()));
+        Assert.That(one, Is.Not.SameAs(second.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>()));
+    }
 }

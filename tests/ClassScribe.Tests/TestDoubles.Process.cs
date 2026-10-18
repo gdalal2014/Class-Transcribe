@@ -252,12 +252,34 @@ internal sealed class FakeProcessCreationApi : IProcessCreationApi
     /// <summary>The process handed back for each launch Windows starts: process 4321, running, unless the test says otherwise.</summary>
     public StartedProcess Next { get; set; } = new(4321, new DateTimeOffset(2026, 10, 16, 23, 0, 2, TimeSpan.Zero), () => null);
 
+    /// <summary>
+    /// Plays the process as each launch Windows starts is handed back, while the launch's handles are still open: a tool's,
+    /// say, writing its lines into the standard handles it was given (see <see cref="WriteTo"/>).
+    /// </summary>
+    public Action<ProcessLaunch>? OnStart { get; set; }
+
+    /// <summary>The environment block, standard handles and job of each tool launch, as they were when Windows was given them.</summary>
+    public IReadOnlyList<(IReadOnlyDictionary<string, string>? Environment, bool HadHandles, bool HadJob)> ToolParts
+    {
+        get { lock (_gate) return [.. _launches.Select(launch => (launch.Environment, launch.Handles is not null, launch.Job is not null))]; }
+    }
+
     /// <inheritdoc />
     public StartedProcess? Start(ProcessLaunch launch, out int error)
     {
         lock (_gate) _launches.Add(launch);
         error = Refusal;
-        return error == 0 ? Next : null;
+        if (error != 0) return null;
+
+        OnStart?.Invoke(launch);
+        return Next;
+    }
+
+    /// <summary>Writes <paramref name="text"/> as UTF-8 into <paramref name="handle"/>, a write end of a pipe a tool's launch hands the tool, as the tool would.</summary>
+    public static void WriteTo(SafeHandle handle, string text)
+    {
+        using var stream = new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(handle.DangerousGetHandle(), ownsHandle: false), FileAccess.Write, bufferSize: 0);
+        stream.Write(System.Text.Encoding.UTF8.GetBytes(text));
     }
 }
 

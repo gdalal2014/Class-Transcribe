@@ -52,6 +52,9 @@ public enum CommandKind
 /// ClassScribe drive status
 /// ClassScribe drive upload ["&lt;recording file, a folder of recordings&gt;"]    without a path: what waits to go up
 /// ClassScribe drive free-space "&lt;recording file or folder&gt;" --yes      deletes local audio once Drive has it, checked
+/// ClassScribe youtube &lt;link&gt;... [--list "&lt;file&gt;"] --name "&lt;course&gt;" --output "&lt;folder&gt;" --download (--yes | --plan)
+///                                                     [--no-transcribe] [--no-open] [--again] [--allow-unlisted]
+/// ClassScribe youtube check                         yt-dlp and its helpers, their versions, what to install
 /// ClassScribe &lt;command&gt; --help                    also -h, -?, /? and help &lt;command&gt;
 /// hidden: ClassScribe attach [--alert &lt;run id&gt;]
 /// </code>
@@ -239,6 +242,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(DevicesCommand(examples));
         root.Add(MicCheckCommand(optionNames, examples));
         root.Add(DriveCommand(optionNames, examples));
+        root.Add(YouTubeCommand(optionNames, examples));
         root.Add(AttachCommand(examples));
 
         var help = new HelpWithExamples(examples);
@@ -331,6 +335,131 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         examples[drive] = DriveExamples;
         return drive;
     }
+
+    /// <summary>
+    /// youtube: links, a --list file of links, or both, joined in order; --name, the course; --output, the recordings folder;
+    /// --download (this build's one way, recording as they play coming next); exactly one of --yes and --plan; and
+    /// --no-transcribe, --no-open, --again and --allow-unlisted. Each word that is no link the batch takes is named by where it
+    /// stands, a line of the file by its number. youtube check takes nothing else.
+    /// </summary>
+    private Command YouTubeCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
+    {
+        var links = new Argument<string[]>("links") { Arity = ArgumentArity.ZeroOrMore, Description = "One or more YouTube links, separated by spaces: videos, or playlists." };
+        var list = new Option<string>("--list") { HelpName = "file", Description = "A text file of links: several on a line, separated by spaces; # starts a comment." };
+        var name = new Option<string>("--name") { HelpName = "course", Description = "The course the videos belong to, such as Risala: the folder they go to, as a class's name names it." };
+        var output = new Option<string>("--output") { HelpName = "folder", Description = "The folder the recordings go to, such as \"D:\\Classes\": the course gets a folder inside it." };
+        var download = new Option<bool>("--download") { Description = "Download the audio with yt-dlp: only for videos you uploaded or whose owner allows it, never your course's." };
+        var yes = new Option<bool>("--yes") { Description = "Go ahead after the plan is printed, with the videos that need no word of yours." };
+        var plan = new Option<bool>("--plan") { Description = "Print the plan and stop: nothing is fetched or sent." };
+        var noTranscribe = new Option<bool>("--no-transcribe") { Description = "Only fetch the audio; the summary gives each recording's transcribe command." };
+        var noOpen = new Option<bool>("--no-open") { Description = "Open nothing at the end; otherwise the course's folder opens once." };
+        var again = new Option<bool>("--again") { Description = "Fetch videos fetched before as new recordings; transcribing them is billed again." };
+        var allowUnlisted = new Option<bool>("--allow-unlisted")
+        {
+            Description = "Download every unlisted video of the batch on your word, given once here, that you uploaded it or its owner allows downloading. Needs YouTube:CourseChannels."
+        };
+
+        var check = new Command("check", "Show where yt-dlp, Deno, FFmpeg and FFprobe are, their versions, and what to install or update. Asks nothing of YouTube.");
+        check.SetAction(_ => commands.YouTubeCheckAsync());
+        examples[check] = YouTubeCheckExamples;
+
+        var command = new Command("youtube", "Download YouTube videos' audio with yt-dlp, each into a recording of the course, then transcribe them.")
+        {
+            links, list, name, output, download, yes, plan, noTranscribe, noOpen, again, allowUnlisted, check
+        };
+        command.Validators.Add(result =>
+        {
+            if (result.Children.OfType<CommandResult>().Any()) return;
+            foreach (var problem in YouTubeProblems(result, links, list, name, output, download, yes, plan, optionNames)) result.AddError(problem);
+        });
+        command.SetAction(parsed =>
+        {
+            var words = Words(parsed.GetValue(links) ?? [], parsed.GetValue(list));
+            var reading = YouTube.LinkList.Read(words);
+            foreach (var note in reading.Notes) Invocation.Output.WriteLine(note);
+            return commands.YouTubeAsync(new YouTube.YouTubeRequest(
+                reading.Links,
+                ClassFolders.SafeName(parsed.GetValue(name)!),
+                Path.GetFullPath(parsed.GetValue(output)!),
+                parsed.GetValue(download),
+                parsed.GetValue(plan) ? YouTube.BatchConfirmation.PlanOnly : YouTube.BatchConfirmation.Yes,
+                Transcribe: !parsed.GetValue(noTranscribe),
+                Open: !parsed.GetValue(noOpen),
+                Again: parsed.GetValue(again),
+                AllowUnlisted: parsed.GetValue(allowUnlisted)));
+        });
+        examples[command] = YouTubeExamples;
+        return command;
+    }
+
+    /// <summary>
+    /// What keeps a youtube command line from running, one sentence each: --name, --output, the links and the --list file,
+    /// each word that is no link the batch takes, --yes and --plan, --download, and more videos than a batch takes.
+    /// </summary>
+    private static IEnumerable<string> YouTubeProblems(CommandResult result, Argument<string[]> links, Option<string> list, Option<string> name, Option<string> output,
+        Option<bool> download, Option<bool> yes, Option<bool> plan, HashSet<string> optionNames)
+    {
+        var course = TokenOf(result.GetResult(name));
+        if (result.GetResult(name) is null || string.IsNullOrWhiteSpace(course))
+            yield return "youtube needs --name \"<course>\", the course the videos belong to, such as --name \"Risala\"";
+        else if (optionNames.Contains(course))
+            yield return $"--name needs the course's name after it; it took the option {course} instead";
+        else if (ClassFolders.SafeName(course).Length == 0)
+            yield return $"youtube cannot use \"{course}\" as a course's name: nothing is left of it once the characters Windows does not allow in a folder's name are taken out";
+
+        if (result.GetResult(output) is not { } folder) yield return "youtube needs --output \"<folder>\", the folder the recordings go to";
+        else if (FolderProblem(output.Name, TokenOf(folder), optionNames) is { } outputProblem) yield return outputProblem;
+
+        var given = result.GetResult(links)?.Tokens.Select(token => token.Value).ToList() ?? [];
+        string? listFile = null;
+        if (result.GetResult(list) is { } listResult)
+        {
+            var value = TokenOf(listResult);
+            if (ValueProblem(value, "--list needs a text file of links after it, such as --list \"risala-links.txt\"", optionNames) is { } missing) yield return missing;
+            else if (value!.IndexOfAny(NotInPaths) >= 0 || value.Any(char.IsControl)) yield return $"--list takes a file; \"{value}\" has a character Windows does not allow in a path: < > \" | ? *";
+            else if (!File.Exists(Path.GetFullPath(value))) yield return $"Nothing found at {Path.GetFullPath(value)}";
+            else listFile = value;
+        }
+
+        if (given.Count == 0 && result.GetResult(list) is null) yield return "youtube needs at least one YouTube link, or --list \"<file>\" of links";
+
+        IReadOnlyList<YouTube.LinkWord> words;
+        string? unreadable = null;
+        try
+        {
+            words = Words(given, listFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: a list file that cannot be read is a mistake of the command line, said with the others.
+            words = Words(given, null);
+            unreadable = $"--list cannot be read: {ex.Message}";
+        }
+
+        if (unreadable is not null) yield return unreadable;
+        var reading = YouTube.LinkList.Read(words);
+        foreach (var problem in reading.Problems) yield return problem;
+        if (listFile is not null && given.Count == 0 && words.Count == 0) yield return $"{Path.GetFileName(listFile)} holds no link";
+
+        var isYes = result.GetValue(yes);
+        var isPlan = result.GetValue(plan);
+        if (isYes == isPlan)
+            yield return isYes ? "--yes and --plan cannot go together" : "youtube needs --yes to go ahead after the plan, or --plan to print the plan alone";
+
+        if (!result.GetValue(download))
+            yield return "youtube needs --download: recording YouTube videos as they play is not part of this build yet";
+
+        var videos = reading.Links.Count(link => link.Kind != YouTube.YouTubeLinkKind.Playlist);
+        if (videos > YouTube.DownloadBatch.MostVideos)
+            yield return $"youtube takes at most {YouTube.DownloadBatch.MostVideos} videos at a time; these links name {videos}";
+    }
+
+    /// <summary>The words of the links on the command line, then of the list file, each with where it stands.</summary>
+    private static IReadOnlyList<YouTube.LinkWord> Words(IEnumerable<string> given, string? listFile) =>
+    [
+        .. given.Select(word => new YouTube.LinkWord(word, "the command line")),
+        .. listFile is null ? [] : YouTube.LinkList.ReadFile(Path.GetFullPath(listFile))
+    ];
 
     /// <summary>What is wrong with <paramref name="value"/> as a path to upload or free: an empty one, or nothing there. Null for a file or a folder.</summary>
     private static string? PathProblem(string value)
@@ -794,6 +923,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
           ClassScribe "D:\Lectures\Lecture 5.mp4"
           ClassScribe mic-check
           ClassScribe drive status
+          ClassScribe youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "D:\Classes" --download --plan
 
         Without a command, ClassScribe shows its menu. A path alone is transcribed, as when a file is dropped on ClassScribe.exe.
         Add --help after a command for its options, such as: ClassScribe record --help
@@ -917,6 +1047,28 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     private const string DriveStatusExamples = """
         Examples:
           ClassScribe drive status
+        """;
+
+    /// <summary>The examples and notes under the help of youtube.</summary>
+    private const string YouTubeExamples = """
+        Examples:
+          ClassScribe youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --download --plan
+          ClassScribe youtube --list "risala-links.txt" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --download --yes
+          ClassScribe youtube "https://www.youtube.com/playlist?list=PL..." --name "Lectures" --output "D:\Classes" --download --no-transcribe --yes
+          ClassScribe youtube check
+
+        Only videos you uploaded, or whose owner allows you to download them, and never your course's: YouTube:CourseChannels names its channels, which are never downloaded.
+        An unlisted video, or one YouTube does not say is public, needs your word: in the menu (Y), its channel in YouTube:MayDownloadChannels, or --allow-unlisted for the whole batch.
+        The plan comes first, with the cost, the time and the room; --yes goes ahead, --plan stops there. The same command run again skips what is done.
+        Q stops after the video in hand; Q twice, or Ctrl+C, stops at once. yt-dlp is installed with: winget install --source winget --id yt-dlp.yt-dlp
+        """;
+
+    /// <summary>The examples under the help of youtube check.</summary>
+    private const string YouTubeCheckExamples = """
+        Examples:
+          ClassScribe youtube check
+
+        Exit code 0 when yt-dlp, Deno, FFmpeg and FFprobe are all in place and yt-dlp is less than 90 days old; 1 otherwise, with what to do.
         """;
 
     /// <summary>The examples under the help of the hidden attach.</summary>

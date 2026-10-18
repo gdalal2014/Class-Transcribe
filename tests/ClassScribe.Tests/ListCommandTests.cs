@@ -2,6 +2,7 @@ using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;
@@ -221,6 +222,41 @@ public class ListCommandTests
         {
             $"Recordings in {elsewhere.Path}, newest first (times are local):",
             "  Fiqh  14 Oct 19:00  00:01:00  no transcript yet"
+        }));
+    }
+}
+
+/// <summary>A batch's YouTube videos in the list: each is named by its video's title and how its audio was obtained.</summary>
+[TestFixture]
+public class ListCommandVideoTests
+{
+    /// <summary>
+    /// Two videos of one batch, in one date folder, are told apart by their titles, which come first among the notes; a
+    /// class beside them has none.
+    /// </summary>
+    [Test]
+    public void A_videos_recording_is_named_by_its_title()
+    {
+        using var recordings = new TempFolder();
+        using var runtime = new TestRuntime();
+        var ui = new FakeConsoleUi();
+        var folder = Path.Combine(recordings.Path, "Risala", "2026-10-18");
+        Directory.CreateDirectory(folder);
+        var first = RecordingFiles.ForNew(folder, "Risala", new DateTimeOffset(2026, 10, 18, 14, 2, 11, TimeSpan.Zero));
+        var second = RecordingFiles.ForNew(folder, "Risala", new DateTimeOffset(2026, 10, 18, 14, 3, 40, TimeSpan.Zero));
+        foreach (var (files, title) in new[] { (first, "The creed, part 1"), (second, "The creed, part 2") })
+        {
+            TestAudio.WriteWav(files.Segment(1), sampleRate: 1, new short[60]);
+            VideoSourceFile.Write(files.Source, VideoSourceFileTests.Downloaded(title: title));
+        }
+
+        new ListCommand(new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = recordings.Path }), TimeProvider.System, NullLogger<ClassFolders>.Instance),
+            runtime.Journal, ui, ZonedTimeProvider.EasternSummer).Run(root: null);
+
+        Assert.That(ui.Screen.Split(Environment.NewLine).Skip(1), Is.EqualTo(new[]
+        {
+            "  Risala  18 Oct 10:03  00:01:00  \"The creed, part 2\" (YouTube, downloaded)  no transcript yet",
+            "  Risala  18 Oct 10:02  00:01:00  \"The creed, part 1\" (YouTube, downloaded)  no transcript yet"
         }));
     }
 }

@@ -811,4 +811,39 @@ public class StartupReportTests
         Assert.That(Report().HeaderLines(), Is.Empty);
         Assert.That(Report().RecordingNow(), Is.Null);
     }
+
+    /// <summary>
+    /// A YouTube video's run that ended unexpectedly is never offered to be continued: its recording is reported with T and
+    /// F alone, whatever its files say.
+    /// </summary>
+    [Test]
+    public async Task A_videos_run_is_reported_without_C()
+    {
+        var files = WriteRecording();
+        WriteRun(files, change: record => record with { Request = record.Request with { Video = YouTubeTestRuns.Video() } });
+        _ui.Type('\r');
+
+        await Report().ShowAsync(interactive: true);
+
+        Assert.That(_ui.Screen, Does.Contain("T  transcribe what was recorded"));
+        Assert.That(_ui.Screen, Does.Not.Contain("C  continue"));
+    }
+
+    /// <summary>
+    /// A class that ended unexpectedly is still offered C when a YouTube video of its course was recorded after it: the
+    /// video is passed over, and the class is the newest recording of its name to continue.
+    /// </summary>
+    [Test]
+    public async Task A_video_recorded_after_a_class_does_not_keep_C_from_the_class()
+    {
+        var lesson = WriteRecording();
+        WriteRun(lesson);
+        var video = WriteRecording(startedUtc: TestRuns.Start.AddMinutes(48), lastWrittenUtc: LastAudio.AddMinutes(1));
+        YouTube.VideoSourceFile.Write(video.Source, VideoSourceFileTests.Downloaded());
+        _ui.Type('\r');
+
+        await Report().ShowAsync(interactive: true);
+
+        Assert.That(_ui.Screen, Does.Contain("C  continue it now as its next part"));
+    }
 }

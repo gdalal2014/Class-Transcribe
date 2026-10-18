@@ -428,7 +428,7 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
     /// samples. ffmpeg writes such headers for 24-bit and float audio, for rates above 48 kHz and for more than
     /// two channels, and NAudio only converts the plain form. Any other format is returned as it is.
     /// </summary>
-    private static WaveFormat Plain(WaveFormat format)
+    internal static WaveFormat Plain(WaveFormat format)
     {
         if (format.Encoding != WaveFormatEncoding.Extensible || format is not WaveFormatExtraData { ExtraSize: >= 22 } extensible)
             return format;

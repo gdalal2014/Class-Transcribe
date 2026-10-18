@@ -108,8 +108,33 @@ public enum StartOrigin
 /// </param>
 /// <param name="Minutes">Stop by itself after this many minutes (--minutes), counted on the steady clock from the start; null to record until stopped.</param>
 /// <param name="Open">False to open nothing at the end (--no-open); otherwise the settings decide.</param>
+/// <param name="Video">
+/// The YouTube video the run is for, when it is one of a batch's (see <see cref="VideoRequest"/>); null for a class. It is
+/// last and has a default, so that a window of an older build still reads a run file that has it, and one that lacks it;
+/// a class's run file is written without it, as before videos.
+/// </param>
 public sealed record RecordRequest(string RunId, string Name, bool Transcribe, SourcePlan Source, string OutputRoot,
-    ContinueChoice Continue, string? ContinueBaseName, double? Minutes, bool Open);
+    ContinueChoice Continue, string? ContinueBaseName, double? Minutes, bool Open,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VideoRequest? Video = null);
+
+/// <summary>
+/// The YouTube video a run is for, one of a batch's (design 4.5): the video's own facts, how its audio is obtained, and where
+/// the batch keeps its recordings. A run that carries one is never a class: it is never offered to be continued, and the
+/// class machinery passes it over. On the download path it is carried by each transcript's run record, which has no recorder.
+/// </summary>
+/// <param name="Url">The video's link, rebuilt from its ID.</param>
+/// <param name="VideoId">The video's ID.</param>
+/// <param name="Title">Its title, or its ID when none is known.</param>
+/// <param name="Channel">Its channel's name, when known.</param>
+/// <param name="Obtained">How its audio is obtained: downloaded or recorded (see <see cref="YouTube.VideoSource"/>).</param>
+/// <param name="Folder">The batch's date folder, where its recordings go; null for the batch's first, which takes its date folder as a class does.</param>
+/// <param name="BrowserProcessId">The process of ClassScribe's video window, on the record path; null on the download path.</param>
+/// <param name="BrowserStartedUtc">When that process started, so that a reused process id is never taken for it; null on the download path.</param>
+/// <param name="Position">The video's place in the batch, from 1.</param>
+/// <param name="Count">How many videos the batch takes.</param>
+/// <param name="BatchId">The batch's id, made as a run's is (see <see cref="RunIds"/>).</param>
+public sealed record VideoRequest(string Url, string VideoId, string Title, string? Channel, string Obtained, string? Folder,
+    int? BrowserProcessId, DateTimeOffset? BrowserStartedUtc, int Position, int Count, string BatchId);
 
 /// <summary>
 /// Run ids. One names a run in its files, its pipe and its stop event, and on the command line (--recorder, attach --alert):

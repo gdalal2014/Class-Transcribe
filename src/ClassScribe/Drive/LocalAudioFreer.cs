@@ -46,6 +46,16 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
             return new FreedAudio(files, [], 0, null);
         }
 
+        // A YouTube video's audio that YouTube:DriveUpload keeps off Drive was never sent: it is not on Drive to free, and
+        // that is no refusal, since the video can be fetched again.
+        if (ClassFolders.IsVideo(files) && !uploads.SendsAudio(files) && !audio.Any(path => manifest?.File(Path.GetFileName(path)) is { IsVerified: true }))
+        {
+            logger.LogInformation(
+                "{Recording} is a YouTube video's recording; its audio is not on Drive (YouTube:DriveUpload), so it stays. Delete it by hand if you need the room; the video can be fetched again.",
+                files.BaseName);
+            return new FreedAudio(files, [], 0, null);
+        }
+
         if (manifest is null)
             return Refuse(files, $"{files.BaseName} has not gone up to Google Drive yet, so none of its audio was deleted. Upload it first: {CommandLine.DriveUpload(files.Segment(1))}");
 

@@ -124,6 +124,7 @@ public sealed class SettingsCheck
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"{Name(transcriptSection, nameof(TranscriptOptions.ShowGapsLongerThanSeconds))} is {gap}; it must be 0 or more, such as 60. 0 turns the headings for silence left out off."));
 
         CheckDrive(configuration, problems);
+        CheckYouTube(configuration, problems);
         CheckLogging(configuration, problems);
         return problems;
     }
@@ -154,6 +155,50 @@ public sealed class SettingsCheck
         var defaults = new DriveOptions();
         CheckGoogleAddress(problems, Name(driveSection, nameof(DriveOptions.ApiBaseUrl)), drive.ApiBaseUrl, defaults.ApiBaseUrl);
         CheckGoogleAddress(problems, Name(driveSection, nameof(DriveOptions.OAuthBaseUrl)), drive.OAuthBaseUrl, defaults.OAuthBaseUrl);
+    }
+
+    /// <summary>
+    /// The YouTube section: yt-dlp's path, when given, must be a full path to an .exe that is there; each channel in
+    /// YouTube:MayDownloadChannels and YouTube:CourseChannels must be a UC id or an @handle, and none may be in both, since a
+    /// course's channel is never downloaded. YouTube:DriveUpload, an enum, is checked by its names when the section is bound,
+    /// and a list written as one value as a value that cannot be read.
+    /// </summary>
+    private static void CheckYouTube(IConfiguration configuration, List<string> problems)
+    {
+        const string youTubeSection = YouTubeOptions.SectionName;
+        var youTube = Bind<YouTubeOptions>(configuration, youTubeSection, problems);
+
+        var ytDlp = Name(youTubeSection, nameof(YouTubeOptions.YtDlpPath));
+        CheckPath(problems, ytDlp, youTube.YtDlpPath);
+        var path = YouTubeOptions.Expanded(youTube.YtDlpPath);
+        if (path.Length > 0 && path.IndexOfAny(Path.GetInvalidPathChars()) < 0)
+        {
+            if (!Path.IsPathFullyQualified(path))
+                problems.Add($"{ytDlp} is \"{youTube.YtDlpPath}\"; it must be the full path of yt-dlp.exe, such as %LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\yt-dlp.exe, or empty to find it. {PathAdvice}");
+            else if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                problems.Add($"{ytDlp} is \"{youTube.YtDlpPath}\"; it must name yt-dlp's .exe file, or be empty to find it.");
+            else if (!File.Exists(path))
+                problems.Add($"{ytDlp} is \"{youTube.YtDlpPath}\", which is not there; install yt-dlp (winget install --source winget --id yt-dlp.yt-dlp), or leave it empty to find it.");
+        }
+
+        var mayDownload = Name(youTubeSection, nameof(YouTubeOptions.MayDownloadChannels));
+        var course = Name(youTubeSection, nameof(YouTubeOptions.CourseChannels));
+        CheckChannels(problems, mayDownload, youTube.MayDownloadChannels);
+        CheckChannels(problems, course, youTube.CourseChannels);
+        foreach (var both in youTube.MayDownloadChannels.Where(entry => youTube.CourseChannels.Contains(entry.Trim(), StringComparer.OrdinalIgnoreCase)))
+            problems.Add($"{mayDownload} names {both}, which is also in {course}; a course's channel is never downloaded, so take it out of one of them.");
+    }
+
+    /// <summary>Adds a problem for each entry of the channel list <paramref name="name"/> that is neither a UC id nor an @handle, by its place.</summary>
+    private static void CheckChannels(List<string> problems, string name, string[] channels)
+    {
+        for (var i = 0; i < channels.Length; i++)
+        {
+            if (YouTubeOptions.IsChannel(channels[i].Trim())) continue;
+
+            problems.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{name}:{i} is \"{channels[i]}\"; each channel is its @handle, such as @yourchannel, or its UC id, UC and 22 more letters and digits, as the channel's page shows them."));
+        }
     }
 
     /// <summary>
@@ -293,6 +338,10 @@ public sealed class SettingsCheck
 
         if (type.IsEnum)
             return IsName(type, text) ? null : Names(type);
+
+        // A list is written in square brackets; a single value in its place would bind as no list at all.
+        if (type.IsArray)
+            return text.Length == 0 ? null : "a list in square brackets, such as [\"@yourchannel\"]";
 
         return null;
     }

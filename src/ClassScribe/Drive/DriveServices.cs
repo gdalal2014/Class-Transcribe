@@ -70,6 +70,10 @@ public static class DriveServices
         services.AddTransient(provider => new Lazy<DriveUploadPass>(provider.GetRequiredService<DriveUploadPass>));
         services.AddScoped<IDriveAutoUpload, DriveAutoUpload>();
 
+        // Drive's room, for a YouTube batch's plan when the videos' audio goes up: the client is made only when Drive is asked.
+        services.AddTransient(provider => new Lazy<DriveClient>(provider.GetRequiredService<DriveClient>));
+        services.AddTransient<IDriveRoom, DriveRoom>();
+
         // What the menu's header and the report at the start say of the queue, from the store and the manifests alone.
         services.AddSingleton<DriveQueueReport>();
         return services;

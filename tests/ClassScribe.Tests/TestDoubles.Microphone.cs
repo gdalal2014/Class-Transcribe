@@ -216,9 +216,23 @@ public sealed class FakeRegistryValues : IRegistryValues
     /// <summary>Removes a value, as deleting it from the registry would.</summary>
     public void Remove(string key, string name) => _values.Remove((Normal(key), name));
 
+    /// <summary>Sets a string value under HKEY_LOCAL_MACHINE, apart from those under HKEY_CURRENT_USER.</summary>
+    public FakeRegistryValues SetLocalMachine(string key, string name, string value)
+    {
+        _values[(LocalMachine + Normal(key), name)] = value;
+        return this;
+    }
+
     /// <inheritdoc />
     public string? ReadString(string currentUserKey, string name) =>
         Read(currentUserKey, name) is { } value ? Convert.ToString(value, CultureInfo.InvariantCulture) : null;
+
+    /// <inheritdoc />
+    public string? ReadLocalMachineString(string localMachineKey, string name) =>
+        Read(LocalMachine + localMachineKey, name) is { } value ? Convert.ToString(value, CultureInfo.InvariantCulture) : null;
+
+    /// <summary>What sets the keys under HKEY_LOCAL_MACHINE apart from those under HKEY_CURRENT_USER.</summary>
+    private const string LocalMachine = @"HKLM\";
 
     /// <inheritdoc />
     public int? ReadDword(string currentUserKey, string name) => Read(currentUserKey, name) as int?;

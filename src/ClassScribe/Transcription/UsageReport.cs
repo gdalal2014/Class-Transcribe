@@ -27,6 +27,25 @@ public sealed class UsageReport(IElevenLabsAccount account, TimeProvider time, I
     private Task<AccountReading?>? _before;
 
     /// <summary>
+    /// What the transcript cost the account, once <see cref="ReportAsync"/> read the credits before and after it; null until
+    /// then, and when either read did not succeed. A batch of YouTube videos projects the rest of its transcripts from it.
+    /// </summary>
+    public UsageCharge? Charged { get; private set; }
+
+    /// <summary>
+    /// The account's standing in one line, for a plan made before anything is sent: "ElevenLabs account: 43,362 of 100,000
+    /// credits used this period; 56,638 left until 1 November", the refusal with what to allow on the key, or that the
+    /// credits could not be read; null when nothing was asked (ElevenLabs:ReadAccountUsage is false).
+    /// </summary>
+    public string? Describe(AccountReading reading) => reading.Kind switch
+    {
+        AccountReadingKind.Read => $"ElevenLabs account: {Standing(reading)}{Overage(reading)}",
+        AccountReadingKind.Refused => $"ElevenLabs would not show the account's credits to this key ({(reading.Status is { } code ? $"HTTP {code}" : "refused")}); the transcripts need nothing more than the key has. {RefusedAdvice}",
+        AccountReadingKind.Unavailable => $"The account's credits could not be read ({reading.Reason ?? "no answer"}); nothing else is affected",
+        _ => null
+    };
+
+    /// <summary>
     /// Begins the read of the account's credits before the upload, and remembers it for <see cref="ReportAsync"/>; a second
     /// call in the same run changes nothing. It is not waited for, so the upload is never held up by it; a read that ends
     /// badly is kept as unavailable, never thrown.
@@ -78,6 +97,7 @@ public sealed class UsageReport(IElevenLabsAccount account, TimeProvider time, I
         if (before is { Kind: AccountReadingKind.Read } && after.CharacterCount >= before.CharacterCount)
         {
             var charged = after.CharacterCount - before.CharacterCount;
+            Charged = new UsageCharge(charged, after.CharacterLimit > 0 ? Math.Max(0, after.CharacterLimit - after.CharacterCount) : null);
             if (charged == 0)
             {
                 logger.LogInformation("ElevenLabs shows no change in the account's credits for this transcript ({Used}); on usage-based API billing the charge appears on the usage page instead{Overage}",
@@ -162,3 +182,8 @@ public sealed class UsageReport(IElevenLabsAccount account, TimeProvider time, I
     /// <summary>A count of credits with thousands separated, such as 43,362.</summary>
     private static string Number(long count) => count.ToString("N0", CultureInfo.InvariantCulture);
 }
+
+/// <summary>What one transcript cost the account, read from its credits before and after it.</summary>
+/// <param name="Credits">The credits the transcript used.</param>
+/// <param name="Left">The credits left this period afterwards; null when the account has no limit.</param>
+public sealed record UsageCharge(long Credits, long? Left);

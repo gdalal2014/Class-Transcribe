@@ -58,6 +58,7 @@ public class RecordingFilesTests
     [TestCase("Kalam_2026-10-15_20-55-27Z (2).json")]
     [TestCase("Kalam_2026-10-15_20-55-27Z.unread.json")]
     [TestCase("Kalam_2026-10-15_20-55-27Z (3).unread.json")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.source.json")]
     public void Any_file_of_a_recording_is_recognised_as_its_recording(string fileName) =>
         Assert.That(RecordingFiles.TryParse(Path.Combine(@"C:\Classes\Kalam", fileName)), Is.EqualTo(new RecordingFiles(@"C:\Classes\Kalam", "Kalam_2026-10-15_20-55-27Z")));
 
@@ -245,5 +246,23 @@ public class RecordingFilesTests
 
         Assert.That(files.FindKeptAnswers(), Is.Empty);
         Assert.That(RecordingFiles.ForNew(folder.File("gone"), "Kalam", Started).FindKeptAnswers(), Is.Empty);
+    }
+
+    /// <summary>
+    /// A video's source file is named after its recording, and is never taken for an answer kept without a transcript, nor
+    /// for a copy of the transcript's answer, nor for a transcript.
+    /// </summary>
+    [Test]
+    public void A_videos_source_file_is_never_an_answer_or_a_transcript()
+    {
+        using var folder = new TempFolder();
+        var files = RecordingFiles.ForNew(folder.Path, "Risala", Started);
+        File.WriteAllText(files.Source, "{}");
+
+        Assert.That(Path.GetFileName(files.Source), Is.EqualTo("Risala_2026-10-15_20-55-27Z.source.json"));
+        Assert.That(files.FindKeptAnswers(), Is.Empty);
+        Assert.That(files.HasTranscript, Is.False);
+        Assert.That(TranscriptCopies.NewestAnswer(files), Is.Null);
+        Assert.That(TranscriptCopies.Transcripts(files), Is.Empty);
     }
 }

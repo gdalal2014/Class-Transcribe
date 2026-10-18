@@ -31,7 +31,8 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
     private const char ByteOrderMark = (char)0xFEFF;
 
     /// <summary>The sections a separate recorder is given: ClassScribe's own settings and the log's.</summary>
-    private static readonly string[] SnapshotSections = [RecordingOptions.SectionName, ElevenLabsOptions.SectionName, TranscriptOptions.SectionName, DriveOptions.SectionName, "Logging"];
+    private static readonly string[] SnapshotSections =
+        [RecordingOptions.SectionName, ElevenLabsOptions.SectionName, TranscriptOptions.SectionName, DriveOptions.SectionName, YouTubeOptions.SectionName, "Logging"];
 
     /// <summary>One reload at a time.</summary>
     private readonly Lock _gate = new();

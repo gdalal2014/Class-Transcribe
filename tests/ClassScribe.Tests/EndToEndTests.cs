@@ -168,15 +168,16 @@ public class EndToEndTests
     /// own folder in the test's folder, the test's console, window and desktop, no real device or microphone, the test's
     /// readers of the apps' microphone sessions and of Windows' usage record, the recorder started in this process, no job,
     /// and the view of runs reaching the recorder's server over an in-memory connection, with Ctrl+C as the test presses it.
+    /// <paramref name="extra"/> adds the test's own stand-ins last.
     /// </summary>
-    private IHost BuildWindow(string classAppMute = "Unknown")
+    private IHost BuildWindow(string classAppMute = "Unknown", Action<IServiceCollection>? extra = null)
     {
         File.WriteAllText(_settingsFolder.File("appsettings.json"), JsonSerializer.Serialize(new
         {
             Recording = new { OutputFolder = _recordings.Path, ReopenWindow = "Never", ClassAppMute = classAppMute },
             ElevenLabs = new { BaseUrl = "http://localhost:9/", KeytermsFile = "", MaxAttempts = 1 }
         }));
-        return AppHost.Build(_settingsFolder.Path, Key, services => services
+        return AppHost.Build(_settingsFolder.Path, Key, services => Extra(services, extra)
             .AddSingleton(_runtime.Folder)
             .AddSingleton<IGoogleCredentialStore>(_driveStore)
             .AddSingleton<IConsoleUi>(_ui)
@@ -204,6 +205,13 @@ public class EndToEndTests
                 OpenPipe = OpenConnectionAsync,
                 WatchCtrlC = _ctrlC.Watch
             }));
+    }
+
+    /// <summary>Adds <paramref name="extra"/>'s stand-ins to <paramref name="services"/>, last, when there are any, and hands them back.</summary>
+    private static IServiceCollection Extra(IServiceCollection services, Action<IServiceCollection>? extra)
+    {
+        extra?.Invoke(services);
+        return services;
     }
 
     /// <summary>
@@ -602,5 +610,59 @@ public class EndToEndTests
             Assert.That(_starts.Launches, Is.Empty, "the check runs in the window");
             Assert.That(_runtime.Journal.List(), Is.Empty, "no run file: the check is no recording");
         }
+    }
+
+    /// <summary>
+    /// A batch of two YouTube videos from the command line, downloaded and transcribed in the window, signed in to Google
+    /// Drive: yt-dlp is played and finds its helpers in winget's links folder of a played disk; each video becomes a
+    /// recording of the course in one date folder, with its source file; each is transcribed through the stub, its transcript
+    /// headed by the video's title and each position linked to that moment of the video; each transcript's run file is over
+    /// and seen; and each recording goes up whole, its audio and source file included, into ClassScribe > Risala > the date
+    /// folder. Nothing reaches YouTube, ElevenLabs or Google.
+    /// </summary>
+    [Test]
+    public async Task A_batch_of_two_YouTube_videos_is_downloaded_transcribed_and_goes_up_to_Drive()
+    {
+        _driveStore.Stored = FakeCredentialStore.With(_google.IssueRefreshToken()).Stored;
+        _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
+        _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
+        _elevenLabs.EnqueueFor(StubHttpHandler.SubscriptionPath, HttpStatusCode.Unauthorized, """{"detail":{"status":"missing_permissions"}}""");
+        var folders = new YouTube.YouTubeFolders(_runtime.Folder);
+        var tools = new FakeToolRunner(folders, TimeProvider.System)
+            .With("abcdefghijk", YtDlpReadTests.Info("abcdefghijk", "The creed, part 1", duration: 3), 3)
+            .With("bcdefghijkl", YtDlpReadTests.Info("bcdefghijkl", "The creed, part 2", duration: 3), 3);
+        var links = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify), "Microsoft", "WinGet", "Links");
+        var disk = new FakeFileProbe();
+        disk.Add(Path.Combine(links, "yt-dlp.exe"), Path.Combine(links, "deno.exe"), Path.Combine(links, "ffmpeg.exe"), Path.Combine(links, "ffprobe.exe"));
+        using var app = BuildWindow(extra: services => services
+            .AddSingleton<YouTube.IToolRunner>(tools)
+            .AddSingleton<IFileProbe>(disk)
+            .AddSingleton<IRegistryValues>(_registry)
+            .AddSingleton<IPowerRequests>(new FakePowerRequests())
+            .AddScoped<YouTube.IBatchPace, InstantPace>());
+
+        var exitCode = await app.Services.GetRequiredService<App>().RunAsync(
+            ["youtube", "https://youtu.be/abcdefghijk", "https://youtu.be/bcdefghijkl", "--name", "Risala", "--output", _recordings.Path, "--download", "--yes", "--no-open"])
+            .WaitAsync(EndPatience);
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(tools.Downloads, Is.EqualTo(["abcdefghijk", "bcdefghijkl"]));
+        var dateFolder = Directory.GetDirectories(Path.Combine(_recordings.Path, "Risala")).Single();
+        var transcripts = Directory.GetFiles(dateFolder, "*.md").Order(StringComparer.Ordinal).ToList();
+        Assert.That(transcripts.Select(path => File.ReadAllLines(path)[0]), Is.EqualTo(["# The creed, part 1", "# The creed, part 2"]));
+        Assert.That(File.ReadAllText(transcripts[0]), Does.Contain("[[00:00:00]](https://www.youtube.com/watch?v=abcdefghijk&t=0s) Hello world."));
+        Assert.That(_runtime.Journal.List().Select(run => (run.Record.Outcome?.Kind, run.Record.Seen, run.IsVideo)),
+            Is.EqualTo(new[] { ((OutcomeKind?)OutcomeKind.Transcribed, true, true), (OutcomeKind.Transcribed, true, true) }));
+        var onDrive = _google.FolderAt($"Risala/{Path.GetFileName(dateFolder)}");
+        Assert.That(onDrive, Is.Not.Null, "ClassScribe > Risala > the batch's date folder");
+        var names = _google.FilesIn(onDrive!.Id).Select(file => file.Name).ToList();
+        foreach (var transcript in transcripts)
+        {
+            var b = Path.GetFileNameWithoutExtension(transcript);
+            Assert.That(names, Is.SupersetOf(new[] { $"{b}.md", $"{b}.json", $"{b}.wav", $"{b}.source.json", $"{b}.log" }));
+        }
+
+        Assert.That(_google.Destructive, Is.Empty);
+        Assert.That(_starts.Launches, Is.Empty, "the batch runs in the window");
     }
 }

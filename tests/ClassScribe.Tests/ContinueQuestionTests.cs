@@ -290,4 +290,21 @@ public class ContinueQuestionTests
         Assert.That(answer, Is.EqualTo(new ContinueAnswer(false, null, null)));
         Assert.That(_log.Problems.Single(), Does.StartWith("Could not look for a recording of \"Kalam\" to continue"));
     }
+
+    /// <summary>
+    /// A YouTube video recorded into the course ten minutes before a class starts is never offered to be continued as the
+    /// class's next part: the menu asks nothing and the class starts as a new recording.
+    /// </summary>
+    [Test]
+    public async Task A_video_recorded_just_before_a_class_is_never_offered()
+    {
+        var video = WriteStopped();
+        YouTube.VideoSourceFile.Write(video.Source, VideoSourceFileTests.Downloaded());
+
+        var answer = await Question().AskAsync("Kalam", RecordingMode.Class, _recordings.Path);
+
+        Assert.That(answer.Continue, Is.Null);
+        Assert.That(answer.GoBack, Is.False);
+        Assert.That(_ui.Screen, Does.Not.Contain("continues it"));
+    }
 }

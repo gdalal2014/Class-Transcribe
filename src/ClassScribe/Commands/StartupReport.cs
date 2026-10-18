@@ -266,12 +266,13 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
     }
 
     /// <summary>
-    /// True when C may continue the recording: no other recording runs, and the recording is the one a new run of its name
-    /// may continue (see <see cref="ContinueQuestion.FindContinuable"/>), within Recording:ContinueWithinMinutes as it is now.
+    /// True when C may continue the recording: it is a class's, never a YouTube video's (whose run is never continued), no
+    /// other recording runs, and the recording is the one a new run of its name may continue (see
+    /// <see cref="ContinueQuestion.FindContinuable"/>), within Recording:ContinueWithinMinutes as it is now.
     /// </summary>
     private bool CanContinue(RunRecord run, RecordingFiles files, IReadOnlyList<RunView> runs)
     {
-        if (runs.Any(other => other.IsRecordingNow)) return false;
+        if (run.Request.Video is not null || runs.Any(other => other.IsRecordingNow)) return false;
 
         var within = TimeSpan.FromMinutes(Math.Max(0, recording.CurrentValue.ContinueWithinMinutes));
         return ContinueQuestion.FindContinuable(folders, journal, run.Request.Name, run.Request.Source.Mode, within, run.Request.OutputRoot, logger,

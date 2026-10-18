@@ -428,7 +428,7 @@ public class SettingsReloadTests
     [Test]
     public void No_part_keeps_the_settings_it_read_first_for_the_whole_session()
     {
-        var readOnce = new[] { typeof(RecordingOptions), typeof(ElevenLabsOptions), typeof(TranscriptOptions), typeof(DriveOptions) }
+        var readOnce = new[] { typeof(RecordingOptions), typeof(ElevenLabsOptions), typeof(TranscriptOptions), typeof(DriveOptions), typeof(YouTubeOptions) }
             .Select(section => typeof(IOptions<>).MakeGenericType(section))
             .ToHashSet();
 
@@ -503,6 +503,7 @@ public class SettingsReloadTests
             ElevenLabs = new { ModelId = "scribe_v2" },
             Transcript = new { IncludeTimestamps = false },
             Drive = new { FolderName = "Classes" },
+            YouTube = new { DriveUpload = "WithoutAudio" },
             Logging = new { LogLevel = new { Default = "Warning" } },
             Other = new { Value = 1 }
         }));
@@ -517,7 +518,8 @@ public class SettingsReloadTests
         Assert.That(snapshot, Does.ContainKey("Logging:LogLevel:Default").WithValue("Warning"));
         Assert.That(snapshot, Does.ContainKey("Drive:FolderName").WithValue("Classes"));
         Assert.That(snapshot, Does.ContainKey("Drive:ApiBaseUrl").WithValue("http://127.0.0.1:5004/"), "a stub's address reaches a recorder through the snapshot");
-        Assert.That(snapshot.Keys, Has.All.Matches<string>(key => new[] { "Recording:", "ElevenLabs:", "Transcript:", "Drive:", "Logging:" }.Any(section => key.StartsWith(section, StringComparison.OrdinalIgnoreCase))));
+        Assert.That(snapshot, Does.ContainKey("YouTube:DriveUpload").WithValue("WithoutAudio"), "a recorder of a video needs what goes to Drive");
+        Assert.That(snapshot.Keys, Has.All.Matches<string>(key => new[] { "Recording:", "ElevenLabs:", "Transcript:", "Drive:", "YouTube:", "Logging:" }.Any(section => key.StartsWith(section, StringComparison.OrdinalIgnoreCase))));
         Assert.That(snapshot.Keys, Has.None.EqualTo(ElevenLabsOptions.ApiKeySetting).IgnoreCase);
         Assert.That(snapshot.Keys, Has.None.EqualTo("Recording:Device").IgnoreCase, "the value that holds the key is left out whole");
         Assert.That(snapshot.Values, Has.None.Matches<string?>(value => value is not null && value.Contains(Key, StringComparison.Ordinal)));

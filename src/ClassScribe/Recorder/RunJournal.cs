@@ -46,6 +46,9 @@ public sealed record RunView(RunRecord Record, bool IsAlive)
 
     /// <summary>A start of ClassScribe reports the run: it ended unexpectedly, its transcription was interrupted, or its outcome is unseen.</summary>
     public bool NeedsReport => EndedUnexpectedly || TranscriptionInterrupted || HasUnseenOutcome;
+
+    /// <summary>The run is a YouTube video's, one of a batch's (see <see cref="VideoRequest"/>): never a class, and never continued as one.</summary>
+    public bool IsVideo => Record.Request.Video is not null;
 }
 
 /// <summary>
