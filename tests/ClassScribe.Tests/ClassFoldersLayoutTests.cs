@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using Moq;
 
 namespace ClassScribe.Tests;
 
@@ -41,8 +42,8 @@ public class ClassFoldersLayoutTests
     /// The folders under test, rooted in the temporary folder, on the test's clock read in <paramref name="zone"/>, US
     /// Eastern time in October unless another is given, so that the local date is the same on every machine.
     /// </summary>
-    private ClassFolders Folders(TimeZoneInfo? zone = null) =>
-        new(TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path }), new ZonedClock(_time, zone ?? ZonedTimeProvider.EasternSummer.LocalTimeZone), _log);
+    private ClassFolders Folders(TimeZoneInfo? zone = null, IAudioOnDrive? onDrive = null) =>
+        new(TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path }), new ZonedClock(_time, zone ?? ZonedTimeProvider.EasternSummer.LocalTimeZone), _log, onDrive);
 
     /// <summary>The path of <paramref name="parts"/> under the temporary recordings folder.</summary>
     private string Under(params string[] parts) => Path.Combine([_folder.Path, .. parts]);
@@ -145,7 +146,7 @@ public class ClassFoldersLayoutTests
 
     /// <summary>
     /// A second, separate class of the name on the same local date goes to "2026-10-17 (2)", a third to "(3)": a date
-    /// folder that holds a recording is taken. A class of another name that day has a folder of its own.
+    /// folder that holds a recording's audio is taken. A class of another name that day has a folder of its own.
     /// </summary>
     [Test]
     public void A_second_and_third_class_of_the_name_that_day_get_folders_marked_2_and_3()
@@ -156,7 +157,7 @@ public class ClassFoldersLayoutTests
         TestAudio.WriteWav(first.Segment(1), 16000, [1]);
         _time.Advance(TimeSpan.FromHours(3));
         var second = folders.CreateRecording("Mantiq");
-        File.WriteAllText(second.Log, "a run that ended before any audio still leaves its log");
+        TestAudio.WriteWav(second.Segment(1), 16000, [1]);
         _time.Advance(TimeSpan.FromHours(3));
         var third = folders.CreateRecording("Mantiq");
         var other = folders.CreateRecording("Kalam");
@@ -185,6 +186,76 @@ public class ClassFoldersLayoutTests
         Assert.That(files.Folder, Is.EqualTo(dated));
         Assert.That(Directory.GetFiles(dated).Select(Path.GetFileName), Is.EquivalentTo(new[] { "Al-Sullam_al-munawraq_translated.pdf", "Class_1_slides.pdf", "notes.wav" }));
         Assert.That(File.ReadAllBytes(Path.Combine(dated, "Al-Sullam_al-munawraq_translated.pdf")), Is.EqualTo(new byte[] { 1, 2, 3 }));
+    }
+
+    /// <summary>
+    /// A start that recorded nothing, a false start, leaves only its log and perhaps its marks in the date folder. That is
+    /// no class (Gulzar decided this on 18 October): the day's real class goes into the same folder, not into "(2)", and
+    /// the false start's files stay as they are beside it.
+    /// </summary>
+    [Test]
+    public void A_date_folder_holding_only_the_log_and_marks_of_a_start_that_recorded_nothing_is_used()
+    {
+        var folders = Folders();
+        var falseStart = folders.CreateRecording("Mantiq");
+        File.WriteAllText(falseStart.Log, "a run that ended before any audio still leaves its log");
+        File.WriteAllText(falseStart.Marks, "00:00:00.000 ~ a mark");
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        var real = folders.CreateRecording("Mantiq");
+
+        Assert.That(real.Folder, Is.EqualTo(falseStart.Folder));
+        Assert.That(real.BaseName, Is.EqualTo("Mantiq_2026-10-17_14-09-42Z"));
+        Assert.That(Directory.GetFiles(real.Folder).Select(Path.GetFileName),
+            Is.EquivalentTo(new[] { "Mantiq_2026-10-17_14-04-42Z.log", "Mantiq_2026-10-17_14-04-42Z.marks.txt" }));
+    }
+
+    /// <summary>
+    /// Each of a recording's audio, transcripts and ElevenLabs' answers makes its date folder a class of its own, so the
+    /// next class of the name that day goes to "(2)": any track's segment, any transcript copy, the answer, and a paid
+    /// answer kept unread.
+    /// </summary>
+    [TestCase(".wav")]
+    [TestCase("_part2.wav")]
+    [TestCase(".mic.wav")]
+    [TestCase("_part3.mic.wav")]
+    [TestCase(".md")]
+    [TestCase(" (2).md")]
+    [TestCase(".json")]
+    [TestCase(" (2).json")]
+    [TestCase(".unread.json")]
+    [TestCase(".WAV")]
+    public void A_recordings_audio_transcript_or_answer_takes_its_date_folder(string suffix)
+    {
+        var dated = Under("Mantiq", "2026-10-17");
+        Directory.CreateDirectory(dated);
+        File.WriteAllText(Path.Combine(dated, "Mantiq_2026-10-17_12-00-00Z.log"), "log");
+        File.WriteAllText(Path.Combine(dated, "Mantiq_2026-10-17_12-00-00Z" + suffix), "kept");
+
+        var files = Folders().CreateRecording("Mantiq");
+
+        Assert.That(files.Folder, Is.EqualTo(Under("Mantiq", "2026-10-17 (2)")));
+    }
+
+    /// <summary>
+    /// A class whose audio went up to Google Drive and was then freed from the laptop, with no transcript (a record-only
+    /// class), leaves only its log and marks; its audio is on Drive, so its date folder is still its own, and the next
+    /// class of the name that day goes to "(2)".
+    /// </summary>
+    [Test]
+    public void A_date_folder_whose_class_has_its_audio_on_drive_alone_is_taken()
+    {
+        var dated = Under("Mantiq", "2026-10-17");
+        Directory.CreateDirectory(dated);
+        File.WriteAllText(Path.Combine(dated, "Mantiq_2026-10-17_12-00-00Z.log"), "log");
+        File.WriteAllText(Path.Combine(dated, "Mantiq_2026-10-17_12-00-00Z.marks.txt"), "marks");
+        var onDrive = new Mock<IAudioOnDrive>();
+        onDrive.Setup(drive => drive.Find(It.Is<RecordingFiles>(files => files.BaseName == "Mantiq_2026-10-17_12-00-00Z")))
+            .Returns(new AudioOnDrive(TimeSpan.FromHours(2), false, "My Drive > ClassScribe > Mantiq > 2026-10-17", null, true));
+
+        var files = Folders(onDrive: onDrive.Object).CreateRecording("Mantiq");
+
+        Assert.That(files.Folder, Is.EqualTo(Under("Mantiq", "2026-10-17 (2)")));
     }
 
     /// <summary>
@@ -295,11 +366,29 @@ public class ClassFoldersLayoutTests
         var folders = Folders();
 
         var first = folders.CreateRecording("Mantiq");
-        File.WriteAllText(first.Log, "the first run's log");
+        TestAudio.WriteWav(first.Segment(1), 16000, [1]);
         var second = folders.CreateRecording("Mantiq");
 
         Assert.That(second.Folder, Is.EqualTo(Under("Mantiq", "2026-10-17 (2)")));
         Assert.That(second.BaseName, Is.EqualTo("Mantiq_2026-10-17_14-04-43Z"));
+    }
+
+    /// <summary>
+    /// A false start leaves its date folder free, so the class started again within the same second goes into that same
+    /// folder; it still takes the next second, so that it never writes into the false start's log.
+    /// </summary>
+    [Test]
+    public void A_class_started_within_the_same_second_as_a_false_start_shares_its_folder_but_not_its_name()
+    {
+        var folders = Folders();
+
+        var falseStart = folders.CreateRecording("Mantiq");
+        File.WriteAllText(falseStart.Log, "the false start's log");
+        var real = folders.CreateRecording("Mantiq");
+
+        Assert.That(real.Folder, Is.EqualTo(falseStart.Folder));
+        Assert.That(real.BaseName, Is.EqualTo("Mantiq_2026-10-17_14-04-43Z"));
+        Assert.That(File.ReadAllText(falseStart.Log), Is.EqualTo("the false start's log"));
     }
 
     /// <summary>A recording made with a recordings folder given for its run (--output) goes to the course and date folders there.</summary>

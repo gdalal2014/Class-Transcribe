@@ -710,8 +710,10 @@ The date folder is the local date, while the files keep the UTC time: an evening
 Eastern time that starts at 21:30 on 17 October goes to `2026-10-17`, although its files say
 `2026-10-18_01-30-00Z`. A second, separate class of the same name that day goes to
 `2026-10-17 (2)`, a third to `(3)`, and so on. A date folder counts as taken only when it holds a
-file of a recording; one that is empty, or holds only your own files (the class's PDFs and slides,
-say), is used as it is, and your files stay where they are. A class that runs past midnight stays
+class: a recording's audio, a transcript or ElevenLabs' answer, or a recording whose audio is on
+Google Drive alone. One that is empty, holds only the `.log` and marks of a start that recorded
+nothing, or holds only your own files (the class's PDFs and slides, say), is used as it is, and
+those files stay where they are. A class that runs past midnight stays
 in the folder it started in, and a recording continued as its next part (C, `--continue`, or after
 a lost recorder) goes on in its own folder, whatever the date is now. A file transcribed on its
 own gets the same layout: a folder named after the file, and in it the date folder of the day it

@@ -513,8 +513,8 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// <summary>
     /// The name of the date folder a new recording of the course in <paramref name="course"/> goes to, on
     /// <paramref name="date"/>: the date's own, or the first of its " (2)", " (3)" and so on that is free. A folder is free
-    /// when it is not there yet, or holds no file of a recording, being empty or holding only other files and folders,
-    /// such as the class's PDFs, which stay as they are. A file of that name is not free, and nor is a folder ClassScribe
+    /// when it is not there yet, or holds no class, being empty, holding only a false start's log and marks, or holding
+    /// only other files and folders, such as the class's PDFs, which stay as they are. A file of that name is not free, and nor is a folder ClassScribe
     /// may not look into, which could not be written either.
     /// </summary>
     private string FreeDateFolder(string course, DateOnly date)
@@ -528,8 +528,8 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
     /// <summary>
     /// True when a new recording may go into the date folder <paramref name="folder"/>: it is not there yet, or it is a
-    /// folder that holds no file of a recording (see <see cref="RecordingFiles.TryParse"/>). A file of that name is not
-    /// free, and nor is a folder that cannot be looked into, which is said.
+    /// folder that holds no class (see <see cref="IsClass"/>), such as one with only a false start's log and marks. A
+    /// file of that name is not free, and nor is a folder that cannot be looked into, which is said.
     /// </summary>
     private bool IsFree(string folder)
     {
@@ -538,7 +538,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
         try
         {
-            return !Directory.EnumerateFiles(folder).Any(file => RecordingFiles.TryParse(file) is not null);
+            return !Directory.EnumerateFiles(folder).Any(IsClass);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -547,6 +547,23 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
             logger.LogWarning("The folder {Folder} cannot be looked into ({Reason}), so this recording goes to the next date folder", folder, ex.Message);
             return false;
         }
+    }
+
+    /// <summary>
+    /// True when <paramref name="file"/> shows that a class was recorded: a file of a recording (see
+    /// <see cref="RecordingFiles.TryParse"/>) that is its audio on either track, a transcript or an answer from ElevenLabs,
+    /// or a log or marks of a recording whose audio is on Google Drive alone (see <see cref="IAudioOnDrive"/>). A log and
+    /// marks alone, as a start that recorded nothing leaves, and an upload copy show no class.
+    /// </summary>
+    private bool IsClass(string file)
+    {
+        if (RecordingFiles.TryParse(file) is not { } files) return false;
+
+        var kind = Path.GetFileName(file)[files.BaseName.Length..];
+        var trace = kind.Equals(".log", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals(".marks.txt", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals(".upload.wav", StringComparison.OrdinalIgnoreCase);
+        return !trace || _onDrive.Find(files) is not null;
     }
 
     /// <summary>

@@ -431,7 +431,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   queued again during its upload, a folder moved or deleted by hand, a done recording asked for
   again, a grown log whose copy is gone or trashed, a manifest that cannot be written, the recordings
   folder with a kept answer at its top, choice 4 on a freed class, the queue counted without a class
-  being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests); 3,357 is the count now,
+  being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests), and 3,370 after a false
+  start stopped taking its date folder; 3,370 is the count now,
   all passing, in about two minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -578,8 +579,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   date folder per class, the LOCAL date of the start on the run's `TimeProvider` and its
   `LocalTimeZone` (`ClassFolders.DateFolderName`, `yyyy-MM-dd`), `yyyy-MM-dd (2)`, `(3)` for later
   classes of the name that day: `ClassFolders.CreateRecording` takes the first date folder that is
-  free (not there, or holding no file `RecordingFiles.TryParse` accepts, so one with only his PDFs or
-  empty is used; a file of that name is passed over, and so is one that cannot be looked into, with
+  free (not there, or holding no class: `IsClass` counts a file `RecordingFiles.TryParse` accepts that
+  is audio on either track, a transcript or an answer, and a `.log` or `.marks.txt` only when
+  `IAudioOnDrive` finds that recording's audio on Drive alone, so a false start's lone log, his PDFs
+  or an empty folder leave it free, as Gulzar decided on 18 October; a file of that name is passed over, and so is one that cannot be looked into, with
   the warning `The folder {Folder} cannot be looked into ({Reason}), so this recording goes to the
   next date folder`, which the README's While recording table quotes), and bumps the second while
   any file of the base name is anywhere in the course (`CourseHasBaseName`), so base names are
