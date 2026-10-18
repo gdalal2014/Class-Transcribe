@@ -82,3 +82,52 @@ Umm al-Barahin
 al-Nur al-Mubin
 Jawharat al-Tawhid
 al-Iqtisad fi al-Iʿtiqad
+
+# The Risala of Ibn Abi Zayd al-Qayrawani: its creed chapter
+
+# Author, text and school
+Ibn Abi Zayd
+al-Risala
+Mālikī
+
+# Throne, names and attributes
+ʿarsh
+istiwāʾ
+kursī
+bi-dhātihi
+al-asmāʾ al-ḥusnā
+makhlūq
+
+# Decree, will and sins
+qadar
+al-qaḍāʾ wa-l-qadar
+mashīʾa
+kabāʾir
+ṣaghāʾir
+
+# Angels and the grave
+ḥafaẓa
+Munkar and Nakir
+barzakh
+
+# Resurrection and the hereafter
+yawm al-qiyāma
+ḥisāb
+mīzān
+ṣirāṭ
+al-ḥawḍ
+shafāʿa
+ruʾya
+Jahannam
+
+# Prophethood, faith and the Companions
+khātam al-nabiyyīn
+īmān
+yazīd wa-yanquṣ
+ahl al-qibla
+ṣaḥāba
+al-khulafāʾ al-rāshidūn
+
+# Following the salaf
+al-salaf al-ṣāliḥ
+bidʿa
