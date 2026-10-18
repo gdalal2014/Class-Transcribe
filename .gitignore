@@ -9,3 +9,6 @@ publish/
 *HANDOFF*.md
 CLAUDE.local.md
 .claude/settings.local.json
+
+# A Google client file downloaded from Google Auth platform > Clients: ClassScribe keeps its own encrypted copy; never commit one
+client_secret*.json

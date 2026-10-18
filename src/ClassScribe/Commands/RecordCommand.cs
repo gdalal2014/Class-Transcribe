@@ -1,6 +1,7 @@
 using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -16,7 +17,9 @@ namespace ClassScribe.Commands;
 /// recording once a second (see <see cref="RecordingLoop"/>); what every run holds meanwhile, from the lock to the run file
 /// and the laptop kept awake, is the bookkeeping's (see <see cref="RunBookkeeping"/>). The settings are those of the run's
 /// own scope, taken when it starts, so an edit made during the class counts from the next run. Each run ends with an
-/// outcome, which the run file keeps and the window or the recorder shows (see <see cref="IResultShower"/>).
+/// outcome, which the run file keeps and the window or the recorder shows (see <see cref="IResultShower"/>). The recording
+/// goes into Google Drive's queue as the run starts, and its outcome is noted at the end; the upload after the run is left
+/// to whoever ran it, once the end is shown (see <see cref="IDriveAutoUpload"/>).
 /// </summary>
 public sealed class RecordCommand(
     IRecordingFactory recordings,
@@ -31,6 +34,7 @@ public sealed class RecordCommand(
     IResultShower results,
     IRecorderStatusSink status,
     SourceChoice choice,
+    IDriveAutoUpload drive,
     IOptionsSnapshot<RecordingOptions> recording,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TimeProvider time,
@@ -52,8 +56,8 @@ public sealed class RecordCommand(
     /// <item>takes the lock, or says which recording runs and returns at once;</item>
     /// <item>makes the recording's files under the request's recordings folder, or opens the recording to continue, from
     /// its length on disk;</item>
-    /// <item>begins the bookkeeping: the run file, the recording's log, the laptop kept awake, and the handlers for an end
-    /// without the usual stop;</item>
+    /// <item>begins the bookkeeping: the run file, the recording's log, Google Drive's queue, the laptop kept awake, and
+    /// the handlers for an end without the usual stop;</item>
     /// <item>starts the recording at that length, with a note where a continued recording resumes;</item>
     /// <item>says where it records, what, the keys, and when it stops by itself with --minutes;</item>
     /// <item>runs the loop until the stop;</item>
@@ -93,8 +97,10 @@ public sealed class RecordCommand(
                 (files, offset, var notRecorded) = OpenFiles(request);
                 (sofar.Files, sofar.Offset) = (files, offset);
 
-                // 3. The run file, the recording's log, the laptop kept awake, and the handlers for an end without the usual stop.
+                // 3. The run file, the recording's log, Google Drive's queue (once Drive is set up), the laptop kept awake, and the
+                // handlers for an end without the usual stop.
                 var run = bookkeeping.Begin(request, files);
+                drive.Queue(files);
                 awake = bookkeeping.KeepAwake();
                 if (request.Transcribe && !HasKey())
                     logger.LogWarning("No ElevenLabs API key found in {Variable}. The class will still be recorded, and you can transcribe it later", ElevenLabsOptions.ApiKeyVariable);
@@ -434,10 +440,14 @@ public sealed class RecordCommand(
         return 1;
     }
 
-    /// <summary>The run is over: its outcome goes into the run file, the run's last state is published, and the outcome is shown.</summary>
+    /// <summary>
+    /// The run is over: its outcome goes into the run file and is noted for the upload to Google Drive after the run, the run's
+    /// last state is published, and the outcome is shown.
+    /// </summary>
     private void End(RecordRequest request, RecorderState? stopping, RecorderPhase phase, RunOutcome outcome)
     {
         bookkeeping.End(outcome);
+        drive.Ended(outcome);
         Publish((stopping ?? new RecorderState(RecorderPhase.Stopping, request.Name, TimeSpan.Zero, Source: null, WaitingFor: null, Microphone: null,
             UploadPercent: null, StopsAtUtc: null, Attention.None, bookkeeping.Home == RunHome.InWindow)) with { Phase = phase, UploadPercent = null });
         results.Show(outcome, request.Open);
@@ -459,8 +469,9 @@ public sealed class RecordCommand(
     }
 
     /// <summary>
-    /// The files this run records into: those of the recording it continues, when the request names one and it can still
-    /// be opened, with the recording's length on disk, where this run starts, and how long ago its audio was last written;
+    /// The files this run records into: those of the recording it continues, in its own folder in whichever layout it was
+    /// made (see <see cref="ClassFolders.OpenToContinue"/>), when the request names one and it can still be opened, with
+    /// the recording's length on disk, where this run starts, and how long ago its audio was last written;
     /// otherwise a new recording's. A recording that cannot be continued does not cost the class: the run says why and
     /// records a new one.
     /// </summary>
@@ -470,7 +481,7 @@ public sealed class RecordCommand(
         {
             try
             {
-                var continued = folders.Open(Path.Combine(request.OutputRoot, ClassFolders.SafeName(request.Name)), baseName);
+                var continued = folders.OpenToContinue(request.OutputRoot, request.Name, baseName);
                 var length = folders.LengthOnDisk(continued);
                 var notRecorded = time.GetUtcNow() - LastWritten(continued);
                 return (continued, length, notRecorded < TimeSpan.Zero ? TimeSpan.Zero : notRecorded);

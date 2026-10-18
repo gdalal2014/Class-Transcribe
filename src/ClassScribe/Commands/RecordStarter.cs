@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -12,8 +13,9 @@ namespace ClassScribe.Commands;
 /// One recording at a time: a recording of the same name running already is shown from the command line, and any other is
 /// explained, with exit code 1. Then whether to continue a recent recording of the same name: the menu asks, the command
 /// line follows --continue and --new and never asks. Then where the run records (see <see cref="RecorderLauncher"/>): in
-/// a separate recorder, which this window shows as its owner, or in this window, through the record command in a scope of
-/// its own, after saying why. A recorder that fails to start is started once more, and after a second failure the run
+/// a separate recorder, which this window shows as its owner, and which uploads to Google Drive itself after the class; or
+/// in this window, through the record command in a scope of its own, after saying why, with the upload to Google Drive
+/// after it in the same scope (see <see cref="IDriveAutoUpload"/>). A recorder that fails to start is started once more, and after a second failure the run
 /// records in this window. A start refused because a recording of the same name took the lock at the same moment shows
 /// that recording instead. A recorder lost while it records is continued by itself, as the same recording's next part,
 /// with the rest of --minutes: in a new recorder the first time, and in this window when it is lost again within 10
@@ -342,8 +344,10 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
 
     /// <summary>
     /// Runs <paramref name="request"/>'s run in this window: the record command, resolved in a scope of its own, and its
-    /// exit code. This window shows the run's outcome, so its run file is marked seen once the run is over, however it
-    /// ended here; a window closed meanwhile leaves the file as it was, for the next start to report.
+    /// exit code. Once the run has ended and shown its end, however it ended, the upload to Google Drive follows in the same
+    /// scope, so its lines go into the recording's log too; it never changes the exit code (see
+    /// <see cref="IDriveAutoUpload"/>). This window shows the run's outcome, so its run file is marked seen once the run is
+    /// over, however it ended here; a window closed meanwhile leaves the file as it was, for the next start to report.
     /// </summary>
     private async Task<int> RecordInThisWindowAsync(RecordRequest request)
     {
@@ -351,7 +355,14 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
         try
         {
             await using var scope = scopes.CreateAsyncScope();
-            return await scope.ServiceProvider.GetRequiredService<IRecordRun>().RunAsync(request);
+            try
+            {
+                return await scope.ServiceProvider.GetRequiredService<IRecordRun>().RunAsync(request);
+            }
+            finally
+            {
+                if (scope.ServiceProvider.GetService<IDriveAutoUpload>() is { } drive) await drive.AfterRunAsync();
+            }
         }
         finally
         {

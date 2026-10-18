@@ -1083,13 +1083,14 @@ public class RuntimeFolderTests
 {
     /// <summary>
     /// The folder is ClassScribe's own under the user's local application data, which never roams or syncs; the runs and
-    /// the lock file are in it. Nothing is made just by asking.
+    /// the lock file are in it. Nothing is made, or even looked at, just by asking where it is.
     /// </summary>
     [Test]
     public void The_folder_is_ClassScribes_own_under_the_users_local_application_data()
     {
-        var folder = new RuntimeFolder();
         var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassScribe");
+
+        var folder = new RuntimeFolder(RuntimeFolder.RealRoot());
 
         Assert.That(folder.Root, Is.EqualTo(expected));
         Assert.That(folder.Runs, Is.EqualTo(Path.Combine(expected, "runs")));
@@ -1097,9 +1098,22 @@ public class RuntimeFolderTests
     }
 
     /// <summary>
-    /// The container makes ClassScribe's own folder, the lock and the run journal as they are, with nothing registered for
-    /// the folder's root, which is then %LOCALAPPDATA%\ClassScribe, so that registering them needs no factory. Nothing is
-    /// made on disk by making them.
+    /// In a test, asking for the real %LOCALAPPDATA%\ClassScribe throws, and says what to register instead, so that no test
+    /// reads or writes the run files of real classes or the real queue for Google Drive.
+    /// </summary>
+    [Test]
+    public void A_test_cannot_reach_the_real_folder()
+    {
+        var refused = Assert.Throws<InvalidOperationException>(() => _ = new RuntimeFolder());
+
+        Assert.That(refused!.Message, Does.Contain("TestRuntime"));
+    }
+
+    /// <summary>
+    /// The container makes ClassScribe's own folder, the lock and the run journal as they are, so that registering them needs
+    /// no factory: with nothing registered for the folder's root it makes the folder of %LOCALAPPDATA%\ClassScribe, which a
+    /// test is refused, and with a folder given it makes the lock and the journal over it. Nothing is made on disk by making
+    /// them.
     /// </summary>
     [Test]
     public void The_container_makes_the_folder_the_lock_and_the_journal_as_they_are()
@@ -1112,12 +1126,21 @@ public class RuntimeFolderTests
             .AddSingleton<RecordingLock>()
             .AddSingleton<RunJournal>()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        Assert.That(() => services.GetRequiredService<RuntimeFolder>(), Throws.InvalidOperationException.With.Message.Contains("TestRuntime"));
 
-        var folder = services.GetRequiredService<RuntimeFolder>();
+        using var temp = new TempFolder();
+        using var given = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<IProcessLiveness, FakeProcessLiveness>()
+            .AddSingleton(new RuntimeFolder(temp.File("ClassScribe")))
+            .AddSingleton<RecordingLock>()
+            .AddSingleton<RunJournal>()
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
-        Assert.That(folder.Root, Is.EqualTo(new RuntimeFolder().Root));
-        Assert.That(services.GetRequiredService<RecordingLock>(), Is.Not.Null);
-        Assert.That(services.GetRequiredService<RunJournal>(), Is.Not.Null);
+        Assert.That(given.GetRequiredService<RecordingLock>(), Is.Not.Null);
+        Assert.That(given.GetRequiredService<RunJournal>(), Is.Not.Null);
+        Assert.That(Directory.Exists(temp.File("ClassScribe")), Is.False, "nothing is made on disk by making them");
     }
 
     /// <summary>A folder given, as tests give one, is used instead, as a full path.</summary>

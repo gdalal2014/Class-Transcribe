@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
@@ -26,8 +27,13 @@ namespace ClassScribe.Storage;
 /// notes say (see <see cref="ClassMarks.PartsOf"/>).
 /// </param>
 /// <param name="HasMicrophone">True when your microphone was recorded with the class, on a track of its own: the .mic.wav files.</param>
+/// <param name="OnDrive">
+/// The recording's audio when it is on Google Drive alone, checked, and none of it is left on this laptop (see
+/// <see cref="IAudioOnDrive"/>): its transcripts can be read and rebuilt, and transcribing it again needs the audio back.
+/// Null while its audio is on this laptop.
+/// </param>
 public sealed record RecordedClass(RecordingFiles Files, DateTime LastRecordedUtc, TimeSpan Length, bool HasTranscript, string? KeptAnswer, bool BeingWritten,
-    int Parts = 1, bool HasMicrophone = false);
+    int Parts = 1, bool HasMicrophone = false, AudioOnDrive? OnDrive = null);
 
 /// <summary>
 /// A recording that a new run of the same name may continue as its next part, because it stopped recently with neither a
@@ -41,14 +47,28 @@ public sealed record RecordedClass(RecordingFiles Files, DateTime LastRecordedUt
 public sealed record ContinueCandidate(RecordingFiles Files, TimeSpan Length, DateTimeOffset StoppedUtc, int Parts);
 
 /// <summary>
-/// Where recordings and transcripts go: a folder per name under Recording:OutputFolder, or under the recordings folder
-/// given for one run (--output), holding the files of every recording of that name, each stamped with its UTC start time
-/// (see <see cref="RecordingFiles"/>). Nothing is ever overwritten. It also finds a recording that a new run may continue
-/// as its next part, and lists the recordings. It lives as long as the app, and reads the setting at each use, so a
-/// change counts as soon as the settings have been read again.
+/// Where recordings and transcripts go: under Recording:OutputFolder, or under the recordings folder given for one run
+/// (--output), a folder per name, the course, and in it a folder per class, named after the local date the class started
+/// on, such as Mantiq\2026-10-17, with " (2)", " (3)" and so on for a second and third class of the name that day. Each
+/// recording's files are stamped with its UTC start time (see <see cref="RecordingFiles"/>). Recordings made before this
+/// layout, flat in the folder of their name, are read as before wherever recordings are looked for: below a course
+/// folder, its own files and those of its date folders count, and no other folder, such as one of slides. Nothing is
+/// ever moved or overwritten. It also finds a recording that a new run may continue as its next part, and lists the
+/// recordings, those whose audio is on Google Drive alone included (see <paramref name="audioOnDrive"/>). It lives as long
+/// as the app, and reads the setting at each use, so a change counts as soon as the settings have been read again.
 /// </summary>
-public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> options, TimeProvider time, ILogger<ClassFolders> logger)
+/// <param name="options">The Recording settings, read at each use.</param>
+/// <param name="time">The clock, in the run's time zone, for the date folders.</param>
+/// <param name="logger">Where problems with folders are said.</param>
+/// <param name="audioOnDrive">What is known of recordings' audio kept on Google Drive alone; none when it is not given.</param>
+public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> options, TimeProvider time, ILogger<ClassFolders> logger, IAudioOnDrive? audioOnDrive = null)
 {
+    /// <summary>What is known of recordings' audio kept on Google Drive alone.</summary>
+    private readonly IAudioOnDrive _onDrive = audioOnDrive ?? NoAudioOnDrive.Instance;
+
+    /// <summary>How a date folder's name writes the local date a class started on: 2026-10-17.</summary>
+    public const string DateFolderFormat = "yyyy-MM-dd";
+
     /// <summary>The folder name a transcribed file gets when nothing usable is left of its own name, as with ".mp3".</summary>
     private const string Untitled = "Untitled";
 
@@ -70,6 +90,12 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// are still seen, as everywhere else.
     /// </summary>
     private static readonly EnumerationOptions Listing = new() { IgnoreInaccessible = true, AttributesToSkip = 0 };
+
+    /// <summary>
+    /// How a folder is looked into when it is read strictly, as for transcribing it: a folder ClassScribe may not open is an
+    /// error, and hidden and system folders are seen, as Windows' own listing does it.
+    /// </summary>
+    private static readonly EnumerationOptions Strict = new() { IgnoreInaccessible = false, AttributesToSkip = 0 };
 
     /// <summary>
     /// The folder that holds every recording folder: Recording:OutputFolder with environment variables
@@ -94,10 +120,12 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     }
 
     /// <summary>
-    /// The files for a recording named <paramref name="name"/> starting now: a folder of that name under
+    /// The files for a recording named <paramref name="name"/> starting now: the folder of that name, the course, under
     /// <paramref name="root"/>, the recordings folder given for the run (--output), or under the root when that is null,
-    /// created if needed and shared with earlier recordings of the name, and files stamped with the UTC time. A recording
-    /// started within the same second as another takes the next second.
+    /// shared with the course's other recordings; in it the date folder of the local date now, on the run's clock and in
+    /// its time zone, or the first of its " (2)", " (3)" and so on that holds no recording yet (see
+    /// <see cref="FreeDateFolder"/>); and files stamped with the UTC time. Both folders are created if needed. A recording
+    /// started within the same second as another of the course takes the next second, so that no two share a base name.
     /// </summary>
     public RecordingFiles CreateRecording(string name, string? root = null)
     {
@@ -105,19 +133,22 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         if (safe.Length == 0) throw new ArgumentException("A name is needed.", nameof(name));
 
         // The path of the folder Windows actually made, in case it tidied the name in a way SafeName did not.
-        var folder = Directory.CreateDirectory(Path.Combine(RootOf(root), safe)).FullName;
+        var course = Directory.CreateDirectory(Path.Combine(RootOf(root), safe)).FullName;
         var started = time.GetUtcNow();
+        var date = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(started, time.LocalTimeZone).DateTime);
+        var folder = Directory.CreateDirectory(Path.Combine(course, FreeDateFolder(course, date))).FullName;
         var files = RecordingFiles.ForNew(folder, safe, started);
-        while (File.Exists(files.Segment(1)))
+        while (CourseHasBaseName(course, files.BaseName))
             files = RecordingFiles.ForNew(folder, safe, started = started.AddSeconds(1));
 
         return files;
     }
 
     /// <summary>
-    /// The files for the transcript of <paramref name="sourcePath"/>: a folder named after the file, under
-    /// <paramref name="root"/>, the recordings folder given for the run (transcribe --output), or under the root when that
-    /// is null, and files stamped with the time now. A file with nothing usable in its name, such as ".mp3", gets an
+    /// The files for the transcript of <paramref name="sourcePath"/>, laid out as a recording's (see
+    /// <see cref="CreateRecording"/>): a folder named after the file, under <paramref name="root"/>, the recordings folder
+    /// given for the run (transcribe --output), or under the root when that is null, the date folder of the transcription
+    /// in it, and files stamped with the time now. A file with nothing usable in its name, such as ".mp3", gets an
     /// "Untitled" folder.
     /// </summary>
     public RecordingFiles CreateForFile(string sourcePath, string? root = null)
@@ -129,26 +160,51 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// <summary>
     /// The files of the recording <paramref name="baseName"/> in <paramref name="folder"/>, for a run that continues it as
     /// its next part: the run's segments take the part numbers after the recording's own, and its marks and notes go into
-    /// the same file. The request names the recording by its folder and base name, such as Kalam_2026-10-15_23-00-02Z.
+    /// the same file. The request names the recording by its base name, such as Kalam_2026-10-15_23-00-02Z, and
+    /// <see cref="OpenToContinue"/> finds its folder.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="baseName"/> is no recording's base name: one with a folder in it, or without a time stamp.</exception>
     /// <exception cref="FileNotFoundException">None of the recording's audio is in <paramref name="folder"/> any more, so there is nothing to continue.</exception>
     public RecordingFiles Open(string folder, string baseName)
     {
         var files = new RecordingFiles(folder, baseName);
-        if (baseName.Length == 0 || Path.GetFileName(baseName) != baseName || baseName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || files.StartedUtc is null)
-            throw new ArgumentException($"\"{baseName}\" is not the name of a recording, such as Kalam_2026-10-15_23-00-02Z.", nameof(baseName));
+        RefuseUnlessBaseName(baseName);
 
-        if (files.FindSegments().Count == 0 && files.FindSegments(Track.Microphone).Count == 0)
+        if (!HasAudio(files))
             throw new FileNotFoundException($"There is no audio of the recording {baseName} left in {folder} to continue.", files.Segment(1));
 
         return files;
     }
 
     /// <summary>
+    /// The files of the recording <paramref name="baseName"/> of <paramref name="name"/>, under the recordings folder
+    /// <paramref name="root"/>, for a run that continues it as its next part (see <see cref="Open"/>), in whichever layout
+    /// it was made: flat in the folder of its name, or in one of that folder's date folders, " (2)" included, whatever the
+    /// date is now. The run keeps writing beside it. The folder of the name is found in any letter case, as Windows takes
+    /// such names for one.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="baseName"/> is no recording's base name: one with a folder in it, or without a time stamp.</exception>
+    /// <exception cref="FileNotFoundException">None of the recording's audio is under the folder of its name any more, so there is nothing to continue.</exception>
+    public RecordingFiles OpenToContinue(string root, string name, string baseName)
+    {
+        RefuseUnlessBaseName(baseName);
+
+        var safe = SafeName(name);
+        var course = FolderOf(root, safe) ?? Path.Combine(root, safe);
+        if (!Directory.Exists(course)) return Open(course, baseName);
+
+        var found = RecordingFoldersIn(course).Select(folder => new RecordingFiles(folder, baseName)).FirstOrDefault(HasAudio);
+        if (found is null)
+            throw new FileNotFoundException($"There is no audio of the recording {baseName} left in {course} or its date folders to continue.", Path.Combine(course, baseName));
+
+        return Open(found.Folder, baseName);
+    }
+
+    /// <summary>
     /// The recording a new run of <paramref name="name"/> may continue as its next part, or null when there is none. Only
     /// the newest recording of the name, in any letter case, under <paramref name="root"/> (the recordings folder given for
-    /// the run, or the root when that is null) is ever offered, and only when all of this holds: it has no transcript; no
+    /// the run, or the root when that is null) is ever offered, in either layout: in the date folders of the name's folder,
+    /// or flat in it. It is offered only when all of this holds: it has no transcript; no
     /// answer ElevenLabs was paid for is kept for it (see <see cref="KeptAnswerOf(RecordingFiles)"/>), beside it, in the
     /// root or in the recordings folder given for the run; it has the same tracks as a run of <paramref name="mode"/>,
     /// which the microphone's .mic.wav files tell; it is not being written, on either track; it has no upload copy, which
@@ -164,9 +220,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     {
         var safe = SafeName(name);
         if (within <= TimeSpan.Zero || safe.Length == 0) return null;
-        if (FolderOf(RootOf(root), safe) is not { } folder) return null;
+        if (FolderOf(RootOf(root), safe) is not { } course) return null;
 
-        var newest = NewestFirst(RecordingsAmong(Directory.EnumerateFiles(folder, "*.wav")))
+        var newest = NewestFirst(RecordingsUnder(course))
             .FirstOrDefault(files => string.Equals(files.Name, safe, StringComparison.OrdinalIgnoreCase));
         if (newest is null) return null;
 
@@ -262,26 +318,119 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     }
 
     /// <summary>
-    /// The recording started last in a folder, or null when the folder holds none. The folder is read
-    /// strictly, so one that cannot be read is an error rather than a folder without recordings.
+    /// The recording started last in a folder, or null when the folder holds none. The recordings of a folder are those in
+    /// it and in its date folders (see <see cref="RecordingFoldersIn"/>): a course's folder stands for its recordings in
+    /// both layouts, a date folder for its own. The folders are read strictly, so one that cannot be read is an error
+    /// rather than a folder without recordings.
     /// </summary>
-    public static RecordingFiles? FindNewest(string folder) =>
-        NewestFirst(RecordingsAmong(Directory.EnumerateFiles(folder, "*.wav"))).FirstOrDefault();
+    public static RecordingFiles? FindNewest(string folder) => NewestFirst(RecordingsUnder(folder)).FirstOrDefault();
 
     /// <summary>
-    /// The recordings in <paramref name="folder"/>, such as one class's folder, newest first by the time each started,
-    /// so that the first is the one <see cref="FindNewest"/> finds, each described as the menu's list describes it. The
-    /// folder is read strictly, as by <see cref="FindNewest"/>, so one that cannot be read is an error; a recording in it
-    /// that cannot be read now is left out with a warning, as in the list.
+    /// The recordings in <paramref name="folder"/> and its date folders, such as a course's or one class's, newest first by
+    /// the time each started, so that the first is the one <see cref="FindNewest"/> finds, each described as the menu's
+    /// list describes it. The folders are read strictly, as by <see cref="FindNewest"/>, so one that cannot be read is an
+    /// error; a recording in them that cannot be read now is left out with a warning, as in the list.
     /// </summary>
     public IReadOnlyList<RecordedClass> RecordingsIn(string folder)
     {
         var root = Root;
-        return NewestFirst(RecordingsAmong(Directory.EnumerateFiles(folder, "*.wav")))
+        return NewestFirst(RecordingsUnder(folder))
             .Select(files => TryDescribe(files, root))
             .OfType<RecordedClass>()
             .ToList();
     }
+
+    /// <summary>
+    /// The folders whose recordings <paramref name="folder"/> stands for: itself, which holds the recordings of the old
+    /// layout flat in the folder of their name, and then its date folders, by name (see <see cref="IsDateFolderName"/>).
+    /// Its other folders, such as one of slides, are passed over. The folder is read strictly, so one that cannot be read
+    /// is an error.
+    /// </summary>
+    public static IReadOnlyList<string> RecordingFoldersIn(string folder) => [folder, .. DateFoldersIn(folder, Strict)];
+
+    /// <summary>The name of the date folder of <paramref name="date"/>: 2026-10-17, and 2026-10-17 (2) from the second class of a name that day.</summary>
+    public static string DateFolderName(DateOnly date, int copy = 1)
+    {
+        var day = date.ToString(DateFolderFormat, CultureInfo.InvariantCulture);
+        return copy == 1 ? day : string.Create(CultureInfo.InvariantCulture, $"{day} ({copy})");
+    }
+
+    /// <summary>
+    /// True when <paramref name="name"/> is a date folder's name: the date of a real day as yyyy-MM-dd, alone or followed by
+    /// a space and a number in brackets, as in 2026-10-17 (2). Any other name, such as Slides, is not.
+    /// </summary>
+    public static bool IsDateFolderName(string name) => DateFolderMatch(name) is not null;
+
+    /// <summary>
+    /// The name of <paramref name="folder"/> when it is the date folder of a later class of its day, such as
+    /// 2026-10-17 (2), which the list shows to tell the day's classes apart; null for any other folder, the day's first
+    /// date folder included.
+    /// </summary>
+    public static string? LaterClassOfItsDay(string folder) =>
+        Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)) is var name && DateFolderMatch(name) is { } match && match.Groups["copy"].Success ? name : null;
+
+    /// <summary>
+    /// The folders that hold the copy of a recording kept in <paramref name="recordingFolder"/> under ClassScribe's own
+    /// folder in Google Drive, from the top down, so that Drive mirrors the laptop: for a date folder its course's name and
+    /// its own, " (2)" included, as Mantiq and 2026-10-17; for any other folder, as one of the old layout, its own name
+    /// alone, as Kalam. Only the folder's own name and its parent's count, whatever the recordings folder is.
+    /// </summary>
+    public static IReadOnlyList<string> DriveLevelsOf(string recordingFolder)
+    {
+        var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(recordingFolder));
+        var own = Path.GetFileName(folder);
+        if (own.Length == 0) return [];
+
+        return IsDateFolderName(own) && Path.GetFileName(Path.GetDirectoryName(folder)) is { Length: > 0 } course ? [course, own] : [own];
+    }
+
+    /// <summary>
+    /// <paramref name="folder"/>'s full path with each folder's name written as it is on disk, as Mantiq when it was typed
+    /// mantiq, so that Drive's folders are named as the laptop's are, whatever was typed. A folder that is not there, or
+    /// that cannot be looked into, keeps the name as given.
+    /// </summary>
+    public static string AsOnDisk(string folder)
+    {
+        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+        var root = Path.GetPathRoot(full) ?? "";
+        var current = root;
+        foreach (var name in full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, OnDiskName(current, name));
+        }
+
+        return current.Length == 0 ? full : current;
+    }
+
+    /// <summary>
+    /// Every recording in <paramref name="folder"/> and its date folders (see <see cref="RecordingFoldersIn"/>), known by any
+    /// of its files (see <see cref="RecordingFiles.TryParse"/>), so that one whose audio is on Google Drive alone, or a file
+    /// transcribed on its own, counts too; newest first by the time each started. Files that are not a recording's, such as a
+    /// class's PDFs, are passed over. The folders are read strictly, so one that cannot be read is an error.
+    /// </summary>
+    public static IReadOnlyList<RecordingFiles> RecordingsByAnyFileIn(string folder) =>
+        [
+            .. NewestFirst(RecordingFoldersIn(folder)
+                .SelectMany(recordings => Directory.EnumerateFiles(recordings, "*", Strict))
+                .Select(RecordingFiles.TryParse)
+                .OfType<RecordingFiles>()
+                .DistinctBy(files => Path.Combine(files.Folder, files.BaseName), StringComparer.OrdinalIgnoreCase))
+        ];
+
+    /// <summary>The audio of <paramref name="files"/> that is on Google Drive alone, checked, and gone from this laptop; null when none of it is.</summary>
+    public AudioOnDrive? AudioOnDriveOf(RecordingFiles files) => _onDrive.Find(files);
+
+    /// <summary>
+    /// The recording started last in <paramref name="folder"/> and its date folders whose audio is all on Google Drive alone,
+    /// with that audio; null when there is none. Transcribing the folder would otherwise pass it over for an older one.
+    /// </summary>
+    public (RecordingFiles Files, AudioOnDrive Audio)? NewestWithAudioOnDriveIn(string folder) =>
+        RecordingsByAnyFileIn(folder)
+            .Where(files => !HasAudio(files))
+            .Select(files => (Files: files, Audio: _onDrive.Find(files)))
+            .Where(found => found.Audio is { AllOfIt: true })
+            .Select(found => ((RecordingFiles Files, AudioOnDrive Audio)?)(found.Files, found.Audio!))
+            .FirstOrDefault();
 
     /// <summary>
     /// Describes one recording as the list describes it (see <see cref="ListRecent"/>), such as one given by a path: its
@@ -349,6 +498,119 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
             .Distinct();
 
     /// <summary>
+    /// The recordings in <paramref name="folder"/> and in its date folders (see <see cref="RecordingFoldersIn"/>), in no
+    /// particular order, every folder read strictly.
+    /// </summary>
+    private static IEnumerable<RecordingFiles> RecordingsUnder(string folder) =>
+        RecordingsAmong(RecordingFoldersIn(folder).SelectMany(recordings => Directory.EnumerateFiles(recordings, "*.wav")));
+
+    /// <summary>The date folders in <paramref name="folder"/>, by name, read as <paramref name="how"/> says; its other folders are passed over.</summary>
+    private static IEnumerable<string> DateFoldersIn(string folder, EnumerationOptions how) =>
+        Directory.EnumerateDirectories(folder, "*", how)
+            .Where(dated => IsDateFolderName(Path.GetFileName(dated)))
+            .Order(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The name of the date folder a new recording of the course in <paramref name="course"/> goes to, on
+    /// <paramref name="date"/>: the date's own, or the first of its " (2)", " (3)" and so on that is free. A folder is free
+    /// when it is not there yet, or holds no file of a recording, being empty or holding only other files and folders,
+    /// such as the class's PDFs, which stay as they are. A file of that name is not free, and nor is a folder ClassScribe
+    /// may not look into, which could not be written either.
+    /// </summary>
+    private string FreeDateFolder(string course, DateOnly date)
+    {
+        for (var copy = 1; ; copy++)
+        {
+            var name = DateFolderName(date, copy);
+            if (IsFree(Path.Combine(course, name))) return name;
+        }
+    }
+
+    /// <summary>
+    /// True when a new recording may go into the date folder <paramref name="folder"/>: it is not there yet, or it is a
+    /// folder that holds no file of a recording (see <see cref="RecordingFiles.TryParse"/>). A file of that name is not
+    /// free, and nor is a folder that cannot be looked into, which is said.
+    /// </summary>
+    private bool IsFree(string folder)
+    {
+        if (File.Exists(folder)) return false;
+        if (!Directory.Exists(folder)) return true;
+
+        try
+        {
+            return !Directory.EnumerateFiles(folder).Any(file => RecordingFiles.TryParse(file) is not null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: a date folder that cannot be looked into could not be recorded into either, and
+            // must not cost the class; the next date folder's name is taken instead, and this says why.
+            logger.LogWarning("The folder {Folder} cannot be looked into ({Reason}), so this recording goes to the next date folder", folder, ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when a file of the recording <paramref name="baseName"/> is in <paramref name="course"/> or in any of its date
+    /// folders, so that a recording started within the same second as another takes the next second. Folders that cannot be
+    /// looked into are passed over: nothing of the course can be written there anyway.
+    /// </summary>
+    private bool CourseHasBaseName(string course, string baseName) =>
+        new[] { course }.Concat(DateFoldersIn(course, Listing)).Any(folder => HoldsBaseName(folder, baseName));
+
+    /// <summary>
+    /// True when a file of the recording <paramref name="baseName"/> is in <paramref name="folder"/>. A folder that cannot be
+    /// looked into, or that leads nowhere, holds none for this look.
+    /// </summary>
+    private bool HoldsBaseName(string folder, string baseName)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(folder, $"{baseName}*", Listing)
+                .Any(file => string.Equals(RecordingFiles.TryParse(file)?.BaseName, baseName, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (IOException ex)
+        {
+            // Deliberately not rethrown: this look only keeps two recordings of a course from sharing a name, and a date
+            // folder that leads nowhere, such as a link to a drive that is gone, must not keep the class from starting;
+            // nothing can have been written there, so it holds no file of the name.
+            logger.LogDebug(ex, "Could not look for files of {Recording} in {Folder}", baseName, folder);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The name of the folder <paramref name="name"/> in <paramref name="parent"/> as it is written on disk; as given when it
+    /// is not there, or cannot be looked up.
+    /// </summary>
+    private static string OnDiskName(string parent, string name)
+    {
+        try
+        {
+            return parent.Length > 0 && Directory.Exists(parent)
+                ? Directory.EnumerateDirectories(parent, name).Select(Path.GetFileName).FirstOrDefault(found => string.Equals(found, name, StringComparison.OrdinalIgnoreCase)) ?? name
+                : name;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // Deliberately not rethrown: the name on disk only spells Drive's folders as the laptop's; a folder that cannot be
+            // looked into keeps the name as it was given.
+            return name;
+        }
+    }
+
+    /// <summary>Throws when <paramref name="baseName"/> is no recording's base name: empty, with a folder in it, with a character Windows forbids, or without a time stamp.</summary>
+    /// <exception cref="ArgumentException"><paramref name="baseName"/> is no recording's base name.</exception>
+    private static void RefuseUnlessBaseName(string baseName)
+    {
+        if (baseName.Length == 0 || Path.GetFileName(baseName) != baseName || baseName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+            || new RecordingFiles("", baseName).StartedUtc is null)
+            throw new ArgumentException($"\"{baseName}\" is not the name of a recording, such as Kalam_2026-10-15_23-00-02Z.", nameof(baseName));
+    }
+
+    /// <summary>True when any audio of the recording is in its folder, on either track.</summary>
+    private static bool HasAudio(RecordingFiles files) => files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0;
+
+    /// <summary>
     /// The recordings folder for one run or listing: <paramref name="root"/>, the folder given for it, read as
     /// Recording:OutputFolder is read (see <see cref="RootFor"/>), or the root when none is given.
     /// </summary>
@@ -384,15 +646,38 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     }
 
     /// <summary>
-    /// Every recording in the folders under <paramref name="root"/>, described for a list, in no particular order. One bad
-    /// item does not hide the rest (see <see cref="ListRecordingsIn"/> and <see cref="TryDescribe"/>); a root that cannot
-    /// be read is an error.
+    /// Every recording in the folders under <paramref name="root"/>, the courses, and in their date folders, described for
+    /// a list, in no particular order. One bad item does not hide the rest (see <see cref="ListRecordingsUnder"/>,
+    /// <see cref="ListRecordingsIn"/> and <see cref="TryDescribe"/>); a root that cannot be read is an error.
     /// </summary>
     private IEnumerable<RecordedClass> DescribeAllUnder(string root) =>
         Directory.EnumerateDirectories(root)
-            .SelectMany(ListRecordingsIn)
+            .SelectMany(ListRecordingsUnder)
             .Select(files => TryDescribe(files, root))
             .OfType<RecordedClass>();
+
+    /// <summary>
+    /// The recordings of a course folder under the root, for the list: those flat in it, as the old layout put them, and
+    /// those in each of its date folders. A course or date folder ClassScribe may not open counts as empty (see
+    /// <see cref="Listing"/>); one that cannot be read for another reason is left out with a warning.
+    /// </summary>
+    private IEnumerable<RecordingFiles> ListRecordingsUnder(string course)
+    {
+        List<string> dated;
+        try
+        {
+            dated = [.. DateFoldersIn(course, Listing)];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: the list is only for picking a recording, and one folder that
+            // cannot be read must not hide the recordings in the others.
+            logger.LogWarning(ex, "Leaving the folder {Folder} out of the list of recordings: it cannot be read", course);
+            return [];
+        }
+
+        return new[] { course }.Concat(dated).SelectMany(ListRecordingsIn);
+    }
 
     /// <summary>Recordings ordered newest first by the time each started, as their names give it, and then by name.</summary>
     private static IOrderedEnumerable<RecordingFiles> NewestFirst(IEnumerable<RecordingFiles> recordings) =>
@@ -438,14 +723,24 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     }
 
     /// <summary>
-    /// The recordings in a folder under the root, for the list. A folder ClassScribe may not open counts as
-    /// empty (see <see cref="Listing"/>); one that cannot be read for another reason is left out with a warning.
+    /// The recordings in a folder under the root, for the list: those with audio of the class on this laptop, and those
+    /// whose audio is all on Google Drive alone (see <see cref="IAudioOnDrive"/>). A folder ClassScribe may not open counts
+    /// as empty (see <see cref="Listing"/>); one that cannot be read for another reason is left out with a warning.
     /// </summary>
     private IReadOnlyList<RecordingFiles> ListRecordingsIn(string folder)
     {
         try
         {
-            return [.. RecordingsAmong(Directory.EnumerateFiles(folder, "*.wav", Listing))];
+            var paths = Directory.EnumerateFiles(folder, "*", Listing).ToList();
+            var withAudio = RecordingsAmong(paths.Where(path => path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))).ToList();
+            if (_onDrive is NoAudioOnDrive) return withAudio;
+
+            var onDriveAlone = paths
+                .Select(RecordingFiles.TryParse)
+                .OfType<RecordingFiles>()
+                .Distinct()
+                .Where(files => !withAudio.Contains(files) && !HasAudio(files) && _onDrive.Find(files) is { AllOfIt: true });
+            return [.. withAudio, .. onDriveAlone];
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -480,12 +775,20 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// Describes a recording from its files: its length and when it was last written to from the segments of both its
     /// tracks, whether it has a transcript, the newest answer paid for but kept without one, beside it or, when its own
     /// folder would not take it, in the recordings folder <paramref name="root"/>, whether it is being recorded now, the
-    /// parts it was made in, and whether it has the microphone's track.
+    /// parts it was made in, and whether it has the microphone's track. A recording whose audio is all on Google Drive
+    /// alone takes its length from what was measured when the audio went up, and counts as last written at its end.
     /// </summary>
-    private static RecordedClass Describe(RecordingFiles files, string root)
+    private RecordedClass Describe(RecordingFiles files, string root)
     {
         var main = files.FindSegments();
         var microphone = files.FindSegments(Track.Microphone);
+        if (main.Count == 0 && microphone.Count == 0 && _onDrive.Find(files) is { AllOfIt: true } onDrive)
+        {
+            var ended = (files.StartedUtc ?? DateTimeOffset.UnixEpoch) + onDrive.Length;
+            return new RecordedClass(files, ended.UtcDateTime, onDrive.Length, files.HasTranscript, KeptAnswerOf(files, root), BeingWritten: false,
+                ClassMarks.PartsOf(files), onDrive.HasMicrophone, onDrive);
+        }
+
         return new RecordedClass(files, LastWritten(main.Concat(microphone)).UtcDateTime, LongestTrack(main, microphone), files.HasTranscript,
             KeptAnswerOf(files, root), IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone), ClassMarks.PartsOf(files), microphone.Count > 0);
     }
@@ -493,4 +796,18 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// <summary>A reference to an environment variable, such as %USERPROFILE%.</summary>
     [GeneratedRegex(@"%(?<name>[^%\\/]+)%", RegexOptions.CultureInvariant)]
     private static partial Regex VariableReference();
+
+    /// <summary>The match of <paramref name="name"/> as a date folder's name, its date that of a real day; null when it is no date folder's name.</summary>
+    private static Match? DateFolderMatch(string name) =>
+        DateFolderShape().Match(name) is { Success: true } match
+        && DateOnly.TryParseExact(match.Groups["date"].Value, DateFolderFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
+            ? match
+            : null;
+
+    /// <summary>
+    /// The shape of a date folder's name: four, two and two digits for the date, then for a later class of the day a space
+    /// and a number in brackets. Digits are 0 to 9 only, and \z ends the match at the very end.
+    /// </summary>
+    [GeneratedRegex(@"^(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})(?<copy> \([0-9]{1,9}\))?\z", RegexOptions.CultureInvariant)]
+    private static partial Regex DateFolderShape();
 }

@@ -28,7 +28,7 @@ namespace ClassScribe.Tests;
 /// </summary>
 [TestFixture, Platform("Win"), Category("WindowsProcess")]
 [SupportedOSPlatform("windows")]
-public class RecorderHostTests
+public partial class RecorderHostTests
 {
     /// <summary>How long a test waits for the run to end once it has asked for the stop.</summary>
     private static readonly TimeSpan EndPatience = TimeSpan.FromSeconds(30);
@@ -66,6 +66,8 @@ public class RecorderHostTests
         _windows = [];
         _runId = null;
         _runFileExistedWhenThePipeWasMade = null;
+        _google = null;
+        _store = null;
     }
 
     /// <summary>Closes the windows and deletes the folders; a file left open fails the deletion, which is the point.</summary>
@@ -92,6 +94,8 @@ public class RecorderHostTests
         ConfigureServices = services =>
         {
             _log = (RecorderLog)services.Single(descriptor => descriptor.ServiceType == typeof(RecorderLog)).ImplementationInstance!;
+            services.Replace(ServiceDescriptor.Singleton(new RoamingFolder(_folder.File("Roaming"))));
+            OnGoogleDrive(services);
             services.Replace(ServiceDescriptor.Transient<IRecordingFactory>(_ => _recordings));
             services.Replace(ServiceDescriptor.Singleton<IProcessStarter>(_starter));
             services.Replace(ServiceDescriptor.Singleton<IPowerRequests>(_power));
@@ -290,7 +294,9 @@ public class RecorderHostTests
         Assert.That((whileRecording.State, whileRecording.Home, whileRecording.Pipe, whileRecording.ProcessId, whileRecording.Request),
             Is.EqualTo((RunState.Recording, RunHome.Separate, LinkProtocol.PipeNameFor(request.RunId), Environment.ProcessId, request)));
         Assert.That(_server!.Windows, Is.Zero, "nobody is attached");
-        Assert.That(recording.Files!.Folder, Is.EqualTo(Path.Combine(_folder.Path, "Kalam")), "the request's folder, from the settings handed over");
+        var dateFolder = ClassFolders.DateFolderName(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(TestRuns.Start, _time.LocalTimeZone).DateTime));
+        Assert.That(recording.Files!.Folder, Is.EqualTo(Path.Combine(_folder.Path, "Kalam", dateFolder)),
+            "the request's folder, from the settings handed over, with the course's folder and the date folder of the recorder's clock");
 
         StopFromAnotherWindow(request.RunId);
 

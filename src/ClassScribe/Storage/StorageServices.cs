@@ -5,7 +5,8 @@ namespace ClassScribe.Storage;
 
 /// <summary>
 /// Registers where recordings and transcripts go, the marks set while recording, the free space of a drive, and
-/// ClassScribe's own folder: the lock that allows one recording at a time and the run files.
+/// ClassScribe's own folder: the lock that allows one recording at a time and the run files; and its roaming folder, which
+/// holds the Google Drive sign-in.
 /// </summary>
 public static class StorageServices
 {
@@ -20,6 +21,9 @@ public static class StorageServices
         services.AddSingleton(_ => new RuntimeFolder());
         services.AddSingleton<RecordingLock>();
         services.AddSingleton<RunJournal>();
+
+        // %APPDATA%\ClassScribe: the Google Drive sign-in, made only when one is stored.
+        services.AddSingleton(_ => new RoamingFolder());
         return services;
     }
 }

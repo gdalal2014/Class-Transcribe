@@ -46,16 +46,43 @@ public class ListCommandTests
 
     /// <summary>
     /// Writes a recording of <paramref name="name"/> started at <paramref name="startedUtc"/>, <paramref name="seconds"/>
-    /// long, into the folder of its name under <paramref name="root"/>, or under the recordings folder. One sample a second
-    /// keeps a long recording small on disk.
+    /// long, into the folder of its name under <paramref name="root"/>, or under the recordings folder, as recordings were
+    /// kept before the course and date folders; or into <paramref name="folder"/> there, such as "Mantiq\2026-10-17". One
+    /// sample a second keeps a long recording small on disk.
     /// </summary>
-    private RecordingFiles WriteRecording(string name, DateTimeOffset startedUtc, int seconds, string? root = null)
+    private RecordingFiles WriteRecording(string name, DateTimeOffset startedUtc, int seconds, string? root = null, string? folder = null)
     {
-        var files = RecordingFiles.ForNew(Path.Combine(root ?? _recordings.Path, name), name, startedUtc);
+        var files = RecordingFiles.ForNew(Path.Combine(root ?? _recordings.Path, folder ?? name), name, startedUtc);
         Directory.CreateDirectory(files.Folder);
         TestAudio.WriteWav(files.Segment(1), sampleRate: 1, new short[seconds]);
         File.SetLastWriteTimeUtc(files.Segment(1), startedUtc.UtcDateTime);
         return files;
+    }
+
+    /// <summary>
+    /// The recordings of both layouts are listed together, those in the course and date folders and those flat in the
+    /// folder of their name; a second class of a name on the same day, in the date folder marked "(2)", is shown with that
+    /// folder, which tells the day's classes apart, while the day's first class needs none. His own files there, such as
+    /// the class's PDFs, and his own folders, such as Slides, are passed over.
+    /// </summary>
+    [Test]
+    public void Recordings_of_both_layouts_are_listed_and_a_later_class_of_the_day_shows_its_folder()
+    {
+        WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), seconds: 7860, folder: @"Mantiq\2026-10-17");
+        WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 22, 0, 0, TimeSpan.Zero), seconds: 3600, folder: @"Mantiq\2026-10-17 (2)");
+        WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 18, 22, 0, 0, TimeSpan.Zero), seconds: 60, folder: @"Mantiq\Slides");
+        File.WriteAllBytes(Path.Combine(_recordings.Path, "Mantiq", "2026-10-17", "Class_1_slides.pdf"), [1]);
+        WriteRecording("Kalam", new DateTimeOffset(2026, 10, 15, 23, 0, 2, TimeSpan.Zero), seconds: 60);
+
+        CreateCommand().Run(root: null);
+
+        Assert.That(Lines, Is.EqualTo(new[]
+        {
+            $"Recordings in {_recordings.Path}, newest first (times are local):",
+            "  Mantiq  17 Oct 18:00  01:00:00  in 2026-10-17 (2)  no transcript yet",
+            "  Mantiq  17 Oct 10:04  02:11:00  no transcript yet",
+            "  Kalam   15 Oct 19:00  00:01:00  no transcript yet"
+        }));
     }
 
     /// <summary>

@@ -1,8 +1,10 @@
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace ClassScribe.Tests;
@@ -35,6 +37,7 @@ public class StartupReportTests
     private Mock<ICommandRunner> _commands = null!;
     private Mock<IDesktop> _desktop = null!;
     private RecordingLogger<StartupReport> _log = null!;
+    private FakeCredentialStore _store = null!;
 
     /// <summary>
     /// Makes the folders, the settings, a console to type into and the commands the report runs, with the clock four
@@ -55,6 +58,7 @@ public class StartupReportTests
         _commands.Setup(commands => commands.TranscribeAsync(It.IsAny<TranscribeRequest>())).ReturnsAsync(0);
         _desktop = new Mock<IDesktop>();
         _log = new RecordingLogger<StartupReport>();
+        _store = new FakeCredentialStore();
     }
 
     /// <summary>Deletes the temporary folders.</summary>
@@ -66,10 +70,17 @@ public class StartupReportTests
         _runtime.Dispose();
     }
 
-    /// <summary>The report under test.</summary>
+    /// <summary>The report under test, with Google Drive as <see cref="_store"/> has it: not set up unless a test signs in.</summary>
     private StartupReport Report() =>
         new(_runtime.Journal, new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), _commands.Object, _settings.Gate(), _ui, _desktop.Object,
-            _runtime.Processes, _options, ZonedClock.Eastern(_runtime.Time), _log);
+            _runtime.Processes, DriveQueue(), _options, ZonedClock.Eastern(_runtime.Time), _log);
+
+    /// <summary>What the report reads of Google Drive's queue: the store, and the manifests in ClassScribe's own folder.</summary>
+    private DriveQueueReport DriveQueue() =>
+        new(_store, Manifests(), _runtime.Journal, TestOptions.Create(new DriveOptions()), ZonedClock.Eastern(_runtime.Time));
+
+    /// <summary>The upload manifests in ClassScribe's own folder.</summary>
+    private UploadManifests Manifests() => new(_runtime.Folder, _runtime.Time, NullLogger<UploadManifests>.Instance);
 
     /// <summary>The run as its file says now.</summary>
     private RunRecord Run(string? runId = null) => _runtime.Journal.Find(runId ?? RunId)!.Record;
@@ -77,11 +88,13 @@ public class StartupReportTests
     /// <summary>
     /// The recording "Kalam" that started at 23:00:02 UTC: 00:47:10 of audio, last written at <see cref="LastAudio"/>; or
     /// the recording of <paramref name="name"/> that started at <paramref name="startedUtc"/>, last written at
-    /// <paramref name="lastWrittenUtc"/>, when given.
+    /// <paramref name="lastWrittenUtc"/>, when given. It is flat in the folder of its name, as recordings were kept before
+    /// the course and date folders, or in <paramref name="dateFolder"/> there, such as 2026-10-15.
     /// </summary>
-    private RecordingFiles WriteRecording(string name = "Kalam", DateTimeOffset? startedUtc = null, DateTimeOffset? lastWrittenUtc = null)
+    private RecordingFiles WriteRecording(string name = "Kalam", DateTimeOffset? startedUtc = null, DateTimeOffset? lastWrittenUtc = null, string? dateFolder = null)
     {
-        var files = RecordingFiles.ForNew(Path.Combine(_recordings.Path, name), name, startedUtc ?? TestRuns.Start);
+        var course = Path.Combine(_recordings.Path, name);
+        var files = RecordingFiles.ForNew(dateFolder is null ? course : Path.Combine(course, dateFolder), name, startedUtc ?? TestRuns.Start);
         Directory.CreateDirectory(files.Folder);
         using (var writer = new WavSegmentWriter(files.Segment(1), 10)) writer.Write(new byte[2830 * 10 * 2]);
         File.SetLastWriteTimeUtc(files.Segment(1), (lastWrittenUtc ?? LastAudio).UtcDateTime);
@@ -253,6 +266,45 @@ public class StartupReportTests
             Minutes = null
         }));
         Assert.That(Run().Seen, Is.True);
+    }
+
+    /// <summary>
+    /// A recording in its date folder that ended unexpectedly is reported as one of the old layout is, with C to continue
+    /// it, which hands on the run's own request naming it; the run that takes the request finds it in its date folder.
+    /// </summary>
+    [Test]
+    public async Task A_recording_in_a_date_folder_is_reported_with_C_to_continue_it()
+    {
+        var files = WriteRecording(dateFolder: "2026-10-15 (2)");
+        WriteRun(files);
+        var started = new List<RecordRequest>();
+        _commands.Setup(commands => commands.RecordAsync(It.IsAny<RecordRequest>(), It.IsAny<StartOrigin>()))
+            .Callback((RecordRequest request, StartOrigin _) => started.Add(request))
+            .ReturnsAsync(0);
+        _ui.Type('c');
+
+        var choice = await Report().ShowAsync(interactive: true);
+
+        Assert.That(choice, Is.EqualTo(new StartupChoice(RunId, StartupAction.Continue)));
+        Assert.That(_ui.Screen, Does.Contain("  C  continue it now as its next part"));
+        Assert.That(started.Single().ContinueBaseName, Is.EqualTo(files.BaseName));
+    }
+
+    /// <summary>
+    /// A newer recording of the same name in the other layout, here in a date folder after a lost one flat in the folder of
+    /// its name, is the one a new run of the name continues, so C is not offered for the older one.
+    /// </summary>
+    [Test]
+    public async Task C_is_not_offered_when_a_newer_recording_of_the_name_is_in_the_other_layout()
+    {
+        WriteRun(WriteRecording());
+        WriteRecording(startedUtc: LastAudio.AddMinutes(1), lastWrittenUtc: LastAudio.AddMinutes(3), dateFolder: "2026-10-15");
+        _ui.Type('\r');
+
+        await Report().ShowAsync(interactive: true);
+
+        Assert.That(_ui.Screen, Does.Contain("  T  transcribe what was recorded"));
+        Assert.That(_ui.Screen, Does.Not.Contain("C  continue"));
     }
 
     /// <summary>T transcribes what was recorded, by the recording's first file, which names exactly that recording, and the run is not reported again.</summary>
@@ -615,6 +667,136 @@ public class StartupReportTests
 
         Assert.That(choice, Is.Null);
         Assert.That(_ui.Screen, Is.EqualTo("Recording now in the background: \"Kalam\" since 19:00 (00:42:13). Start ClassScribe to see it."));
+    }
+
+    // ------------------------------------------------------------------ Google Drive
+
+    /// <summary>Signs in to Google Drive, as a sign-in stored earlier would be.</summary>
+    private void SignedInToDrive() => _store.Stored = FakeCredentialStore.With("a-refresh-token").Stored;
+
+    /// <summary>Puts a recording of <paramref name="name"/> in Google Drive's queue, as one that could not go up, and returns it with its size as the lines say it.</summary>
+    private (RecordingFiles Files, string Size) Waiting(string name = "Kalam")
+    {
+        var files = WriteRecording(name);
+        Manifests().Write(Manifests().Queue(files) with
+        {
+            LastTriedUtc = LastAudio.AddMinutes(1),
+            LastError = "Google Drive could not be reached (No such host is known.)."
+        });
+        return (files, DriveCommand.Size(UploadManifests.OnDisk(files).Bytes));
+    }
+
+    /// <summary>
+    /// In the menu, what waits to go up to Google Drive is said after the runs, with its size and its last try, and U uploads
+    /// it now, through the drive command, once the settings pass; the report ends there.
+    /// </summary>
+    [Test]
+    public async Task What_waits_for_Google_Drive_is_reported_with_U_to_upload_it()
+    {
+        SignedInToDrive();
+        var (files, size) = Waiting();
+        _commands.Setup(commands => commands.DriveUploadAsync(null)).ReturnsAsync(0);
+        _ui.Type('U');
+
+        var choice = await Report().ShowAsync(interactive: true);
+
+        Assert.That(choice, Is.EqualTo(new StartupChoice(null, StartupAction.Upload)));
+        Assert.That(_ui.Screen, Is.EqualTo(string.Join(Environment.NewLine,
+            $"Google Drive: 1 recording waits to go up ({files.BaseName}, {size}; last try 15 Oct 19:48: Google Drive could not be reached (No such host is known.)).",
+            "  U  upload it now                        Enter  go on to the menu")));
+        _commands.Verify(commands => commands.DriveUploadAsync(null), Times.Once);
+    }
+
+    /// <summary>Enter goes on to the menu without uploading; what waits is offered again at the next start.</summary>
+    [Test]
+    public async Task Enter_goes_on_and_nothing_is_uploaded()
+    {
+        SignedInToDrive();
+        Waiting();
+        Waiting("Fiqh");
+        _ui.Type('\r');
+
+        var choice = await Report().ShowAsync(interactive: true);
+
+        Assert.That(choice, Is.Null);
+        Assert.That(_ui.Screen, Does.StartWith("Google Drive: 2 recordings wait to go up (").And.Contain(" in all; last try 15 Oct 19:48: ").And.Contain("  U  upload them now"));
+        _commands.Verify(commands => commands.DriveUploadAsync(It.IsAny<string?>()), Times.Never);
+    }
+
+    /// <summary>U runs nothing while the settings cannot be used, as a menu choice; the report ends, and the menu shows why.</summary>
+    [Test]
+    public async Task U_uploads_nothing_while_the_settings_cannot_be_used()
+    {
+        SignedInToDrive();
+        Waiting();
+        _settings.Write("{ \"Recording\": { \"FlushSeconds\": \"abc\" } }");
+        _ui.Type('U');
+
+        Assert.That(await Report().ShowAsync(interactive: true), Is.Null);
+
+        _commands.Verify(commands => commands.DriveUploadAsync(It.IsAny<string?>()), Times.Never);
+    }
+
+    /// <summary>Not signed in, what waits is said with how to sign in, and no key is asked for, since nothing could go up.</summary>
+    [Test]
+    public async Task Not_signed_in_what_waits_is_said_with_how_to_sign_in()
+    {
+        _store.Stored = FakeCredentialStore.With(null).Stored;
+        var (files, size) = Waiting();
+
+        var choice = await Report().ShowAsync(interactive: true);
+
+        Assert.That(choice, Is.Null);
+        Assert.That(_ui.Screen, Is.EqualTo(string.Join(Environment.NewLine,
+            $"Google Drive: 1 recording waits to go up ({files.BaseName}, {size}; last try 15 Oct 19:48: Google Drive could not be reached (No such host is known.)).",
+            "ClassScribe is not signed in to Google Drive: 9 > S in the menu signs in, then 9 > U uploads it.")));
+        Assert.That(_ui.KeyReads, Is.Zero);
+    }
+
+    /// <summary>On the command line what waits is said with the command that uploads it, and nothing is asked.</summary>
+    [Test]
+    public async Task On_the_command_line_what_waits_is_said_with_the_command_that_uploads_it()
+    {
+        SignedInToDrive();
+        var (files, size) = Waiting();
+
+        Assert.That(await Report().ShowAsync(interactive: false), Is.Null);
+
+        Assert.That(_ui.Screen, Is.EqualTo(string.Join(Environment.NewLine,
+            $"Google Drive: 1 recording waits to go up ({files.BaseName}, {size}; last try 15 Oct 19:48: Google Drive could not be reached (No such host is known.)).",
+            $"To upload it: {CommandLine.DriveUpload(null)}")));
+        Assert.That(_ui.KeyReads, Is.Zero);
+    }
+
+    /// <summary>The menu's header ends with Google Drive's line, after the runs going on now; before Drive is set up it has none.</summary>
+    [Test]
+    public void The_header_ends_with_Google_Drives_line()
+    {
+        var (_, size) = Waiting();
+        Assert.That(Report().HeaderLines(), Is.Empty, "not set up");
+
+        SignedInToDrive();
+        Assert.That(Report().HeaderLines(), Is.EqualTo(new[] { $"Google Drive: 1 recording waits to go up ({size}). 9 > U uploads it." }));
+    }
+
+    /// <summary>A run to report comes first, then what waits for Google Drive; a choice made about the run ends the report there.</summary>
+    [Test]
+    public async Task A_run_to_report_comes_before_Google_Drive()
+    {
+        SignedInToDrive();
+        WriteRun(WriteRecording());
+        Waiting("Fiqh");
+        _ui.Type('\r');
+        _ui.Type('\r');
+
+        await Report().ShowAsync(interactive: true);
+
+        var screen = _ui.Screen;
+        var run = screen.IndexOf("ended unexpectedly", StringComparison.Ordinal);
+        var drive = screen.IndexOf("Google Drive: ", StringComparison.Ordinal);
+        Assert.That(run, Is.GreaterThanOrEqualTo(0), "the run is shown");
+        Assert.That(drive, Is.GreaterThanOrEqualTo(0), "Google Drive's line is shown");
+        Assert.That(run, Is.LessThan(drive));
     }
 
     /// <summary>With nothing to report, nothing is shown and no key is read.</summary>

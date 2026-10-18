@@ -68,7 +68,7 @@ public interface IRecordRun
     Task<int> RunAsync(RecordRequest request);
 }
 
-/// <summary>What the report at the start offers to do about a run that needs a decision.</summary>
+/// <summary>What the report at the start offers to do about a run that needs a decision, or about what waits for Google Drive.</summary>
 public enum StartupAction
 {
     /// <summary>C: continue the recording as its next part.</summary>
@@ -81,13 +81,16 @@ public enum StartupAction
     Open,
 
     /// <summary>F: forget the run, doing nothing about it.</summary>
-    Forget
+    Forget,
+
+    /// <summary>U: upload what waits to go up to Google Drive now.</summary>
+    Upload
 }
 
 /// <summary>What was chosen in the report at the start.</summary>
-/// <param name="RunId">The run the choice is about.</param>
+/// <param name="RunId">The run the choice is about; null for U, which is about what waits for Google Drive.</param>
 /// <param name="Action">What to do about it.</param>
-public sealed record StartupChoice(string RunId, StartupAction Action);
+public sealed record StartupChoice(string? RunId, StartupAction Action);
 
 /// <summary>
 /// The report at the start: runs that ended unexpectedly, transcriptions interrupted, and outcomes nobody has seen yet,

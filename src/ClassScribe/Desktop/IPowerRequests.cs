@@ -79,6 +79,9 @@ public static class StayAwake
     /// <summary>The reason Windows shows, in powercfg /requests, for the request held while a recording or a file made earlier is uploaded.</summary>
     public const string TranscribingReason = "ClassScribe is transcribing a recording";
 
+    /// <summary>The reason Windows shows, in powercfg /requests, for the request held while recordings go up to Google Drive.</summary>
+    public const string UploadingReason = "ClassScribe is uploading to Google Drive";
+
     /// <summary>
     /// The laptop awake and ClassScribe running, always; the screen as <paramref name="screen"/> says: with
     /// <see cref="KeepScreenOn.OnBattery"/> while <paramref name="power"/> says the laptop runs on battery, which is

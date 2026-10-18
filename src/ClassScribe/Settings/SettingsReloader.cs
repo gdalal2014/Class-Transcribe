@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using ClassScribe.Drive;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Configuration.Memory;
@@ -30,7 +31,7 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
     private const char ByteOrderMark = (char)0xFEFF;
 
     /// <summary>The sections a separate recorder is given: ClassScribe's own settings and the log's.</summary>
-    private static readonly string[] SnapshotSections = [RecordingOptions.SectionName, ElevenLabsOptions.SectionName, TranscriptOptions.SectionName, "Logging"];
+    private static readonly string[] SnapshotSections = [RecordingOptions.SectionName, ElevenLabsOptions.SectionName, TranscriptOptions.SectionName, DriveOptions.SectionName, "Logging"];
 
     /// <summary>One reload at a time.</summary>
     private readonly Lock _gate = new();
@@ -125,10 +126,11 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
     }
 
     /// <summary>
-    /// The settings a separate recorder is given: the Recording, ElevenLabs, Transcript and Logging sections as they are
-    /// now, overrides from environment variables included, by setting name, such as Recording:FlushSeconds. Never the
-    /// whole of the settings, which hold every environment variable, ELEVENLABS_API_KEY among them, and never the key:
-    /// ElevenLabs:ApiKey is left out, and so is any value that holds the key.
+    /// The settings a separate recorder is given: the Recording, ElevenLabs, Transcript, Drive and Logging sections as they
+    /// are now, overrides from environment variables included, by setting name, such as Recording:FlushSeconds. None of the
+    /// Drive settings holds a secret: the Google client and sign-in are never in the settings. Never the whole of the
+    /// settings, which hold every environment variable, ELEVENLABS_API_KEY among them, and never the key: ElevenLabs:ApiKey
+    /// is left out, and so is any value that holds the key.
     /// </summary>
     public IReadOnlyDictionary<string, string?> Snapshot()
     {

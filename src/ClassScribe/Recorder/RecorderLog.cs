@@ -175,6 +175,18 @@ public sealed class RecorderLog(TimeProvider time, string? startupFile = null) :
     public string? StartupFile => _startupFile;
 
     /// <summary>
+    /// The recording's log the lines go to now, as <see cref="WriteFileTo"/> named it; null when none is named. An upload of
+    /// the recording reads it to know that its log is still being written by this process.
+    /// </summary>
+    public string? NamedFile
+    {
+        get
+        {
+            lock (_gate) return _named;
+        }
+    }
+
+    /// <summary>
     /// How many lines did not reach the file they were for: lines a full queue could not take, lines the disk refused, and
     /// lines written after the log was disposed. They are still in memory, while they are among the last
     /// <see cref="Capacity"/>.

@@ -47,6 +47,11 @@ public enum CommandKind
 /// ClassScribe list [--output "&lt;folder&gt;"]
 /// ClassScribe devices
 /// ClassScribe mic-check [--seconds &lt;n&gt;] [--log-folder "&lt;folder&gt;"]
+/// ClassScribe drive signin [--client "&lt;downloaded client file&gt;"]    the first time needs --client
+/// ClassScribe drive signout
+/// ClassScribe drive status
+/// ClassScribe drive upload ["&lt;recording file, a folder of recordings&gt;"]    without a path: what waits to go up
+/// ClassScribe drive free-space "&lt;recording file or folder&gt;" --yes      deletes local audio once Drive has it, checked
 /// ClassScribe &lt;command&gt; --help                    also -h, -?, /? and help &lt;command&gt;
 /// hidden: ClassScribe attach [--alert &lt;run id&gt;]
 /// </code>
@@ -150,6 +155,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         string[] words = [.. args.SelectMany(argument => SplitOffJoinedOptions(argument, tree.OptionNames))];
         if (words is [var first, .. var rest] && first.Equals(HelpWord, StringComparison.OrdinalIgnoreCase)) words = [.. rest, "--help"];
         if (words is [var command, ..] && tree.CommandNames.Contains(command)) words[0] = command.ToLowerInvariant();
+        if (words is [var parent, var child, ..] && tree.SubcommandNames.TryGetValue(parent, out var children) && children.Contains(child)) words[1] = child.ToLowerInvariant();
 
         for (var i = 0; i < words.Length; i++)
         {
@@ -232,20 +238,124 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(ListCommand(optionNames, examples));
         root.Add(DevicesCommand(examples));
         root.Add(MicCheckCommand(optionNames, examples));
+        root.Add(DriveCommand(optionNames, examples));
         root.Add(AttachCommand(examples));
 
         var help = new HelpWithExamples(examples);
         var helpOption = root.Options.OfType<HelpOption>().Single();
         helpOption.Action = help;
 
-        foreach (var option in root.Subcommands.SelectMany(command => command.Options).Append(helpOption))
+        var allCommands = root.Subcommands.SelectMany(command => command.Subcommands.Prepend(command)).ToList();
+        foreach (var option in allCommands.SelectMany(command => command.Options).Append(helpOption))
         {
             optionNames.Add(option.Name);
             optionNames.UnionWith(option.Aliases);
         }
 
         var commandNames = new HashSet<string>(root.Subcommands.Select(command => command.Name), StringComparer.OrdinalIgnoreCase);
-        return new BuiltTree(root, lonePath, help, commandNames, optionNames);
+        var subcommandNames = root.Subcommands
+            .Where(command => command.Subcommands.Count > 0)
+            .ToDictionary(command => command.Name, command => new HashSet<string>(command.Subcommands.Select(child => child.Name), StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
+        return new BuiltTree(root, lonePath, help, commandNames, subcommandNames, optionNames);
+    }
+
+    /// <summary>
+    /// drive: signin, with --client the first time, the client file downloaded from Google, passed on as a full path;
+    /// signout; status; upload, with a recording's file or a folder of recordings, or nothing for the queue; and free-space,
+    /// with a recording's file or a folder, and --yes, without which it is a mistake. drive alone is a mistake that names
+    /// them all.
+    /// </summary>
+    private Command DriveCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
+    {
+        var client = new Option<string>("--client")
+        {
+            HelpName = "file",
+            Description = "The client file you downloaded from Google (Google Auth platform > Clients > Download JSON), such as \"$env:USERPROFILE\\Downloads\\client_secret_....json\". Needed the first time; ClassScribe keeps the client, encrypted for your Windows account, and the file can then be deleted."
+        };
+        var signIn = new Command("signin", "Sign in to Google Drive in your browser. The first time, --client names the client file you downloaded from Google.") { client };
+        signIn.Validators.Add(result =>
+        {
+            if (result.GetResult(client) is { } given && ClientFileProblem(TokenOf(given), optionNames) is { } problem) result.AddError(problem);
+        });
+        signIn.SetAction(parsed => commands.DriveSignInAsync(parsed.GetValue(client) is { } file ? Path.GetFullPath(file) : null));
+        examples[signIn] = DriveSignInExamples;
+
+        var signOut = new Command("signout", "Sign out of Google Drive: Google is asked to end ClassScribe's access, and the sign-in is forgotten. The client is kept, and nothing on Drive is touched.");
+        signOut.SetAction(_ => commands.DriveSignOutAsync());
+        examples[signOut] = DriveSignOutExamples;
+
+        var status = new Command("status", "Show the Google account ClassScribe is signed in as, since when, the storage used and ClassScribe's folder on Drive.");
+        status.SetAction(_ => commands.DriveStatusAsync());
+        examples[status] = DriveStatusExamples;
+
+        var uploadPath = new Argument<string?>("path")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "A recording's file, a course's or a class's folder, or the recordings folder: each recording in it goes up. Without one, every recording waiting to go up."
+        };
+        var upload = new Command("upload", "Upload recordings to Google Drive: the audio, the transcripts, ElevenLabs' answers, the marks and the log, each checked against Drive's MD5.") { uploadPath };
+        upload.Validators.Add(result =>
+        {
+            if (TokenOf(result.GetResult(uploadPath)) is { } given && PathProblem(given) is { } problem) result.AddError(problem);
+        });
+        upload.SetAction(parsed => commands.DriveUploadAsync(parsed.GetValue(uploadPath) is { } given ? Path.GetFullPath(given) : null));
+        examples[upload] = DriveUploadExamples;
+
+        var freePath = new Argument<string>("path") { Description = "A recording's file, a course's or a class's folder, or the recordings folder: the audio of each recording in it is deleted from this laptop once Google Drive has it." };
+        var yes = new Option<bool>("--yes") { Description = "Go ahead: delete the audio files from this laptop. Needed, as nothing is asked." };
+        var freeSpace = new Command("free-space", "Free room on this laptop: delete recordings' .wav files once each one's copy on Google Drive is checked again. Transcripts, answers, marks and logs stay, and nothing on Drive is touched.") { freePath, yes };
+        freeSpace.Validators.Add(result =>
+        {
+            var given = TokenOf(result.GetResult(freePath));
+            if (string.IsNullOrWhiteSpace(given))
+                result.AddError("drive free-space needs a path: a recording's file or a folder of recordings, such as ClassScribe drive free-space \"D:\\Classes\\Kalam\" --yes");
+            else if (PathProblem(given) is { } problem)
+                result.AddError(problem);
+            if (!result.GetValue(yes))
+                result.AddError("drive free-space deletes audio from this laptop once Google Drive has a checked copy of it; add --yes to go ahead, such as ClassScribe drive free-space \"D:\\Classes\\Kalam\" --yes");
+        });
+        freeSpace.SetAction(parsed => commands.DriveFreeSpaceAsync(Path.GetFullPath(parsed.GetValue(freePath)!)));
+        examples[freeSpace] = DriveFreeSpaceExamples;
+
+        var drive = new Command("drive", "Google Drive: upload recordings, free room on this laptop, sign in, sign out, or see the sign-in.") { signIn, signOut, status, upload, freeSpace };
+        drive.Validators.Add(result =>
+        {
+            if (!result.Children.OfType<CommandResult>().Any())
+                result.AddError("drive needs one of signin, signout, status, upload or free-space, such as ClassScribe drive status");
+        });
+
+        // Never run: the validator above refuses drive alone. A command without an action of its own would also get
+        // System.CommandLine's "Required command was not provided." beside ClassScribe's words.
+        drive.SetAction(_ => Mistake);
+        examples[drive] = DriveExamples;
+        return drive;
+    }
+
+    /// <summary>What is wrong with <paramref name="value"/> as a path to upload or free: an empty one, or nothing there. Null for a file or a folder.</summary>
+    private static string? PathProblem(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "Nothing found at an empty path";
+
+        var full = Path.GetFullPath(value);
+        return File.Exists(full) || Directory.Exists(full) ? null : $"Nothing found at {full}";
+    }
+
+    /// <summary>
+    /// What is wrong with <paramref name="value"/> as the client file --client names: no value, a character Windows does not
+    /// allow in a path, nothing there, or a folder. Null for a file, which the sign-in then reads.
+    /// </summary>
+    private static string? ClientFileProblem(string? value, HashSet<string> optionNames)
+    {
+        if (ValueProblem(value, "--client needs the client file you downloaded from Google after it, such as \"$env:USERPROFILE\\Downloads\\client_secret_....json\"", optionNames) is { } missing)
+            return missing;
+        if (value!.IndexOfAny(NotInPaths) >= 0 || value.Any(char.IsControl))
+            return $"--client takes a file; \"{value}\" has a character Windows does not allow in a path: < > \" | ? *";
+
+        var file = Path.GetFullPath(value);
+        return Directory.Exists(file) ? $"--client names a folder, not the client file: {file}"
+            : !File.Exists(file) ? $"Nothing found at {file}"
+            : null;
     }
 
     /// <summary>
@@ -683,6 +793,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
           ClassScribe transcribe "D:\Classes\Kalam"
           ClassScribe "D:\Lectures\Lecture 5.mp4"
           ClassScribe mic-check
+          ClassScribe drive status
 
         Without a command, ClassScribe shows its menu. A path alone is transcribed, as when a file is dropped on ClassScribe.exe.
         Add --help after a command for its options, such as: ClassScribe record --help
@@ -747,6 +858,67 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         The log's path is printed at the start and at the end. Q stops the check; M writes a numbered mark.
         """;
 
+    /// <summary>The examples and notes under the help of drive.</summary>
+    private const string DriveExamples = """
+        Examples:
+          ClassScribe drive signin --client "$env:USERPROFILE\Downloads\client_secret_....json"
+          ClassScribe drive status
+          ClassScribe drive upload "$env:USERPROFILE\ClassScribe\Mantiq\2026-10-17"
+          ClassScribe drive upload
+          ClassScribe drive free-space "$env:USERPROFILE\ClassScribe\Mantiq\2026-10-17" --yes
+          ClassScribe drive signout
+
+        The first sign-in needs the client file you made in your own Google Cloud project; the README's "Google Drive (set up once)" has the steps.
+        ClassScribe asks Google only for its own files and folders in your Drive, nothing else, and never deletes, trashes or shares anything there.
+        """;
+
+    /// <summary>The examples and notes under the help of drive upload.</summary>
+    private const string DriveUploadExamples = """
+        Examples:
+          ClassScribe drive upload "$env:USERPROFILE\ClassScribe\Mantiq\2026-10-17"
+          ClassScribe drive upload "$env:USERPROFILE\ClassScribe\Mantiq"
+          ClassScribe drive upload "$env:USERPROFILE\ClassScribe"
+          ClassScribe drive upload
+
+        Each recording goes to My Drive > ClassScribe > its course > its date folder, as on this laptop; one of the old layout, to My Drive > ClassScribe > its name.
+        Without a path, every recording waiting to go up goes up. An upload that stops goes on from where it stopped next time.
+        While a class records, the upload waits between pieces. Esc or Ctrl+C stops it, and what is left waits.
+        """;
+
+    /// <summary>The examples and notes under the help of drive free-space.</summary>
+    private const string DriveFreeSpaceExamples = """
+        Examples:
+          ClassScribe drive free-space "$env:USERPROFILE\ClassScribe\Mantiq\2026-10-17" --yes
+          ClassScribe drive free-space "$env:USERPROFILE\ClassScribe\Mantiq" --yes
+
+        Only a recording whose every .wav file has a copy on Google Drive with the same size and MD5, asked of Drive again now, loses its audio here.
+        Its transcripts, ElevenLabs' answers, its marks and its log stay on this laptop, and so do the other files in its folder. Nothing on Drive is touched.
+        """;
+
+    /// <summary>The examples and notes under the help of drive signin.</summary>
+    private const string DriveSignInExamples = """
+        Examples:
+          ClassScribe drive signin --client "$env:USERPROFILE\Downloads\client_secret_....json"
+          ClassScribe drive signin
+
+        Your browser opens Google's sign-in: choose your account and allow ClassScribe. Esc in this window gives up.
+        The client is kept, encrypted for your Windows account, so a later sign-in needs no --client.
+        """;
+
+    /// <summary>The examples and notes under the help of drive signout.</summary>
+    private const string DriveSignOutExamples = """
+        Examples:
+          ClassScribe drive signout
+
+        The files on Drive stay as they are. Signing in again needs no client file.
+        """;
+
+    /// <summary>The examples under the help of drive status.</summary>
+    private const string DriveStatusExamples = """
+        Examples:
+          ClassScribe drive status
+        """;
+
     /// <summary>The examples under the help of the hidden attach.</summary>
     private const string AttachExamples = """
         Examples:
@@ -774,8 +946,10 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// <param name="LonePath">The root's hidden argument: a path alone on the command line.</param>
     /// <param name="Help">The help, with examples, of every command.</param>
     /// <param name="CommandNames">The commands' names, in any case.</param>
+    /// <param name="SubcommandNames">The names of the commands under a command, such as drive's signin, by that command's name, in any case.</param>
     /// <param name="OptionNames">Every option's names and aliases, in any case.</param>
-    private sealed record BuiltTree(RootCommand Root, Argument<string?> LonePath, HelpWithExamples Help, HashSet<string> CommandNames, HashSet<string> OptionNames);
+    private sealed record BuiltTree(RootCommand Root, Argument<string?> LonePath, HelpWithExamples Help, HashSet<string> CommandNames,
+        Dictionary<string, HashSet<string>> SubcommandNames, HashSet<string> OptionNames);
 
     /// <summary>
     /// The help of a command: System.CommandLine's, which lists its arguments and options, then ClassScribe's examples and

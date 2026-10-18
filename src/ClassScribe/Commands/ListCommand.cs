@@ -5,12 +5,14 @@ using ClassScribe.Storage;
 namespace ClassScribe.Commands;
 
 /// <summary>
-/// The list command: every recording under the recordings folder, newest first, one line each, with when it started in
-/// local time (an evening class in US Eastern time has a UTC stamp on the next day), its length, the parts it was made in,
-/// whether your microphone was recorded with the class, its transcripts, and what its run is doing now; then the
-/// transcriptions going on in the background. For example:
+/// The list command: every recording under the recordings folder, in the course and date folders or flat in the folder of
+/// its name as recordings were kept before, newest first, one line each, with when it started in local time (an evening
+/// class in US Eastern time has a UTC stamp on the next day), its length, the date folder of a later class of its day, the
+/// parts it was made in, whether your microphone was recorded with the class, its transcripts, and what its run is doing
+/// now; then the transcriptions going on in the background. For example:
 /// <code>
 ///   Kalam  15 Oct 19:00  01:58:10  2 parts  class + microphone  transcript (2)
+///   Kalam  15 Oct 13:00  00:58:10  in 2026-10-15 (2)  transcript
 ///   Fiqh   14 Oct 19:30  00:42:13  no transcript yet  RECORDING NOW
 /// </code>
 /// It only reads: nothing is recorded, uploaded or changed, and no run file is marked seen.
@@ -63,13 +65,17 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
 
     /// <summary>
     /// What sets a recording apart besides its name, start and length, as the list and the menu's choice 3 note it: the
-    /// parts it was made in when there were more than one ("2 parts"), and "class + microphone" when your microphone was
-    /// recorded with the class.
+    /// date folder of a later class of its day ("in 2026-10-17 (2)"), which tells it from the day's first class and says
+    /// where to find it; the parts it was made in when there were more than one ("2 parts"); "class + microphone" when
+    /// your microphone was recorded with the class; and "audio on Drive" when its audio is on Google Drive alone, freed
+    /// from this laptop once checked there.
     /// </summary>
     internal static IEnumerable<string> NotesOf(RecordedClass recorded)
     {
+        if (ClassFolders.LaterClassOfItsDay(recorded.Files.Folder) is { } dateFolder) yield return $"in {dateFolder}";
         if (recorded.Parts > 1) yield return $"{recorded.Parts} parts";
         if (recorded.HasMicrophone) yield return "class + microphone";
+        if (recorded.OnDrive is not null) yield return "audio on Drive";
     }
 
     /// <summary>

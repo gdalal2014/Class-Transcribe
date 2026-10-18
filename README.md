@@ -4,7 +4,9 @@ Records a class and, when you stop it, can send the recording to ElevenLabs (Scr
 the transcript. It records in one of three ways: the sound your computer plays, which is an online
 class as you hear it; that sound and your microphone together, so that what you say in the class is
 in the transcript too; or your microphone alone, for a class held in a room. See
-[Your microphone](#your-microphone).
+[Your microphone](#your-microphone). Once it is signed in to your own Google Drive, each class also
+goes up there by itself, every file checked against Drive's own MD5, and the audio can then be
+deleted from the laptop to free room (see [Google Drive](#google-drive)).
 
 ## Set up once
 
@@ -62,6 +64,69 @@ in the transcript too; or your microphone alone, for a class held in a room. See
    sees this, at the start of a recording and whenever it begins (see
    [While recording](#while-recording)).
 
+### Google Drive (set up once)
+
+ClassScribe can put every class in your own Google Drive: the audio of both tracks, the transcripts,
+ElevenLabs' answers, the marks and the log, uncompressed, in `My Drive > ClassScribe`, in folders that
+mirror the laptop's (`My Drive > ClassScribe > Mantiq > 2026-10-17`). It needs a Google Cloud project
+of your own, which costs nothing, and one sign-in. It asks Google only for the files and folders it
+makes itself: it cannot see anything else in your Drive, and it shares nothing.
+
+1. Open https://console.cloud.google.com/ signed in with the Google account whose Drive should hold
+   the classes. Make a new project named `ClassScribe` (no billing account is needed).
+2. Open https://console.cloud.google.com/apis/library/drive.googleapis.com in that project and click
+   **Enable**.
+3. Go to **Google Auth platform** (Menu > Google Auth platform). Under **Branding**, click Get started:
+   app name `ClassScribe`, your Gmail address as the support email; under **Audience** choose
+   **External**; give your Gmail address as the contact; agree and create.
+4. Under **Data Access**, click **Add or Remove Scopes**, tick `.../auth/drive.file` ("See, edit,
+   create, and delete only the specific Google Drive files you use with this app"), then Update and
+   **Save**. ClassScribe asks for this one scope and no other.
+5. Under **Audience**, click **Publish app** and confirm, so the status reads **In production**. Do this
+   before you sign in: while the app is in Testing, Google ends the sign-in after 7 days. An app that
+   asks only for this scope, for your own use, does not need Google's verification.
+6. Under **Clients**, click **Create client**, choose **Desktop app**, name it `ClassScribe desktop`,
+   and click **Create**. In the box that opens, click **Download JSON**: Google shows the secret only
+   this once. The file lands in Downloads as `client_secret_....json`.
+7. Start ClassScribe, choose **9** (Google Drive), then **S**, and drag that file onto the window (or
+   type its path) and press Enter. Your browser opens: choose your account, click Continue if Google
+   says the app is being tested, and **Allow**. The window says
+   `Signed in to Google Drive as ... Uploads go to My Drive > ClassScribe (...)`, and the folder is
+   there in My Drive. The same from a terminal:
+   `ClassScribe drive signin --client "$env:USERPROFILE\Downloads\client_secret_....json"`.
+8. Delete the downloaded file: ClassScribe keeps its own copy of the client, encrypted for your
+   Windows account (see [Where things go](#where-things-go)). Never put it in the repo; `.gitignore`
+   keeps `client_secret*.json` out of git.
+9. Upload a class that is already on the laptop, such as the class of 17 October once it is in
+   `%USERPROFILE%\ClassScribe\Mantiq\2026-10-17` with its files named `Mantiq_2026-10-17_14-04-42Z.*`:
+   choose 9, then R, and press its number; or 9, then F, and drag its folder onto the window; or, from
+   a terminal:
+   ```powershell
+   ClassScribe drive upload "$env:USERPROFILE\ClassScribe\Mantiq\2026-10-17"
+   ```
+   It goes to My Drive > ClassScribe > Mantiq > 2026-10-17. Your own files in that folder, such as
+   the class's PDFs and slides, stay on the laptop alone. The last line says where it is, with the
+   folder's address: `Mantiq_2026-10-17_14-04-42Z is on Google Drive: My Drive > ClassScribe > Mantiq >
+   2026-10-17 (4 files, 727 MB, each checked against Drive's MD5): https://...`. Then look in
+   https://drive.google.com under My Drive > ClassScribe > Mantiq > 2026-10-17. The first upload
+   of a class of two hours takes about 10 minutes on a line that uploads 10 Mbit/s.
+
+Since the app is not verified, Google's page may name the project rather than show ClassScribe's
+name and logo; that is expected. The browser comes back to ClassScribe at `http://127.0.0.1:<port>/`,
+on this computer only, and the page there says you can close the tab. If the browser does not open,
+the window shows the address to copy into it. ClassScribe waits up to 5 minutes; Esc gives up.
+
+If the console will not publish the app, leave it in Testing, add your Gmail address under
+Audience > Test users, and sign in again with 9 > S whenever ClassScribe says Google ended the
+sign-in (every 7 days).
+
+From then on each class goes up by itself after its transcript (with record only, after recording).
+If the laptop is offline, it waits and goes up after the next class, or with U in the report at the
+start, or 9 > U. A transcript made later (menu choices 3 and 4, `transcribe`, `rebuild`) sends its
+new `.md` and `.json`, and a file transcribed on its own sends its transcript and answer. Deleting
+files on the laptop never touches Drive. See [Google Drive](#google-drive) for what goes up, where,
+and how to free room on the laptop afterwards.
+
 ## Use it
 
 ```powershell
@@ -79,6 +144,7 @@ ClassScribe starts with a menu. Press the number of what you want:
   6  Choose what to record: a device or an app
   7  Microphone: none, with the class, or in person
   8  Check the microphone: watch what apps do with it (opens nothing)
+  9  Google Drive: upload, free room on this laptop, sign in
   A  Show the recording in progress        (only while one records)
   Q  Quit
 ```
@@ -91,6 +157,27 @@ A to show it again. Above the choices, the header names what runs in the backgro
 `Recording now: "Kalam" since 19:00 (00:42:13). A shows it.` or
 `Being transcribed in the background: "Fiqh" (uploading 40%).`
 
+Once Google Drive is set up, the report at the start also says what waits to go up, such as
+`Google Drive: 1 recording waits to go up (Mantiq_2026-10-17_14-04-42Z, 727 MB; last try 17 Oct 21:40:
+Google Drive could not be reached (...)).`, or for several `Google Drive: 3 recordings wait to go up
+(2.1 GB in all; last try ...).`, with `not tried yet` for one that has not been tried, and
+`, not finished` for a try that did not finish and left no error. Below it come `U  upload it now` (or `them`) and
+`Enter  go on to the menu`. When ClassScribe is not signed in, it says
+`ClassScribe is not signed in to Google Drive: 9 > S in the menu signs in, then 9 > U uploads it.`
+and asks nothing. Before a command the report asks nothing either and gives the command instead:
+`To upload it: <full path of ClassScribe.exe> drive upload`, after the sign-in advice
+(`... Then, to upload it: ...`) when ClassScribe is not signed in.
+
+The header's last line says where Google Drive stands, from what ClassScribe knows on the laptop,
+without asking Google: `Google Drive: signed in; nothing waits to go up.`,
+`Google Drive: 2 recordings wait to go up (1.4 GB). 9 > U uploads them.`,
+`Google Drive: uploading Mantiq_2026-10-17_14-04-42Z (41%); 1 more waits.` while a recorder or
+another ClassScribe window uploads it, `Google Drive: not signed in; 1 recording waits to go up. 9 > S signs in.`, or
+`Google Drive: the sign-in cannot be read. 9 > S signs in again.` While signed in with
+`Drive:Enabled` set to `false`, the line ends ` Uploads after each class are off (Drive:Enabled).`
+Before Drive is set up the header has no Drive line. A class being recorded or transcribed now is
+never counted as waiting; it goes up once it has stopped.
+
 - **1 Record only** asks for a name for the recording, such as `Kalam`, then records until you press
   Q twice and keeps the recording, to transcribe later. Esc at the name goes back to the menu. When a
   recording of that name stopped within the last hour (`Recording:ContinueWithinMinutes`) without a
@@ -101,10 +188,17 @@ A to show it again. Above the choices, the header names what runs in the backgro
   so, and A shows it.
 - **2 Record and transcribe** does the same, then sends the recording to ElevenLabs and, once the
   transcript is saved, says what it cost (see [Cost and privacy](#cost-and-privacy)).
-- **3 Transcribe a recent recording** lists the last nine recordings, newest first, each with its
-  length, `2 parts` when it was continued after an interruption, and `transcript ready`,
-  `answer kept`, `RECORDING NOW` or `no transcript yet`; press one's number. A recording that has a transcript, or an answer ElevenLabs was paid for (see
-  [Where things go](#where-things-go)), is not sent again at once, because that is billed again:
+- **3 Transcribe a recent recording** lists the last nine recordings, newest first, in the course and
+  date folders or flat in the folder of their name, each with its length, its date folder for a
+  later class of the same day (`in 2026-10-17 (2)`), `2 parts` when it was continued after an
+  interruption, `audio on Drive` when its audio was deleted from the laptop after it went up to
+  Google Drive, and `transcript ready`, `answer kept`, `RECORDING NOW` or `no transcript yet`; press
+  one's number. A recording whose audio is on Drive alone says where its audio is
+  (`The audio of ... is on Google Drive, not on this laptop (My Drive > ...). To transcribe it again,
+  download its .wav files from there into ... first.`) and offers only R, which makes its transcript
+  again for free from its saved answer (see [Google Drive](#google-drive)). A recording that has a
+  transcript, or an answer ElevenLabs was paid for (see [Where things go](#where-things-go)), is not
+  sent again at once, because that is billed again:
   R makes its transcript again for free from ElevenLabs' saved answer (see
   [A transcript again, for free](#a-transcript-again-for-free)), Y transcribes it again, which is
   billed again, and any other key goes back. A recording that is being recorded now, in another
@@ -115,9 +209,10 @@ A to show it again. Above the choices, the header names what runs in the backgro
   Enter. A WAV file, 24-bit, floating-point and surround ones included, is first reduced to a small
   16 kHz mono copy; one that another recorder never finished is read to its end, with a warning.
   Any other audio or video file, or a WAV ClassScribe cannot read, is uploaded as it is. One of a
-  recording's own `.wav` files, or a recording's folder (which means the recording started last in
-  it), gets the same care as in choice 3: R or Y first when it would be billed again, and nothing
-  sent while it is being recorded.
+  recording's own `.wav` files, or a folder of recordings (a course's folder, which means its class
+  started last, in its date folders or flat in it; a class's date folder; or a folder of the old
+  layout), gets the same care as in choice 3: R or Y first when it would be billed again, only R for
+  a class whose audio is on Google Drive alone, and nothing sent while it is being recorded.
 - **5 Open the recordings folder** shows it in Explorer.
 - **6 Choose what to record** lists the output devices and the apps with sound; see below.
 - **7 Microphone** asks whether to record your microphone with the class (W), alone for a class in the
@@ -126,6 +221,22 @@ A to show it again. Above the choices, the header names what runs in the backgro
 - **8 Check the microphone** watches what the programs on your computer do with the microphone and
   writes a line for each change, without opening it; see
   [Checking what your class page does with your microphone](#checking-what-your-class-page-does-with-your-microphone).
+- **9 Google Drive** says whether ClassScribe is signed in to Google Drive, and as whom
+  (`Google Drive: signed in as you@gmail.com since 17 Oct 2026.`), without asking Google. While
+  signed in: U uploads what waits to go up (its line says how many and how much, such as
+  `U  Upload what waits to go up (1 recording, 727 MB)`, or `nothing waits now`); R lists the recent
+  recordings, each with `on Drive`, `waiting`, `not uploaded` or `RECORDING NOW`, and uploads the one
+  whose number you press; F uploads a recording's file, a class's date folder, a course's folder or
+  the recordings folder that you drag onto the window or type; L frees room on this laptop: it lists
+  the recent recordings, says which audio files of the one you pick would be deleted, how much room
+  that frees and what stays, and deletes them when you press Y, each first checked again against its
+  copy on Drive (see [Free room on the laptop](#free-room-on-the-laptop)); a recording that is not
+  all on Drive yet keeps its audio (`... is not all on Google Drive yet, so its audio stays here.
+  Upload it first: R, then its number.`); I checks with Google (the account, the storage used,
+  ClassScribe's folder in My Drive and what waits, as `drive status` does); S signs in again and O
+  signs out. Not signed in, S signs in: drag the client file Google gave you onto the window, or press
+  Enter alone to sign in again with the client ClassScribe keeps (see
+  [Google Drive (set up once)](#google-drive-set-up-once)). Esc goes back.
 
 When a choice is done, the menu comes back, after an error too. Q or Ctrl+C leaves it.
 
@@ -361,7 +472,7 @@ These keys work in the ClassScribe window:
 | V | Switches your microphone off and on by hand (see [Your microphone](#your-microphone)). With the class, your voice is normally recorded only while the class app is listening; V off keeps it out whatever the app does, and V on is needed first where the app's mute cannot be seen. In a recording of the class alone it only says `There is no microphone in this recording`. |
 | Esc | Leaves the view of a recording that runs in the background, without stopping or pausing anything: from the menu, the menu comes back; from a command, ClassScribe exits 0 and says `The recording carries on in the background. Start ClassScribe to see it.` In a recording that runs in the window, Esc only says that Q twice stops it. |
 
-The first lines of a recording say where it goes (`Recording "Kalam" to D:\Classes\Kalam`, or
+The first lines of a recording say where it goes (`Recording "Kalam" to D:\Classes\Kalam\2026-10-15`, or
 `Continuing "Kalam" as its next part (Kalam_2026-10-15_23-00-02Z, 00:47:10 recorded so far), in ...`),
 what is recorded (`Recording from the app "chrome"`, `the device the class plays on`, `the device
 the class plays on, and your microphone "OBSBOT"`, or in person `your microphone`), the keys (V among
@@ -467,6 +578,13 @@ says `The recorder is not answering (process 1234, started 19:00). Its audio so 
 keeps waiting, S stops it.`, and S stops the recording through a signal that does not need the
 link.
 
+Once Google Drive is set up (and `Drive:Enabled` is on, as it is unless you change it), the recorder
+lives on after the window has been shown the end, for as long as the upload of its class and of what
+else waits takes, about 10 minutes for a class of two hours on a line that uploads 10 Mbit/s (see
+[Google Drive](#google-drive)). Its lines go into the recording's `.log` and `recorder.log`, closing
+the window does not stop it, and the next class may start meanwhile: the upload then waits between
+pieces until that class has stopped recording.
+
 Only one recording runs at a time, through a lock that is held only while it captures, so the next
 class can start while the last one is still being uploaded. The menu's header then says
 `Being transcribed in the background: "Fiqh" (uploading 40%).`, and that recording cannot be sent
@@ -523,10 +641,12 @@ ClassScribe reports what happened.
 ### Keeping the laptop awake
 
 From the start of a recording until its transcript is saved (with record only, until its files are
-closed), and while a recording or a file is transcribed, ClassScribe asks Windows to keep the laptop
-awake. `powercfg /requests`, in a terminal run as administrator, lists the request as
-`ClassScribe is recording a class` or `ClassScribe is transcribing a recording`. Windows ends the
-request when ClassScribe ends, however it ends. The screen is kept on as `Recording:KeepScreenOn`
+closed), while a recording or a file is transcribed, and while ClassScribe uploads to Google Drive,
+it asks Windows to keep the laptop awake. `powercfg /requests`, in a terminal run as administrator,
+lists the request as `ClassScribe is recording a class`, `ClassScribe is transcribing a recording` or
+`ClassScribe is uploading to Google Drive`. Windows ends the request when ClassScribe ends, however
+it ends. After a class, the background recorder lives on to upload it and holds the last of these;
+the next class can start at once all the same. The screen is kept on as `Recording:KeepScreenOn`
 says:
 
 - `OnBattery`, the default: only while the laptop runs on battery. There a laptop with Modern
@@ -554,28 +674,63 @@ time asleep is not taken for a fault of the device.
 ### Where things go
 
 Recordings and transcripts go to the folder set as `Recording:OutputFolder` in `appsettings.json`,
-which is `%USERPROFILE%\ClassScribe` unless you change it. Each name gets a folder, and every file of
-a recording carries the name and the time the recording started, in UTC (the `Z`):
+which is `%USERPROFILE%\ClassScribe` unless you change it. Each name is a course and gets a folder;
+each class of it gets a folder inside that one, named after the local date the class started on;
+and every file of a recording carries the name and the time the recording started, in UTC (the `Z`):
 
 ```
 %USERPROFILE%\ClassScribe\
-    Kalam\                                       one folder per name, shared by its recordings
-        Kalam_2026-10-14_19-30-00Z.wav           the audio as captured (kept)
-        Kalam_2026-10-14_19-30-00Z_part2.wav     only after a device switch, a failure or 1500 MB
-        Kalam_2026-10-14_19-30-00Z.mic.wav       your microphone, when recorded with the class (kept)
-        Kalam_2026-10-14_19-30-00Z_part2.mic.wav the microphone's next file, after a microphone change, a failure or 1500 MB
-        Kalam_2026-10-14_19-30-00Z.marks.txt     the marks set with M, and ClassScribe's own notes, if any
-        Kalam_2026-10-14_19-30-00Z.log           everything the recording's runs logged
-        Kalam_2026-10-14_19-30-00Z.md            the transcript
-        Kalam_2026-10-14_19-30-00Z.json          the full ElevenLabs response, with word timings
-        Kalam_2026-10-14_19-30-00Z.upload.wav    the 16 kHz copy that is uploaded, while it is needed
-        Kalam_2026-10-14_19-30-00Z.unread.json   only when a paid answer did not become a transcript
-    Lecture 5\                                   a transcribed file; the file itself stays where it is
-        Lecture 5_2026-10-15_09-00-00Z.md
-        Lecture 5_2026-10-15_09-00-00Z.json
-    mic-check\                                   the microphone check's logs (menu choice 8, mic-check)
-        mic-check_2026-10-17_19-00-12.log        one per run, named by the local start time
+    Mantiq\                                          the course: one folder per name
+        2026-10-17\                                  one class: the local date it started on
+            Mantiq_2026-10-17_14-04-42Z.wav          the audio as captured (kept)
+            Mantiq_2026-10-17_14-04-42Z_part2.wav    only after a device switch, a failure or 1500 MB
+            Mantiq_2026-10-17_14-04-42Z.mic.wav      your microphone, when recorded with the class (kept)
+            Mantiq_2026-10-17_14-04-42Z_part2.mic.wav  the microphone's next file, after a microphone change, a failure or 1500 MB
+            Mantiq_2026-10-17_14-04-42Z.marks.txt    the marks set with M, and ClassScribe's own notes, if any
+            Mantiq_2026-10-17_14-04-42Z.log          everything the recording's runs logged
+            Mantiq_2026-10-17_14-04-42Z.md           the transcript
+            Mantiq_2026-10-17_14-04-42Z.json         the full ElevenLabs response, with word timings
+            Mantiq_2026-10-17_14-04-42Z.upload.wav   the 16 kHz copy that is uploaded, while it is needed
+            Mantiq_2026-10-17_14-04-42Z.unread.json  only when a paid answer did not become a transcript
+            Class_1_slides.pdf                       your own files: left alone, never uploaded
+        2026-10-17 (2)\                              a second class of the name on the same day
+            Mantiq_2026-10-17_22-00-05Z.wav
+        Slides\                                      your own folders are passed over
+    Kalam\                                           a course recorded before the date folders
+        Kalam_2026-10-14_19-30-00Z.wav               flat in the folder of its name; still read everywhere
+    Lecture 5\                                       a transcribed file; the file itself stays where it is
+        2026-10-15\                                  the day it was transcribed
+            Lecture 5_2026-10-15_13-00-00Z.md
+            Lecture 5_2026-10-15_13-00-00Z.json
+    mic-check\                                       the microphone check's logs (menu choice 8, mic-check)
+        mic-check_2026-10-17_19-00-12.log            one per run, named by the local start time
 ```
+
+The date folder is the local date, while the files keep the UTC time: an evening class in US
+Eastern time that starts at 21:30 on 17 October goes to `2026-10-17`, although its files say
+`2026-10-18_01-30-00Z`. A second, separate class of the same name that day goes to
+`2026-10-17 (2)`, a third to `(3)`, and so on. A date folder counts as taken only when it holds a
+file of a recording; one that is empty, or holds only your own files (the class's PDFs and slides,
+say), is used as it is, and your files stay where they are. A class that runs past midnight stays
+in the folder it started in, and a recording continued as its next part (C, `--continue`, or after
+a lost recorder) goes on in its own folder, whatever the date is now. A file transcribed on its
+own gets the same layout: a folder named after the file, and in it the date folder of the day it
+was transcribed. The same layout is used under a folder given with `--output`.
+
+Recordings made before the date folders, flat in the folder of their name
+(`Kalam\Kalam_2026-10-14_19-30-00Z.wav`), are still listed, continued, transcribed and rebuilt
+where they are: ClassScribe never moves anything. In a course's folder ClassScribe looks only into folders
+named as a date (`2026-10-17` or `2026-10-17 (2)`), so a folder of your own there, such as
+`Slides`, is passed over; files that are not a recording's are ignored by every list and never
+touched.
+
+On Google Drive, once you are signed in, the same tree is under `My Drive > ClassScribe`
+(`Drive:FolderName`): a class in a course and date folder goes to `ClassScribe > Mantiq >
+2026-10-17`, a date folder's own name, `(2)` included, and a recording still flat in the folder of its
+name to `ClassScribe > Kalam`. The rule comes from the recording's own folder, so it holds under any
+recordings folder and under `--output`. Only a recording's own files go up, never your PDFs or slides
+beside it, and never the `.upload.wav` (see [Google Drive](#google-drive)). Deleting files on the
+laptop, by hand or with the free-space option, never changes anything on Drive.
 
 In person your microphone is the recording itself, so its files carry the plain names (`.wav`,
 `_part2.wav`). With the class, the upload copy is the class and your microphone mixed into one track
@@ -640,11 +795,25 @@ or syncs, and nothing in it holds the API key:
                                      keeps the generation before, at about 1 MB
     runs\<run id>.json               one file per run: its state, a heartbeat every 10 seconds, and how it ended
     runs\<run id>.request.json       what the window handed the recorder; deleted once the recorder has read it
+    drive\folders.json               the ids of ClassScribe's folders in your Google Drive, so each is found at once
+    drive\recordings\<base name>.<8 characters>.json
+                                     one per recording: each file that went up, checked, and whether it waits
+                                     in the queue; an upload stopped half way goes on from it, by an address
+                                     Google keeps for a week, which is never logged
+    drive\upload.lock                held open while an upload runs, so only one runs at a time
 ```
 
 A run id is the start time in UTC and eight random digits, such as `20261015-230002Z-1f3a9c07`. A
 run that needs nothing more (seen, continued or forgotten) is deleted 30 days after its last update.
 The recorder also runs in this folder, so it holds nothing under OneDrive or in the repo open.
+
+The Google Drive sign-in lives in `%APPDATA%\ClassScribe\google-drive.dat`: the Google client you
+gave ClassScribe (its id and secret) and, while you are signed in, the sign-in itself, the account's
+email and when you signed in. It is encrypted with Windows' data protection for your Windows account,
+so only you, on this laptop, can open it; it is never in `appsettings.json`, a log or a run file. If
+Windows cannot open it (another Windows user, another computer, or a password reset by an
+administrator), ClassScribe counts that as not signed in and says so: sign in again with the client
+file. A sign-out forgets the sign-in and keeps the client, so signing in again needs no file.
 
 ### Without the menu
 
@@ -658,6 +827,13 @@ ClassScribe rebuild "C:\path\to\recording folder or file"
 ClassScribe list                                                        # the recordings, newest first
 ClassScribe devices                                                     # the devices, apps with sound and microphones
 ClassScribe mic-check                                                   # watch what apps do with the microphone
+ClassScribe drive signin --client "$env:USERPROFILE\Downloads\client_secret_....json"   # the first Google sign-in
+ClassScribe drive signin                                                # sign in again, with the client kept
+ClassScribe drive status                                                # the account, storage, folder on Drive and what waits
+ClassScribe drive signout                                               # end ClassScribe's access; keep the client
+ClassScribe drive upload "$env:USERPROFILE\ClassScribe\Mantiq\2026-10-17"   # a class, a course's folder or the recordings folder
+ClassScribe drive upload                                                # every recording that waits to go up
+ClassScribe drive free-space "$env:USERPROFILE\ClassScribe\Mantiq" --yes   # delete the audio Google Drive has, checked again first
 ClassScribe --help                                                      # the commands; also record --help and so on
 ```
 
@@ -670,16 +846,45 @@ runs in the window, and closing the window ends it.
 In short: `record "<name>" SOURCE --output "<folder>" [--mic ["<microphone>"] [--mic-follows <app>|auto|none]]
 [--minutes <n>] [--no-open] [--continue | --new]`, `record-only` with the same options,
 `transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
-`list [--output "<folder>"]`, `devices` and `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
+`list [--output "<folder>"]`, `devices`, `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
+`drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]` and
+`drive free-space "<path>" --yes`,
 where the parts in brackets may be left out, and SOURCE is `--device "<part of its name>"`,
 `--device auto`, `--app <process>` or `--in-person ["<microphone>"]`. `<command> --help` (also `-h`,
 `-?`, `/?` or `help <command>`) lists a command's options with examples.
 
+`drive signin` opens Google's sign-in in your browser and waits up to 5 minutes for it (Esc gives
+up, with exit code 130); the first time it needs `--client` with the client file you downloaded (see
+[Google Drive (set up once)](#google-drive-set-up-once)), and after that the client ClassScribe keeps
+is used. `drive status` prints the account, since when, the end of the client id (never the secret),
+the storage used, ClassScribe's folder with its address, and what waits to go up, a line each
+(`Waiting: Mantiq_2026-10-17_14-04-42Z (4 files, 727 MB), last try 17 Oct 21:40: ...`, or
+`not tried yet`, or `Nothing waits to go up.`); it asks Google but changes nothing, and ends with
+exit code 1 when ClassScribe is not signed in or Google cannot be reached. `drive signout` asks
+Google to end ClassScribe's access, then forgets the sign-in whatever Google answers; when Google
+could not be asked, it says how to end the access yourself and ends with exit code 1. Neither
+touches anything on Drive.
+
+`drive upload` takes a recording's file (that recording), a class's date folder, a course's folder
+(each class in it, in either layout) or the recordings folder (each course in it; a folder in it
+without a recording is named and passed over, and a recording's file lying at its top, such as a
+paid answer kept there, is left out with the command that lays it out beside its recording); then it
+uploads the rest of the queue that is due. Without a path it uploads every recording that waits. It
+ends with exit code 0 when everything it took is on Drive (a recording on Drive already and unchanged
+since says `... is already on Google Drive: ...`), and 1 when anything waits (not signed in, another
+upload holding the lock, a recording being recorded, Google out of reach, Drive full, a file Drive
+refused) or the path names no recording. `drive free-space` takes the same paths and needs `--yes`,
+since it asks nothing; it ends with 1 when any recording kept its audio or Drive could not be asked.
+Ctrl+C stops either with exit code 130; an upload then goes on from where it stopped the next time,
+and free space deletes nothing it has not checked. See [Google Drive](#google-drive).
+
 For `record` and `record-only` the name, a source and `--output` are required, and nothing is ever
 asked: every missing piece and every value ClassScribe cannot use is named at once, followed by that
 command's help, with exit code 2, before the settings are read and before anything starts.
-`transcribe` on a recording's folder takes the recording started last in it; on one of its files,
-that whole recording; any other audio or video file, on its own, as menu choice 4 does. Given a
+`transcribe` on a folder takes the recording started last in it and in its date folders: for a
+course's folder, its newest class in either layout; for a class's date folder, that class; for a
+folder of the old layout, its newest recording. On one of a recording's files it takes that whole
+recording; any other audio or video file, on its own, as menu choice 4 does. Given a
 folder, it also names the other recordings there that have no transcript, each with its length,
 the local time it started and the command that transcribes it (or, for one whose paid answer is
 kept, the free `rebuild` command): `Also in this folder, without a transcript: ...`. It does so
@@ -704,7 +909,10 @@ code 1 and a message that says what to do instead:
   with `--again`, which sends it all the same;
 - one that is still being recorded, in another window: transcribe it once it has stopped.
 
-A file dropped on `ClassScribe.exe` counts as the command line too.
+A file dropped on `ClassScribe.exe` counts as the command line too. A recording whose audio was
+deleted from the laptop after it went up to Google Drive is refused everywhere, with where its audio is
+and the free `rebuild` command (see [Google Drive](#google-drive)); given its course's folder,
+`transcribe` says so rather than send an older class in its place.
 
 | Option | With | What it does |
 | --- | --- | --- |
@@ -713,7 +921,7 @@ A file dropped on `ClassScribe.exe` counts as the command line too.
 | `--in-person ["<microphone>"]` | `record`, `record-only` | Records your microphone alone, for a class in the room: part of its name, such as `"OBSBOT"`, or nothing for `Recording:Microphone`, else Windows' default microphone (never a Bluetooth one). It is the third kind of source. The recording's name must come right after the word `record`, before `--in-person` or `--mic`, which would otherwise take it as the microphone's name. |
 | `--mic ["<microphone>"]` | `record`, `record-only` | Records your microphone too, beside `--device` or `--app`, as a second track mixed into one transcript; it takes a microphone's name the same way. Not with `--in-person`, where the microphone is already the source. |
 | `--mic-follows <app>` | `record`, `record-only` | With `--mic`: the app whose microphone use your microphone follows, by part of its process name, such as `chrome`; `auto` follows any app that holds the microphone; `none` records whenever V is on. Without it, the app recorded with `--app`, else `Recording:MicrophoneFollows`. Not with `--in-person`, and never ClassScribe itself. |
-| `--output "<folder>"` | `record`, `record-only`, `transcribe`, `list` | The recordings folder: the recording gets a folder of its name inside it. Required for `record` and `record-only`. For `transcribe` it is used only for a file that is not a recording's; a recording's transcript goes beside the recording. |
+| `--output "<folder>"` | `record`, `record-only`, `transcribe`, `list` | The recordings folder: the recording goes to the folder of its name inside it, and there to the date folder of the day it started (see [Where things go](#where-things-go)). Required for `record` and `record-only`. For `transcribe` it is used only for a file that is not a recording's; a recording's transcript goes beside the recording. |
 | `--minutes <n>` | `record`, `record-only` | Stops by itself after that many minutes, counted from the start with pauses included, such as `90` or `1.5` (a dot, never a comma; more than 0 and at most 1440). Q twice still stops it earlier. |
 | `--continue` | `record`, `record-only` | Continues, as its next part, the recording of that name that stopped within `Recording:ContinueWithinMinutes` without a transcript; when there is none, says so and starts a new one. |
 | `--new` | `record`, `record-only` | Starts a new recording without a word about one that could be continued. Not with `--continue`. |
@@ -721,6 +929,8 @@ A file dropped on `ClassScribe.exe` counts as the command line too.
 | `--no-open` | `record`, `record-only`, `transcribe`, `rebuild` | Opens nothing at the end, whatever `Recording:OpenFolderWhenDone` and `Recording:OpenTranscriptWhenDone` say. |
 | `--seconds <n>` | `mic-check` | Stops the check by itself after that many seconds, a whole number from 1 to 86400 (a day), such as `600`. Without it, Q or Ctrl+C stops it. |
 | `--log-folder "<folder>"` | `mic-check` | Puts the check's log there, instead of the `mic-check` folder under `Recording:OutputFolder`. |
+| `--client "<file>"` | `drive signin` | The client file you downloaded from Google (Google Auth platform > Clients > Download JSON). Needed for the first sign-in; ClassScribe then keeps the client, encrypted for your Windows account, and the file can be deleted. A file that is not there, or a folder, is a mistake on the command line. |
+| `--yes` | `drive free-space` | Goes ahead and deletes the audio files from this laptop, once each is checked again against its copy on Google Drive. Needed, since the command asks nothing; without it nothing is deleted and the exit code is 2. |
 
 An option may come before or after the path or the name, in any letter case; `--` ends the options,
 for a name that starts with `--`. An argument that starts with `@` is a path, not a file of
@@ -730,11 +940,14 @@ The menu is shown only when someone can type into the window: started without a 
 script, ClassScribe says so, shows the help and exits 2.
 
 `list` prints every recording under the recordings folder, newest first, one line each
-(`Recordings in D:\Classes, newest first (times are local):`): its name, when it started in local
-time, its length, `2 parts` when it was continued, `class + microphone` when your microphone was
-recorded with the class, `transcript`, `transcript (2)` for one made twice, `answer kept` or
-`no transcript yet`, and `RECORDING NOW`, `TRANSCRIBING` or `ENDED UNEXPECTEDLY` where that applies;
-then a line for each recording being transcribed in the background. It changes nothing. `devices`
+(`Recordings in D:\Classes, newest first (times are local):`), in the course and date folders or
+flat in the folder of its name: its name, when it started in local time, its length, its date
+folder for a later class of the same day (`in 2026-10-17 (2)`), `2 parts` when it was continued,
+`class + microphone` when your microphone was recorded with the class, `audio on Drive` when its
+audio is on Google Drive alone (its length is then the one it had when its audio left the laptop),
+`transcript`, `transcript (2)` for one made twice, `answer kept` or `no transcript yet`, and
+`RECORDING NOW`, `TRANSCRIBING` or `ENDED UNEXPECTEDLY` where that applies; then a line for each
+recording being transcribed in the background. It changes nothing. `devices`
 prints the output devices, marked `default` or `playing`, then the apps with sound
 (`chrome  (app on Speakers (Realtek(R) Audio), playing)`), each with the `--device` or `--app`
 option that records it, leaving out ClassScribe itself; then `Microphones:`, each with what it is
@@ -751,10 +964,10 @@ At the end, ClassScribe hands Windows an exit code, which a script can check (in
 
 | Exit code | Meaning |
 | --- | --- |
-| 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, and when `mic-check` stopped normally. |
-| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log. |
-| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a value that cannot be used, an unknown word, or a path that is not there. Nothing was started. |
-| 130 | Cancelled with Ctrl+C. |
+| 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, when `mic-check` stopped normally, when `drive upload` found everything it took on Drive, and when `drive free-space` freed the audio of every recording it took (or found none left). An upload to Google Drive after a class or a transcript never changes the exit code. |
+| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked. |
+| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. Nothing was started. |
+| 130 | Cancelled with Ctrl+C, or with Esc while `drive signin` waits for Google; Ctrl+C during `drive upload` too, which goes on from where it stopped the next time, and during `drive free-space`. |
 | none | The window was closed while the recording ran in the background; the next start reports how it ended. |
 
 When `record-only` ends, its last message gives the command that transcribes the recording; so does
@@ -781,7 +994,9 @@ If you did not stop it, check Bitdefender's Notifications (Protection > Advanced
   F  forget this                          Enter  go on to the menu
 ```
 
-Enter goes on; so do Esc and Ctrl+C.
+Enter goes on; so do Esc and Ctrl+C. After the runs, once Google Drive is set up, the report says
+what waits to go up there, with U to upload it now (see [Use it](#use-it)). A class whose recorder
+ended unexpectedly went into that queue as it started, so it goes up later too, from where it is.
 
 The second line names the cause when it is known: `Windows shut down or signed you out at about
 19:47`, `Windows restarted at about 19:47`, `It ended when its window was closed at about 19:47`
@@ -802,8 +1017,9 @@ that has been dealt with since (continued by a later run, transcribed, or its au
 not reported, and one whose recording is on a drive that is not there now, such as an unplugged USB
 drive, waits for a start that finds the drive.
 
-A recording continued as its next part stays one recording: the new audio goes into the next part
-file, the marks go on, and the transcript says `Recorded 15 October 2026, 23:00 UTC, in 2 parts.`
+A recording continued as its next part stays one recording, in its own folder, whichever layout it
+was made in and whatever the date is now: the new audio goes into the next part file, the marks go
+on, and the transcript says `Recorded 15 October 2026, 23:00 UTC, in 2 parts.`
 with a heading `## [00:47:10] Resumed at 23:51 UTC, about 4 minutes not recorded` at the join. A
 recording that can no longer be continued, such as one whose audio was moved, costs nothing: the
 run warns (`Could not continue ...; recording "Kalam" as a new recording instead`) and records a
@@ -840,8 +1056,9 @@ has a transcript, or run `rebuild`:
 dotnet run --project src/ClassScribe -- rebuild "C:\path\to\recording folder or file"
 ```
 
-`rebuild` takes a recording's folder (its newest recording with a saved answer, even one whose audio
-has been deleted; a newer recording it passes over is named, with the reason), any file of a
+`rebuild` takes a folder (its newest recording with a saved answer, in it or in its date folders, so
+a course's folder, a class's date folder or a folder of the old layout, even one whose audio has
+been deleted; a newer recording it passes over is named, with the reason), any file of a
 recording (`.wav`, `.marks.txt`, `.md`), or an answer saved as `.json`. It lays out the recording's
 newest saved answer, or the `.json` given, needs no API key, uploads nothing, and says so:
 `Rebuilt from Kalam_2026-10-14_19-30-00Z.json into Kalam_2026-10-14_19-30-00Z (3).md; nothing was uploaded`,
@@ -856,6 +1073,109 @@ out. An answer ClassScribe set aside as `.unread.json`, because it could not be 
 place, is used only when you give `rebuild` that very file: given the recording, `rebuild` names it
 and gives the command. The words are ElevenLabs' answer as it was: to use a changed glossary, the
 recording has to be transcribed again, which is billed again.
+
+### Google Drive
+
+Once ClassScribe is signed in (see [Google Drive (set up once)](#google-drive-set-up-once)), each
+class goes up to your Google Drive by itself, once its transcript is saved and shown (with record
+only, once its files are closed), and also after a transcript that failed, so that the audio is safe
+first. Not after a cancel, a run that recorded nothing, a recorder that failed, or a run Windows
+ended: such a class waits in the queue. A run that recorded nothing leaves little more than its
+`.log` in its folder, which goes up with the next upload and is counted as waiting until then. In
+the background recorder the upload happens after the window has been shown the end, while the next
+class may already record, and its lines go into the recording's `.log`; closing the window does not
+stop it. A recording that runs in the window (`dotnet run`, or `Recording:SeparateProcess` set to
+`false`) uploads in the window after the end, and Ctrl+C there stops the upload, with everything
+left waiting. Nothing about Google Drive ever changes how a class or its transcript ends, or the
+exit code. A transcript made later (menu choices 3 and 4,
+`transcribe`, `rebuild`) sends only its new `.md` and `.json`; a file transcribed on its own sends
+its transcript and answer, not the file itself. `Drive:Enabled` set to `false` stops the uploads
+after each class and after a transcript, and nothing goes into the queue by itself; 9 and
+`drive upload` still upload.
+
+**What goes up**, uncompressed: every file of the recording but the temporary `.upload.wav`, in this
+order: the transcripts (`.md`, `(2).md`), ElevenLabs' answers (`.json`, a kept `.unread.json`), the
+marks, the class's audio (`.wav`, `_part2.wav`), your microphone's (`.mic.wav`), and the log last.
+Your own files in the folder, such as the class's PDFs, never go up: only files named as the
+recording's are taken. With `Drive:Upload` set to `WithoutAudio` the `.wav` files stay on the laptop
+alone. The window, the `.log` and `recorder.log` say it as it goes:
+`Google Drive: uploading Mantiq_2026-10-17_14-04-42Z (4 files, 727 MB) to ClassScribe/Mantiq/2026-10-17`,
+then `Mantiq_2026-10-17_14-04-42Z.wav: 30% (217 MB of 722 MB, 3.1 MB/s)` for each tenth of a file
+that goes in more than one piece, and `...: already on Drive` for one that is there already. Sizes
+are in the units Google Drive shows, where 1 MB is 1,048,576 bytes.
+
+**Where**: Drive mirrors the laptop (see [Where things go](#where-things-go)): `My Drive > ClassScribe >
+Mantiq > 2026-10-17` for a class in its course and date folder, `2026-10-17 (2)` for the second class
+of the day, and `My Drive > ClassScribe > Kalam` for a recording still flat in the folder of its name.
+ClassScribe finds each folder again by an id it remembers (in
+`%LOCALAPPDATA%\ClassScribe\drive\folders.json`), or by its name, and makes it only when it is not
+there; only one upload runs at a time, so a folder is never made twice.
+
+**Each file is checked**: after its last piece, Google Drive is asked for the copy's size and MD5,
+which must be the file's. A copy that differs is said, with both
+(`... does not match Drive's MD5 after it went up (here ..., ... bytes; on Drive ..., ... bytes);
+sending it again as a new revision`), and sent once more as a new revision of itself; if it still
+differs, the recording waits. The last line says where the class is:
+`Mantiq_2026-10-17_14-04-42Z is on Google Drive: My Drive > ClassScribe > Mantiq > 2026-10-17 (4 files, 727 MB, each checked against Drive's MD5): https://drive.google.com/drive/folders/...`.
+In the background recorder, and in a run in the window, it is written into the `.log` just before
+the log goes up, so Drive's copy of the log holds it. Lines logged after that, such as those about
+other recordings the same upload takes from the queue, stay in the laptop's `.log`; they go up, as a
+new revision of the log, the next time that recording goes up (after a transcript made later, say).
+
+**Nothing goes up twice**: ClassScribe remembers each file it sent (in
+`%LOCALAPPDATA%\ClassScribe\drive\recordings`), so another upload of the recording sends only what is
+new. A new transcript copy or a new part is a new file; a text file that has grown, such as the log
+after a continued class or the marks, goes up as a new revision of ClassScribe's own copy, and as a
+new file when that copy was deleted on Drive or is in the trash, which ClassScribe never touches.
+Nothing else on Drive is ever replaced: a file on the laptop that changed in any other way is left
+out, with a warning, and the copy on Drive stays as it is. When the record of a recording is lost
+(another laptop, `%LOCALAPPDATA%` cleared), the files already in its folder on Drive are taken for
+its own when name and MD5 match. An upload stopped half way (offline, the laptop asleep, a closed
+window, Ctrl+C) goes on from where it stopped next time, even after a restart, for up to six days.
+
+**The queue**: with `Drive:Enabled` on, a class goes into it as its run starts, so a class whose
+recorder crashed still goes up later. What could not go up waits there until the next class, whose
+recorder uploads that class first and then the rest of the queue that is due, or until you press U
+in the report at the start, or 9 > U, or run `drive upload` without a path. A transcript made later
+takes what is due in the queue along too. Nothing uploads by itself at any other time: there is no
+uploader in the background. Only one upload runs at a time, across ClassScribe's windows and
+recorders; another says `Another ClassScribe is uploading to Google Drive; ... waits and goes up after
+it`, and the one uploading takes it before it stops, even a recording it was uploading as a
+transcript of it was made. While a class records, an upload of an earlier one waits between pieces
+(`Google Drive: paused while "Kalam" records`) and goes on once it stops (`Google Drive: going on, now
+that "Kalam" has stopped recording`), so the class's own sound and your microphone are not held up.
+The laptop is kept awake meanwhile (see [Keeping the laptop awake](#keeping-the-laptop-awake)).
+
+A recording asked for again that is on Drive already and has not changed is not put back in the
+queue. One whose folder is on a drive that is not there now, such as an unplugged USB drive, waits for
+an upload that finds it. One whose folder you moved or deleted on a drive that is there is done when
+every file of it went up before; otherwise it is taken out of the queue, with how to upload it from
+where it is now (9 > F, or `drive upload "<its folder>"`).
+
+#### Free room on the laptop
+
+Once a class is on Drive, 9 > L, or `drive free-space "<path>" --yes`, deletes its audio from the
+laptop: its `.wav`, `_partN.wav`, `.mic.wav` and `_partN.mic.wav` files, and nothing else. Before
+anything is deleted, every one of them is checked again: its upload was checked when it went up, its
+MD5 is worked out afresh from the file itself, and Google Drive is asked now for its copy, which must
+be outside the trash with the same size and MD5. If any one fails, none of that recording's audio is
+deleted, and the reason is given. The transcripts, ElevenLabs' answers, the marks and the log stay on
+the laptop, and so do your own files; a recording being recorded or transcribed keeps its audio,
+and so does one that has not gone up yet (`... has not gone up to Google Drive yet, so none of its
+audio was deleted. Upload it first: ...`, with the `drive upload` command for it). The line says
+what was freed: `Freed 722 MB on this laptop: deleted 1 audio file of Mantiq_2026-10-17_14-04-42Z
+(Mantiq_2026-10-17_14-04-42Z.wav). Their copies stay on Google Drive, in My Drive > ClassScribe >
+Mantiq > 2026-10-17; the transcripts, ElevenLabs' answers, the marks and the log stay here`. Given
+several recordings, such as a course's folder, it frees each one that passes, keeps the audio of
+each one that does not, and ends with `Freed ... on this laptop in all`.
+
+Deleting audio, this way or by hand, never touches Drive. A recording whose audio is gone from the
+laptop after it went up counts as done, never as waiting, and is never uploaded again: `list` and menu
+choice 3 show it with `audio on Drive` and its length as it was; its transcript stays readable, and R
+or `rebuild` make its transcript again for free from the saved `.json`; transcribing it again is
+refused with where the audio is: `The audio of ... is on Google Drive, not on this laptop: My Drive >
+... (https://...). To transcribe it again, download its .wav files from there into ... first`, followed
+by the free `rebuild` command.
 
 ### Checking what your class page does with your microphone
 
@@ -951,6 +1271,11 @@ Take two minutes to check the whole path on your machine:
    while the video plays; press Q twice and check that the transcript holds both. For a class in the
    room, 7 then I, then 1: speak, stop, and play the `.wav` file back. Run the microphone check once
    during your first real class, as above.
+5. Once Google Drive is set up, the dry run goes up there too after its transcript: with the published
+   copy, start ClassScribe again after a minute and the header says `Google Drive: signed in; nothing
+   waits to go up.`, and the `.log` beside the recording holds the line that names its folder,
+   `My Drive > ClassScribe > Dry run > <today's date>`. Delete it in Drive afterwards if you like;
+   ClassScribe never deletes anything there.
 
 ## How the recording is protected
 
@@ -995,6 +1320,10 @@ Take two minutes to check the whole path on your machine:
   place, the tracks end together, and a microphone whose own clock runs fast or slow is corrected in
   small steps, counted in the summary as `corrections for drift`.
 - An existing recording is never overwritten.
+- Once Google Drive is set up, each class has a second copy there, every file checked against
+  Drive's MD5, and an upload that breaks off goes on where it stopped. The laptop's audio is deleted
+  only when you ask (9 > L, `drive free-space`), and only after each file is checked against its copy
+  on Drive once more (see [Google Drive](#google-drive)).
 
 ## The glossary
 
@@ -1058,7 +1387,7 @@ The ones you are most likely to change:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where recordings and transcripts go, one folder per name. Environment variables work, and quotes around the path are ignored. A relative path is taken from your user folder, so `Classes` means `%USERPROFILE%\Classes`. A folder inside OneDrive brings a warning. |
+| `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where recordings and transcripts go: a folder per name, and in it a folder per class, named after the local date it started on (see [Where things go](#where-things-go)). Environment variables work, and quotes around the path are ignored. A relative path is taken from your user folder, so `Classes` means `%USERPROFILE%\Classes`. A folder inside OneDrive brings a warning. |
 | `Recording:Device` | empty | Part of the name of the output device to record, such as `Pixel Buds`. Empty means the device the class plays on. |
 | `Recording:App` | empty | The app whose sound to record, by its process name, such as `chrome`. Overrides `Recording:Device`. |
 | `Recording:Mode` | `Class` | What a recording holds: `Class` (the sound the computer plays), `ClassAndMicrophone` (that and your microphone, mixed into one transcript) or `Microphone` (your microphone alone, in person). The names are taken in any letter case; a number is refused. Menu choice 7 overrides it until ClassScribe is closed. See [Your microphone](#your-microphone). |
@@ -1088,13 +1417,21 @@ The ones you are most likely to change:
 | `Transcript:ParagraphPauseSeconds` | 2.0 | A pause between words this long, in seconds, starts a new paragraph. 0 or more; 0 turns these breaks off. |
 | `Transcript:MaxParagraphCharacters` | 900 | A longer paragraph is split at the next sentence end. 0 or more; 0 turns this off. |
 | `Transcript:ShowGapsLongerThanSeconds` | 60 | In a recording of the class alone, a heading in the transcript where at least this much time with nothing playing was left out (`About 3 minutes with nothing playing were left out here`). 0 writes no such heading; below 0 is refused. Recordings with your microphone leave nothing out. |
+| `Drive:Enabled` | true | Once Google Drive is set up, put each class in the queue as its run starts and upload it after its transcript (with record only, once its files are closed), with what else waits; and upload a transcript made later. `false` puts nothing in the queue and sends nothing by itself: then only menu choice 9 and `drive upload` upload, and the menu's header says so. See [Google Drive](#google-drive). |
+| `Drive:FolderName` | `ClassScribe` | The name of the folder ClassScribe makes in My Drive at the first Google sign-in, which holds the classes as the recordings folder does: a folder per course, and in it one per class's date folder. ClassScribe finds that folder again by a mark of its own, so you may rename or move it in Drive, and a change here later changes nothing. At most 100 characters, without tabs or line breaks. |
+| `Drive:Upload` | `Everything` | What of a recording goes up: `Everything` (both tracks' audio, the transcripts, ElevenLabs' answers, the marks and the log) or `WithoutAudio` (all but the `.wav` files, which then stay on the laptop alone). The temporary `.upload.wav` never goes up. The names are taken in any letter case; a number is refused. |
+| `Drive:ChunkMegabytes` | 8 | The size of each piece sent to Google Drive, in MiB (1,048,576 bytes), from 1 to 256: a piece lost to a dropped connection costs at most this much, sent again. |
 | `Logging:Console:FormatterName` | `plain` | One line per message. Set to `simple` to see full stack traces. |
 
 The file has a few more that rarely need changing, checked the same way: `Recording:FlushSeconds`
 (5, at least 1), `Recording:StatusIntervalSeconds` (60, at least 1), `Recording:MaxSegmentMegabytes`
 (1500, from 10 to 4000), `ElevenLabs:ModelId` (`scribe_v2`, not empty), `ElevenLabs:TagAudioEvents`
-(false; true marks laughter and other sounds), `ElevenLabs:MaxAttempts` (3, from 1 to 10) and
-`ElevenLabs:RetryDelaySeconds` (5, from 0 to 3600). The `Logging` section is read again and checked
+(false; true marks laughter and other sounds), `ElevenLabs:MaxAttempts` (3, from 1 to 10),
+`ElevenLabs:RetryDelaySeconds` (5, from 0 to 3600), and `Drive:ApiBaseUrl` and `Drive:OAuthBaseUrl`
+(Google's own addresses, `https://www.googleapis.com/` and `https://oauth2.googleapis.com/`; an
+`https` address, or `http` to `127.0.0.1` or `localhost` only, for a local stub in a dry run, as
+`Drive__ApiBaseUrl`). The Google client and sign-in are never in this file (see
+[Where things go](#where-things-go)). The `Logging` section is read again and checked
 like the rest: each log level, under `Logging:LogLevel` (where `Default` is `Information`) or under a
 log's own section, such as `Logging:Console:LogLevel`, must be `Trace`, `Debug`, `Information`,
 `Warning`, `Error`, `Critical` or `None`.
@@ -1164,10 +1501,10 @@ Windows audio through COM interop.
   length differ by more than a minute, the line says whose number it used. The estimate never turns
   dollars into credits, because the in-app credit rate and the API's dollar rate cannot be reconciled
   from ElevenLabs' pages.
-- When the key may read the account, the run's last line, after the transcript is saved and opened,
-  gives the credits themselves: `ElevenLabs charged 43,362 credits for this transcript; 56,638 of
-  100,000 credits are left until 1 November`. The credits are read before the upload and again after
-  the transcript, so the difference counts anything else the account did in between; when the first
+- When the key may read the account, the run's last line, after the transcript is saved and opened
+  (only the upload to Google Drive comes after it), gives the credits themselves: `ElevenLabs
+  charged 43,362 credits for this transcript; 56,638 of 100,000 credits are left until 1 November`.
+  The credits are read before the upload and again after the transcript, so the difference counts anything else the account did in between; when the first
   read did not succeed, the line gives the account's standing instead (`ElevenLabs account: ...
   credits used this period`), and when the credits did not change, it says so, since API usage on a
   plan may be billed in dollars and then shows on the usage page alone. A key restricted to Speech to
@@ -1179,11 +1516,11 @@ Windows audio through COM interop.
   elevenlabs.io, or set ElevenLabs:ReadAccountUsage to false to stop asking` (ElevenLabs may answer
   `HTTP 403` instead; both are read the same way); `ElevenLabs:ReadAccountUsage` set to `false`
   stops it asking. Nothing about this read can delay or fail a transcript; it has 10 seconds and is
-  never tried again. Where the line lands
-  depends on where the class was recorded: in this window, and after `transcribe`, it is the last line
-  on the screen; in a background recording, the usual way, the recorder reads the account only once
-  the window has been shown the end and has opened the transcript, so the line is in the recording's
-  `.log` beside the recording (and in `recorder.log`), not in the window. The estimate line above
+  never tried again. Where the line lands depends on where the class was recorded: in this window,
+  and after `transcribe`, it is the last line on the screen before Google Drive's; in a background
+  recording, the usual way, the recorder reads the account only once the window has been shown the
+  end and has opened the transcript, so the line is in the recording's `.log` beside the recording
+  (and in `recorder.log`), not in the window. The estimate line above
   comes before the end, so the window shows it either way.
 - Every transcript ElevenLabs sends back is charged, even one ClassScribe could not save; that one
   is kept (see [Where things go](#where-things-go)).
@@ -1197,6 +1534,25 @@ Windows audio through COM interop.
   yourself in the class page may not keep your voice out, the Windows mute does (see
   [Your microphone](#your-microphone)). In person everyone in the room is recorded and uploaded: ask
   before recording others, and check what your institution allows.
+- Google Drive costs nothing extra: the sign-in uses your own Google Cloud project, without billing,
+  and asks only for `drive.file`, which lets ClassScribe see and change only the files and folders it
+  makes itself, nothing else in your Drive. It never shares anything (it never calls Drive's sharing
+  API), and it only adds to Drive: it never deletes, trashes or overwrites anything there, with one
+  exception, a new revision of its own copy of a file in two cases only: a text file of the recording
+  (its log, its marks, a transcript or an answer) that has grown since it went up, and its own copy
+  whose MD5 check failed, sent once more. A class's audio goes to Google's servers, as it does to
+  ElevenLabs'; with your microphone, or in person, other voices go too. Your own files beside a
+  recording, such as the class's PDFs, never go up. The Google client and the sign-in stay on this
+  laptop, encrypted for your Windows account; they are never written to a log (the `.log` that goes up
+  to Drive included), `appsettings.json` or a run file. The record of what went up
+  (`%LOCALAPPDATA%\ClassScribe\drive`) holds file names, sizes, MD5s and Drive's ids, and, while an
+  upload is unfinished, the address that lets it go on, which Google accepts for a week at most and
+  which is never logged. Deleting files from the laptop, with the free-space option (9 > L,
+  `drive free-space`) or by hand, never touches Drive: the free-space option deletes only a
+  recording's audio (`.wav`, `_partN.wav`, `.mic.wav`, `_partN.mic.wav`), after checking each file
+  against its copy on Drive again, and never its `.md`, `.json`, `.marks.txt` or `.log`. Signing out asks Google to end ClassScribe's access; you can also
+  end it yourself at https://myaccount.google.com/connections. Nothing on Drive is touched by a
+  sign-out.
 
 ## If something goes wrong
 
@@ -1226,6 +1582,8 @@ words you see.
 | `--mic-follows goes with --mic: it names the app whose microphone use your microphone follows`, `--mic-follows cannot go with --in-person: in person there is no class app`, `--mic-follows needs part of an app's name, such as chrome, or auto or none` | Give `--mic-follows` only with `--mic`, and a value that names an app (not ClassScribe), or `auto` or `none`. |
 | `record needs a name, right after the word record: ... (--in-person took "Kalam" as the microphone's name)` | Put the name right after `record`, before `--in-person` or `--mic`, which may take a name themselves. |
 | `--seconds takes a whole number of seconds, such as 600`, `--seconds takes from 1 to 86400 seconds (a day)`, `--log-folder needs a folder after it, such as "D:\Classes"` | `mic-check`'s refusals; fix the value. |
+| `drive needs one of signin, signout, status, upload or free-space, such as ClassScribe drive status` | Give the word after `drive` (exit code 2). |
+| `drive free-space needs a path: a recording's file or a folder of recordings, ...`, `drive free-space deletes audio from this laptop once Google Drive has a checked copy of it; add --yes to go ahead, ...` | Give the recording's file or folder, and `--yes`, since the command asks nothing before it deletes. Nothing was deleted (exit code 2). |
 | `ElevenLabs:ApiKey is set in the settings` | Remove the key from `appsettings.json` (or an `ElevenLabs__ApiKey` variable). It is not used: ClassScribe reads the key only from `ELEVENLABS_API_KEY`. This warning comes once, at the first choice or command. |
 | `Recording:OutputFolder is inside OneDrive` | OneDrive uploads a recording again and again while it grows, and can hold files ClassScribe needs to delete. Choose a folder outside OneDrive, such as `%USERPROFILE%\ClassScribe`. This warning, too, comes once, at the first choice or command, and refuses nothing. |
 | A `WARNING` line under `Recordings and transcripts` in the menu | `The drive X:\ is not available`: plug the drive in, or change `Recording:OutputFolder`. `... is a file, so recordings cannot go there`: change `Recording:OutputFolder`. `Recording:OutputFolder uses %NAME%, which is not set`: set that variable, or write the folder out in full. |
@@ -1236,6 +1594,7 @@ words you see.
 | --- | --- |
 | `No sound for 60 seconds` | Check that the class is playing through the device named in the message and that Windows is not muted. With Bluetooth earbuds that play in one ear only, see the earbuds row below. |
 | `Could not start capturing system audio yet` | Windows is still setting up the device, one just plugged in, say. ClassScribe tries again every second by itself. |
+| `The folder ... cannot be looked into (...), so this recording goes to the next date folder` | The date folder for today, such as `Mantiq\2026-10-17`, is there but ClassScribe may not read it, as with one copied from another account. The class records into `2026-10-17 (2)` instead; nothing is lost. Give yourself access to the folder in its Properties > Security if you want to use it. |
 | `uses an audio format this app cannot read`, `uses the unsupported encoding` | The device sends sound in a form ClassScribe cannot record, so the recording did not start. Choose another device with menu choice 6. |
 | `Cannot capture an output device right now` | Windows has no usable output device at that moment, or its audio service is restarting. ClassScribe tries again every second and says so every 30 seconds; plug in or switch on a device. |
 | `Nothing to record yet; waiting for ...`, `Still nothing to record` | The chosen device is not connected, the chosen app is not playing, or there is no output device. ClassScribe keeps looking; connect the device or start the sound, or press Q twice and choose something else with 6. |
@@ -1362,7 +1721,7 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `ElevenLabs' answer to an earlier try at ..., which has been paid for, is kept in ...` | The same for a recording whose paid answer is kept without a transcript: the `rebuild` command given lays that answer out for free, and `--again` transcribes the recording again, billed again. |
 | `... is being recorded now; transcribe it once it has stopped` | That recording is still being recorded, in this window or another. Stop it first, then transcribe it. |
 | `Also in this folder, without a transcript: ...` | The folder holds other recordings without a transcript, such as the first half of a class split by a crash. The command after each transcribes it, or lays out its kept answer for free. |
-| `There is no ClassScribe recording in ...` | The folder holds no `.wav` file named as ClassScribe names its recordings. Give the recording's own folder, or the file itself. |
+| `There is no ClassScribe recording in ...` | The folder holds no `.wav` file named as ClassScribe names its recordings, neither in it nor in its date folders (such as `2026-10-17`). Give the course's folder, the class's date folder, or the file itself; the recordings folder itself holds courses, not recordings. |
 | `... holds ... of audio, and ElevenLabs takes at most 10 hours per file` | Nothing was prepared or sent. Copy some of its `.wav` files into a folder of their own and transcribe that folder, then the rest the same way. With your microphone, copy the matching `.mic.wav` files beside them under the same names, or only the class is sent; the length counted is the class track's alone, so a five-hour class with its microphone track is sent as it is. |
 | `Preparing the recording for upload (2 segment(s) of the class and 1 of your microphone)`, then `Prepared 01:58:10 of audio for upload: the class and your microphone mixed into one track` | Normal for a recording with your microphone: the two are mixed into one track. |
 | `Your microphone stayed silent; only the class is sent.` | The microphone's track never rose above a very low level: you never unmuted, the class app never listened, or the microphone heard nothing. The summary line at the end of the recording says which. The upload is then the class's alone. |
@@ -1393,7 +1752,7 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `... has no saved answer from ElevenLabs yet; transcribe it first` | There is no answer to lay out yet: transcribe the recording first. |
 | `... has a transcript, but its saved answer from ElevenLabs is no longer there` | The `.json` beside the transcript was deleted, so only a new transcription, billed again, can make another. |
 | `... has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try ... is kept in ...` | Run the `rebuild` command the next line gives: it lays that kept answer out. |
-| `... is neither a file of a ClassScribe recording nor an answer from ElevenLabs saved as .json` | Give `rebuild` a recording's folder, one of its files, or an answer saved as `.json`. |
+| `... is neither a file of a ClassScribe recording nor an answer from ElevenLabs saved as .json` | Give `rebuild` a course's folder, a class's date folder, one of a recording's files, or an answer saved as `.json`. |
 | `... is rebuilt`, `... is rebuilt instead` | `rebuild` was given a folder: it rebuilds the transcript of the newest recording there that has a saved answer, and names each newer one it passed over, with the reason. For a paid answer kept apart, run the command the next line gives; a recording without a saved answer has to be transcribed first. |
 | `Could not rebuild the transcript of ...` | The saved answer could not be read, or the new transcript could not be saved; the lines after it say why, such as `ElevenLabs answered in a form this app cannot read`. Nothing was sent, and nothing is charged. |
 
@@ -1404,6 +1763,67 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Leaving ... out of the list of recordings: one of its files cannot be read` | Another program holds a file of that recording open, or it may not be read. Close that program and choose 3 again. The other recordings are still listed. |
 | `Leaving the folder ... out of the list of recordings: it cannot be read` | A folder in the recordings folder cannot be read, such as a link to a drive that is not plugged in. |
 | `No recordings found.` and a reason | The recordings folder cannot be used; see the `WARNING` row under [The settings and the menu](#the-settings-and-the-menu). |
+
+### Google Drive
+
+| What you see | What to do |
+| --- | --- |
+| `ClassScribe has no Google client yet, so it cannot sign in`, `Google Drive: not set up` | Make the client once, as [Google Drive (set up once)](#google-drive-set-up-once) says, then sign in with the file: 9, then S, or `drive signin --client "<the file>"`. |
+| `... is the file of a Web application client, and ClassScribe signs in as a Desktop app` | In Google Auth platform > Clients, click Create client, choose Desktop app, download its JSON, and give that file. |
+| `... is not a client file from Google`, `... is not a Desktop app client's file from Google`, `... holds no client_id` | Give the `client_secret_....json` file Download JSON gave you, as it is. |
+| `... holds no client_secret` | Google shows a secret only once. On the client's page, click Add secret, download the JSON again, and give that file. |
+| `The browser did not open by itself. Copy this address into your browser:` | Copy the address under it into your browser and sign in there; ClassScribe waits up to 5 minutes. |
+| `You did not allow ClassScribe to use Google Drive; no sign-in was stored.` | Sign in again and click Allow on Google's page. The client is kept, so 9 then S, then Enter, is enough. |
+| `Google did not give ClassScribe access to Google Drive: the box for it was left unticked` | Sign in again and tick the box `See, edit, create, and delete only the specific Google Drive files you use with this app`. |
+| `Google's answer did not reach ClassScribe within 5 minutes` | Sign in again and finish in the browser within 5 minutes. If the browser said it could not reach `127.0.0.1`, a security program may be blocking it: in Bitdefender, allow `http://127.0.0.1` under Online Threat Prevention, then try again. |
+| `Google ended the sign-in with an error (...)`, `Google refused the sign-in (HTTP 400, invalid_grant ...)` | Sign in again; a sign-in's code is used once and lasts only minutes. If it happens again, check the client in Google Auth platform > Clients. |
+| `ClassScribe is not signed in to Google Drive` | Sign in with 9, then S, or `drive signin`. |
+| `Google ended ClassScribe's sign-in to Google Drive` | Sign in again with 9, then S. If it happens every 7 days, the app is still in Testing: publish it (step 5 of the set-up), then sign in again. |
+| `Google no longer accepts ClassScribe's Google client (invalid_client ...)`, `Google does not accept the client in that file` | The client was deleted, or its secret replaced. Download the client's JSON again (Add secret, if the secret is gone) and sign in with that file. |
+| `Google Drive answered that the Drive API is not enabled in your Google Cloud project` | Open https://console.cloud.google.com/apis/library/drive.googleapis.com in your project, click Enable, wait a minute, and try again. |
+| `Google could not be reached ...`, `Google Drive could not be reached ...` | Check the internet connection, then try again. The sign-in is kept. |
+| `Google Drive could not be reached (...). ClassScribe asks again in 2 seconds, and goes on asking for about 4 minutes` (or `Google Drive refused to ... (HTTP 503 ...)` with the same end) | Nothing to do: Google was out of reach or busy for a moment, and ClassScribe asks again by itself, waiting a little longer each time. If it is still out of reach after about 4 minutes, the upload stops and the recordings wait (below). |
+| `Google Drive did not accept ClassScribe's sign-in (HTTP 401 ...). Sign in again with menu choice 9 > S, or ClassScribe drive signin.`, `Google refused to renew ClassScribe's sign-in (HTTP ..., ...). Try again later.` | Sign in again with 9, then S; if Google refused the renewal for another reason, try again later. What waits stays in the queue. |
+| `Google Drive holds 2 folders marked as ClassScribe's own; using ...` | More than one folder in My Drive carries ClassScribe's mark, as when a folder put in the trash was restored after a sign-in had made a new one. ClassScribe uses the one named; move what you want from the other into it. |
+| `Could not remember the ids of ClassScribe's folders on Drive in ...` | Harmless: the folders are found by their names next time. Check that `%LOCALAPPDATA%\ClassScribe\drive` can be written. |
+| `Could not read ...\drive\recordings\....json (...); the recording's files on Google Drive are looked for by name instead` | Harmless: the record of what went up could not be read, so the files already on Drive are found by name and MD5, and nothing goes up twice. |
+| `... google-drive.dat cannot be opened by this Windows account`, `... google-drive.dat is damaged` | The sign-in was made by another Windows user or on another computer, or Windows' keys changed. Sign in again with the client file (Add secret on the client's page, if you deleted the file). |
+| `Signed out here, but Google could not be reached to end ClassScribe's access` | The sign-in is forgotten here. To end the access at Google too, open https://myaccount.google.com/connections, choose ClassScribe and remove its access. |
+| `The ClassScribe folder is not in My Drive now: it is in the trash, or was deleted.` | ClassScribe never takes anything out of the trash. Restore the folder in Drive yourself, or sign in again to make a new one. |
+| `Drive:FolderName is ...`, `Drive:ApiBaseUrl is "..."; it must be an https address, ...`, `Drive:ChunkMegabytes is 0; it must be from 1 to 256.`, `Drive:Upload is "...", which is not Everything or WithoutAudio.` | Fix the setting: a plain name of at most 100 characters; Google's own address, or `http://127.0.0.1:<port>/` for a local stub; a piece size from 1 to 256 (MiB); `Everything` or `WithoutAudio`. |
+| `Google Drive: uploading ... to ClassScribe/...`, `...: 30% (...)`, `... is on Google Drive: My Drive > ...` | Normal: a class going up, each file checked against Drive's MD5. `...: already on Drive` is a file that was there already, `... is already on Google Drive: ...` a recording that needed nothing more, and `Nothing waits to go up to Google Drive.` an upload of the queue that found it empty. |
+| `Google Drive: paused while "..." records`, then `Google Drive: going on, now that "..." has stopped recording` | Normal: an upload of an earlier class waits between pieces while a class records, so that the class is not held up, and goes on by itself. |
+| `Another ClassScribe is uploading to Google Drive; ... waits and goes up after it` | Nothing to do: one upload runs at a time, and the one running takes this recording before it stops. `... is on Drive already, unchanged since it went up` instead means nothing of it needed to go up. |
+| `<base> waits to go up to Google Drive: ...`, `<problem> 2 recordings wait to go up to Google Drive after the next class, or with menu choice 9 > U, or ClassScribe drive upload.` | It goes up later; the reason is in the line. To send it now, press U in the report at the start, or 9 > U, or run `drive upload`. With `Drive:Enabled` set to `false` the line ends `... to go up to Google Drive with menu choice 9 > U, or ClassScribe drive upload.`, since nothing goes up after a class then. |
+| `<file> did not go up to Google Drive: ...`, `<file> could not be read to go up to Google Drive: ...` | That file waits, with Drive's words or Windows' reason, and the recording's other files went up. The next upload tries it again. |
+| `The upload to Google Drive was stopped. 1 recording waits, and goes on from where it stopped after the next class, or with menu choice 9 > U, or ClassScribe drive upload` | Ctrl+C stopped the upload. It goes on from where it stopped with the next upload. |
+| `The upload to Google Drive stopped because of an error (<reason>); <base> waits to go up after the next class, or with menu choice 9 > U, or ClassScribe drive upload` | The class and its transcript are fine, and the exit code is as it would have been; the recording waits and goes up with the next upload. If it happens again, look at the lines before it in the recording's `.log`. |
+| `Google Drive is full: the account's storage takes nothing more (HTTP 403, storageQuotaExceeded: ...). Make room in Google Drive, or add storage to the account, then upload again.` | Make room in Google Drive or add storage, then upload with 9 > U. After a class, ClassScribe tries that recording again no sooner than a day later. |
+| `Google Drive takes no more uploads today (...). Upload again tomorrow.` | Google lets each account upload 750 GB in 24 hours ([Google's limits](https://knowledge.workspace.google.com/admin/drive/storage-and-upload-limits-for-google-workspace)). Upload tomorrow with 9 > U; after a class, ClassScribe tries again no sooner than a day later. |
+| `<file> does not match Drive's MD5 after it went up (here ..., ... bytes; on Drive ..., ... bytes); sending it again as a new revision` | The copy that arrived differs from the file, so it is sent once more, as a new revision of ClassScribe's own copy. `<file> still does not match Drive's MD5 after it was sent again; it goes up again with the next upload.` leaves the recording waiting; the next upload tries again. |
+| `<file> on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown goes up again, as a new revision. The copy on Drive stays as it is`, `A different <file> is already in My Drive > ... on Google Drive; ClassScribe never replaces it, so this one did not go up` | The file changed on the laptop after it went up, or Drive holds another file of that name. The copy on Drive stays as it is; only a text file that has grown goes up again. To keep the laptop's version on Drive as well, upload it yourself under another name. |
+| `<file>'s copy on Google Drive is no longer there, or is in the trash, so it goes up again as a new file; ClassScribe takes nothing out of the trash` | Nothing to do: the grown file goes up again, and the copy in the trash stays there. |
+| `<base> is being recorded now; it goes up once it has stopped`, `<base> is being transcribed now; it goes up once it has stopped`, `<file> is open in another program, as while it is being recorded; <base> goes up once it is closed` | Nothing to do: it waits and goes up after it has stopped. For another program holding a file, close that program. |
+| `Google Drive answered with an upload address for <file> that is not its own, so nothing was sent there.`, `The upload of <file> begun earlier names an address that is not Google Drive's own, so it is not used; the upload starts again` | ClassScribe sends a file only to Google Drive's own address. Nothing was sent elsewhere; the file goes up with the next upload, or starts again from the beginning. If it happens again, check `Drive:ApiBaseUrl`. |
+| `Google Drive took none of the last pieces of <file>; it goes up again with the next upload.`, `Google Drive lost the upload of <file> twice; it starts again with the next upload.` | Google kept losing what was sent. The rest of the recording went up; the file goes up again with the next upload. |
+| `<file> is no longer in <folder> and never went up to Google Drive, so it is left out` | A file was deleted or moved from the folder before it went up. Nothing to do, unless you want it on Drive: put it back, then upload again. |
+| `Google Drive refused to ... (HTTP ...)`, `Google Drive did not say where to send the file when asked to ...`, `Google Drive's answer when asked to ... could not be read.`, `Google Drive made the folder ... but did not say its id.` | Google answered in a way ClassScribe did not expect. The recording waits; upload it again later with 9 > U. If it keeps happening, the lines before it in the recording's `.log` say more. |
+| `<folder> holds no recording; it is passed over`, `<file> is not a file of a ClassScribe recording, so there is nothing to upload from it` (or `to free from it`), `There is no ClassScribe recording in <folder>` | `drive upload` and `drive free-space` take a recording's file, a class's date folder, a course's folder or the recordings folder. Your own folders and files there are passed over, never uploaded. |
+| `... was put in the queue again while it went up, so it is looked at once more` | Nothing to do: a transcript made meanwhile, say, goes up in the same upload. |
+| `The folder of ..., ..., is not there now: its drive, ..., is not there either; it waits for an upload that finds it` | Plug the drive back in, then upload with 9 > U. |
+| `The folder of ..., ..., is not there now: it was moved or deleted, so it is taken out of the queue for Google Drive` | If you moved it, upload it from where it is now: 9 > F, or `drive upload "<its folder>"`. Nothing on Drive changed. |
+| `The folder of ..., ..., is not there now, but every file of it went up to Google Drive before and was checked` | Nothing to do: it is safe on Drive. |
+| `... lies in ... itself, not in a recording's folder, so it does not go up` | A paid answer kept in the recordings folder, when its own folder would not take it: run the `rebuild` command the line gives, which lays it out beside its recording, then upload that recording. |
+| `ClassScribe could not keep track of the upload of ... in ... (...), so the upload stopped` | `%LOCALAPPDATA%\ClassScribe\drive` could not be written: check the free space on the laptop and that no program holds the file, then upload with 9 > U. |
+| `Could not put ... in the queue for Google Drive (...); it goes in when the class ends` | Harmless: the class records as usual, and goes into the queue at its end. |
+| `Freed <size> on this laptop: deleted 1 audio file of <base> (...). Their copies stay on Google Drive, in My Drive > ...; the transcripts, ElevenLabs' answers, the marks and the log stay here` | Done: the audio is on Drive alone, checked, and the rest stays on the laptop. Nothing on Drive changed. |
+| `None of the audio of <base> was deleted: <file> has not gone up to Google Drive yet.` (or `... is open in another program, as while it is being recorded.`, `...'s copy on Google Drive is no longer there, or is in the trash.`, `... differs from its copy on Google Drive (here ... bytes, MD5 ...; there ..., MD5 ...).`) | One audio file failed the check, so all of that recording's audio stayed. Upload the recording again (9 > R, or `drive upload`), then free it again. |
+| `<base> has not gone up to Google Drive yet, so none of its audio was deleted. Upload it first: <command>`, `<base> is not all on Google Drive yet, so its audio stays here. Upload it first: R, then its number.` | Run the command given, or 9 > R, then free it again. |
+| `<base> is being recorded now, so none of its audio was deleted.`, `<base> is being transcribed now, so none of its audio was deleted.` | Free it once it has stopped. |
+| `<base> has no audio on this laptop to delete; its audio is on Google Drive, in My Drive > ...` | Nothing to do: it was freed before. |
+| `<file> could not be deleted (...); it stays on this laptop` | Another program holds that file open. Close it and free the recording again; the files already freed stay freed. |
+| `Google Drive could not be reached (...). Nothing more was deleted.` | Free space asks Drive about every file before it deletes anything, so nothing of a recording it could not check was deleted. Try again when the laptop is online. |
+| `The audio of ... is on Google Drive, not on this laptop: ...`, `Part of the audio of ...` | Its audio was freed, so it cannot be transcribed again as it is: download its `.wav` files from the folder named into the recording's folder first. To make its transcript again for free, run the `rebuild` command the next line gives. |
 
 ## Layout
 
@@ -1429,11 +1849,18 @@ src/ClassScribe/
     Link/             the named pipe between the recorder and the windows that show its run
     Transcription/    ElevenLabs client (Refit), glossary, transcript layout, the upload's time limit,
                       the cost estimate and the account's credits after a transcript
-    Storage/          recording folders, file names, numbered transcript copies, marks, and the
-                      microphone check's log
-    Commands/         the menu, the microphone menu, the command line (record, transcribe, rebuild,
-                      list, devices, mic-check), the report at the start, the view of a recording,
-                      the microphone check, and the settings check before each
+    Drive/            Google Drive: the sign-in (PKCE, the listener on 127.0.0.1, the browser), the
+                      client file, the encrypted store, the access tokens, Google's OAuth and Drive
+                      clients (Refit), ClassScribe's folders in My Drive, the resumable uploads, the
+                      record of what went up and the queue, the upload after each class, and freeing
+                      room on the laptop
+    Storage/          recording folders (course and date folders, the old flat ones read too), file
+                      names, what of a recording's audio is on Google Drive alone, numbered
+                      transcript copies, marks, the microphone check's log, and the roaming folder
+                      that holds the Google sign-in
+    Commands/         the menu, the microphone menu, Google Drive's menu, the command line (record,
+                      transcribe, rebuild, list, devices, mic-check, drive), the report at the start,
+                      the view of a recording, the microphone check, and the settings check before each
 tests/ClassScribe.Tests/    NUnit and Moq
 ```
 
@@ -1452,6 +1879,13 @@ make hidden windows of the test's own, and read the test process's own job; the 
 run the window and the recorder in one process over temporary folders, with simulated devices and
 microphones and a stub standing in for ElevenLabs, in person, with the class and the microphone,
 and for the microphone check. A simulated class of twelve minutes with the microphone runs with the
-suite, and one of four hours on request. No test ever starts ClassScribe itself, records, opens a
-device or a microphone, plays a sound or sends anything to ElevenLabs. A test run that hangs is
-stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).
+suite, and one of four hours on request. Google is a small Google in memory (`FakeGoogle`) with a
+browser and a listener the tests play, and with Drive's folders, files and resumable uploads, faults
+included; a few tests use the real listener on `127.0.0.1` with the test as the browser, and the
+store's tests use Windows' real data protection in a temporary folder, never `%APPDATA%\ClassScribe`.
+The recordings the upload and free-space tests use are small files in temporary folders, in the
+course and date layout and the old flat one. No test ever starts ClassScribe itself, records, opens
+a device or a microphone, plays a sound, opens a browser, or sends anything to ElevenLabs or Google,
+and none reads or writes the real `%APPDATA%\ClassScribe`, `%LOCALAPPDATA%\ClassScribe` or
+`%USERPROFILE%\ClassScribe`. The suite holds 3,357 tests and takes about two minutes; a test run that
+hangs is stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).

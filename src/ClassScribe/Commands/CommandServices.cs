@@ -7,9 +7,9 @@ namespace ClassScribe.Commands;
 
 /// <summary>
 /// Registers the console, the desktop, the gate, the commands, the menu, the microphone menu and the microphone check,
-/// the command line, the report at the start and the app that puts them together; and what a run needs to record in
-/// this window or in a recorder: the run itself, its recording loop and checks, its bookkeeping, how it shows its end,
-/// and the recorder's log.
+/// Google Drive's menu and command, the command line, the report at the start and the app that puts them together; and
+/// what a run needs to record in this window or in a recorder: the run itself, its recording loop and checks, its
+/// bookkeeping, how it shows its end, and the recorder's log.
 /// </summary>
 public static class CommandServices
 {
@@ -39,6 +39,12 @@ public static class CommandServices
         services.AddTransient<MicrophoneMenu>();
         services.AddTransient<MicCheckCommand>();
         services.AddTransient<IMicCheckRun>(provider => provider.GetRequiredService<MicCheckCommand>());
+
+        // Google Drive: menu choice 9 and the drive command, each resolved by the runner in a scope of its own; the command
+        // reads Ctrl+C through the signals of its scope.
+        services.AddTransient<DriveMenu>();
+        services.AddTransient<DriveCommand>();
+        services.AddTransient<DriveUploadCommand>();
 
         // Reports nothing until the real report at the start is registered; added only when no report is there yet.
         services.TryAddSingleton<IStartupReport, NoStartupReport>();

@@ -4,6 +4,7 @@ using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
+using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -133,13 +134,15 @@ public class MenuCommandTests
     }
 
     /// <summary>
-    /// Writes a recording into its folder under the recordings root, started at the given time; with
-    /// <paramref name="withTranscript"/>, also a transcript and the answer it was made from, as a transcription that went
-    /// well leaves them.
+    /// Writes a recording into the folder of its name under the recordings root, as recordings were kept before the course
+    /// and date folders, or into <paramref name="folder"/> under the root, such as "Mantiq\2026-10-17", started at the given
+    /// time; with <paramref name="withTranscript"/>, also a transcript and the answer it was made from, as a transcription
+    /// that went well leaves them.
     /// </summary>
-    private RecordingFiles WriteRecording(string name, DateTimeOffset started, bool withTranscript = false, int sampleRate = 16000, int samples = 1600)
+    private RecordingFiles WriteRecording(string name, DateTimeOffset started, bool withTranscript = false, int sampleRate = 16000, int samples = 1600,
+        string? folder = null)
     {
-        var files = RecordingFiles.ForNew(_folder.File(name), name, started);
+        var files = RecordingFiles.ForNew(_folder.File(folder ?? name), name, started);
         Directory.CreateDirectory(files.Folder);
         TestAudio.WriteWav(files.Segment(1), sampleRate, new short[samples]);
         File.SetLastWriteTimeUtc(files.Segment(1), started.UtcDateTime);
@@ -185,6 +188,7 @@ public class MenuCommandTests
             .And.Contain("6  Choose what to record: a device or an app")
             .And.Contain("7  Microphone: none, with the class, or in person")
             .And.Contain("8  Check the microphone: watch what apps do with it (opens nothing)")
+            .And.Contain("9  Google Drive: upload, free room on this laptop, sign in")
             .And.Contain("Recording from: the device the class plays on")
             .And.Contain(_folder.Path));
         Assert.That(Lines(), Has.Member($"Settings: {_settings.File.Path}"));
@@ -545,7 +549,7 @@ public class MenuCommandTests
     [Test]
     public async Task Enter_and_other_keys_do_nothing()
     {
-        _ui.Type('\r', 'x', '9', 'q');
+        _ui.Type('\r', 'x', '0', 'q');
 
         Assert.That(await RunMenuAsync(), Is.EqualTo(0));
         _commands.VerifyNoOtherCalls();
@@ -591,6 +595,32 @@ public class MenuCommandTests
         await RunMenuAsync();
 
         Assert.That(Lines(), Has.Member($"  1  {both.BaseName}  00:00:00  2 parts  class + microphone  no transcript yet"));
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// 3 lists the recordings of both layouts together, those in the course and date folders and those flat in the folder
+    /// of their name, and a second class of the name on the same day is shown with its date folder, "(2)", which tells the
+    /// day's classes apart. The one picked is sent by its first segment, in its own folder.
+    /// </summary>
+    [Test]
+    public async Task Three_lists_both_layouts_and_shows_the_folder_of_a_later_class_of_the_day()
+    {
+        var old = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 15, 23, 0, 2, TimeSpan.Zero));
+        var first = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), folder: @"Mantiq\2026-10-17");
+        var second = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 22, 0, 0, TimeSpan.Zero), folder: @"Mantiq\2026-10-17 (2)");
+        File.WriteAllBytes(_folder.File(@"Mantiq\2026-10-17\Class_1_slides.pdf"), [1]);
+        _ui.Type('3', '1', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(Lines(), Is.SupersetOf(new[]
+        {
+            $"  1  {second.BaseName}  00:00:00  in 2026-10-17 (2)  no transcript yet",
+            $"  2  {first.BaseName}  00:00:00  no transcript yet",
+            $"  3  {old.BaseName}  00:00:00  no transcript yet"
+        }));
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(second.Segment(1))), Times.Once);
         _commands.VerifyNoOtherCalls();
     }
 
@@ -838,6 +868,29 @@ public class MenuCommandTests
         _commands.VerifyNoOtherCalls();
     }
 
+    /// <summary>
+    /// A course's folder typed into choice 4 means its newest class in either layout, here one in a date folder after one
+    /// flat in the course's folder, a folder of slides passed over: when that class has a transcript, 4 asks first, and a
+    /// yes sends the folder as typed. A class's date folder means its own recording.
+    /// </summary>
+    [Test]
+    public async Task Four_takes_a_course_folder_for_its_newest_class_in_either_layout()
+    {
+        var flat = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 10, 14, 0, 0, TimeSpan.Zero));
+        var dated = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), withTranscript: true, folder: @"Mantiq\2026-10-17");
+        WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 18, 14, 0, 0, TimeSpan.Zero), folder: @"Mantiq\Slides");
+        _ui.TypeLine(_folder.File("Mantiq"));
+        _ui.TypeLine(dated.Folder);
+        _ui.Type('4', 'y', '4', 'n', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(Lines().Count(line => line.StartsWith("This recording has a transcript.", StringComparison.Ordinal)), Is.EqualTo(2));
+        _commands.Verify(c => c.TranscribeAsync(FromMenu(_folder.File("Mantiq"))), Times.Once);
+        _commands.VerifyNoOtherCalls();
+        Assert.That(flat.HasTranscript, Is.False);
+    }
+
     /// <summary>For a recording dragged into choice 4 whose paid answer is kept without a transcript, R lays that answer out for free, as in choice 3.</summary>
     [Test]
     public async Task Four_with_R_lays_a_kept_answer_out_for_free()
@@ -1041,6 +1094,31 @@ public class MenuCommandTests
         _commands.Verify(c => c.MicCheckAsync(new MicCheckRequest(StopAfter: null, LogFolder: null)), Times.Once);
         _commands.VerifyNoOtherCalls();
         Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back afterwards");
+    }
+
+    /// <summary>9 hands Google Drive to the runner, which shows its menu in a scope of its own; the menu comes back afterwards.</summary>
+    [Test]
+    public async Task Nine_hands_Google_Drive_to_the_runner()
+    {
+        _ui.Type('9', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.Verify(c => c.DriveMenuAsync(), Times.Once);
+        _commands.VerifyNoOtherCalls();
+        Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back afterwards");
+    }
+
+    /// <summary>9 reads the settings first, as every choice does: with settings that cannot be used, Google Drive is not shown.</summary>
+    [Test]
+    public async Task Nine_waits_for_settings_that_can_be_used()
+    {
+        BreakTheSettings();
+        _ui.Type('9', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.VerifyNoOtherCalls();
     }
 
     /// <summary>
@@ -1269,6 +1347,7 @@ public class CommandRunnerTests
     private WatchedScopes _scopes = null!;
     private ServiceProvider? _container;
     private CommandRunner? _runner;
+    private GoogleWorld _drive = null!;
 
     /// <summary>Creates the folders, the console, the simulated devices, the mocks, the stand-ins and the logs to inspect.</summary>
     [SetUp]
@@ -1286,6 +1365,7 @@ public class CommandRunnerTests
         _checked = [];
         _log = new RecordingLogger<CommandRunner>();
         _transcribeLog = new RecordingLogger<TranscribeCommand>();
+        _drive = new GoogleWorld();
     }
 
     /// <summary>The microphone check as a test plays it: it notes the request it is handed and ends with <see cref="ExitCode"/>.</summary>
@@ -1307,6 +1387,7 @@ public class CommandRunnerTests
     public void TearDown()
     {
         _container?.Dispose();
+        _drive.Dispose();
         _recordings.Dispose();
         _settingsFolder.Dispose();
         _runtime.Dispose();
@@ -1334,6 +1415,8 @@ public class CommandRunnerTests
             services.AddScoped(provider => Noted(provider, CreateTranscribeCommand()));
             services.AddScoped(provider => Noted(provider, CreateMicrophoneMenu()));
             services.AddScoped<IMicCheckRun>(provider => Noted(provider, new FakeMicCheckRun(_checked) { ExitCode = micCheckExitCode }));
+            services.AddScoped(provider => Noted(provider, CreateDriveMenu()));
+            services.AddScoped(provider => Noted(provider, _drive.Command()));
         }
 
         more?.Invoke(services);
@@ -1341,6 +1424,15 @@ public class CommandRunnerTests
         _scopes = new WatchedScopes(_container.GetRequiredService<IServiceScopeFactory>());
         _runner = new CommandRunner(_scopes, _container.GetRequiredService<IServiceProviderIsService>(), _log);
         return _runner;
+    }
+
+    /// <summary>Menu choice 9 over nothing stored, with the manifests and the queue in the test's own ClassScribe folder.</summary>
+    private DriveMenu CreateDriveMenu()
+    {
+        var store = new FakeCredentialStore();
+        var manifests = new UploadManifests(_runtime.Folder, _runtime.Time, NullLogger<UploadManifests>.Instance);
+        var queue = new DriveQueueReport(store, manifests, _runtime.Journal, TestOptions.Create(new DriveOptions()), _runtime.Time);
+        return new DriveMenu(_runner!, store, Folders(), manifests, queue, _ui, _runtime.Time);
     }
 
     /// <summary>Notes that a command was made in the scope of <paramref name="provider"/>, and hands it on.</summary>
@@ -1367,7 +1459,7 @@ public class CommandRunnerTests
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, new KeytermLoader(NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), folders, new ClassMarks(NullLogger<ClassMarks>.Instance), elevenLabs, recording,
             new TranscriptionProgress(), usage, NullLogger<TranscriptionWorkflow>.Instance);
-        return new TranscribeCommand(workflow, usage, folders, new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), recording, elevenLabs,
+        return new TranscribeCommand(workflow, usage, folders, new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), recording, elevenLabs,
             ZonedTimeProvider.EasternSummer, _transcribeLog);
     }
 
@@ -1406,6 +1498,8 @@ public class CommandRunnerTests
     [TestCase("attach")]
     [TestCase("microphone")]
     [TestCase("mic-check")]
+    [TestCase("drive")]
+    [TestCase("drive-status")]
     public async Task Each_command_runs_in_a_scope_of_its_own_made_when_it_starts_and_disposed_when_it_ends(string command)
     {
         var runner = CreateRunner();
@@ -1420,6 +1514,8 @@ public class CommandRunnerTests
             "devices" => runner.DevicesAsync(),
             "microphone" => runner.ChooseMicrophoneAsync(),
             "mic-check" => runner.MicCheckAsync(new MicCheckRequest(null, null)),
+            "drive" => runner.DriveMenuAsync(),
+            "drive-status" => runner.DriveStatusAsync(),
             _ => runner.AttachAsync(inProgress.RunId, alert: false)
         };
 
@@ -1502,6 +1598,8 @@ public class CommandRunnerTests
         Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.AttachAsync(null, alert: false))!.Message, Does.Contain("background"));
         Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.ChooseMicrophoneAsync())!.Message, Does.Contain("microphone"));
         Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.MicCheckAsync(new MicCheckRequest(null, null)))!.Message, Does.Contain("microphone check"));
+        Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.DriveMenuAsync())!.Message, Does.Contain("Google Drive"));
+        Assert.That(Assert.ThrowsAsync<NotSupportedException>(() => runner.DriveStatusAsync())!.Message, Does.Contain("Google Drive"));
         Assert.That(_scopes.Made, Is.Empty);
     }
 
@@ -1543,6 +1641,27 @@ public class CommandRunnerTests
         Assert.That(_log.Problems, Is.EqualTo(Enumerable.Repeat($"{recording.BaseName} {string.Format(reason, recording.Folder)}", 2)));
         Assert.That(_resolvedIn, Is.Empty, "the transcribe command was not made");
         _client.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// A class in its date folder that a recorder transcribes in the background is refused here too when it is named by
+    /// the course's folder, whose newest class it is, or by its date folder.
+    /// </summary>
+    [Test]
+    public async Task Transcribing_refuses_a_class_in_a_date_folder_a_recorder_is_busy_with()
+    {
+        var runner = CreateRunner();
+        var dated = RecordingFiles.ForNew(_recordings.File(@"Kalam\2026-10-15"), "Kalam", TestRuns.Start);
+        Directory.CreateDirectory(dated.Folder);
+        TestAudio.WriteWav(dated.Segment(1), 16000, new short[16000]);
+        _runtime.WriteRun(1, dated, RunState.Transcribing, alive: true);
+
+        var byCourse = await runner.TranscribeAsync(new TranscribeRequest(_recordings.File("Kalam"), FromCommandLine: true));
+        var byDateFolder = await runner.TranscribeAsync(new TranscribeRequest(dated.Folder, FromCommandLine: true));
+
+        Assert.That((byCourse, byDateFolder), Is.EqualTo((1, 1)));
+        Assert.That(_log.Problems, Is.EqualTo(Enumerable.Repeat($"{dated.BaseName} is being transcribed in the background; its transcript will appear in {dated.Folder}", 2)));
+        Assert.That(_resolvedIn, Is.Empty, "the transcribe command was not made");
     }
 
     /// <summary>

@@ -4,6 +4,7 @@ using System.Text.Json;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
+using ClassScribe.Drive;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -35,13 +36,15 @@ public class SettingsReloadTests
 
     private TempFolder _folder = null!;
     private TempFolder _data = null!;
+    private TestRuntime _runtime = null!;
 
-    /// <summary>Creates a folder for appsettings.json, as the app's own folder, and one for recordings.</summary>
+    /// <summary>Creates a folder for appsettings.json, as the app's own folder, one for recordings, and ClassScribe's own folder.</summary>
     [SetUp]
     public void SetUp()
     {
         _folder = new TempFolder();
         _data = new TempFolder();
+        _runtime = new TestRuntime();
     }
 
     /// <summary>Deletes the temporary folders.</summary>
@@ -50,6 +53,7 @@ public class SettingsReloadTests
     {
         _folder.Dispose();
         _data.Dispose();
+        _runtime.Dispose();
     }
 
     /// <summary>The settings file of the app under test.</summary>
@@ -61,12 +65,28 @@ public class SettingsReloadTests
     /// <summary>Settings as JSON, written the way a person would write them, paths included.</summary>
     private static string Json(object settings) => JsonSerializer.Serialize(settings);
 
-    /// <summary>Writes the settings and builds the app over them, as Program does, with the services changed as a test needs.</summary>
+    /// <summary>
+    /// Writes the settings and builds the app over them, as Program does, with the services changed as a test needs (see
+    /// <see cref="Build"/>).
+    /// </summary>
     private IHost BuildApp(string json, Action<IServiceCollection>? services = null)
     {
         WriteSettings(json);
-        return AppHost.Build(_folder.Path, Key, services);
+        return Build(_folder.Path, services);
     }
+
+    /// <summary>
+    /// Builds the app over the settings in <paramref name="contentRoot"/>, as Program does, with the services changed as a
+    /// test needs; its Google sign-in is looked for in a temporary folder, never in the real %APPDATA%\ClassScribe, and its
+    /// run files and queue for Google Drive are in a temporary ClassScribe folder, never the real %LOCALAPPDATA%\ClassScribe.
+    /// </summary>
+    private IHost Build(string contentRoot, Action<IServiceCollection>? services = null) =>
+        AppHost.Build(contentRoot, Key, collection =>
+        {
+            collection.AddSingleton(new RoamingFolder(_data.File("Roaming")));
+            collection.AddSingleton(_runtime.Folder);
+            services?.Invoke(collection);
+        });
 
     /// <summary>The menu over the app's own settings, folders, choice and gate, with a scripted keyboard and mocked commands and desktop.</summary>
     private static MenuCommand Menu(IHost app, FakeConsoleUi ui, Mock<ICommandRunner> commands, Mock<IDesktop> desktop, RunGate? gate = null) =>
@@ -369,7 +389,7 @@ public class SettingsReloadTests
         var runner = app.Services.GetRequiredService<ICommandRunner>();
 
         // Records under the name given, as record-only from the command line does, until the audio is in, then stops,
-        // and returns the recording's files.
+        // and returns the recording's files, which are in the date folder under the folder of the name.
         async Task<string[]> RecordAsync(string name)
         {
             var capture = captures.Dequeue();
@@ -381,7 +401,7 @@ public class SettingsReloadTests
             capture.Deliver(TestAudio.Shorts(1000, -1000));
             lock (signals) signals[^1].RequestStop();
             Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(0));
-            return Directory.GetFiles(Path.Combine(recordings, name), "*.wav");
+            return Directory.GetFiles(Path.Combine(recordings, name), "*.wav", SearchOption.AllDirectories);
         }
 
         Assert.That(gate.TryOpen(GateUse.MenuChoice), Is.True);
@@ -394,7 +414,8 @@ public class SettingsReloadTests
         {
             Assert.That(first, Has.Length.EqualTo(1), "the first run, with the settings as they were");
             Assert.That(second, Has.Length.EqualTo(2), "the session took the edited Recording:MaxSegmentMegabytes");
-            Assert.That(desktop.Invocations.Select(call => $"{call.Method.Name} {Path.GetFileName((string)call.Arguments[0])}").ToArray(), Is.EqualTo(new[] { "OpenFolder Second" }), "the command took the edited Recording:OpenFolderWhenDone");
+            Assert.That(desktop.Invocations.Select(call => $"{call.Method.Name} {Path.GetFileName(Path.GetDirectoryName((string)call.Arguments[0]))}").ToArray(), Is.EqualTo(new[] { "OpenFolder Second" }),
+                "the command took the edited Recording:OpenFolderWhenDone, and opened the date folder of the recording named Second");
             Assert.That(power.Holds.Select(hold => hold.Releases), Is.EqualTo(new[] { 1, 1 }), "each run kept the laptop awake through the stand-in, not through Windows, and let it go");
         }
     }
@@ -407,7 +428,7 @@ public class SettingsReloadTests
     [Test]
     public void No_part_keeps_the_settings_it_read_first_for_the_whole_session()
     {
-        var readOnce = new[] { typeof(RecordingOptions), typeof(ElevenLabsOptions), typeof(TranscriptOptions) }
+        var readOnce = new[] { typeof(RecordingOptions), typeof(ElevenLabsOptions), typeof(TranscriptOptions), typeof(DriveOptions) }
             .Select(section => typeof(IOptions<>).MakeGenericType(section))
             .ToHashSet();
 
@@ -463,23 +484,25 @@ public class SettingsReloadTests
     }
 
     /// <summary>
-    /// The snapshot a separate recorder will get holds the Recording, ElevenLabs, Transcript and Logging sections, with
-    /// an override from an environment variable in place, and never the key: not under ElevenLabs:ApiKey, not as
+    /// The snapshot a separate recorder will get holds the Recording, ElevenLabs, Transcript, Drive and Logging sections,
+    /// with an override from an environment variable in place, and never the key: not under ElevenLabs:ApiKey, not as
     /// ELEVENLABS_API_KEY, which the host maps into the settings like every environment variable, and not inside another
     /// value, such as an override that carries it by mistake, which is left out whole. The variables get back the
     /// values they had, so a stub address set for the whole test run still holds afterwards.
     /// </summary>
     [Test]
-    public void The_snapshot_holds_the_four_sections_and_never_the_key()
+    public void The_snapshot_holds_the_five_sections_and_never_the_key()
     {
         using var keyVariable = new TemporaryVariable(ElevenLabsOptions.ApiKeyVariable, Key);
         using var baseUrlVariable = new TemporaryVariable("ElevenLabs__BaseUrl", "http://localhost:5003/");
+        using var driveVariable = new TemporaryVariable("Drive__ApiBaseUrl", "http://127.0.0.1:5004/");
         using var deviceVariable = new TemporaryVariable("Recording__Device", $"{Key} speakers");
         using var app = BuildApp(Json(new
         {
             Recording = new { FlushSeconds = 6 },
             ElevenLabs = new { ModelId = "scribe_v2" },
             Transcript = new { IncludeTimestamps = false },
+            Drive = new { FolderName = "Classes" },
             Logging = new { LogLevel = new { Default = "Warning" } },
             Other = new { Value = 1 }
         }));
@@ -492,7 +515,9 @@ public class SettingsReloadTests
         Assert.That(snapshot, Does.ContainKey("ElevenLabs:BaseUrl").WithValue("http://localhost:5003/"), "an override from the environment is part of the snapshot");
         Assert.That(snapshot["Transcript:IncludeTimestamps"], Is.EqualTo("false").IgnoreCase);
         Assert.That(snapshot, Does.ContainKey("Logging:LogLevel:Default").WithValue("Warning"));
-        Assert.That(snapshot.Keys, Has.All.Matches<string>(key => new[] { "Recording:", "ElevenLabs:", "Transcript:", "Logging:" }.Any(section => key.StartsWith(section, StringComparison.OrdinalIgnoreCase))));
+        Assert.That(snapshot, Does.ContainKey("Drive:FolderName").WithValue("Classes"));
+        Assert.That(snapshot, Does.ContainKey("Drive:ApiBaseUrl").WithValue("http://127.0.0.1:5004/"), "a stub's address reaches a recorder through the snapshot");
+        Assert.That(snapshot.Keys, Has.All.Matches<string>(key => new[] { "Recording:", "ElevenLabs:", "Transcript:", "Drive:", "Logging:" }.Any(section => key.StartsWith(section, StringComparison.OrdinalIgnoreCase))));
         Assert.That(snapshot.Keys, Has.None.EqualTo(ElevenLabsOptions.ApiKeySetting).IgnoreCase);
         Assert.That(snapshot.Keys, Has.None.EqualTo("Recording:Device").IgnoreCase, "the value that holds the key is left out whole");
         Assert.That(snapshot.Values, Has.None.Matches<string?>(value => value is not null && value.Contains(Key, StringComparison.Ordinal)));
@@ -524,7 +549,7 @@ public class SettingsReloadTests
     [Test]
     public void Without_a_settings_file_the_defaults_apply()
     {
-        using var app = AppHost.Build(_folder.Path, Key);
+        using var app = Build(_folder.Path);
 
         var verdict = app.Services.GetRequiredService<SettingsReloader>().TryReload();
 
@@ -756,7 +781,7 @@ public class SettingsReloadTests
     public async Task The_menu_names_the_settings_file_and_warns_of_a_stale_copy()
     {
         var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", "{}");
-        using var app = AppHost.Build(output, Key);
+        using var app = Build(output);
         var ui = new FakeConsoleUi();
         ui.Type('q');
 
@@ -793,7 +818,7 @@ public class SettingsReloadTests
         var output = DevelopmentLayout(settings, settings);
         var copy = Path.Combine(output, "appsettings.json");
         var project = Path.GetFullPath(Path.Combine(output, "..", "..", "..", "appsettings.json"));
-        using var app = AppHost.Build(output, Key);
+        using var app = Build(output);
         var gateLog = new RecordingLogger<RunGate>();
         var gate = new RunGate(app.Services.GetRequiredService<SettingsReloader>(), app.Services.GetRequiredService<SettingsFile>(), gateLog);
         var ui = new FakeConsoleUi();

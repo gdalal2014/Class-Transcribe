@@ -53,6 +53,37 @@ public interface ICommandRunner
     /// for each change to a log, in this window, until it is stopped there. Opens no microphone. Returns the exit code.
     /// </summary>
     Task<int> MicCheckAsync(MicCheckRequest request);
+
+    /// <summary>
+    /// Menu choice 9: Google Drive, with the sign-in's state and its keys: sign in, sign out, check with Google (see
+    /// <see cref="DriveMenu"/>). Returns the exit code.
+    /// </summary>
+    Task<int> DriveMenuAsync();
+
+    /// <summary>
+    /// Signs in to Google Drive in the browser, with the client in <paramref name="clientFile"/>, the file downloaded from
+    /// Google, or with the client kept from before when it is null. Returns the exit code.
+    /// </summary>
+    Task<int> DriveSignInAsync(string? clientFile);
+
+    /// <summary>Signs out of Google Drive: Google is asked to end ClassScribe's access, and the sign-in is forgotten; the client is kept. Returns the exit code.</summary>
+    Task<int> DriveSignOutAsync();
+
+    /// <summary>Shows the Google Drive sign-in's state: the account, the storage used and ClassScribe's folder. Returns the exit code.</summary>
+    Task<int> DriveStatusAsync();
+
+    /// <summary>
+    /// Uploads to Google Drive what <paramref name="path"/> names, a recording's file or a folder of recordings, then the
+    /// rest of the queue that is due; with no path, every recording waiting in the queue (see <see cref="DriveUploadCommand"/>).
+    /// Returns the exit code.
+    /// </summary>
+    Task<int> DriveUploadAsync(string? path);
+
+    /// <summary>
+    /// Frees room on this laptop: deletes the audio of the recordings <paramref name="path"/> names once each file's copy on
+    /// Google Drive is checked; nothing on Drive is touched (see <see cref="DriveUploadCommand"/>). Returns the exit code.
+    /// </summary>
+    Task<int> DriveFreeSpaceAsync(string path);
 }
 
 /// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>
@@ -74,8 +105,9 @@ public interface IMicCheckRun
 /// Runs each command in a new scope of the service container, made when the command starts and disposed when it ends. A
 /// recording goes to the starter (<see cref="IRecordStarter"/>), which chooses between a recorder in the background and this
 /// window. Showing a run goes to the attach command (<see cref="AttachCommand"/>), which finds the run in the run files and
-/// shows it through the view of runs; list, devices, the microphone menu and the microphone check go to their commands. A
-/// command whose services are not registered in the container it runs over says so, before it makes a scope.
+/// shows it through the view of runs; list, devices, the microphone menu, the microphone check and Google Drive (menu
+/// choice 9 and the drive command) go to their commands. A command whose services are not registered in the container it
+/// runs over says so, before it makes a scope.
 /// </summary>
 public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderIsService registered, ILogger<CommandRunner> logger) : ICommandRunner
 {
@@ -163,6 +195,54 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         Require<IMicCheckRun>("The microphone check is not part of this build yet.");
         await using var scope = scopes.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<IMicCheckRun>().RunAsync(request);
+    }
+
+    /// <summary>Shows menu choice 9, Google Drive (<see cref="DriveMenu"/>), in a scope of its own. Returns the exit code.</summary>
+    public async Task<int> DriveMenuAsync()
+    {
+        Require<DriveMenu>("Google Drive is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<DriveMenu>().RunAsync();
+    }
+
+    /// <summary>Signs in to Google Drive with the drive command (<see cref="DriveCommand"/>), in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> DriveSignInAsync(string? clientFile)
+    {
+        Require<DriveCommand>("Google Drive is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<DriveCommand>().SignInAsync(clientFile);
+    }
+
+    /// <summary>Signs out of Google Drive with the drive command, in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> DriveSignOutAsync()
+    {
+        Require<DriveCommand>("Google Drive is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<DriveCommand>().SignOutAsync();
+    }
+
+    /// <summary>Shows the Google Drive sign-in's state with the drive command, in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> DriveStatusAsync()
+    {
+        Require<DriveCommand>("Google Drive is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<DriveCommand>().StatusAsync();
+    }
+
+    /// <summary>Uploads to Google Drive with the drive upload command (<see cref="DriveUploadCommand"/>), in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> DriveUploadAsync(string? path)
+    {
+        Require<DriveUploadCommand>("Uploading to Google Drive is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<DriveUploadCommand>().UploadAsync(path);
+    }
+
+    /// <summary>Frees room on this laptop with the drive free-space command, in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> DriveFreeSpaceAsync(string path)
+    {
+        Require<DriveUploadCommand>("Freeing room once recordings are on Google Drive is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<DriveUploadCommand>().FreeSpaceAsync(path);
     }
 
     /// <summary>

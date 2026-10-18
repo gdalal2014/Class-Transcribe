@@ -51,11 +51,14 @@ public class ContinueQuestionTests
 
     /// <summary>
     /// Writes a recording of "Kalam" that started at 23:00:02 UTC and stopped at 23:47:02, four minutes before now, holding
-    /// 00:47:10 of audio, with its parts as given: as a crash, a closed window or a restart leaves it.
+    /// 00:47:10 of audio, with its parts as given: as a crash, a closed window or a restart leaves it. It is flat in the
+    /// folder of its name, as recordings were kept before the course and date folders, or in <paramref name="dateFolder"/>
+    /// there, such as 2026-10-15.
     /// </summary>
-    private RecordingFiles WriteStopped(string name = "Kalam", int parts = 1)
+    private RecordingFiles WriteStopped(string name = "Kalam", int parts = 1, string? dateFolder = null)
     {
-        var files = RecordingFiles.ForNew(Path.Combine(_recordings.Path, name), name, TestRuns.Start);
+        var course = Path.Combine(_recordings.Path, name);
+        var files = RecordingFiles.ForNew(dateFolder is null ? course : Path.Combine(course, dateFolder), name, TestRuns.Start);
         Directory.CreateDirectory(files.Folder);
         for (var part = 1; part <= parts; part++)
         {
@@ -99,6 +102,23 @@ public class ContinueQuestionTests
         Assert.That(answer.Hint, Is.EqualTo("Continuing Kalam_2026-10-15_23-00-02Z as its next part (00:47:10 recorded so far)."));
         Assert.That(_ui.Screen, Does.Contain(
             "Kalam_2026-10-15_23-00-02Z stopped 4 minutes ago (00:47:10 recorded, no transcript yet). C continues it as its next part, N starts a new recording, Esc goes back."));
+    }
+
+    /// <summary>
+    /// A recording of the name in its date folder is asked about and continued as one of the old layout is: C gives its
+    /// files in that folder, which the run then writes into; the command line's --continue takes it too.
+    /// </summary>
+    [Test]
+    public async Task A_recording_in_a_date_folder_is_asked_about_and_continued()
+    {
+        var files = WriteStopped(dateFolder: "2026-10-15 (2)");
+        _ui.Type('c');
+
+        var answer = await Question().AskAsync("Kalam", RecordingMode.Class, _recordings.Path);
+        var resolved = Question().Resolve("Kalam", RecordingMode.Class, _recordings.Path, ContinueChoice.Continue);
+
+        Assert.That(answer.Continue, Is.EqualTo(files));
+        Assert.That(resolved.Continue, Is.EqualTo(files));
     }
 
     /// <summary>A recording made in parts says so in the question.</summary>

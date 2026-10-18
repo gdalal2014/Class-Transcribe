@@ -15,8 +15,8 @@ namespace ClassScribe.Commands;
 /// the menu only acts on a key pressed after it is shown. Each choice reads the settings again first, and runs only once
 /// they have passed the check (see <see cref="RunGate"/>); showing the recording in progress never waits for the settings.
 /// The menu reaches every command through the runner (<see cref="ICommandRunner"/>), which runs each in a scope of its
-/// own, the microphone menu of choice 7 and the microphone check of choice 8 among them, and the runs only through the
-/// report, so that it is made before the services of the background recorder are registered.
+/// own, the microphone menu of choice 7, the microphone check of choice 8 and Google Drive's menu of choice 9 among them,
+/// and the runs only through the report, so that it is made before the services of the background recorder are registered.
 /// </summary>
 public sealed class MenuCommand(
     ICommandRunner commands,
@@ -170,6 +170,9 @@ public sealed class MenuCommand(
                 case '8':
                     await commands.MicCheckAsync(new MicCheckRequest(StopAfter: null, LogFolder: null));
                     break;
+                case '9':
+                    await commands.DriveMenuAsync();
+                    break;
             }
         }
         catch (OperationCanceledException)
@@ -222,6 +225,7 @@ public sealed class MenuCommand(
         ui.WriteLine("  6  Choose what to record: a device or an app");
         ui.WriteLine("  7  Microphone: none, with the class, or in person");
         ui.WriteLine("  8  Check the microphone: watch what apps do with it (opens nothing)");
+        ui.WriteLine("  9  Google Drive: upload, free room on this laptop, sign in");
         if (report.RecordingNow() is { Home: RunHome.Separate }) ui.WriteLine($"  {ShowKey}  Show the recording in progress");
         ui.WriteLine("  Q  Quit");
         ui.WriteLine();
@@ -313,7 +317,7 @@ public sealed class MenuCommand(
     private sealed record SourceEntry(string Line, string Name, string Setting, Action Pick);
 
     /// <summary>
-    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 8, or A, which comes back as
+    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 9, or A, which comes back as
     /// <see cref="ShowKey"/>. Returns null for Q, for Ctrl+C, or when nobody can type.
     /// </summary>
     private async Task<char?> ReadChoiceAsync()
@@ -322,7 +326,7 @@ public sealed class MenuCommand(
         {
             var key = await ui.ReadKeyAsync(CancellationToken.None);
             if (key is not { } pressed || IsQuit(pressed)) return null;
-            if (pressed.KeyChar is >= '1' and <= '8') return pressed.KeyChar;
+            if (pressed.KeyChar is >= '1' and <= '9') return pressed.KeyChar;
             if (pressed.Key == ConsoleKey.A && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return ShowKey;
         }
     }
@@ -373,7 +377,9 @@ public sealed class MenuCommand(
 
     /// <summary>
     /// Transcribes a recording picked in choice 3 or given in choice 4 by sending <paramref name="path"/>, which names it,
-    /// with the care such a recording needs. One being recorded now is not sent: what was sent would stop short. One that
+    /// with the care such a recording needs. One being recorded now is not sent: what was sent would stop short. One whose
+    /// audio is on Google Drive alone is not sent either: where the audio is is said, with the free rebuild (see
+    /// <see cref="OfferRebuildOfAudioOnDriveAsync"/>). One that
     /// would be billed again offers the free rebuild first, with R, when there is an answer to rebuild from (see
     /// <see cref="WhyBilledAgain"/>), and the new try with Y; any other key goes back without either. The runner refuses
     /// one that a recorder transcribes in the background.
@@ -383,6 +389,12 @@ public sealed class MenuCommand(
         if (recorded.BeingWritten)
         {
             ui.WriteLine($"{recorded.Files.BaseName} is being recorded now; transcribe it once it has stopped.");
+            return;
+        }
+
+        if (recorded.OnDrive is { } onDrive)
+        {
+            await OfferRebuildOfAudioOnDriveAsync(recorded, onDrive);
             return;
         }
 
@@ -402,6 +414,25 @@ public sealed class MenuCommand(
         }
 
         await commands.TranscribeAsync(new TranscribeRequest(path));
+    }
+
+    /// <summary>
+    /// What choice 3 does with a recording whose audio is on Google Drive alone: it says so, and where, and that the audio
+    /// must be back in its folder before it can be transcribed again; R rebuilds its transcript for free from ElevenLabs'
+    /// saved answer, or from an answer paid for and kept, when there is one. Any other key goes back.
+    /// </summary>
+    private async Task OfferRebuildOfAudioOnDriveAsync(RecordedClass recorded, AudioOnDrive onDrive)
+    {
+        var rebuildFrom = TranscriptCopies.NewestAnswer(recorded.Files) ?? recorded.KeptAnswer;
+        var audio = $"The audio of {recorded.Files.BaseName} is on Google Drive, not on this laptop ({onDrive.Location}). To transcribe it again, download its .wav files from there into {recorded.Files.Folder} first.";
+        if (rebuildFrom is null)
+        {
+            ui.WriteLine(audio);
+            return;
+        }
+
+        ui.WriteLine($"{audio} R rebuilds its transcript from ElevenLabs' saved answer, with the current marks and Transcript settings (free, nothing is uploaded). Any other key goes back.");
+        if ((await ui.ReadKeyAsync(CancellationToken.None))?.Key == ConsoleKey.R) await commands.RebuildAsync(rebuildFrom, open: true);
     }
 
     /// <summary>What choice 3 says about a recording after its notes: RECORDING NOW while it is being recorded, its transcript ready, an answer paid for and kept without one, or none yet.</summary>
@@ -489,13 +520,18 @@ public sealed class MenuCommand(
 
     /// <summary>
     /// The recording <paramref name="path"/> names, as transcribe takes it (see <see cref="TranscribeCommand"/>): for a
-    /// folder, the recording started last in it; for a segment file of a recording with audio on disk, that recording.
+    /// folder, the recording started last in it, one whose audio is on Google Drive alone included, so that what is asked
+    /// about is the recording transcribe would take; for a segment file of a recording with audio on disk, that recording.
     /// Null for any other file, which is sent on its own, and for a folder without a recording, which transcribe reports.
     /// </summary>
-    private static RecordingFiles? RecordingAt(string path)
+    private RecordingFiles? RecordingAt(string path)
     {
         var fullPath = Path.GetFullPath(path);
-        if (Directory.Exists(fullPath)) return ClassFolders.FindNewest(fullPath);
+        if (Directory.Exists(fullPath))
+        {
+            var newest = ClassFolders.FindNewest(fullPath);
+            return folders.NewestWithAudioOnDriveIn(fullPath) is { } onDrive && (newest is null || onDrive.Files.StartedUtc > newest.StartedUtc) ? onDrive.Files : newest;
+        }
 
         return RecordingFiles.TryParse(fullPath) is { } files && files.FindSegments().Count > 0 ? files : null;
     }

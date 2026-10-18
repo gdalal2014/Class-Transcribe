@@ -463,6 +463,156 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--log-folder names a file, not a folder: {file}" }));
     }
 
+    /// <summary>drive signin takes the client file as a full path; without --client it signs in with the client kept.</summary>
+    [Test]
+    public async Task Drive_signin_takes_the_client_file_as_a_full_path()
+    {
+        var client = _folder.File("client_secret_1.json");
+        File.WriteAllText(client, "{}");
+        var relative = Path.GetRelativePath(Environment.CurrentDirectory, client);
+
+        Assert.That(await RunAsync("drive", "signin", "--client", relative), Is.EqualTo(0));
+        Assert.That(await RunAsync("drive", "signin"), Is.EqualTo(0));
+
+        _commands.Verify(c => c.DriveSignInAsync(client), Times.Once);
+        _commands.Verify(c => c.DriveSignInAsync(null), Times.Once);
+    }
+
+    /// <summary>drive signout and drive status run what they name, and the runner's exit code comes back.</summary>
+    [Test]
+    public async Task Drive_signout_and_status_run_what_they_name()
+    {
+        _commands.Setup(c => c.DriveStatusAsync()).ReturnsAsync(1);
+
+        Assert.That(await RunAsync("drive", "signout"), Is.EqualTo(0));
+        Assert.That(await RunAsync("drive", "status"), Is.EqualTo(1));
+
+        _commands.Verify(c => c.DriveSignOutAsync(), Times.Once);
+        _commands.Verify(c => c.DriveStatusAsync(), Times.Once);
+    }
+
+    /// <summary>--client without a file, with a file that is not there, or with a folder, is a mistake, named before anything starts.</summary>
+    [Test]
+    public async Task Drive_signin_client_that_is_not_a_file_is_refused()
+    {
+        var missing = _folder.File("client_secret_missing.json");
+
+        AssertRefused(await RunAsync("drive", "signin", "--client"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--client needs the client file you downloaded from Google after it, such as \"$env:USERPROFILE\\Downloads\\client_secret_....json\"" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("drive", "signin", "--client", missing));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"Nothing found at {missing}" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("drive", "signin", "--client", _folder.Path));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--client names a folder, not the client file: {_folder.Path}" }));
+    }
+
+    /// <summary>
+    /// drive upload with a recording's file or a folder passes it on as a full path; without one it uploads what waits. A
+    /// path that is not there is a mistake, named before anything starts, and the runner's exit code comes back.
+    /// </summary>
+    [Test]
+    public async Task Drive_upload_takes_a_path_or_nothing()
+    {
+        var file = _folder.File("Mantiq_2026-10-17_14-04-42Z.wav");
+        File.WriteAllText(file, "RIFF");
+        _commands.Setup(c => c.DriveUploadAsync(null)).ReturnsAsync(1);
+
+        Assert.That(await RunAsync("drive", "upload", Path.GetRelativePath(Environment.CurrentDirectory, file)), Is.EqualTo(0));
+        Assert.That(await RunAsync("drive", "upload", _folder.Path), Is.EqualTo(0));
+        Assert.That(await RunAsync("Drive", "UPLOAD"), Is.EqualTo(1));
+
+        _commands.Verify(c => c.DriveUploadAsync(file), Times.Once);
+        _commands.Verify(c => c.DriveUploadAsync(_folder.Path), Times.Once);
+        _commands.Verify(c => c.DriveUploadAsync(null), Times.Once);
+
+        CreateLine();
+        var missing = _folder.File("not here");
+        AssertRefused(await RunAsync("drive", "upload", missing));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"Nothing found at {missing}" }));
+    }
+
+    /// <summary>
+    /// drive free-space needs a path and --yes, as nothing is asked; with both, the path goes on as a full path. Without
+    /// --yes, or without a path, it is a mistake that says what to add, and nothing is deleted.
+    /// </summary>
+    [Test]
+    public async Task Drive_free_space_needs_a_path_and_yes()
+    {
+        Assert.That(await RunAsync("drive", "free-space", _folder.Path, "--yes"), Is.EqualTo(0));
+        _commands.Verify(c => c.DriveFreeSpaceAsync(_folder.Path), Times.Once);
+
+        CreateLine();
+        AssertRefused(await RunAsync("drive", "free-space", _folder.Path));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "drive free-space deletes audio from this laptop once Google Drive has a checked copy of it; add --yes to go ahead, such as ClassScribe drive free-space \"D:\\Classes\\Kalam\" --yes" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("drive", "free-space", "--yes"));
+        Assert.That(_line.Mistakes, Has.Some.StartsWith("drive free-space needs a path"));
+
+        CreateLine();
+        AssertRefused(await RunAsync("drive", "free-space", _folder.File("not here"), "--yes"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"Nothing found at {_folder.File("not here")}" }));
+        _commands.Verify(c => c.DriveFreeSpaceAsync(It.IsAny<string>()), Times.Once);
+    }
+
+    /// <summary>drive alone, or with a word it does not know, is a mistake that names what it does.</summary>
+    [Test]
+    public async Task Drive_alone_is_a_mistake_naming_what_it_does()
+    {
+        AssertRefused(await RunAsync("drive"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "drive needs one of signin, signout, status, upload or free-space, such as ClassScribe drive status" }));
+        Assert.That(_line.Output.ToString(), Does.Contain("signin").And.Contain("signout").And.Contain("status"));
+
+        CreateLine();
+        AssertRefused(await RunAsync("drive", "sync"));
+        Assert.That(_line.Mistakes, Has.Some.Contains("sync"));
+    }
+
+    /// <summary>drive and its words are taken in any case.</summary>
+    [Test]
+    public async Task Drive_and_its_words_are_taken_in_any_case()
+    {
+        var client = _folder.File("client_secret_1.json");
+        File.WriteAllText(client, "{}");
+
+        await RunAsync("DRIVE", "SignIn", "--CLIENT", client);
+        await RunAsync("Drive", "STATUS");
+        await RunAsync("drive", "SignOut");
+
+        _commands.Verify(c => c.DriveSignInAsync(client), Times.Once);
+        _commands.Verify(c => c.DriveStatusAsync(), Times.Once);
+        _commands.Verify(c => c.DriveSignOutAsync(), Times.Once);
+    }
+
+    /// <summary>Each drive command has its help, with examples, and exits 0; help before them works too.</summary>
+    [TestCase("drive", "--help")]
+    [TestCase("drive", "signin", "--help")]
+    [TestCase("drive", "signout", "-h")]
+    [TestCase("drive", "status", "/?")]
+    [TestCase("help", "drive", "signin")]
+    public async Task Every_drive_command_has_its_help(params string[] args)
+    {
+        Assert.That(await RunAsync(args), Is.EqualTo(0));
+
+        Assert.That(_line.Output.ToString(), Does.Contain("Usage:").And.Contain("Examples:").And.Contain("ClassScribe drive "));
+        Assert.That(_line.Errors.ToString(), Is.Empty);
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>The help of drive signin says where the client file comes from and that it is needed the first time.</summary>
+    [Test]
+    public async Task The_help_of_drive_signin_says_where_the_client_file_comes_from()
+    {
+        await RunAsync("drive", "signin", "--help");
+
+        var help = Regex.Replace(_line.Output.ToString(), @"\s+", " ");
+        Assert.That(help, Does.Contain("--client").And.Contain("Download JSON").And.Contain("Needed the first time")
+            .And.Contain("ClassScribe drive signin --client \"$env:USERPROFILE\\Downloads\\client_secret_....json\""));
+    }
+
     /// <summary>The hidden attach shows the recording in progress, or, with --alert and a run id, that run in a window the recorder opened.</summary>
     [Test]
     public async Task Attach_shows_the_recording_in_progress()
@@ -921,7 +1071,7 @@ public class CommandLineTreeTests
         Assert.That(await RunAsync(ask), Is.EqualTo(0));
 
         var help = _line.Output.ToString();
-        foreach (var command in new[] { "record", "record-only", "transcribe", "rebuild", "list", "devices", "mic-check" })
+        foreach (var command in new[] { "record", "record-only", "transcribe", "rebuild", "list", "devices", "mic-check", "drive" })
             Assert.That(help, Does.Contain(command));
         Assert.That(help, Does.Not.Contain("attach"), "the hidden command");
         Assert.That(help, Does.Contain("Examples:").And.Contain("ELEVENLABS_API_KEY"));
@@ -948,6 +1098,9 @@ public class CommandLineTreeTests
         Assert.That(_line.KindOf("devices"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("mic-check", "--seconds", "5"), Is.EqualTo(CommandKind.Command), "the log goes under Recording:OutputFolder, so the settings are read first");
         Assert.That(_line.KindOf("record", "Kalam", "--in-person", "--output", Classes), Is.EqualTo(CommandKind.Command));
+        Assert.That(_line.KindOf("drive", "status"), Is.EqualTo(CommandKind.Command), "the Drive settings are read first");
+        Assert.That(_line.KindOf("drive", "signin"), Is.EqualTo(CommandKind.Command));
+        Assert.That(_line.KindOf("drive", "signin", "--help"), Is.EqualTo(CommandKind.Help));
         Assert.That(_line.KindOf(_folder.File("Lecture.mp4")), Is.EqualTo(CommandKind.Command));
     }
 

@@ -76,12 +76,13 @@ public class AppTests
 
     /// <summary>
     /// The arguments a command line printed by <see cref="CommandLine"/> hands the program, as PowerShell splits it: the
-    /// words after the program, each quoted path as one argument without its quotes.
+    /// words after the program, each quoted path as one argument without its quotes, and with the backticks that escape a
+    /// character inside the quotes taken off, as PowerShell takes them off.
     /// </summary>
     private static string[] ArgumentsOf(string printed)
     {
-        var words = Regex.Matches(printed, "\"([^\"]*)\"|(\\S+)")
-            .Select(match => match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value)
+        var words = Regex.Matches(printed, "\"((?:`.|[^\"`])*)\"|(\\S+)")
+            .Select(match => match.Groups[1].Success ? Regex.Replace(match.Groups[1].Value, "`(.)", "$1") : match.Groups[2].Value)
             .ToArray();
         Assert.That(words[..2], Is.EqualTo(new[] { "&", Exe }), "the program, named by its full path");
         return words[2..];
@@ -285,7 +286,8 @@ public class AppTests
 
     /// <summary>
     /// The command lines ClassScribe prints for later run as printed: transcribing a recording, transcribing it again
-    /// with --again, and rebuilding it, each handed over the way PowerShell splits the printed line.
+    /// with --again, and rebuilding it; and uploading to Google Drive a recording whose folder holds a $, a backtick and
+    /// Arabic letters, and what waits; each handed over the way PowerShell splits the printed line.
     /// </summary>
     [Test]
     public async Task The_printed_command_lines_run_as_printed()
@@ -293,14 +295,22 @@ public class AppTests
         const string recording = @"C:\Users\gdala\ClassScribe\Kalam\Kalam_2026-10-14_19-30-00Z.wav";
         const string folder = @"C:\Program Files\ClassScribe\";
         var again = FromCommandLine(recording, again: true);
+        _commands.Setup(c => c.DriveUploadAsync(It.IsAny<string?>())).ReturnsAsync(0);
+        var course = Directory.CreateDirectory(Path.Combine(_folder.Path, "Uṣūl $al-fiqh `أصول`", "2026-10-17")).FullName;
+        var upload = Path.Combine(course, "Uṣūl $al-fiqh `أصول`_2026-10-17_14-04-42Z.wav");
+        File.WriteAllBytes(upload, [1]);
 
         await RunAsync(ArgumentsOf(CommandLine.Transcribe(recording, Exe, folder)));
         await RunAsync(ArgumentsOf(CommandLine.Transcribe(recording, Exe, folder, again: true)));
         await RunAsync(ArgumentsOf(CommandLine.Rebuild(recording, Exe, folder)));
+        await RunAsync(ArgumentsOf(CommandLine.DriveUpload(upload, Exe, folder)));
+        await RunAsync(ArgumentsOf(CommandLine.DriveUpload(null, Exe, folder)));
 
         _commands.Verify(c => c.TranscribeAsync(FromCommandLine(recording, true, false)), Times.Once);
         _commands.Verify(c => c.TranscribeAsync(again), Times.Once);
         _commands.Verify(c => c.RebuildAsync(recording, true), Times.Once);
+        _commands.Verify(c => c.DriveUploadAsync(upload), Times.Once);
+        _commands.Verify(c => c.DriveUploadAsync(null), Times.Once);
         _commands.VerifyNoOtherCalls();
     }
 

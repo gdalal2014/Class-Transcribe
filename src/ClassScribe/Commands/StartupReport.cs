@@ -1,5 +1,6 @@
 using System.Globalization;
 using ClassScribe.Audio;
+using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -18,17 +19,20 @@ namespace ClassScribe.Commands;
 /// showed the run, is shown once, with O to open the transcript. On the command line the report prints the commands that
 /// would do the same, asks nothing, and the command carries on. A recording continued by a later run, transcribed since,
 /// or whose audio is gone has been dealt with: it is marked seen without a word. One on a drive that is not there now, such
-/// as a USB drive unplugged, waits for a start that finds the drive. The menu's header names what runs in the background
-/// (see <see cref="HeaderLines"/>), and the menu shows the recording in progress (see <see cref="RecordingNow"/>).
+/// as a USB drive unplugged, waits for a start that finds the drive. After the runs, once Google Drive is set up, what
+/// waits to go up there is said, with its size and its last try (see <see cref="DriveQueueReport"/>), and U uploads it now;
+/// on the command line, the command that does. The menu's header names what runs in the background, and ends with Google
+/// Drive's line (see <see cref="HeaderLines"/>), and the menu shows the recording in progress (see <see cref="RecordingNow"/>).
 /// </summary>
 /// <remarks>
 /// The report carries out the choice made itself, since the run it is about is known here only: C through
 /// <see cref="ICommandRunner.RecordAsync(RecordRequest, StartOrigin)"/> as a run started from the report, T through
-/// <see cref="ICommandRunner.TranscribeAsync"/>, each once the settings have passed the check, as a menu choice does; O
-/// and F itself. The choice returned only says what was done; the caller does not carry it out again.
+/// <see cref="ICommandRunner.TranscribeAsync"/>, U through <see cref="ICommandRunner.DriveUploadAsync"/>, each once the
+/// settings have passed the check, as a menu choice does; O and F itself. The choice returned only says what was done; the
+/// caller does not carry it out again.
 /// </remarks>
 public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICommandRunner commands, RunGate gate, IConsoleUi ui, IDesktop desktop,
-    IProcessLiveness liveness, IOptionsMonitor<RecordingOptions> recording, TimeProvider time, ILogger<StartupReport> logger) : IStartupReport
+    IProcessLiveness liveness, DriveQueueReport drive, IOptionsMonitor<RecordingOptions> recording, TimeProvider time, ILogger<StartupReport> logger) : IStartupReport
 {
     /// <summary>Where the second offer on a line of offers begins, as in "  C  continue it now as its next part     T  transcribe what was recorded".</summary>
     private const int SecondColumn = 42;
@@ -42,8 +46,9 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
     /// <summary>
     /// Shows the report. Interactive, as at the menu's start, each run is shown in turn with what can be done, and the key
     /// pressed is carried out: C and T run their work and end the report, the other runs waiting for the next start; O, F
-    /// and Enter go on to the next run. Returns the last choice carried out, or null for none. Not interactive, as before a
-    /// command, the runs going on now get a line each, the others are printed with the commands that deal with them,
+    /// and Enter go on to the next run; then what waits to go up to Google Drive, with U to upload it now and Enter to go on.
+    /// Returns the last choice carried out, or null for none. Not interactive, as before a command, the runs going on now get
+    /// a line each, the others are printed with the commands that deal with them, and so is what waits for Google Drive;
     /// nothing is asked, and null is returned. Outcomes nobody saw are shown once in either case.
     /// </summary>
     public async Task<StartupChoice?> ShowAsync(bool interactive)
@@ -75,15 +80,49 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
             if (ended) return choice;
         }
 
-        return made;
+        return await ReportWhatWaitsForDriveAsync(interactive) ?? made;
     }
 
     /// <summary>
     /// The lines for the menu's header about the runs going on now: the recording in the background, since when and for
     /// how long, with A to show it; a recording in another window, which has no recorder to show and ends when that window
-    /// is closed; and each transcription in the background, with how far its upload is.
+    /// is closed; and each transcription in the background, with how far its upload is. Last, once Google Drive is set up,
+    /// its line: what waits to go up, or what goes up now (see <see cref="DriveQueueReport.HeaderLine"/>).
     /// </summary>
-    public IReadOnlyList<string> HeaderLines() => LinesAboutRunsNow(journal.List(), header: true);
+    public IReadOnlyList<string> HeaderLines() => [.. LinesAboutRunsNow(journal.List(), header: true), .. drive.HeaderLine() is { } line ? [line] : Array.Empty<string>()];
+
+    /// <summary>
+    /// What waits to go up to Google Drive, once Drive is set up and anything waits. Interactive, signed in, U uploads it now
+    /// (once the settings pass, as a menu choice), which ends the report, and Enter goes on; not signed in, how to sign in is
+    /// said and nothing is asked. Not interactive, the command that uploads it is printed. Returns the upload chosen, or null.
+    /// </summary>
+    private async Task<StartupChoice?> ReportWhatWaitsForDriveAsync(bool interactive)
+    {
+        if (drive.Waiting() is not { } waiting) return null;
+
+        ui.WriteLine(waiting.Line);
+        var it = waiting.Count == 1 ? "it" : "them";
+        if (!interactive)
+        {
+            ui.WriteLine(waiting.SignedIn
+                ? $"To upload {it}: {CommandLine.DriveUpload(null)}"
+                : $"{GoogleTokens.NotSignedIn} Then, to upload {it}: {CommandLine.DriveUpload(null)}");
+            return null;
+        }
+
+        if (!waiting.SignedIn)
+        {
+            ui.WriteLine($"ClassScribe is not signed in to Google Drive: 9 > S in the menu signs in, then 9 > U uploads {it}.");
+            return null;
+        }
+
+        WriteOffers([("U", $"upload {it} now"), ("Enter", "go on to the menu")]);
+        while (true)
+        {
+            if (await ui.ReadKeyAsync(CancellationToken.None) is not { } key || key.Key is ConsoleKey.Enter or ConsoleKey.Escape || IsCtrlC(key)) return null;
+            if (key.Key == ConsoleKey.U) return (await CarryOutAsync(run: null, StartupAction.Upload, () => commands.DriveUploadAsync(null))).Choice;
+        }
+    }
 
     /// <summary>The recording in the background now, which the menu shows at once; null when there is none. A recording in another window has no recorder to show.</summary>
     public RunRecord? RecordingNow() => journal.List().FirstOrDefault(run => run.IsRecordingNow && run.Record.Home == RunHome.Separate)?.Record;
@@ -283,11 +322,7 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
         offers.Add(("T", run.State == RunState.Transcribing ? "transcribe it" : "transcribe what was recorded"));
         offers.Add(("F", "forget this"));
         offers.Add(("Enter", "go on to the menu"));
-        for (var i = 0; i < offers.Count; i += 2)
-        {
-            var left = $"  {offers[i].Key}  {offers[i].Text}";
-            ui.WriteLine(i + 1 < offers.Count ? $"{left.PadRight(SecondColumn)}{offers[i + 1].Key}  {offers[i + 1].Text}" : left);
-        }
+        WriteOffers(offers);
 
         while (true)
         {
@@ -308,16 +343,27 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
         }
     }
 
+    /// <summary>Writes the offers two to a line, as "  C  continue it now as its next part     T  transcribe what was recorded".</summary>
+    private void WriteOffers(IReadOnlyList<(string Key, string Text)> offers)
+    {
+        for (var i = 0; i < offers.Count; i += 2)
+        {
+            var left = $"  {offers[i].Key}  {offers[i].Text}";
+            ui.WriteLine(i + 1 < offers.Count ? $"{left.PadRight(SecondColumn)}{offers[i + 1].Key}  {offers[i + 1].Text}" : left);
+        }
+    }
+
     /// <summary>
-    /// Carries out C or T for <paramref name="run"/>: once the settings, read again, pass the check, as for a menu choice,
-    /// the run is marked seen and <paramref name="work"/> runs. A failure is reported and the menu comes next, as after a
-    /// menu choice; settings that cannot be used run nothing and leave the run to report again.
+    /// Carries out C or T for <paramref name="run"/>, or U for what waits to go up to Google Drive, with no run: once the
+    /// settings, read again, pass the check, as for a menu choice, the run is marked seen and <paramref name="work"/> runs. A
+    /// failure is reported and the menu comes next, as after a menu choice; settings that cannot be used run nothing and
+    /// leave the run, or what waits, to report again.
     /// </summary>
-    private async Task<(StartupChoice? Choice, bool Ended)> CarryOutAsync(RunRecord run, StartupAction action, Func<Task<int>> work)
+    private async Task<(StartupChoice? Choice, bool Ended)> CarryOutAsync(RunRecord? run, StartupAction action, Func<Task<int>> work)
     {
         if (!gate.TryOpen(GateUse.MenuChoice)) return (null, true);
 
-        journal.MarkSeen(run.RunId);
+        if (run is not null) journal.MarkSeen(run.RunId);
         try
         {
             await work();
@@ -334,7 +380,7 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
             logger.LogError(ex, "Stopped because of an error");
         }
 
-        return (new StartupChoice(run.RunId, action), true);
+        return (new StartupChoice(run?.RunId, action), true);
     }
 
     /// <summary>Prints <paramref name="report"/> with the commands that deal with it, for the command line, which never asks.</summary>

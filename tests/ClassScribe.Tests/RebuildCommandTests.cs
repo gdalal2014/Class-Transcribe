@@ -25,6 +25,7 @@ public class RebuildCommandTests
     private FakeElevenLabsAccount _account = null!;
     private Mock<IDesktop> _desktop = null!;
     private RecordingLogger<RebuildCommand> _log = null!;
+    private FakeDriveAutoUpload _drive = null!;
 
     /// <summary>Creates a temporary recordings folder with a class folder in it, ClassScribe's own folder in another, the mocks and the log to inspect.</summary>
     [SetUp]
@@ -39,6 +40,7 @@ public class RebuildCommandTests
         _account = new FakeElevenLabsAccount();
         _desktop = new Mock<IDesktop>();
         _log = new RecordingLogger<RebuildCommand>();
+        _drive = new FakeDriveAutoUpload();
     }
 
     /// <summary>Checks that nothing was prepared or sent, as no rebuild ever does, then deletes the temporary folders.</summary>
@@ -75,7 +77,7 @@ public class RebuildCommandTests
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new RebuildCommand(workflow, folders, _desktop.Object, recording, _log);
+        return new RebuildCommand(workflow, folders, _desktop.Object, _drive, recording, _log);
     }
 
     /// <summary>Where a transcription's last line says what it cost, a rebuild's says that nothing was sent and nothing charged; the account is never read.</summary>
@@ -95,10 +97,49 @@ public class RebuildCommandTests
         Assert.That(_account.Reads, Is.EqualTo(0));
     }
 
-    /// <summary>Writes a recording's first segment into the class folder, started at <paramref name="started"/>.</summary>
-    private RecordingFiles WriteRecording(DateTimeOffset started)
+    /// <summary>
+    /// After the rebuild, once its lines are said, the recording goes up to Google Drive, last of all: the new transcript is
+    /// all that is new, so it is all that goes up.
+    /// </summary>
+    [Test]
+    public async Task After_a_rebuild_the_recording_goes_up_to_Google_Drive_last()
     {
-        var files = RecordingFiles.ForNew(_class, "Kalam", started);
+        var recording = WriteRecording(new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), "2026-10-14");
+        SaveAnswer(recording, "An answer.");
+        bool? saidBefore = null;
+        _drive.OnUpload = () =>
+        {
+            saidBefore = _log.Messages.Contains(RebuildCommand.NothingCharged) && File.Exists(recording.Transcript(2));
+            return Task.CompletedTask;
+        };
+
+        Assert.That(await CreateCommand().RunAsync(recording.Segment(1), open: false), Is.EqualTo(0));
+
+        Assert.That(_drive.Calls, Is.EqualTo(new[] { $"Upload {recording.BaseName}" }));
+        Assert.That(_drive.Recordings.Single(), Is.EqualTo(recording));
+        Assert.That(saidBefore, Is.True, "the new transcript saved and its lines said before the upload");
+    }
+
+    /// <summary>An answer saved under a name of its own, which is no recording's, is rebuilt beside itself, and nothing goes up to Google Drive.</summary>
+    [Test]
+    public async Task A_rebuild_of_an_answer_of_its_own_sends_nothing_to_Google_Drive()
+    {
+        var answer = _folder.File("downloaded answer.json");
+        File.WriteAllText(answer, JsonSerializer.Serialize(new { text = "An answer." }));
+
+        Assert.That(await CreateCommand().RunAsync(answer, open: false), Is.EqualTo(0));
+
+        Assert.That(_drive.Calls, Is.Empty);
+    }
+
+    /// <summary>
+    /// Writes a recording's first segment into the class folder, as recordings were kept before the course and date
+    /// folders, or into <paramref name="folder"/> under it, such as its date folder 2026-10-14, started at <paramref name="started"/>.
+    /// </summary>
+    private RecordingFiles WriteRecording(DateTimeOffset started, string? folder = null)
+    {
+        var files = RecordingFiles.ForNew(folder is null ? _class : Path.Combine(_class, folder), "Kalam", started);
+        Directory.CreateDirectory(files.Folder);
         TestAudio.WriteWav(files.Segment(1), 16000, new short[1600]);
         return files;
     }
@@ -316,6 +357,68 @@ public class RebuildCommandTests
         Assert.That(_log.Messages, Has.Member($"Transcript saved to {recording.Transcript()}"));
     }
 
+    /// <summary>
+    /// An answer kept in the recordings folder for a recording in a date folder, because that folder would not take it, is
+    /// laid out beside the recording, in its date folder under the folder of its name, as one of the old layout is.
+    /// </summary>
+    [Test]
+    public async Task An_answer_kept_in_the_recordings_folder_is_laid_out_beside_its_recording_in_its_date_folder()
+    {
+        var recording = WriteRecording(new DateTimeOffset(2026, 10, 15, 23, 0, 2, TimeSpan.Zero), "2026-10-15 (2)");
+        WriteRecording(new DateTimeOffset(2026, 10, 15, 14, 0, 0, TimeSpan.Zero), "2026-10-15");
+        File.WriteAllLines(recording.Marks, ["00:00:00.050"]);
+        var kept = _folder.File(Path.GetFileName(recording.UnreadAnswer()));
+        File.WriteAllText(kept, JsonSerializer.Serialize(new { text = "Kept answer." }));
+
+        Assert.That(await CreateCommand().RunAsync(kept, open: false), Is.EqualTo(0));
+
+        Assert.That(File.ReadAllText(recording.Transcript()), Does.Contain("] Mark 1").And.Contain("Kept answer."));
+        Assert.That(Directory.GetFiles(_folder.Path, "*.md"), Is.Empty, "nothing is written beside the kept answer");
+    }
+
+    /// <summary>
+    /// A course's folder is rebuilt from its newest recording with a saved answer among those of its date folders and
+    /// those flat in it, here one in a date folder after one of the old layout; a folder of slides is passed over. The old
+    /// layout's own folder, given by itself, still means its recording.
+    /// </summary>
+    [Test]
+    public async Task A_course_folder_is_rebuilt_from_its_newest_answered_class_in_either_layout()
+    {
+        var flat = WriteRecording(new DateTimeOffset(2026, 10, 7, 19, 30, 0, TimeSpan.Zero));
+        var dated = WriteRecording(new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), "2026-10-14");
+        var slides = WriteRecording(new DateTimeOffset(2026, 10, 16, 19, 30, 0, TimeSpan.Zero), "Slides");
+        SaveAnswer(flat, "The old layout.");
+        SaveAnswer(dated, "A date folder.");
+        SaveAnswer(slides, "Not a class.");
+
+        Assert.That(await CreateCommand().RunAsync(_class, open: false), Is.EqualTo(0));
+
+        Assert.That(File.ReadAllText(dated.Transcript(2)), Does.Contain("A date folder."));
+        Assert.That(File.Exists(slides.Transcript(2)), Is.False, "the folder of slides was passed over");
+        Assert.That(File.Exists(flat.Transcript(2)), Is.False, "the course's folder meant its newest class, not the old one flat in it");
+    }
+
+    /// <summary>
+    /// A class's date folder is rebuilt from its own recording, even when a later class of the course has an answer; given
+    /// the course's folder, a newer class without an answer, in another date folder, is named as passed over.
+    /// </summary>
+    [Test]
+    public async Task A_date_folder_is_rebuilt_from_its_own_recording_and_a_newer_class_without_an_answer_is_named()
+    {
+        var earlier = WriteRecording(new DateTimeOffset(2026, 10, 7, 19, 30, 0, TimeSpan.Zero), "2026-10-07");
+        var later = WriteRecording(new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero), "2026-10-14");
+        var unanswered = WriteRecording(new DateTimeOffset(2026, 10, 15, 19, 30, 0, TimeSpan.Zero), "2026-10-15");
+        SaveAnswer(earlier, "Earlier.");
+        SaveAnswer(later, "Later.");
+
+        Assert.That(await CreateCommand().RunAsync(earlier.Folder, open: false), Is.EqualTo(0));
+        Assert.That(await CreateCommand().RunAsync(_class, open: false), Is.EqualTo(0));
+
+        Assert.That(File.ReadAllText(earlier.Transcript(2)), Does.Contain("Earlier."));
+        Assert.That(File.ReadAllText(later.Transcript(2)), Does.Contain("Later."));
+        Assert.That(_log.Messages, Has.Some.StartsWith($"{unanswered.BaseName} has no saved answer from ElevenLabs yet"));
+    }
+
     /// <summary>An answer kept in the recordings folder whose recording is gone, folder and all, is laid out beside the answer.</summary>
     [Test]
     public async Task An_answer_kept_in_the_recordings_folder_without_its_recording_is_laid_out_beside_it()
@@ -447,7 +550,7 @@ public class RebuildCommandTests
         SaveAnswer(recording, "Through the app.");
         using var settings = new TempFolder();
         File.WriteAllText(settings.File("appsettings.json"), JsonSerializer.Serialize(new { Recording = new { OutputFolder = _folder.Path } }));
-        using var app = AppHost.Build(settings.Path, apiKey: null, services => services.AddSingleton(_runtime.Folder));
+        using var app = AppHost.Build(settings.Path, apiKey: null, services => services.AddSingleton(_runtime.Folder).AddSingleton(new RoamingFolder(settings.File("Roaming"))));
 
         var exitCode = await app.Services.GetRequiredService<App>().RunAsync(["rebuild", _class, "--no-open"]);
 

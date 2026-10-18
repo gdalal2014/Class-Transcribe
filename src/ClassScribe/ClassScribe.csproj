@@ -20,6 +20,8 @@
     <PackageReference Include="NAudio.Core" Version="2.2.1" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="Refit.HttpClientFactory" Version="16.3.0" />
+    <!-- Windows' data protection (DPAPI), which keeps the Google Drive sign-in encrypted for the Windows account. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
     <!-- The command line's parser. ClassScribe keeps its own exit codes and its own Ctrl+C: see CommandLineTree. -->
     <PackageReference Include="System.CommandLine" Version="2.0.13" />
   </ItemGroup>

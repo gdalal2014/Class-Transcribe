@@ -31,6 +31,7 @@ public class TranscribeCommandTests
     private FakeElevenLabsAccount _account = null!;
     private RecordingLogger<UsageReport> _usageLog = null!;
     private RecordingLogger<TranscribeCommand> _log = null!;
+    private FakeDriveAutoUpload _drive = null!;
 
     /// <summary>Creates a temporary folder, the mocks, the fake reader of the account, and the stand-ins for keeping the laptop awake.</summary>
     [SetUp]
@@ -46,6 +47,7 @@ public class TranscribeCommandTests
         _account = new FakeElevenLabsAccount();
         _usageLog = new RecordingLogger<UsageReport>();
         _log = new RecordingLogger<TranscribeCommand>();
+        _drive = new FakeDriveAutoUpload();
     }
 
     /// <summary>Deletes the temporary folder. That fails if a test left a file open, which is the point.</summary>
@@ -81,7 +83,7 @@ public class TranscribeCommandTests
             usage,
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new TranscribeCommand(workflow, usage, folders, _signals, _desktop.Object, _power, _powerSource, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
+        return new TranscribeCommand(workflow, usage, folders, _signals, _desktop.Object, _power, _powerSource, _drive, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
     }
 
     /// <summary>
@@ -129,12 +131,120 @@ public class TranscribeCommandTests
     /// <summary>What the account's report said at Information, which the window shows; its Debug notes are left out.</summary>
     private IReadOnlyList<string> UsageLines() => [.. _usageLog.Entries.Where(entry => entry.Level == LogLevel.Information).Select(entry => entry.Message)];
 
-    /// <summary>Writes a recording's segment files into the temporary folder and returns the recording.</summary>
-    private RecordingFiles WriteRecording(string name, DateTimeOffset started, int segments = 1)
+    /// <summary>
+    /// Once the transcript is saved and opened, and its cost said, the recording goes up to Google Drive, last of all: only
+    /// what is new goes up then, its transcript and answer.
+    /// </summary>
+    [Test]
+    public async Task After_the_transcript_the_recording_goes_up_to_Google_Drive_last()
     {
-        var files = RecordingFiles.ForNew(_folder.Path, name, started);
+        var recording = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), folder: @"Mantiq\2026-10-17");
+        _account.Answer(FakeElevenLabsAccount.Read(0), FakeElevenLabsAccount.Read(500));
+        (bool Saved, bool Opened, int CostLines)? atTheUpload = null;
+        _drive.OnUpload = () =>
+        {
+            atTheUpload = (File.Exists(recording.Transcript()), _desktop.Invocations.Count > 0, UsageLines().Count);
+            return Task.CompletedTask;
+        };
+
+        Assert.That(await CreateCommand(openWhenDone: true).RunAsync(new TranscribeRequest(recording.Segment(1))), Is.EqualTo(0));
+
+        Assert.That(_drive.Calls, Is.EqualTo(new[] { $"Upload {recording.BaseName}" }));
+        Assert.That(_drive.Recordings.Single(), Is.EqualTo(recording));
+        Assert.That(atTheUpload, Is.EqualTo((true, true, 1)), "saved, opened and its cost said before the upload");
+    }
+
+    /// <summary>A file transcribed on its own has its transcript and answer go up, from the folder made for them; the file itself lives elsewhere.</summary>
+    [Test]
+    public async Task A_file_transcribed_on_its_own_has_its_transcript_and_answer_go_up()
+    {
+        var video = _folder.File("Lecture 5.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+
+        Assert.That(await CreateCommand().RunAsync(new TranscribeRequest(video)), Is.EqualTo(0));
+
+        var uploaded = _drive.Recordings.Single();
+        Assert.That(uploaded.Name, Is.EqualTo("Lecture 5"));
+        Assert.That(File.Exists(uploaded.Transcript()) && File.Exists(uploaded.Json()), Is.True);
+        Assert.That(Path.GetDirectoryName(uploaded.Folder), Is.EqualTo(_folder.File(@"Recordings\Lecture 5")));
+    }
+
+    /// <summary>A transcription refused or one that fails sends nothing to Google Drive.</summary>
+    [Test]
+    public async Task A_refused_or_failed_transcription_sends_nothing_to_Google_Drive()
+    {
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        File.WriteAllText(recording.Transcript(), "# Kalam");
+
+        Assert.That(await CreateCommand().RunAsync(new TranscribeRequest(recording.Segment(1), FromCommandLine: true)), Is.EqualTo(1));
+        Assert.That(await CreateCommand(apiKey: "").RunAsync(new TranscribeRequest(recording.Segment(1), Again: true, FromCommandLine: true)), Is.EqualTo(1));
+
+        Assert.That(_drive.Calls, Is.Empty);
+    }
+
+    /// <summary>
+    /// Writes a recording's segment files into the temporary folder, or into <paramref name="folder"/> under it, such as
+    /// "Mantiq\2026-10-17", and returns the recording.
+    /// </summary>
+    private RecordingFiles WriteRecording(string name, DateTimeOffset started, int segments = 1, string? folder = null)
+    {
+        var files = RecordingFiles.ForNew(folder is null ? _folder.Path : _folder.File(folder), name, started);
+        Directory.CreateDirectory(files.Folder);
         for (var i = 1; i <= segments; i++) File.WriteAllBytes(files.Segment(i), [0]);
         return files;
+    }
+
+    /// <summary>
+    /// A course's folder is transcribed from its newest class in either layout, here one in a date folder after one flat in
+    /// the course's folder; a folder of his own there, such as Slides, is passed over even when it holds a newer file named
+    /// as a recording. The course's other recordings without a transcript are named, as a name folder's were.
+    /// </summary>
+    [Test]
+    public async Task A_course_folder_is_transcribed_from_its_newest_class_in_either_layout()
+    {
+        var flat = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 10, 14, 0, 0, TimeSpan.Zero), folder: "Mantiq");
+        var newest = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), segments: 2, folder: @"Mantiq\2026-10-17");
+        WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 18, 14, 0, 0, TimeSpan.Zero), folder: @"Mantiq\Slides");
+        File.WriteAllBytes(_folder.File(@"Mantiq\2026-10-17\Class_1_slides.pdf"), [1]);
+
+        var exitCode = await CreateCommand().RunAsync(new TranscribeRequest(_folder.File("Mantiq"), FromCommandLine: true));
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        _preparer.Verify(p => p.Prepare(new[] { newest.Segment(1), newest.Segment(2) }, newest.Upload, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.That(File.Exists(newest.Transcript()), Is.True, "the transcript goes beside the recording, in its date folder");
+        Assert.That(_log.Messages, Has.Some.StartsWith($"Also in this folder, without a transcript: {flat.BaseName} ("));
+    }
+
+    /// <summary>A class's date folder is transcribed from its own recording, although a later class of the course is in another date folder.</summary>
+    [Test]
+    public async Task A_date_folder_is_transcribed_from_its_own_recording()
+    {
+        var earlier = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 10, 14, 0, 0, TimeSpan.Zero), folder: @"Mantiq\2026-10-10");
+        WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), folder: @"Mantiq\2026-10-17");
+
+        Assert.That(await CreateCommand().RunAsync(new TranscribeRequest(earlier.Folder, FromCommandLine: true)), Is.EqualTo(0));
+
+        _preparer.Verify(p => p.Prepare(new[] { earlier.Segment(1) }, earlier.Upload, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.That(_log.Messages, Has.None.StartsWith("Also in this folder"));
+    }
+
+    /// <summary>
+    /// A course's folder whose newest class, in a date folder, is still being recorded is refused, as a name folder's was:
+    /// nothing is prepared or sent.
+    /// </summary>
+    [Test]
+    public async Task A_course_folder_whose_newest_class_is_being_recorded_is_refused()
+    {
+        WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 10, 14, 0, 0, TimeSpan.Zero), folder: "Mantiq");
+        var recordingNow = WriteRecording("Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), folder: @"Mantiq\2026-10-17 (2)");
+
+        int exitCode;
+        using (HoldForWriting(recordingNow.Segment(1)))
+            exitCode = await CreateCommand().RunAsync(new TranscribeRequest(_folder.File("Mantiq"), FromCommandLine: true));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        _preparer.Verify(Calls.AnyPreparation, Times.Never);
+        Assert.That(_log.Problems, Is.EqualTo(new[] { $"{recordingNow.BaseName} is being recorded now; transcribe it once it has stopped" }));
     }
 
     /// <summary>Gives a recording a transcript and the answer it was made from, as a transcription that went well leaves them.</summary>
@@ -230,23 +340,38 @@ public class TranscribeCommandTests
         _client.Verify(Calls.TranscriptionOf(video), Times.Once);
     }
 
-    /// <summary>When the transcript is ready, it and its folder are opened, as the settings ask.</summary>
+    /// <summary>
+    /// The one date folder in <paramref name="named"/>, the folder named after a file transcribed on its own: the folder of
+    /// the day it was transcribed, found rather than worked out, so that a test run across midnight finds it too.
+    /// </summary>
+    private static string DateFolderIn(string named)
+    {
+        var dated = Directory.GetDirectories(named).Single();
+        Assert.That(ClassFolders.IsDateFolderName(Path.GetFileName(dated)), Is.True, $"{dated} is a date folder");
+        return dated;
+    }
+
+    /// <summary>
+    /// When the transcript is ready, it and its folder are opened, as the settings ask. A file transcribed on its own gets
+    /// a recording's layout: a folder named after it under the recordings folder, and in it the date folder of the day it
+    /// was transcribed.
+    /// </summary>
     [Test]
     public async Task The_transcript_and_its_folder_are_opened_when_ready()
     {
         var video = _folder.File("class.mp4");
         File.WriteAllBytes(video, [1, 2, 3]);
-        var transcriptFolder = Path.Combine(_folder.File("Recordings"), "class");
 
         await CreateCommand(openWhenDone: true).RunAsync(new TranscribeRequest(video));
 
+        var transcriptFolder = DateFolderIn(Path.Combine(_folder.File("Recordings"), "class"));
         _desktop.Verify(d => d.OpenFolder(transcriptFolder), Times.Once);
         _desktop.Verify(d => d.OpenFile(It.Is<string>(p => p.StartsWith(transcriptFolder) && p.EndsWith(".md"))), Times.Once);
     }
 
     /// <summary>
     /// A file that is not a recording's, given with --output, has its transcript in a folder named after it inside the
-    /// folder given, rather than under Recording:OutputFolder.
+    /// folder given, in the date folder of the day, rather than under Recording:OutputFolder.
     /// </summary>
     [Test]
     public async Task A_single_file_goes_into_the_output_folder_given()
@@ -254,10 +379,10 @@ public class TranscribeCommandTests
         var video = _folder.File("class.mp4");
         File.WriteAllBytes(video, [1, 2, 3]);
         var elsewhere = _folder.File("Elsewhere");
-        var transcriptFolder = Path.Combine(elsewhere, "class");
 
         Assert.That(await CreateCommand(openWhenDone: true).RunAsync(new TranscribeRequest(video, elsewhere, FromCommandLine: true)), Is.EqualTo(0));
 
+        var transcriptFolder = DateFolderIn(Path.Combine(elsewhere, "class"));
         _client.Verify(Calls.TranscriptionOf(video), Times.Once);
         _desktop.Verify(d => d.OpenFolder(transcriptFolder), Times.Once);
         Assert.That(Directory.GetFiles(transcriptFolder, "*.md"), Has.Length.EqualTo(1));

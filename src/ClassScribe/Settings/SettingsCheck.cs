@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Drive;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
@@ -122,8 +123,50 @@ public sealed class SettingsCheck
         if (gap < 0)
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"{Name(transcriptSection, nameof(TranscriptOptions.ShowGapsLongerThanSeconds))} is {gap}; it must be 0 or more, such as 60. 0 turns the headings for silence left out off."));
 
+        CheckDrive(configuration, problems);
         CheckLogging(configuration, problems);
         return problems;
+    }
+
+    /// <summary>
+    /// The Drive section: the folder's name must be a plain name, which Drive takes as it is; a piece is from 1 to 256 MiB
+    /// (Drive:Upload, an enum, is checked by its names when the section is bound); and Google's addresses must be https, or
+    /// http only to this computer, for a local stub in a dry run: the client secret and the tokens go there, so an address
+    /// elsewhere without encryption is refused.
+    /// </summary>
+    private static void CheckDrive(IConfiguration configuration, List<string> problems)
+    {
+        const string driveSection = DriveOptions.SectionName;
+        var drive = Bind<DriveOptions>(configuration, driveSection, problems);
+
+        var folderName = Name(driveSection, nameof(DriveOptions.FolderName));
+        if (string.IsNullOrWhiteSpace(drive.FolderName))
+            problems.Add($"{folderName} is empty; it names the folder in My Drive that holds the classes, such as ClassScribe.");
+        else if (drive.FolderName.Trim().Length > DriveOptions.LongestFolderName)
+            problems.Add(string.Create(CultureInfo.InvariantCulture, $"{folderName} is {drive.FolderName.Trim().Length} characters long; it may be at most {DriveOptions.LongestFolderName}, such as ClassScribe."));
+        else if (drive.FolderName.Any(char.IsControl))
+            problems.Add($"{folderName} holds a tab, a line break or another control character; write a plain name, such as ClassScribe.");
+
+        // A piece below a MiB costs a request for every MiB of a class; one above 256 MiB holds too much to send again after
+        // a dropped connection. Whole MiB are always a multiple of the 256 KiB Drive asks for.
+        CheckRange(problems, Name(driveSection, nameof(DriveOptions.ChunkMegabytes)), drive.ChunkMegabytes, DriveOptions.SmallestChunkMegabytes, DriveOptions.LargestChunkMegabytes);
+
+        var defaults = new DriveOptions();
+        CheckGoogleAddress(problems, Name(driveSection, nameof(DriveOptions.ApiBaseUrl)), drive.ApiBaseUrl, defaults.ApiBaseUrl);
+        CheckGoogleAddress(problems, Name(driveSection, nameof(DriveOptions.OAuthBaseUrl)), drive.OAuthBaseUrl, defaults.OAuthBaseUrl);
+    }
+
+    /// <summary>
+    /// Adds a problem when <paramref name="value"/> is not an https address, nor an http one to 127.0.0.1 or localhost, with
+    /// Google's own address, <paramref name="example"/>, as the example.
+    /// </summary>
+    private static void CheckGoogleAddress(List<string> problems, string name, string? value, string example)
+    {
+        var usable = Uri.TryCreate(value, UriKind.Absolute, out var address)
+            && (address.Scheme == Uri.UriSchemeHttps
+                || (address.Scheme == Uri.UriSchemeHttp && (address.IsLoopback || address.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase))));
+        if (!usable)
+            problems.Add($"{name} is \"{value}\"; it must be an https address, such as {example}, or http://127.0.0.1:<port>/ for a local stub.");
     }
 
     /// <summary>

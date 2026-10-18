@@ -1,6 +1,7 @@
 using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Desktop;
+using ClassScribe.Drive;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -11,8 +12,9 @@ namespace ClassScribe.Commands;
 
 /// <summary>What to transcribe, and how.</summary>
 /// <param name="Path">
-/// A recording's folder (its newest recording is meant), any file of a recording that still has its audio (a segment, its
-/// transcript, its answer, its marks, its log or its upload copy), or any other audio or video file.
+/// A folder of recordings, a course's or a class's date folder (its newest recording is meant, among those in it and in its
+/// date folders), any file of a recording that still has its audio (a segment, its transcript, its answer, its marks, its
+/// log or its upload copy), or any other audio or video file.
 /// </param>
 /// <param name="OutputRoot">
 /// The folder given with --output, as a full path: the transcript of a file that is not a recording's goes into a folder
@@ -35,8 +37,8 @@ public sealed record TranscribeRequest(string Path, string? OutputRoot = null, b
 /// Transcribes audio that already exists: a recording, named by its folder or by one of its files, or any other audio or
 /// video file. A recording still being recorded is refused, and so, on the command line without --again, is one
 /// that would be billed a second time. Given a folder, it names the folder's other recordings that have no transcript.
-/// The laptop is kept awake while the audio is prepared and uploaded and the answer awaited. The settings are those of
-/// the run's own scope.
+/// The laptop is kept awake while the audio is prepared and uploaded and the answer awaited. Once the transcript is saved,
+/// its new files go up to Google Drive, once Drive is set up. The settings are those of the run's own scope.
 /// </summary>
 public sealed class TranscribeCommand(
     TranscriptionWorkflow workflow,
@@ -46,13 +48,14 @@ public sealed class TranscribeCommand(
     IDesktop desktop,
     IPowerRequests power,
     IPowerSource powerSource,
+    IDriveAutoUpload drive,
     IOptionsSnapshot<RecordingOptions> recording,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TimeProvider time,
     ILogger<TranscribeCommand> logger)
 {
     /// <summary>
-    /// Transcribes what the request's path names: a folder means the recording started last in it, any file of a
+    /// Transcribes what the request's path names: a folder means the recording started last in it or in its date folders, any file of a
     /// recording that still has its audio means that whole recording, and any other file is sent on its own, its
     /// transcript going under the request's output folder when it gives one. Returns the process exit code.
     /// </summary>
@@ -67,9 +70,18 @@ public sealed class TranscribeCommand(
         if (File.Exists(fullPath))
         {
             // A recording with audio of either track: the class's .wav files, or your microphone's .mic.wav files alone when the class could not be recorded.
-            return RecordingFiles.TryParse(fullPath) is { } recorded && (recorded.FindSegments().Count > 0 || recorded.FindSegments(Track.Microphone).Count > 0)
-                ? await TranscribeRecordingAsync(recorded, request)
-                : await TranscribeFileAsync(fullPath, request);
+            var recorded = RecordingFiles.TryParse(fullPath);
+            if (recorded is not null && (recorded.FindSegments().Count > 0 || recorded.FindSegments(Track.Microphone).Count > 0))
+                return await TranscribeRecordingAsync(recorded, request);
+
+            // A file of a recording whose audio is on Google Drive alone, such as its transcript, is no audio to send.
+            if (recorded is not null && folders.AudioOnDriveOf(recorded) is { } onDrive)
+            {
+                SayAudioIsOnDrive(recorded, onDrive);
+                return 1;
+            }
+
+            return await TranscribeFileAsync(fullPath, request);
         }
 
         logger.LogError("Nothing found at {Path}", fullPath);
@@ -77,13 +89,22 @@ public sealed class TranscribeCommand(
     }
 
     /// <summary>
-    /// Transcribes the recording started last in <paramref name="folder"/>. The folder's other recordings without a
-    /// transcript are named before anything is sent and again once the transcript is saved, so that none is missed:
-    /// a class split by a crash, for one, is two recordings.
+    /// Transcribes the recording started last in <paramref name="folder"/> and its date folders (see
+    /// <see cref="ClassFolders.FindNewest"/>): for a course's folder the newest class in either layout, for a date folder
+    /// its own. When the newest is one whose audio is on Google Drive alone, that is said, rather than an older one sent in
+    /// its place. The folder's other recordings without a transcript are named before anything is sent and again once the
+    /// transcript is saved, so that none is missed: a class split by a crash, for one, is two recordings.
     /// </summary>
     private async Task<int> TranscribeFolderAsync(string folder, TranscribeRequest request)
     {
-        if (ClassFolders.FindNewest(folder) is not { } newest)
+        var newest = ClassFolders.FindNewest(folder);
+        if (folders.NewestWithAudioOnDriveIn(folder) is { } onDrive && (newest is null || onDrive.Files.StartedUtc > newest.StartedUtc))
+        {
+            SayAudioIsOnDrive(onDrive.Files, onDrive.Audio);
+            return 1;
+        }
+
+        if (newest is null)
         {
             logger.LogError("There is no ClassScribe recording in {Folder}", folder);
             return 1;
@@ -156,6 +177,13 @@ public sealed class TranscribeCommand(
             return true;
         }
 
+        // What is left on this laptop would be sent as if it were the whole class, and billed.
+        if (folders.AudioOnDriveOf(files) is { } onDrive)
+        {
+            SayAudioIsOnDrive(files, onDrive);
+            return true;
+        }
+
         if (!request.FromCommandLine || request.Again) return false;
 
         var firstSegment = FirstSegment(files);
@@ -181,6 +209,18 @@ public sealed class TranscribeCommand(
         return true;
     }
 
+    /// <summary>
+    /// Says that the audio of <paramref name="files"/>, all of it or part of it, is on Google Drive alone, so it cannot be
+    /// transcribed again until it is back in its folder, and gives the free rebuild from the saved answer when there is one.
+    /// </summary>
+    private void SayAudioIsOnDrive(RecordingFiles files, AudioOnDrive onDrive)
+    {
+        logger.LogError("{Which} of {Recording} is on Google Drive, not on this laptop: {Location}{Link}. To transcribe it again, download its .wav files from there into {Folder} first",
+            onDrive.AllOfIt ? "The audio" : "Part of the audio", files.BaseName, onDrive.Location, onDrive.Link is { } link ? $" ({link})" : "", files.Folder);
+        if (TranscriptCopies.NewestAnswer(files) is { } answer)
+            logger.LogInformation("To lay its transcript out again for free, from ElevenLabs' saved answer, run: {Command}", CommandLine.Rebuild(answer));
+    }
+
     /// <summary>True when there is an API key; otherwise it says where the key belongs.</summary>
     private bool HasKey()
     {
@@ -191,14 +231,17 @@ public sealed class TranscribeCommand(
     }
 
     /// <summary>
-    /// Says where the transcript was saved, opens it as the settings ask, unless the request says to open nothing, and
-    /// then, as the last step, says what the transcript cost the account (see <see cref="UsageReport"/>).
+    /// Says where the transcript was saved, opens it as the settings ask, unless the request says to open nothing, then says
+    /// what the transcript cost the account (see <see cref="UsageReport"/>), and last of all, once Drive is set up, uploads
+    /// the recording the transcript belongs to, a file's own folder included, to Google Drive: only its new files go up then
+    /// (see <see cref="IDriveAutoUpload"/>), and nothing of it changes the exit code.
     /// </summary>
     private async Task DoneAsync(TranscriptFiles saved, TranscribeRequest request)
     {
         logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
         if (request.Open) desktop.ShowTranscript(recording.Value, saved);
         await usage.ReportAsync(signals.Cancellation);
+        if (RecordingFiles.TryParse(saved.TranscriptPath) is { } transcribed) await drive.UploadAsync(transcribed);
     }
 
     /// <summary>

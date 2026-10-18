@@ -9,14 +9,24 @@ for a class in a room. The recording runs in a separate recorder process
 (`ClassScribe.exe --recorder <run id>`), which the window shows through a named pipe, so closing
 the window does not end a class. When stopped, it sends the recording to ElevenLabs Scribe v2 with
 a glossary of Arabic terms and saves a Markdown transcript and ElevenLabs' JSON answer beside the
-recording. `README.md` is the user guide. The full background, design decisions and history are in
-`docs/HANDOFF.md` (kept out of git); read it before larger changes. It has not been brought up to
-date with the review fix round, with increment 1 (settings read before each run, rebuild and the
-transcribe guards, the growing upload limit, the arrival watch, keep-awake, the device check's COM
-fix), with increment 2 (the process split, the command line, the alerts, continue and the report at
-the start), with increment 3 (the microphone, the QPC timeline, the microphone check) or with the
-cost line and the Bluetooth warning yet, section 6.4 above all, so where it disagrees with the code
-or with this file, the code wins.
+recording, in a course > date folder (`<root>\Mantiq\2026-10-17\Mantiq_2026-10-17_14-04-42Z.*`;
+the old flat `<root>\<name>\` folders are still read). It signs in to the user's own Google Drive
+(OAuth for a desktop app, `drive.file` only), uploads each class there by itself once its transcript
+is saved (record-only: once its files are closed), from the recorder or the window that ran it, into
+a tree that mirrors the laptop's (`My Drive > ClassScribe > Mantiq > 2026-10-17`); what could not go
+up waits in a queue for the next class or `drive upload` / menu choice 9 > U; each file is checked
+against Drive's MD5; and it frees room on the laptop by deleting audio Drive has (`drive free-space`,
+9 > L), never touching Drive. `README.md` is the user guide. The full background, design decisions
+and history are in `docs/HANDOFF.md` (kept out of git); read it before larger changes. It has not
+been brought up to date with the review fix round, with increment 1 (settings read before each run,
+rebuild and the transcribe guards, the growing upload limit, the arrival watch, keep-awake, the
+device check's COM fix), with increment 2 (the process split, the command line, the alerts, continue
+and the report at the start), with increment 3 (the microphone, the QPC timeline, the microphone
+check), with the cost line and the Bluetooth warning, with the course and date folders, or with
+Google Drive (sign-in, uploads, the queue, free space) yet, section 6.4 above all, so where it
+disagrees with the code or with this file, the code wins. Google Drive's design is `drive.md`
+(Claude's design notes of 17 October 2026, outside the repo); its section 2.4 tree
+(`ClassScribe > <recording name>`) was replaced by the course > date mirror above.
 
 ## Ground rules
 
@@ -34,6 +44,33 @@ or with this file, the code wins.
 - A real transcription request spends the user's ElevenLabs credits and sends audio to
   ElevenLabs, so ask before making one. Tests use `StubHttpHandler`; manual runs can point
   `ElevenLabs__BaseUrl` at a local stub.
+- Google Drive credentials: the Google client (id and secret) is imported from the client file
+  Google offers (Download JSON) and kept, with the refresh token, only in
+  `%APPDATA%\ClassScribe\google-drive.dat`, DPAPI-protected for the Windows account
+  (`DpapiGoogleCredentialStore`). Never print, log, commit or put in `appsettings.json`, a run or
+  request file, a test or the recording's `.log`: the client secret, a refresh or access token, an
+  authorization code, the PKCE verifier, the state, or an upload session's address (its
+  `upload_id`; it is kept only in the recording's manifest under `%LOCALAPPDATA%\ClassScribe\drive`
+  while that upload is unfinished, and `UploadSession`/`UploadAddress` print without it). The
+  authorization address goes to the window only. Status shows only the end of the client id
+  (`GoogleClient.ShortId`). `client_secret*.json` is in `.gitignore`. A real sign-in, a real upload
+  (it sends the class to Google) and any real request to Google are the user's to make: never send
+  anything to Google from a test or a manual run without asking; tests use `FakeGoogle`, and
+  `Drive__ApiBaseUrl` and `Drive__OAuthBaseUrl` can point a dry run at a local stub. ClassScribe only
+  creates on Drive: it never deletes, trashes, shares or overwrites anything there, with one
+  exception Gulzar allowed: a new revision of its own copy of a text file that has grown (a log, the
+  marks, an answer laid out anew; `RecordingUpload` sends a revision only when the text file is
+  larger than Drive's copy, and to its copy that is still there outside the trash, or to repair its own
+  copy whose MD5 check failed). Deleting local files,
+  by `drive free-space` or by hand, never touches Drive. A test run turns on the AppContext switches
+  `RoamingFolder.RefuseTheRealFolderSwitch` and `RuntimeFolder.RefuseTheRealFolderSwitch` (`TestGuards`,
+  the assembly's `[SetUpFixture]`), so a test that asks for the real `%APPDATA%\ClassScribe` or
+  `%LOCALAPPDATA%\ClassScribe` fails at once: with Gulzar signed in, a class recorded through the real
+  app would otherwise go up to his own Drive after it ends, and the real run files and Drive queue are
+  his. Every test that builds the app or the recorder's host registers `new RoamingFolder(<temporary
+  folder>)` or a `FakeCredentialStore`, and a `TestRuntime`'s `RuntimeFolder` (`RecorderHost.Folder` is
+  made only when first asked for, so giving one is enough; `RuntimeFolder.RealRoot()` works out the
+  real path, without the switch, for the one test of where it is).
 - Do not turn on trimming or Native AOT: NAudio reaches Windows audio through COM interop.
 - No test opens a capture stream on any microphone, and nothing plays a sound: the normal tests use
   the fakes, and the only tests that open a real device (listening only, the two `AudioDevice` tests
@@ -44,9 +81,10 @@ or with this file, the code wins.
   `devices` command, the microphone check and the watch on the class app all rest on it.
 - Tests never read or write the real `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` or
   `%USERPROFILE%\ClassScribe`: temporary folders only (`TestRuntime`, `TempFolder`). The real
-  `%LOCALAPPDATA%\ClassScribe` holds the run files and logs of real classes now, so list its files
-  (names, sizes and times) before and after a full run and compare the lists, rather than expecting
-  it empty; a test that wrote there is a bug.
+  `%LOCALAPPDATA%\ClassScribe` holds the run files and logs of real classes now, and
+  `%USERPROFILE%\ClassScribe` Gulzar's real class with his PDFs and notes beside it, so list both
+  folders' files (names, sizes and times) before and after a full run and compare the lists, rather
+  than expecting them empty; a test that wrote there is a bug.
 
 ## Conventions
 
@@ -55,10 +93,17 @@ or with this file, the code wins.
   well, async/await, the built-in DI container.
 - HTTP APIs are called through Refit interfaces registered with `AddRefitGeneratedClient` (Refit's
   source-generated client, given the `ElevenLabsJson` System.Text.Json context), not requests built
-  by hand with `HttpClient`.
+  by hand with `HttpClient`. Google's are `IGoogleOAuthApi` (`GoogleOAuthJson`, snake_case: token and
+  revoke, URL-encoded forms) and `IDriveApi` (`DriveJson`, camelCase web defaults), registered in
+  `Drive/DriveServices.cs` with the base address from `Drive:OAuthBaseUrl` / `Drive:ApiBaseUrl` read
+  when the client is made, `HttpClient.Timeout` off (each call has 60 s of its own), no redirects,
+  the keep-alive connect callback, and `RemoveAllLoggers()` so Microsoft.Extensions.Http never logs
+  their requests. Every call returns `HttpResponseMessage`; the bearer is passed per call as
+  `[Header("Authorization")]` ("Bearer " + token, as the ElevenLabs key is), so `DriveClient` can
+  renew a refused token (401) once and repeat the call.
 - No `ArgumentNullException` guards on DI-injected parameters.
 - Registration: each area registers its services in its own `<Area>Services.cs` (`SettingsServices`,
-  `StorageServices`, `AudioServices`, `TranscriptionServices`, `DesktopServices`, `CommandServices`,
+  `StorageServices`, `AudioServices`, `TranscriptionServices`, `DriveServices`, `DesktopServices`, `CommandServices`,
   and last `Commands/WindowServices.cs`, the window's side of a run in the background, which
   replaces the stand-in `NoStartupReport`), called from `ServiceCollectionExtensions.AddClassScribe`;
   `AppHost` adds the settings reload (`SettingsServices.AddSettingsReload`), since it builds the
@@ -103,7 +148,11 @@ or with this file, the code wins.
   private or internal members, so check those yourself; a local function cannot take a summary
   (CS1587), so give it a `//` comment.
 - Errors: log at each layer with the existing logger; rethrow with `throw;` (never `throw ex;`);
-  never swallow exceptions. A deliberate exception, a catch that does not rethrow, carries a
+  never swallow exceptions. Google Drive's parts throw `GoogleDriveException` (a `DriveProblem` and a
+  message in plain words that says what to do, never a secret) and log the details at Debug; the
+  command or pass that catches it (`DriveCommand`, `DriveUploadPass`, `DriveUploadCommand`) logs the message once, so the window never shows the
+  same failure twice. Nothing of Drive ever reaches a run: `DriveAutoUpload` catches whatever its pass
+  throws, a cancel included, and its queue write at a run's start. A deliberate exception, a catch that does not rethrow, carries a
   comment that starts `// Deliberately not rethrown:` and gives the reason, so
   `grep -rn "Deliberately not rethrown" src` lists them. A few older ones give their reason in other
   words or in the method's summary: the Ctrl+C catch in `MenuCommand.RunChoiceAsync`,
@@ -141,7 +190,9 @@ or with this file, the code wins.
   setters are declared only to keep that order.
 - Time every interval on the steady clock (`TimeProvider.GetTimestamp` and `GetElapsedTime`), never
   the time of day, so a change of the Windows clock neither stretches nor shortens it. In tests,
-  `ManualTimeProvider.Advance` moves both clocks and `StepWallClock` only the time of day.
+  `ManualTimeProvider.Advance` moves both clocks and `StepWallClock` only the time of day; a test that
+  checks that nothing happened yet reads `UntilNextTimer` (the limit still to come) or waits for
+  `TimersMade` to grow (the code's next wait), never a fixed delay.
 - The QPC timeline (`Audio/Timeline`, design section 3): a packet carries the performance-counter
   stamp of its first frame in 100-ns units (`AudioDataEventArgs.Qpc100ns`, null when Windows flags
   `TimestampError`, which places it by its arrival). `MediaTime` converts without overflow,
@@ -175,8 +226,38 @@ or with this file, the code wins.
   the files stay under a megabyte. Every test that builds the app with `AppHost.Build` and runs a
   command or the menu must register a `TestRuntime`'s `RuntimeFolder`
   (`AddSingleton(runtime.Folder)`): the start-up report, the runner and the starter read and mark
-  the run files, and the real `%LOCALAPPDATA%\ClassScribe` may hold a class in progress. The
-  recorder's seams for tests are `RecorderHost { Folder, Time, ConfigureServices }` and
+  the run files, and the real `%LOCALAPPDATA%\ClassScribe` may hold a class in progress. One that
+  reaches Google Drive also registers a `RoamingFolder` in a temporary folder
+  (`AddSingleton(new RoamingFolder(temp))`), or replaces `IGoogleCredentialStore`, and puts
+  `FakeGoogle` in as every HTTP client's primary handler (`ConfigureAll<HttpClientFactoryOptions>`),
+  with `FakeBrowser` and `FakeLoopbackReceiver` in place of `IBrowser` and `ILoopbackReceiver`, so
+  no browser opens and nothing reaches Google. The Drive fakes are in `TestDoubles.Drive.cs`:
+  `FakeGoogle` (an in-memory Google with state: the token endpoint with the S256 check, refresh,
+  revoke, `invalid_grant`, `invalid_client`; about; folders with app properties and the root query;
+  faults with `Fail`, `Unreachable` and `Hold`; every secret it saw in `Secrets`, upload ids
+  included; and for the uploads files with content and MD5 (`AddFile`, `Md5Override`,
+  `WrongMd5For`), resumable sessions that keep the bytes and answer 308 with `Range`, and 400 for a
+  piece that is not the last and not a multiple of 256 KiB, as Drive refuses it (`PieceMultiple`)
+  (`Sessions`, `SessionHost` for an address elsewhere), the folder searches by name and by parent,
+  and the faults `FailWhen`, `CommitOnlyNext`, `DropNextAfter` and `ExpireSessions`; `Destructive`
+  lists any request that could change or remove something on Drive, which must stay empty), `FakeBrowser`
+  (`BrowserPlay`: Allow, Deny, WrongStateFirst, FaviconFirst, Nothing, CannotOpen),
+  `FakeLoopbackReceiver`, `LocalHttpBrowser` (a real GET to the real listener on 127.0.0.1),
+  `FakeCredentialStore`, `CapturingLoggerProvider` and `GoogleWorld`, which puts them together with
+  the Refit clients, a `ManualTimeProvider` (read by `SignIn()` and `Command()` through
+  `ZonedClock.Eastern`, so a date they show is the same in any time zone) and a `TestRuntime`, and for the uploads a recordings
+  folder in a temporary folder (`WriteRecording`, `WriteAudio` at 8 kHz so a file under a megabyte
+  takes several pieces), the manifests, a retry without jitter, the resumable upload in pieces of
+  256 KiB (`GoogleWorld.PieceSize`, set through `ResumableUpload.PieceSize`), the pass, the freer,
+  the command and `ClassFolders` with `DriveCopies`, and for the uploads after a class `AutoUpload`,
+  `QueueReport` (local times in US Eastern time) and `RecorderLog` (added to `Logs`, whose
+  `TestLoggerFactory.AddProvider` hands every line on, and with a recording's log named in it, it plays
+  a process that still writes that log, as a recorder after its class). `FakeDriveAutoUpload` plays
+  Drive's part in a run (`Calls`: "Queue", "Ended", "AfterRun", "Upload"; `OnQueue`, `OnUpload`) for
+  the commands built by hand, and `GoogleOrElse` routes an app's every HTTP client to `FakeGoogle` for
+  googleapis.com and to another handler, such as the ElevenLabs stub, for the rest (`EndToEndTests`).
+  `RecorderHostDriveTests.cs` is a part of `RecorderHostTests` (partial) that signs the real recorder
+  host in to `FakeGoogle` through `SignedInToDrive`. The recorder's seams for tests are `RecorderHost { Folder, Time, ConfigureServices }` and
   `AppHost.BuildRecorder(..., configureServices)`. Never set the real console title, write a
   sequence to the real console, flash a visible window, or read the console in a recorder. Two
   NUnit pitfalls: `Does.Contain`, `Does.StartWith` and `Does.EndWith` compare with the current
@@ -199,7 +280,17 @@ or with this file, the code wins.
   message is added or changed. The lines the README quotes for the cost and the Bluetooth warning are
   worded in `TranscriptionCost.Describe`, `UsageReport` (`RefusedAdvice` is a public const),
   `RebuildCommand.NothingCharged` and `RecordingMonitor.BluetoothText`; reword them and the README's
-  rows (Transcribing, Making a transcript again, While recording) together.
+  rows (Transcribing, Making a transcript again, While recording) together. The Google Drive lines it
+  quotes are worded in `DriveUploadPass` (`HowTheQueueGoesUp`, `AfterTheNextClass`, the stop and
+  pause lines), `DriveQueueReport` (the menu header and the report at the start), `StartupReport`
+  (the not-signed-in sentence and `To upload it:`), `RecordingUpload` (the progress, the last line,
+  the MD5 and revision warnings, the folder not there), `LocalAudioFreer` (`Freed ...`, the refusals),
+  `DriveMenu` (choice 9's keys), `DriveCommand` (`drive status`), `DriveClient` (Google's refusals),
+  `DriveRetry` (`ClassScribe asks again in ...`), `DriveAutoUpload`, `ResumableUpload`,
+  `TranscribeCommand.SayAudioIsOnDrive` and `GoogleTokens`/`GoogleSignIn`'s constants; reword them
+  with the README's Google Drive rows. The examples there use today's class as it will be after
+  Gulzar moves it: `Mantiq\2026-10-17\Mantiq_2026-10-17_14-04-42Z.*`, 4 files, 727 MB in
+  `DriveCommand.Size`'s units (1 MB is 1,048,576 bytes; its `.wav` alone is 722 MB).
 
 ## Working with Gulzar
 
@@ -232,6 +323,11 @@ dotnet run --project src/ClassScribe -- transcribe "<path>" --again    # one wit
 dotnet run --project src/ClassScribe -- rebuild "C:\path\to\folder-or-file"      # free, from the saved .json; --no-open
 dotnet run --project src/ClassScribe -- list                           # the recordings, newest first; --output
 dotnet run --project src/ClassScribe -- devices                        # the devices and apps with sound
+dotnet run --project src/ClassScribe -- drive status                   # the Google sign-in; asks Google (ask Gulzar first)
+dotnet run --project src/ClassScribe -- drive signin --client "<file>" # a real Google sign-in in the browser: Gulzar's to make
+dotnet run --project src/ClassScribe -- drive signout                  # revoke, forget the token, keep the client
+dotnet run --project src/ClassScribe -- drive upload "<file or folder>" # a real upload to Google: Gulzar's to make; no path: the queue
+dotnet run --project src/ClassScribe -- drive free-space "<file or folder>" --yes   # deletes local .wav once Drive has them, checked
 dotnet run --project src/ClassScribe -- record --help                  # help per command; --help, -h, -?, /?, help <command>
 dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"
 ```
@@ -256,7 +352,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   after two failed starts of the recorder. The recorder's own exit codes are internal: 0 done, 1
   failed, 3 refused by the lock, 4 no request or one it cannot take, 130 cancelled; the window turns
   them into the codes below. Its lines go to `%LOCALAPPDATA%\ClassScribe\recorder.log`
-  (`recorder.old.log` at 1 MB) until the recording's folder is known, then into `<base>.log`.
+  (`recorder.old.log` at 1 MB) until the recording's folder is known, then into `<base>.log`. Once
+  Google Drive is set up, the recorder lives on after the end has gone to the windows, for the upload
+  of its class and of the queue (step 8, below), while the next class may already record.
 - `record` and `record-only` need the name, a source (`--device "<part>"`, `--device auto`,
   `--app <process>` or `--in-person ["<microphone>"]`) and `--output`; `--mic ["<microphone>"]`
   adds the microphone beside `--device` or `--app`, and `--mic-follows <app>|auto|none` names the
@@ -326,12 +424,54 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `EndToEndTests` also covers in person from the command line, the class with the microphone
   following chrome through a cycle of listening and not (mixed by the real preparer), and
   `mic-check --seconds 1`. Nothing is played or recorded. The suite had 887 tests at the end of
-  increment 1, 2,134 at the end of increment 2, 2,822 at the end of increment 3 and 2,893 after the
-  cost line and the Bluetooth warning, with the review's fixes.
+  increment 1, 2,134 at the end of increment 2, 2,822 at the end of increment 3, 2,893 after the
+  cost line and the Bluetooth warning, with the review's fixes, 3,046 after the Google Drive
+  sign-in, 3,111 after the course and date folders, 3,270 after the uploads and free-space,
+  3,333 after the uploads by themselves, and 3,357 after the review's fixes to them (a recording
+  queued again during its upload, a folder moved or deleted by hand, a done recording asked for
+  again, a grown log whose copy is gone or trashed, a manifest that cannot be written, the recordings
+  folder with a kept answer at its top, choice 4 on a freed class, the queue counted without a class
+  being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests); 3,357 is the count now,
+  all passing, in about two minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
+  (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
+  a failure and a cancel passed over, a transcript made later sending its new files only),
+  `DriveQueueReportTests`,
+  `RecorderHostDriveTests.cs` (the real recorder host signed in to `FakeGoogle`: after a transcript,
+  record-only and a failed transcript, not after a cancel, never before the end has gone to the
+  windows, the outcome and exit code kept when Drive fails), `RoamingFolderTests`, and additions to
+  `DriveUploadPassTests` (a busy recording taken once more), `RecordingUploadTests` (the last line in
+  the log that goes up), `RecordCommandTests`, `RecordStarterTests`, `TranscribeCommandTests`,
+  `RebuildCommandTests`, `StartupReportTests` (U), `RecorderLogTests`, `SettingsCheckTests`,
+  `ServiceRegistrationTests` and `EndToEndTests` (a class goes up to `FakeGoogle` after its
+  transcript). The uploads' tests: `DriveRetryTests` (the waits on the manual clock),
+  `ResumableUploadTests` (pieces of 256 KiB, a short Range, a dropped piece, 503/429, a renewed
+  token, a forgotten session, a kept session in a new uploader, six days, another host, a revision),
+  `UploadManifestTests`,
+  `RecordingUploadTests` (what goes up and in what order, the PDFs and the upload copy left, the
+  folder that mirrors the laptop's, a grown log as a revision, any other change left as it is, a lost
+  manifest adopting Drive's files, an MD5 mismatch, a recording being written or with a live run,
+  audio deleted after it went up), `DriveUploadPassTests` (the queue after the recordings asked for,
+  the upload lock, keep-awake, the pause while a class records, a cancel resumed),
+  `LocalAudioFreerTests`, `DriveUploadCommandTests` (what a path names), `FreedAudioTests` (list,
+  menu choice 3, transcribe and rebuild of a freed class), `ClassFoldersDriveTests`, additions to
+  `DriveClientTests`, `DriveFoldersTests`, `DriveCommandTests`, `DriveMenuTests`, `CommandLineTreeTests`,
+  `SettingsCheckTests`, `ServiceRegistrationTests`, and `DriveSecretsTests` (an upload through the real
+  app leaves no secret, the session's address included, in a log or a file). The sign-in's tests
+  (`PkceTests`, `GoogleClientFileTests`, `GoogleCredentialStoreTests` with Windows' real DPAPI in a
+  temporary folder, `GoogleTokensTests`, `DriveClientTests`,
+  `DriveFoldersTests`, `LoopbackReceiverTests` with the real listener on 127.0.0.1 and the test as
+  the browser, `GoogleSignInTests`, `DriveCommandTests`, `DriveMenuTests`, and `DriveSecretsTests`,
+  which runs a sign-in, a renewal and a sign-out through the real app with every log at Trace and
+  fails if any secret `FakeGoogle` saw is in a log line, a run file, the settings snapshot or the
+  store in plain text) run with the suite; none reaches Google or opens a browser.
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
-  aborts a run that deadlocks and fails it instead of hanging. The suite normally takes well under a
-  minute. `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own.
+  aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about two
+  minutes (2 min 9 s for 3,357 tests on 17 October 2026, plus the build). `[CancelAfter]` cannot
+  interrupt a blocked `Wait`, so it is no guard on its own. One flaky
+  `WindowsAudio` failure has been seen once in four full runs:
+  `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
+  passed alone and in the next full run; run it again before suspecting a change.
 - The two `AudioDevice` tests in `WindowsCaptureTests` are `[Explicit]`: they open the laptop's real
   output devices (listening only), so run them only when the user is not in a class or an audio test.
 - Publish as a folder, as above, never single-file: Bitdefender quarantined single-file builds
@@ -416,15 +556,54 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   command (a transcribed recording without `--again`, a recording still being written, `rebuild`
   without a saved answer), another recording running, a lost recorder that was not continued,
   nothing recorded (a class track never written while the microphone's was counts, with the
-  `transcribe` command for the microphone's files), and `mic-check` unable to create its log; 2 a
-  mistake on the command line, named with that command's help (a missing name, source or
-  `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a bad value,
-  an unknown word, a path that is not there); 130 cancelled. A window closed during a background
-  recording gives none; the run file in `%LOCALAPPDATA%\ClassScribe\runs` keeps the outcome for the
+  `transcribe` command for the microphone's files), `mic-check` unable to create its log, a Google
+  sign-in that did not go through, `drive status` not signed in or with Google out of reach,
+  `drive signout` when Google could not be asked, `drive upload` with anything left waiting (not set
+  up, signed out, another upload holding the lock, a recording being recorded, Google out of reach,
+  Drive full, a file refused) or a path that names no recording, and `drive free-space` when any
+  recording kept its audio or Drive could not be asked; 2 a mistake on the command line, named with that
+  command's help (a missing name, source or `--output`, two sources, `--mic` with `--in-person`,
+  `--mic-follows` without `--mic`, a bad value, an unknown word, a path that is not there, `drive`
+  alone, `--client` without a file, `drive free-space` without `--yes` or a path); 130 cancelled (Esc
+  during the sign-in's wait included, and Ctrl+C during `drive upload`, which leaves it to go on
+  where it stopped, or `drive free-space`; nothing reads Esc during those two, although
+  `CommandLineTree`'s help for `drive upload` says "Esc or Ctrl+C stops it"). An upload after a run
+  or a transcript never changes the exit code. A window closed during a background recording gives
+  none; the run file in `%LOCALAPPDATA%\ClassScribe\runs` keeps the outcome for the
   next start's report (`StartupReport`). A microphone track that could not be started is left out
   of the run and the class goes on alone, with a warning at the end and exit 0.
 - Recordings go to `Recording:OutputFolder` (`%USERPROFILE%\ClassScribe`; a relative path is taken
-  from the user profile, see `ClassFolders.Root`): a folder per recording name, and files named
+  from the user profile, see `ClassFolders.Root`), or the `--output` folder, in the course > date
+  layout (Gulzar's decision of 17 October 2026): a folder per recording name, the course, and in it a
+  date folder per class, the LOCAL date of the start on the run's `TimeProvider` and its
+  `LocalTimeZone` (`ClassFolders.DateFolderName`, `yyyy-MM-dd`), `yyyy-MM-dd (2)`, `(3)` for later
+  classes of the name that day: `ClassFolders.CreateRecording` takes the first date folder that is
+  free (not there, or holding no file `RecordingFiles.TryParse` accepts, so one with only his PDFs or
+  empty is used; a file of that name is passed over, and so is one that cannot be looked into, with
+  the warning `The folder {Folder} cannot be looked into ({Reason}), so this recording goes to the
+  next date folder`, which the README's While recording table quotes), and bumps the second while
+  any file of the base name is anywhere in the course (`CourseHasBaseName`), so base names are
+  unique per course. Its deliberate catches: `IsFree` (a
+  date folder that cannot be looked into counts as taken, with a warning), `HoldsBaseName` (a date
+  folder that leads nowhere holds no file of the name, at Debug) and `ListRecordingsUnder` (a course
+  folder that cannot be read is left out of the list with one warning). A file transcribed on its own gets the
+  same layout (`CreateForFile`, the date of the transcription). A continued recording stays where it
+  is: `RecordCommand` opens it with `ClassFolders.OpenToContinue(OutputRoot, Name, BaseName)`, which
+  looks for the base name flat in the course folder and in its date folders (the request carries no
+  folder). The old flat layout (`<root>\<name>\<name>_<stamp>Z.*`) is read everywhere and nothing is
+  ever moved: every reader goes through `ClassFolders.RecordingFoldersIn(folder)` (the folder itself,
+  then its date folders by name; `IsDateFolderName` is `yyyy-MM-dd` of a real day, optionally
+  ` (N)`; other subfolders such as `Slides` are passed over), so `FindNewest`, `RecordingsIn`,
+  `FindContinuable`, the list (`ListRecent`, `ListAll`, one warning per unreadable course folder,
+  date folders read with `IgnoreInaccessible`), `RebuildCommand.FindInFolder` and `WhereRecorded` (an
+  answer kept in the root is laid out beside its recording in either layout) take a course folder, a
+  date folder or an old name folder. `ListCommand.NotesOf` shows `in 2026-10-17 (2)` for a later
+  class of its day (`ClassFolders.LaterClassOfItsDay`). `ClassFolders.DriveLevelsOf(folder)` is the
+  Drive path under `Drive:FolderName` that `RecordingUpload` uses: a date folder gives its course and
+  itself, any other folder its own name, whatever the recordings folder (so `--output` folders mirror
+  the same way). Files in a recording's folder that `RecordingFiles.TryParse` does not take for the
+  recording's (his PDFs, slides and notes, even one named `Mantiq_2026-10-17_Notes.md`, which has no
+  time in its stamp) are ignored by every listing, never uploaded, never deleted. Files are named
   `<name>_<yyyy-MM-dd_HH-mm-ss>Z` (UTC start) with `.wav`, `_partN.wav`, `.mic.wav` and
   `_partN.mic.wav` (the microphone's track beside the class, `Track.Microphone`,
   `RecordingFiles.FindSegments(Track)`; in person the microphone is the main track under the plain
@@ -464,7 +643,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   when keyterms were sent; dollars are never turned into credits), guarded so that it can never fail
   the paid transcript. Then `UsageReport` (scoped, one per run): `TranscriptionWorkflow` calls `Begin`
   as the upload starts (the read runs alongside, never awaited there), and `ReportAsync` is the run's
-  last step, after `Transcript saved to` and the results are open, so nothing anyone waits for is
+  last step but the upload to Google Drive, after `Transcript saved to` and the results are open, so nothing anyone waits for is
   delayed: in this window `RecordCommand` (when `RunBookkeeping.Home` is `InWindow`) and
   `TranscribeCommand` call it; in a recorder `RecordCommand` leaves it to `RecorderHost.RecordAsync`,
   which calls it after `server.EndAsync` has sent the end to the windows (which open the results),
@@ -491,7 +670,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ElevenLabs__BaseUrl` work; one that fails the check stops the start, since it cannot be fixed
   while ClassScribe runs. Warnings (a key in the settings, an output folder inside OneDrive) are
   given once per process. `SettingsReloader.Snapshot` gives the Recording, ElevenLabs (never the
-  key), Transcript and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
+  key), Transcript, Drive (no secret is ever a setting) and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
   the recorder in the request file, and `RunJournal.WriteRequest` leaves the key out should it ever
   be in it. A recording that is running keeps the settings it started with. The microphone's
   settings are `Recording:Mode`, `Recording:Microphone`, `Recording:MicrophoneProcessing` (`Raw` or
@@ -500,7 +679,200 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   the class app, so no command-line option), plus `Transcript:ShowGapsLongerThanSeconds` (0 or more).
   The cost line's settings are `ElevenLabs:PricePerHourUsd` (0.22) and
   `ElevenLabs:KeytermsPricePerHourUsd` (0.05), each from 0 to 100 dollars an hour, and
-  `ElevenLabs:ReadAccountUsage` (true).
+  `ElevenLabs:ReadAccountUsage` (true). The Drive section (`DriveOptions`, `Drive/`): `Drive:FolderName`
+  (`ClassScribe`; not empty, at most 100 characters, no control characters; names the root folder
+  only when it is first made), `Drive:ApiBaseUrl` and `Drive:OAuthBaseUrl` (Google's; https, or
+  http only to a loopback address, for a stub), `Drive:Upload` (`Everything` or `WithoutAudio`, by
+  name), `Drive:ChunkMegabytes` (8; from 1 to 256 MiB) and `Drive:Enabled` (true: each class goes
+  into the queue as its run starts and up after it, and a transcript made later sends its new files;
+  false: nothing is queued or sent by itself, only 9 and `drive upload` upload).
+- Google Drive sign-in (slice 1 of design `drive.md`; `GoogleSignIn`, window only, never a recorder):
+  menu choice 9 (`DriveMenu`: the state from the store alone; S, and while signed in I and O) and
+  `drive signin [--client "<file>"]`, `drive signout`, `drive status` (`DriveCommand`, through
+  `ICommandRunner.DriveMenuAsync`, `DriveSignInAsync`, `DriveSignOutAsync`, `DriveStatusAsync`, each
+  in a scope of its own). The client file (`GoogleClientFile`: `installed` only, a `web` client
+  refused, at most 64 KB, never quoted) is imported and stored at once (same client id: only the
+  secret is taken and the sign-in kept). The listener (`ILoopbackReceiver`,
+  `HttpListenerLoopbackReceiver` on `http://127.0.0.1:<free port>/`, five tries) and the browser
+  (`IBrowser`, `ShellBrowser`, which never logs the address) are seams. The address carries PKCE
+  S256, `drive.file` alone, `prompt=consent` and `access_type=offline`; the wait is 5 minutes on the
+  `TimeProvider`, Esc or Ctrl+C gives up (a cancel), any request without the state gets 400 and the
+  wait goes on, `access_denied` ends it. After the exchange, `drive.file` must be granted and a
+  refresh token given; the sign-in is stored first, then Drive's about is read and the root folder
+  found or made (`DriveFolders`: remembered id in `%LOCALAPPDATA%\ClassScribe\drive\folders.json`,
+  else `appProperties` `classscribe=root`, else made; trashed folders never count and are never
+  touched); a failure there puts back what was stored before. `GoogleTokens` (one per run, over
+  the process's `GoogleTokenCache`): renews when less than 2 minutes are left, one renewal at a time,
+  and at once after a 401; `invalid_grant` removes the dead token (only if it is still the one
+  stored) and keeps the client. Sign-out revokes, then forgets the token and keeps the client
+  whatever Google answers. The sign-in's deliberate catches: `HttpListenerLoopbackReceiver` (a port
+  taken meanwhile: another, up to five tries), `ShellBrowser`'s two (a browser that does not open:
+  the window shows the address; the exception is not logged, as its message holds the address),
+  `DpapiGoogleCredentialStore`'s unreadable cases (a file that cannot be read, a blob this account
+  cannot open, one that is not the store's JSON: each counts as not signed in, with why) and its
+  temporary-file delete, `DriveFolders`' remembered-id read and write and its temporary-file delete,
+  `GoogleSignIn` (the revoke that fails at sign-out; the tab closed before the page), `GoogleTokens`
+  and `DriveClient` (an error body that is not Google's JSON), and `DriveCommand`'s two (the
+  command's answer, exit 1).
+- Google Drive uploads (slice 2 of design `drive.md`; by themselves after each class, slice 3,
+  below): menu choice 9 > U (the
+  queue), R (a recent recording, listed with `on Drive`, `waiting`, `not uploaded`), F (a dragged
+  path), L (free space, asked with Y), and `drive upload ["<path>"]`, `drive free-space "<path>"
+  --yes` (`DriveUploadCommand`, through `ICommandRunner.DriveUploadAsync` and
+  `DriveFreeSpaceAsync`). A path names a recording by any of its files; a folder its recordings and
+  its date folders' (`ClassFolders.RecordingsByAnyFileIn`), its other folders (Slides) passed over
+  silently; a folder of courses (one holding no recording, or one whose other folders hold
+  recordings, as the recordings folder with a kept answer at its top) names each course in it, one
+  without a recording named, `mic-check` passed over silently, and a recording's file lying at its
+  top left out with a line (`... lies in ... itself, not in a recording's folder, so it does not go
+  up`, with the `rebuild` command for a kept answer). `DriveUploadPass`: the recordings asked for are
+  queued (manifests, only once a client is kept), unless `RecordingUpload.IsUpToDate` (done, and
+  every file that goes up unchanged since its check, by size and write time; files gone, as audio
+  freed, change nothing), so a done or freed recording asked for while signed out or while the lock
+  is held is never said to wait; then they go up, then the rest of the queue that is due
+  (`NextAttemptUtc`), or all of it for `drive upload` alone; a recording busy when the pass came to it
+  is looked at once more before the pass lets go (`Taken`), so a class whose run ends meanwhile goes up
+  with it, and so is one done with that was queued again after its try began (`Taken.Begin` notes
+  `UploadManifest.TimesQueued`, which `UploadManifests.Queue` counts up; `KeepWaiting`, what an upload
+  writes of a recording it cannot take now, does not); what waits goes up
+  `DriveUploadPass.AfterTheNextClass` ("after the next class, or with menu choice 9 > U, or
+  ClassScribe drive upload") while `Drive:Enabled` is on, else `HowTheQueueGoesUp`; one pass at a time under `%LOCALAPPDATA%\ClassScribe\drive\upload.lock`
+  (`DriveUploadLock`, `FileShare.None`; a pass that finds it held leaves its recordings queued and
+  says `Another ClassScribe is uploading to Google Drive; ... waits and goes up after it`; never
+  `recording.lock`); `StayAwake.UploadingReason` held for the pass; before each piece it waits,
+  polling the run journal every 30 s, while any run records (`Google Drive: paused while "Kalam"
+  records`); Google out of reach after retries, Drive full, a sign-in gone or a manifest that cannot
+  be written (`UploadNotTrackedException`, thrown by the run's `Save` in words of its own, never taken
+  for a file that could not be read) ends the pass, a file or folder Drive refuses keeps that
+  recording waiting. `RecordingUpload`: busy when a live run records or transcribes it or
+  `ClassFolders.IsBeingWritten` (`KeepWaiting`, `InProgress`); a folder that is not there
+  (`FolderNotThere`) waits, with `LastError`, only when its drive is not there either; on a drive that
+  is there it was moved or deleted by hand: done when its manifest has entries and every one is
+  verified, else `UploadState.Missing` (out of the queue, `RecordingOutcome.Missing`, which
+  `PassResult.AllDone` counts as nothing waiting) with a warning that says how to upload it from where
+  it is now; asked for again once its folder is back, it is queued as any other. A run reads the
+  manifest's `TimesQueued` at each write and keeps a queue written meanwhile by another process; at
+  its end, a recording queued again since the run began stays `Waiting` (`... was put in the queue
+  again while it went up, so it is looked at once more`), so a (2).md made during an upload is never
+  left behind; the files are `RecordingFiles.TryParse`'s of the same base name but the
+  `.upload.wav` (and with `WithoutAudio` the `.wav`s), never a PDF beside them, in the order `.md`
+  copies, `.json` answers, `.marks.txt`, main `.wav` parts, `.mic.wav` parts, `.log` last; Drive's
+  folder is `DriveFolders.FindOrCreatePathAsync(ClassFolders.DriveLevelsOf(ClassFolders.AsOnDisk(folder)))`
+  (course > date folder, or an old flat folder's name; each level by remembered id in
+  `folders.json` keyed by its path under the root, else by escaped name in its parent, else made;
+  levels forgotten when the root changes); each file's MD5 is cached in the manifest by size and
+  write time, audio is opened `FileShare.Read | Delete` (a sharing violation: it waits), text is a
+  snapshot read with `ReadWrite | Delete`; a file without a checked copy is looked for in Drive's
+  folder by name and adopted when its size and MD5 match; after the last piece `files.get` must
+  give the same size and `md5Checksum`, else a warning with both and one new revision of itself,
+  then the recording waits; a verified text file that has grown goes up as a new revision while
+  `files.get` finds its copy outside the trash, and otherwise, its copy deleted or trashed on Drive,
+  as a new file in the folder (the trash is never touched); any other change is left as it is on
+  Drive with a warning; without a manifest, a same-name text file on Drive gets a revision only when
+  the local one is larger; a file gone from the laptop after its copy
+  was checked stays in the manifest and counts as safe. Lines: `Google Drive: uploading <base> (n
+  files, size) to ClassScribe/<course>/<date>`, `<file>: 30% (...)` per tenth of a multi-piece file,
+  `<file>: already on Drive`, and `<base> is on Google Drive: My Drive > ... (n files, size, each
+  checked against Drive's MD5): <link>`, which, while this process still writes the recording's log
+  (`RecorderLog.NamedFile`, as a recorder after its class or a run in the window), is written and
+  flushed just before the `.log` goes up, so Drive's copy holds it, and is said once. Each try clears
+  `LastError` as it begins, and every write of an upload stamps `UploadManifest.UpdatedUtc` (a queue
+  clears it), so `IsBeingUploaded(now)` (waiting, tried, no error, written within `GoingOnWithin`, 5
+  minutes) tells an upload going on now, in any process, and a recording queued again right after
+  its upload is not taken for one; `BytesOnDrive` says how much Drive has. `ResumableUpload`: pieces of `Drive:ChunkMegabytes` MiB
+  (`PieceSize` for tests), each `PieceContent` with its Content-Range streamed from the open file;
+  308 confirms by its `Range`, 200/201 completes; a passing failure (Unreachable or Busy: 408, 429,
+  5xx, 403 rate limits) waits as `DriveRetry` says (2, 4 ... 64 s plus up to 1 s, 8 attempts) and
+  asks the session `bytes */size`; 404/410 starts a new session once; a kept session is used only
+  for the same size, MD5 and target, under six days old, at Drive's own address
+  (`UploadAddress.TryParse` against `Drive:ApiBaseUrl`: scheme, host, port, path); a piece may take
+  the longer of 2 minutes and its bytes at 0.25 Mbit/s. `DriveClient` classes refusals:
+  `DriveProblem.Busy` (retried), `Full` (`storageQuotaExceeded`; `uploadLimitExceeded`,
+  `dailyLimitExceeded`: the recording's next automatic try a day later), else `Refused`.
+  `UploadManifests` (`drive\recordings\<base>.<8 hex of SHA-256 of the folder's path in
+  capitals>.json`, `UploadJson`, states by name, written atomically with three retries; one that
+  cannot be read counts as none, with a warning; a write that still fails is thrown, said in words by
+  its caller and logged by `Write` at Debug alone). `drive status` ends with the queue (`Waiting:
+  <base> (n files, size), not tried yet` or `last try <local time>: <error>`, or `Nothing waits to
+  go up.`), and 9 > U's line counts it, both through `DriveQueueReport.Queued()`, which leaves out a
+  class being recorded or transcribed now, as the header and the report do. Free space
+  (`LocalAudioFreer`): refused for a busy recording or an upload copy open in a
+  program, or one without a manifest (with the `drive upload` command to run); every `.wav`,
+  `_partN.wav`, `.mic.wav` and `_partN.mic.wav` must be verified in the manifest, its MD5 worked out
+  afresh, and Drive asked now for a copy outside the trash with the same size and MD5; any failure
+  keeps all of that recording's audio; then the files are deleted (nothing else, nothing on Drive),
+  `FreedUtc` and the length kept in the manifest as it is then (read again, so a queue written
+  meanwhile stays), and `Freed <size> on this laptop: ...` said. Menu choice 4 with a folder asks
+  about the recording transcribe would take, a newer freed one included (`MenuCommand.RecordingAt`,
+  as `TranscribeCommand.TranscribeFolderAsync`). The
+  rest of the app reads freed audio through `IAudioOnDrive` (`Storage`, `DriveCopies` from the
+  manifests: verified audio missing locally; `AllOfIt` when none is left): `ClassFolders` lists such
+  a recording (`RecordedClass.OnDrive`, its length from the manifest), the list and menu choice 3
+  note `audio on Drive`, choice 3 offers only R (rebuild from the saved answer), and `transcribe`
+  refuses a file or folder of it, or one with part of its audio gone, saying where the audio is and
+  giving the free rebuild command; `rebuild` works from the local `.json` as before. The deliberate
+  catches of the uploads: `DriveRetry.RunAsync` and `ResumableUpload.SendAsync` (a passing failure is
+  asked again after a wait), `UploadManifests.Write` (a held file tried again), `ReadFile` (a manifest
+  that cannot be read counts as none) and `TryDelete`, `DriveUploadLock.TryTake` (as `RecordingLock`),
+  `RecordingUpload`'s run (a file in use: the recording waits; one file refused or unreadable: the
+  others go on), `DriveUploadPass.RunAsync` (Google out of reach, Drive full, a sign-in gone or a
+  manifest that cannot be written ends the pass, with what waits) and `UploadOneAsync` (a recording
+  refused waits), `LocalAudioFreer` (a
+  file that cannot be deleted stays; a sharing violation is the answer; no upload copy),
+  `DriveUploadCommand.FreeSpaceAsync` and `ClassFolders.OnDiskName` (a folder that cannot be looked
+  into keeps the name given).
+- Google Drive by itself (slice 3 of design `drive.md`): `IDriveAutoUpload` (`DriveAutoUpload`,
+  scoped: one per run, shared by the run and whoever ran it). Once Drive is set up (a client kept, or
+  a store that cannot be read) and `Drive:Enabled` is on, `RecordCommand` step 3 queues the run's
+  recording beside the run file (`Queue`; a queue that cannot be written is a warning, never the
+  class's failure) and `End` notes the outcome (`Ended`); after a `Transcribed`, `Recorded` or
+  `TranscriptFailed` outcome, `AfterRunAsync` runs one pass, `[own recording]` then the queue that is
+  due; never after a cancel, `NothingRecorded`, `RecorderFailed` or a run without an outcome (Windows
+  ended the session): the recording waits. It runs in the recorder as `RecorderHost` step 8, after
+  the end has gone to the windows and the cost line, in the run's scope (its lines in `<base>.log`
+  and `recorder.log`; the recorder lives on for the upload), and in this window in
+  `RecordStarter.RecordInThisWindowAsync`, in the run's scope after the run returns or throws.
+  `TranscribeCommand` (after the cost line, a file transcribed on its own too) and `RebuildCommand`
+  (after `NothingCharged`) call `UploadAsync(RecordingFiles.TryParse(transcript))`: only the new files
+  go up. Its pass is a `Lazy<DriveUploadPass>`, made only when one runs; a first Ctrl+C cancels it
+  (`signals.RequestStop()` first); it never throws and never changes an exit code; before Drive is
+  set up or with `Drive:Enabled` off it says nothing but at Debug. `DriveQueueReport` (singleton,
+  store and manifests only, never Google): `HeaderLine()` ends `StartupReport.HeaderLines()`, so the
+  menu's header shows `Google Drive: signed in; nothing waits to go up.`, `... 2 recordings wait to go
+  up (1.4 GB). 9 > U uploads them.`, `Google Drive: uploading <base> (41%); 1 more waits.`, `Google
+  Drive: not signed in; ... 9 > S signs in.` or `the sign-in cannot be read ... 9 > S signs in again`,
+  with ` Uploads after each class are off (Drive:Enabled).` when off, and nothing before set-up;
+  `Waiting()` gives the report at the start its line after the runs (`Google Drive: 1 recording waits
+  to go up (<base>, <size>; last try 17 Oct 21:40: <error>).`, or several `in all`), with `U  upload
+  it now` / `Enter  go on to the menu` (`StartupAction.Upload`, `StartupChoice.RunId` null, through
+  `ICommandRunner.DriveUploadAsync(null)` once the gate passes), the sign-in advice when signed out,
+  and on the command line `To upload it: <CommandLine.DriveUpload(null)>`. A recording being recorded
+  or transcribed now (`RecordingUpload.BusyIn`) never counts as waiting, nor does one uploading now.
+  Deliberate catches: `DriveAutoUpload.Queue` (the queue at the start) and `UploadAsync` (a cancel,
+  and any failure, said with what waits). Two behaviours that are by design, so do not "fix" them
+  without asking: a run that captured nothing was queued at its start and stays queued, so its folder's
+  `.log` goes up with the next pass into the course > date folder and counts as waiting until then;
+  and in a recorder the pass goes on to other recordings after its own, and those lines land in this
+  class's local `.log` after its copy went up, so Drive's copy lacks them until that recording goes up
+  again (a later transcript, rebuild or explicit upload sends the longer log as a revision).
+- Still to be checked with Gulzar against the real Google (design 5.3), never from a test or a manual
+  run without asking: the Google Cloud set-up with the app published before the first sign-in; the
+  real sign-in, and whether Bitdefender lets the browser reach `http://127.0.0.1:<port>/`; that
+  Google's console and consent screens still match the README's steps; then a publish to
+  `%LOCALAPPDATA%\Programs\ClassScribe` with a renewed Bitdefender ATD exception. Only `FakeGoogle`
+  (the generated Refit client, the real app's DI clients in `DriveSecretsTests`) and the design's local
+  probe have exercised the 308/`Range` handling, the `Location` format, and Refit's `[Body]
+  HttpContent` with `Content-Range` through a real `SocketsHttpHandler`; the 403 reasons
+  `uploadLimitExceeded` and `dailyLimitExceeded` were not checked against Google's error pages. The
+  first real class with Drive set up is the first time the hidden recorder lives on after the window
+  has the end and the first time it reaches the network (Bitdefender may notice). The first real
+  upload is Gulzar's to start: his class of 17 October (about 727 MB, once he has moved it to
+  `%USERPROFILE%\ClassScribe\Mantiq\2026-10-17` and renamed its files `Mantiq_2026-10-17_14-04-42Z.*`;
+  his PDFs and notes beside it stay on the laptop). Its `.json` was re-indented by his editor (tabs,
+  CRLF, 5.2 MB) and still parses whole (39,543 words, 7,884 s), so `ElevenLabsAnswer` and `rebuild`
+  must keep reading pretty-printed answers. His run file `20261017-140441Z-af758de8.json` in
+  `%LOCALAPPDATA%\ClassScribe\runs` still names the old `Mantiq_10_17_2026` folder; it looks finished,
+  but if the start-up report ever names it, that is why.
 - The microphone check (`MicCheckCommand`, menu choice 8 and `mic-check`, resolved through
   `IMicCheckRun` in a scope of its own): MicWatch inside ClassScribe. Every 250 ms it reads
   `IMicrophoneSessions.ReadAll()` and `IMicrophoneUsageRecord.Read()`, hands them to the pure
@@ -601,9 +973,31 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   heartbeat, which the menu header and `list` read), and what a transcript cost: `TranscriptionCost`
   (the estimate), `ElevenLabsAccount.cs` (`IElevenLabsAccount`, `AccountReading`, the reader of
   `GET /v1/user/subscription`) and `UsageReport` (scoped: the read before the upload and the line after).
-- `src/ClassScribe/Storage`: class folders under the output folder, recording file names (both
-  tracks), numbered transcript copies (`TranscriptCopies`, never overwritten), marks, and the
-  microphone check's log file (`MicCheckLog`: the header, the cost line, flushed per line).
+- `src/ClassScribe/Drive`: Google Drive (design `drive.md`, slices 1 to 3): `DriveOptions` (with `DriveUploadScope`),
+  `IGoogleOAuthApi.cs` and `IDriveApi.cs` (the Refit interfaces, `DriveApiSettings`), `GoogleJson.cs`
+  (`GoogleOAuthJson`, `DriveJson`, `DriveStoreJson` and their records, which print no token),
+  `GoogleDriveException.cs` (`DriveProblem`), `GoogleClientFile.cs` (`GoogleClient`, the import),
+  `Pkce`, `ILoopbackReceiver.cs` and `Windows/HttpListenerLoopbackReceiver.cs`, `IBrowser.cs`
+  (`ShellBrowser`), `GoogleCredentialStore.cs` (`GoogleCredentials`, `StoredCredentials`,
+  `IGoogleCredentialStore`, `DpapiGoogleCredentialStore`), `GoogleTokens.cs` (`GoogleTokenCache`,
+  `GoogleTokens`), `DriveClient` (the calls, the 401 renewal, Google's refusals in words and kinds,
+  `PieceAnswer`), `DriveFolders` (the root folder and the levels under it, `DriveFolderPath`),
+  `GoogleSignIn` (`SignedIn`, `SignOutOutcome`), and the uploads: `DriveRetry`, `PieceContent`,
+  `ResumableUpload.cs` (`UploadAddress`, `UploadSource`, `UploadTarget`, `IUploadWatch`,
+  `ResumableUpload`), `UploadManifest.cs` (`UploadState`, `UploadSession`, `ManifestFile`,
+  `UploadManifest`, `UploadJson`, `UploadManifests`), `DriveUploadLock`, `RecordingUpload`
+  (`RecordingOutcome`, `RecordingUploadResult`), `DriveUploadPass` (`PassResult`),
+  `LocalAudioFreer` (`FreedAudio`), `DriveCopies` (the `IAudioOnDrive` of `Storage`),
+  `DriveAutoUpload.cs` (`IDriveAutoUpload`, `DriveAutoUpload`: the queue at a run's start and the
+  upload after it, and after a transcript made later), `DriveQueueReport.cs` (`DriveWaiting`,
+  `DriveQueueReport`: the menu's header line and the report's), and `DriveServices` (`AddDrive`,
+  called from `AddClassScribe` after the transcription).
+- `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`: course and date folders, the old flat layout read too), recording file names (both
+  tracks), numbered transcript copies (`TranscriptCopies`, never overwritten), marks, the
+  microphone check's log file (`MicCheckLog`: the header, the cost line, flushed per line), and
+  `RoamingFolder` (`%APPDATA%\ClassScribe`, where `google-drive.dat` is kept; tests give a temporary one),
+  and `IAudioOnDrive.cs` (`AudioOnDrive`, `IAudioOnDrive`, `NoAudioOnDrive`: what the lists and commands
+  know of audio kept on Drive alone; `ClassFolders` takes it as an optional last argument).
 - `src/ClassScribe/Commands`: the menu, the command line (`CommandLineTree` on System.CommandLine,
   `App`, `CommandLine` for the commands printed for later), the contracts (`Requests.cs`:
   `RecordRequest`, `SourcePlan`, `ClassSource`, `ContinueChoice`, `StartOrigin`, `RunIds`;
@@ -617,9 +1011,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (`StartupReport`), `transcribe`, `rebuild`, `list` and `devices` (output devices, apps with sound,
   then the microphones with which apps hold them, from `Lazy<IMicrophoneProvider>` and
   `Lazy<IMicrophoneSessions>`), `MicrophoneMenu.cs` (menu choice 7: W, I or N, the microphone, the
-  follow question), `MicCheckCommand.cs` (the microphone check's loop), the gate (`RunGate`), the
-  console and desktop abstractions, the name prompt, the close prompt and the exit warnings, and
-  `WindowServices.cs` (the registration of the window's side). `RecordingMonitor.cs` also declares
+  follow question), `MicCheckCommand.cs` (the microphone check's loop), Google Drive's commands
+  (`DriveMenu`, menu choice 9; `DriveCommand`, `drive signin`, `signout` and `status`;
+  `DriveUploadCommand`, `drive upload` and `drive free-space`, and what a path names), the gate
+  (`RunGate`), the console and desktop abstractions, the name prompt, the close prompt and the exit
+  warnings, and `WindowServices.cs` (the registration of the window's side). `RecordingMonitor.cs` also declares
   `IMicrophoneRecording` (what a recording with the microphone tells the run beyond its snapshot),
   `MicrophoneWords` and `MicrophoneChecks` (the microphone's checks beside the class's);
   `ICommandRunner.cs` declares `MicCheckRequest` and the `IMicCheckRun` seam. Each command runs in
@@ -675,5 +1071,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `MicrophoneSourceTests`, `MicrophoneActivationTests`, `MicrophoneMenuTests`, `MicCheckCommandTests`,
   `MicrophoneChangeTrackerTests`, `MicCheckLogTests`, `UploadMixTests`, `MediaTimeTests`,
   `RecordingClockTests`, `TrackPlacerTests`, `EndpointFactsTests`, `CoreAudioPropertyTests` and
-  `RecorderSoakTests`. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
+  `RecorderSoakTests`. The course > date layout's tests are `ClassFoldersLayoutTests` (on a
+  `ManualTimeProvider` read through `ZonedClock` in a fixed zone, so the local date is the same on
+  every machine), with layout cases in `ClassFoldersTests`, `ListCommandTests`, `MenuCommandTests`,
+  `TranscribeCommandTests`, `RebuildCommandTests`, `RecordCommandTests` (continue in either layout,
+  a class past midnight), `ContinueQuestionTests`, `StartupReportTests` and `EndToEndTests`; a test
+  that looks for a new recording's folder finds the one date folder rather than working out today's
+  date, so a run across midnight passes. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
   guard. The test project sees ClassScribe's internals (`InternalsVisibleTo` in `CoreAudioInterop.cs`).

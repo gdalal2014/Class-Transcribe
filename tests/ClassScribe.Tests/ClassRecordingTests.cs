@@ -447,7 +447,8 @@ public class ClassRecordingTests
         File.WriteAllText(settings.File("appsettings.json"), "{}");
         using var host = AppHost.Build(settings.Path, apiKey: null, services => services
             .AddSingleton<ILoopbackCaptureProvider>(_provider)
-            .AddSingleton(_runtime.Folder));   // never the real %LOCALAPPDATA%\ClassScribe
+            .AddSingleton(_runtime.Folder)                                // never the real %LOCALAPPDATA%\ClassScribe
+            .AddSingleton(new RoamingFolder(settings.File("Roaming"))));  // nor the real %APPDATA%\ClassScribe
         var choice = host.Services.GetRequiredService<SourceChoice>();
         choice.App = "chrome";
         using var scope = host.Services.CreateScope();

@@ -6,11 +6,13 @@ namespace ClassScribe.Tests;
 /// <summary>
 /// A logger factory that keeps every message logged through it, by category, so that a test can inspect what the
 /// classes a factory builds have said. The track set's factory makes a session, a chooser, a gate, a watch and the track
-/// set itself, each with a logger of its own, and takes the factory rather than one logger per class.
+/// set itself, each with a logger of its own, and takes the factory rather than one logger per class. A provider added
+/// gets every message as well, as the recorder's log does in the app, so that a test can follow the lines into a file.
 /// </summary>
 public sealed class TestLoggerFactory : ILoggerFactory
 {
     private readonly ConcurrentQueue<(string Category, LogLevel Level, string Message)> _entries = new();
+    private readonly ConcurrentQueue<ILoggerProvider> _providers = new();
 
     /// <summary>Every message logged, whatever its category or level, in order.</summary>
     public IReadOnlyList<string> Messages => [.. _entries.Select(entry => entry.Message)];
@@ -24,17 +26,15 @@ public sealed class TestLoggerFactory : ILoggerFactory
     /// <inheritdoc />
     public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
 
-    /// <summary>Nothing is added: the factory keeps its own entries.</summary>
-    public void AddProvider(ILoggerProvider provider)
-    {
-    }
+    /// <summary>Hands every message from now on to <paramref name="provider"/> as well, besides keeping it.</summary>
+    public void AddProvider(ILoggerProvider provider) => _providers.Enqueue(provider);
 
-    /// <summary>Nothing to let go of.</summary>
+    /// <summary>Nothing to let go of: the providers added belong to whoever made them.</summary>
     public void Dispose()
     {
     }
 
-    /// <summary>A logger of one category, which hands every message to the factory.</summary>
+    /// <summary>A logger of one category, which hands every message to the factory and to the providers added.</summary>
     private sealed class Logger(TestLoggerFactory factory, string category) : ILogger
     {
         /// <inheritdoc />
@@ -44,7 +44,10 @@ public sealed class TestLoggerFactory : ILoggerFactory
         public bool IsEnabled(LogLevel logLevel) => true;
 
         /// <inheritdoc />
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
             factory._entries.Enqueue((category, logLevel, formatter(state, exception)));
+            foreach (var provider in factory._providers) provider.CreateLogger(category).Log(logLevel, eventId, state, exception, formatter);
+        }
     }
 }

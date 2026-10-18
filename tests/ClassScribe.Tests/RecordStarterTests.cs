@@ -1,6 +1,7 @@
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
+using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -40,6 +41,7 @@ public class RecordStarterTests
     private FakeRunViewer _viewer = null!;
     private FakeConsoleUi _ui = null!;
     private FakeRecordRuns _inWindow = null!;
+    private List<FakeDriveAutoUpload> _drives = null!;
     private ServiceProvider _services = null!;
     private RecordingLogger<RecordStarter> _log = null!;
 
@@ -59,7 +61,11 @@ public class RecordStarterTests
         _viewer = new FakeRunViewer();
         _ui = new FakeConsoleUi();
         _inWindow = new FakeRecordRuns();
-        _services = new ServiceCollection().AddScoped<IRecordRun>(provider => new FakeRecordRun(_inWindow, provider)).BuildServiceProvider(validateScopes: true);
+        _drives = [];
+        _services = new ServiceCollection()
+            .AddScoped<IRecordRun>(provider => new FakeRecordRun(_inWindow, provider))
+            .AddScoped<IDriveAutoUpload>(_ => NewDrive())
+            .BuildServiceProvider(validateScopes: true);
         _log = new RecordingLogger<RecordStarter>();
     }
 
@@ -146,6 +152,52 @@ public class RecordStarterTests
         Assert.That(_inWindow.Runs.Single().Scope, Is.Not.SameAs(_services), "a scope of its own");
         Assert.That(_starter.Launches, Is.Empty);
         Assert.That(_ui.Screen, Does.Contain(RecorderLauncher.SeparateProcessOff));
+    }
+
+    /// <summary>Google Drive's part in a scope, noted in <see cref="_drives"/>, one per scope.</summary>
+    private FakeDriveAutoUpload NewDrive()
+    {
+        var drive = new FakeDriveAutoUpload();
+        lock (_drives) _drives.Add(drive);
+        return drive;
+    }
+
+    /// <summary>
+    /// A run in this window is followed by the upload to Google Drive, in the run's own scope, once it has ended and shown
+    /// its end; the exit code is the run's.
+    /// </summary>
+    [Test]
+    public async Task A_run_in_this_window_is_followed_by_the_upload_to_Google_Drive()
+    {
+        _options.Set(new RecordingOptions { OutputFolder = _recordings.Path, SeparateProcess = false });
+        _inWindow.ThenExit(0);
+
+        Assert.That(await RunAsync(), Is.Zero);
+
+        Assert.That(_drives.Single().Calls, Is.EqualTo(new[] { "Ended Transcribed", "AfterRun" }), "the run's own part, told how it ended, then the upload");
+    }
+
+    /// <summary>A run in this window whose transcript failed is followed by the upload all the same; the failure goes on to the caller.</summary>
+    [Test]
+    public void A_run_in_this_window_that_failed_is_followed_by_the_upload_and_its_failure()
+    {
+        _options.Set(new RecordingOptions { OutputFolder = _recordings.Path, SeparateProcess = false });
+        _inWindow.ThenFail(new InvalidOperationException("The transcript failed."));
+
+        Assert.That(async () => await RunAsync(), Throws.InvalidOperationException.With.Message.EqualTo("The transcript failed."));
+
+        Assert.That(_drives.Single().Calls, Is.EqualTo(new[] { "Ended TranscriptFailed", "AfterRun" }));
+    }
+
+    /// <summary>A run in a recorder is uploaded by the recorder itself, so the window that shows it uploads nothing.</summary>
+    [Test]
+    public async Task A_run_in_a_recorder_is_not_uploaded_by_the_window()
+    {
+        _viewer.Then(Ends(_recorder, Transcribed));
+
+        Assert.That(await RunAsync(), Is.Zero);
+
+        Assert.That(_drives, Is.Empty);
     }
 
     /// <summary>A run in this window shows its own outcome, so its run file is marked seen once it is over, and the next start does not report it.</summary>

@@ -6,9 +6,11 @@ using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio.Timeline;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
+using ClassScribe.Drive;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -95,6 +97,8 @@ public class EndToEndTests
     private List<string> _pipesOpened = null!;
     private CancellationTokenSource _pumps = null!;
     private bool _mixForUpload;
+    private FakeGoogle _google = null!;
+    private FakeCredentialStore _driveStore = null!;
 
     /// <summary>
     /// The folders, the window's console, window and desktop, the recorder's device and microphone, with chrome's
@@ -129,6 +133,8 @@ public class EndToEndTests
         _connections = [];
         _pipesOpened = [];
         _pumps = new CancellationTokenSource();
+        _google = new FakeGoogle();
+        _driveStore = new FakeCredentialStore();
         _mixForUpload = false;
 
         // The window starts the recorder: here as the real recorder host, in the background of this process, over the
@@ -172,6 +178,7 @@ public class EndToEndTests
         }));
         return AppHost.Build(_settingsFolder.Path, Key, services => services
             .AddSingleton(_runtime.Folder)
+            .AddSingleton<IGoogleCredentialStore>(_driveStore)
             .AddSingleton<IConsoleUi>(_ui)
             .AddSingleton<IWindowSignals>(_window)
             .AddSingleton(_desktop.Object)
@@ -183,6 +190,7 @@ public class EndToEndTests
             .AddSingleton<IOwnProcesses>(new FakeOwnProcesses(Environment.ProcessId))
             .AddSingleton<IProcessStarter>(_starts)
             .AddSingleton<IJobInspector>(new FakeJobInspector())
+            .ConfigureAll<HttpClientFactoryOptions>(options => options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = new GoogleOrElse(_google, _elevenLabs)))
             .AddScoped<IRunViewer>(provider => new RecorderView(
                 provider.GetRequiredService<IConsoleUi>(),
                 provider.GetRequiredService<IWindowSignals>(),
@@ -220,6 +228,7 @@ public class EndToEndTests
             services.Replace(ServiceDescriptor.Singleton<IRegistryValues>(_registry));
             services.Replace(ServiceDescriptor.Singleton<IProcessStarter>(_recorderStarts));
             services.Replace(ServiceDescriptor.Singleton<IPowerRequests>(new FakePowerRequests()));
+            services.Replace(ServiceDescriptor.Singleton<IGoogleCredentialStore>(_driveStore));
             services.Replace(ServiceDescriptor.Singleton<IPowerSource>(new FakePowerSource()));
             services.Replace(ServiceDescriptor.Singleton<ISystemTimes>(new FakeSystemTimes(TimeProvider.System)));
             services.Replace(ServiceDescriptor.Scoped<ISessionEvents>(_ => new FakeSessionEvents()));
@@ -227,7 +236,7 @@ public class EndToEndTests
             services.Replace(ServiceDescriptor.Singleton(_recorderDesktop.Object));
             services.Replace(ServiceDescriptor.Singleton(provider => _server = new RecorderServer(
                 provider.GetRequiredService<RecorderLog>(), provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<ILogger<RecorderServer>>())));
-            services.ConfigureAll<HttpClientFactoryOptions>(options => options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = _elevenLabs));
+            services.ConfigureAll<HttpClientFactoryOptions>(options => options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = new GoogleOrElse(_google, _elevenLabs)));
         }
     };
 
@@ -289,6 +298,20 @@ public class EndToEndTests
     private RunRecord TheRun() => _runtime.Journal.List().Single().Record;
 
     /// <summary>
+    /// The folder the class named Kalam was recorded into, checked to be where a new recording goes: the folder of its
+    /// name, the course, under the recordings folder, and in it the one date folder, named after the local date the class
+    /// started on, as the recording's own UTC stamp gives it.
+    /// </summary>
+    private string KalamFolder()
+    {
+        var dated = Directory.GetDirectories(Path.Combine(_recordings.Path, "Kalam")).Single();
+        var started = RecordingFiles.TryParse(Directory.GetFiles(dated, "*.wav").First())!.StartedUtc!.Value;
+        Assert.That(Path.GetFileName(dated), Is.EqualTo(ClassFolders.DateFolderName(DateOnly.FromDateTime(started.ToLocalTime().DateTime))),
+            "the date folder of the local date the class started on");
+        return dated;
+    }
+
+    /// <summary>
     /// Menu choice 2, from the key press to the saved transcript: the recorder starts in the background and this window
     /// shows it as the window that started it; Esc leaves the view and the recording goes on, with A offered in the menu;
     /// A shows it again, with the log so far replayed; Q twice stops it; the recording is sent to ElevenLabs with the
@@ -329,7 +352,7 @@ public class EndToEndTests
         Assert.That(await menu.WaitAsync(EndPatience), Is.EqualTo(0));
 
         var run = TheRun();
-        var folder = Path.Combine(_recordings.Path, "Kalam");
+        var folder = KalamFolder();
         var transcript = Directory.GetFiles(folder, "*.md").Single();
         var log = File.ReadAllLines(Directory.GetFiles(folder, "*.log").Single());
         var saved = System.Array.FindIndex(log, line => line.Contains("Transcript saved to", StringComparison.Ordinal));
@@ -381,8 +404,8 @@ public class EndToEndTests
         var run = TheRun();
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(Directory.GetFiles(Path.Combine(_recordings.Path, "Kalam"), "*.wav"), Has.Length.EqualTo(1));
-            Assert.That(Directory.GetFiles(Path.Combine(_recordings.Path, "Kalam"), "*.md"), Is.Empty, "record-only makes no transcript");
+            Assert.That(Directory.GetFiles(KalamFolder(), "*.wav"), Has.Length.EqualTo(1));
+            Assert.That(Directory.GetFiles(KalamFolder(), "*.md"), Is.Empty, "record-only makes no transcript");
             Assert.That(_elevenLabs.Requests, Is.Empty);
             Assert.That((run.State, run.Outcome?.Kind, run.Seen), Is.EqualTo((RunState.Finished, OutcomeKind.Recorded, true)));
             Assert.That((run.Request.Transcribe, run.Request.Open, run.Request.OutputRoot, run.Request.Source.Class), Is.EqualTo((false, false, _recordings.Path, new ClassSource.Automatic())),
@@ -392,6 +415,42 @@ public class EndToEndTests
 
         _desktop.VerifyNoOtherCalls();
         _recorderDesktop.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// Signed in to Google Drive, a class recorded and transcribed from the command line goes up by itself: the window ends
+    /// with the transcript, and the recorder, last of all, uploads the transcript, the answer, the audio and the log into
+    /// ClassScribe > Kalam > the class's date folder, each checked against Drive's MD5, with the last line, where the class
+    /// is on Drive, in Drive's copy of the log; nothing on Drive is changed or removed, and nothing leaves the process.
+    /// </summary>
+    [Test]
+    public async Task Signed_in_a_class_goes_up_to_Google_Drive_after_its_transcript()
+    {
+        _driveStore.Stored = FakeCredentialStore.With(_google.IssueRefreshToken()).Stored;
+        _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
+        _elevenLabs.EnqueueFor(StubHttpHandler.SubscriptionPath, HttpStatusCode.Unauthorized, """{"detail":{"status":"missing_permissions"}}""");
+        using var app = BuildWindow();
+        var command = Task.Run(() => app.Services.GetRequiredService<App>().RunAsync(["record", "Kalam", "--device", "auto", "--output", _recordings.Path, "--no-open"]));
+
+        await UntilShownAsync(RecordStarter.InTheBackground);
+        await PlayIntoTheRecordingAsync();
+        await UntilShownAsync("Press Q twice");
+        _ui.Type('q', 'q');
+
+        Assert.That(await command.WaitAsync(EndPatience), Is.EqualTo(0));
+        Assert.That(await _recorders.Single().WaitAsync(EndPatience), Is.EqualTo(0));
+        var folder = KalamFolder();
+        var b = Path.GetFileNameWithoutExtension(Directory.GetFiles(folder, "*.md").Single());
+        var onDrive = _google.FolderAt($"Kalam/{Path.GetFileName(folder)}");
+        Assert.That(onDrive, Is.Not.Null, "ClassScribe > Kalam > the date folder");
+        Assert.That(_google.FilesIn(onDrive!.Id).Select(file => file.Name), Is.EquivalentTo(new[] { $"{b}.md", $"{b}.json", $"{b}.wav", $"{b}.log" }));
+        foreach (var file in _google.FilesIn(onDrive.Id).Where(file => file.Name != $"{b}.log"))
+            Assert.That(file.Content, Is.EqualTo(File.ReadAllBytes(Path.Combine(folder, file.Name))), file.Name);
+        var lastLine = $"{b} is on Google Drive: My Drive > ClassScribe > Kalam > {Path.GetFileName(folder)} (4 files,";
+        Assert.That(System.Text.Encoding.UTF8.GetString(_google.FilesIn(onDrive.Id).Single(file => file.Name == $"{b}.log").Content), Does.Contain(lastLine));
+        Assert.That(File.ReadAllText(Path.Combine(folder, $"{b}.log")), Does.Contain(lastLine));
+        Assert.That(_google.Destructive, Is.Empty);
+        Assert.That(TheRun().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
     }
 
     /// <summary>
@@ -419,7 +478,7 @@ public class EndToEndTests
         Assert.That(await command.WaitAsync(EndPatience), Is.EqualTo(0));
         Assert.That(await _recorders.Single().WaitAsync(EndPatience), Is.EqualTo(0));
         var run = TheRun();
-        var folder = Path.Combine(_recordings.Path, "Kalam");
+        var folder = KalamFolder();
         using (Assert.EnterMultipleScope())
         {
             Assert.That(Directory.GetFiles(folder, "*.wav"), Has.Length.EqualTo(1), "one file, the microphone as the main track");
@@ -487,7 +546,7 @@ public class EndToEndTests
         Assert.That(await command.WaitAsync(EndPatience), Is.EqualTo(0));
         Assert.That(await _recorders.Single().WaitAsync(EndPatience), Is.EqualTo(0));
         var run = TheRun();
-        var folder = Path.Combine(_recordings.Path, "Kalam");
+        var folder = KalamFolder();
         var microphoneFile = Directory.GetFiles(folder, "*.mic.wav").Single();
         var voice = TestAudio.ReadWav(microphoneFile).Samples;
         var log = File.ReadAllLines(Directory.GetFiles(folder, "*.log").Single());

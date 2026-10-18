@@ -1,5 +1,6 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Drive;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Configuration;
 
@@ -51,6 +52,7 @@ public class SettingsCheckTests
     [TestCase("Recording:MicrophoneProcessing", "raw mode", "Raw or Default")]
     [TestCase("Recording:ClassAppMute", "Maybe", "Visible, Invisible or Unknown")]
     [TestCase("Transcript:ShowGapsLongerThanSeconds", "1 minute", "a whole number")]
+    [TestCase("Drive:Enabled", "after the class", "true or false")]
     public void A_value_that_cannot_be_read_is_reported_by_its_setting(string setting, string value, string expected)
     {
         var problems = Problems(new() { [setting] = value });
@@ -540,6 +542,102 @@ public class SettingsCheckTests
         finally
         {
             Environment.SetEnvironmentVariable("OneDriveCommercial", before);
+        }
+    }
+
+    /// <summary>The Drive section's defaults: the folder ClassScribe in My Drive, and Google's own addresses.</summary>
+    [Test]
+    public void The_Drive_defaults_are_Googles_addresses_and_the_ClassScribe_folder()
+    {
+        var drive = new DriveOptions();
+
+        Assert.That((drive.FolderName, drive.ApiBaseUrl, drive.OAuthBaseUrl), Is.EqualTo(("ClassScribe", "https://www.googleapis.com/", "https://oauth2.googleapis.com/")));
+        Assert.That(Problems(new() { ["Drive:FolderName"] = "Classes of 2026 (Arabic)" }), Is.Empty);
+    }
+
+    /// <summary>The folder's name must be a plain name of at most 100 characters: not empty, and without a tab or a line break.</summary>
+    [TestCase("", "Drive:FolderName is empty; it names the folder in My Drive that holds the classes, such as ClassScribe.")]
+    [TestCase("   ", "Drive:FolderName is empty; it names the folder in My Drive that holds the classes, such as ClassScribe.")]
+    [TestCase("Class\tScribe", "Drive:FolderName holds a tab, a line break or another control character; write a plain name, such as ClassScribe.")]
+    public void The_Drive_folder_name_must_be_a_plain_name(string value, string problem)
+    {
+        Assert.That(Problems(new() { ["Drive:FolderName"] = value }), Is.EqualTo(new[] { problem }));
+    }
+
+    /// <summary>A name of 101 characters is refused, with the length; 100 is taken.</summary>
+    [Test]
+    public void The_Drive_folder_name_may_have_at_most_100_characters()
+    {
+        Assert.That(Problems(new() { ["Drive:FolderName"] = new string('a', 100) }), Is.Empty);
+        Assert.That(Problems(new() { ["Drive:FolderName"] = new string('a', 101) }),
+            Is.EqualTo(new[] { "Drive:FolderName is 101 characters long; it may be at most 100, such as ClassScribe." }));
+    }
+
+    /// <summary>What goes up and in pieces of what size: everything, in pieces of 8 MiB, unless the settings say otherwise.</summary>
+    [Test]
+    public void The_Drive_defaults_upload_everything_in_pieces_of_8_MiB()
+    {
+        var drive = new DriveOptions();
+
+        Assert.That((drive.Upload, drive.ChunkMegabytes), Is.EqualTo((DriveUploadScope.Everything, 8)));
+        Assert.That(Problems(new() { ["Drive:Upload"] = "withoutaudio", ["Drive:ChunkMegabytes"] = "256" }), Is.Empty);
+    }
+
+    /// <summary>Uploads after each class are on by default, once Drive is set up; false leaves them to menu choice 9 and drive upload.</summary>
+    [Test]
+    public void Drive_uploads_after_each_class_by_default()
+    {
+        Assert.That(new DriveOptions().Enabled, Is.True);
+        Assert.That(Problems(new() { ["Drive:Enabled"] = "false" }), Is.Empty);
+    }
+
+    /// <summary>Drive:Upload takes Everything or WithoutAudio by name, in any case, and nothing else, not even a number.</summary>
+    [TestCase("Everything", true)]
+    [TestCase("WithoutAudio", true)]
+    [TestCase("everything", true)]
+    [TestCase("1", false)]
+    [TestCase("Audio", false)]
+    public void Drive_Upload_takes_the_names_of_its_values(string value, bool usable)
+    {
+        var problems = Problems(new() { ["Drive:Upload"] = value });
+
+        Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo($"Drive:Upload is \"{value}\", which is not Everything or WithoutAudio."));
+    }
+
+    /// <summary>A piece is from 1 to 256 MiB: a smaller one would cost a request per MiB, a larger one too much memory and too much to send again.</summary>
+    [TestCase(0, false)]
+    [TestCase(1, true)]
+    [TestCase(256, true)]
+    [TestCase(257, false)]
+    [TestCase(-8, false)]
+    public void Drive_ChunkMegabytes_is_from_1_to_256(int value, bool usable)
+    {
+        var problems = Problems(new() { ["Drive:ChunkMegabytes"] = value.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+
+        Assert.That(problems, usable ? Is.Empty : Is.EqualTo(new[] { $"Drive:ChunkMegabytes is {value}; it must be from 1 to 256." }));
+    }
+
+    /// <summary>
+    /// Google's addresses must be https, or http only to this computer, for a local stub in a dry run: the client secret and
+    /// the tokens are sent there, so plain http elsewhere is refused, and so is anything that is not a web address.
+    /// </summary>
+    [TestCase("https://www.googleapis.com/", true)]
+    [TestCase("https://drive-stub.example/", true)]
+    [TestCase("http://127.0.0.1:5005/", true)]
+    [TestCase("http://localhost:5005", true)]
+    [TestCase("http://www.googleapis.com/", false)]
+    [TestCase("ftp://127.0.0.1/", false)]
+    [TestCase("www.googleapis.com", false)]
+    [TestCase("", false)]
+    public void Google_addresses_must_be_https_or_a_local_stub(string value, bool usable)
+    {
+        foreach (var (setting, example) in new[] { ("Drive:ApiBaseUrl", "https://www.googleapis.com/"), ("Drive:OAuthBaseUrl", "https://oauth2.googleapis.com/") })
+        {
+            var problems = Problems(new() { [setting] = value });
+
+            Assert.That(problems, usable
+                ? Is.Empty
+                : Is.EqualTo(new[] { $"{setting} is \"{value}\"; it must be an https address, such as {example}, or http://127.0.0.1:<port>/ for a local stub." }));
         }
     }
 }

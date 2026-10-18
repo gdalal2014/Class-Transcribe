@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using ClassScribe.Drive;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -10,19 +11,22 @@ namespace ClassScribe.Commands;
 /// <summary>
 /// Lays a transcript out again, for free, from an answer ElevenLabs sent earlier and ClassScribe saved: with the
 /// recording's marks and the Transcript settings as they are now, written as the next free copy, so that nothing is
-/// overwritten. Nothing is uploaded and no API key is needed. It suits labels typed into the marks after the class, and
-/// a change to the Transcript settings. The settings are those of the run's own scope.
+/// overwritten. Nothing is sent to ElevenLabs and no API key is needed. It suits labels typed into the marks after the
+/// class, and a change to the Transcript settings. Once Drive is set up, the new transcript then goes up to Google Drive
+/// with its recording (see <see cref="IDriveAutoUpload"/>). The settings are those of the run's own scope.
 /// </summary>
 public sealed partial class RebuildCommand(
     TranscriptionWorkflow workflow,
     ClassFolders folders,
     IDesktop desktop,
+    IDriveAutoUpload drive,
     IOptionsSnapshot<RecordingOptions> recording,
     ILogger<RebuildCommand> logger)
 {
     /// <summary>
     /// Rebuilds the transcript <paramref name="path"/> names: a folder means its newest recording with a saved answer,
-    /// whether or not its audio is still there; any file of a recording means that recording, from its newest saved
+    /// whether or not its audio is still there, among those in it and in its date folders (a course's folder, a class's
+    /// date folder, or a folder of the old layout); any file of a recording means that recording, from its newest saved
     /// answer; and an answer saved as .json means that answer. When <paramref name="open"/> is true, the new transcript is
     /// opened as the settings ask. Returns the process exit code.
     /// </summary>
@@ -68,6 +72,10 @@ public sealed partial class RebuildCommand(
         logger.LogInformation("Transcript saved to {Path}", rebuilt);
         if (open) desktop.ShowTranscript(recording.Value, new TranscriptFiles(rebuilt, answer));
         logger.LogInformation("{Cost}", NothingCharged);
+
+        // Last of all, the new transcript goes up to Google Drive with its recording, once Drive is set up; an answer saved
+        // under a name of its own belongs to no recording, and nothing goes up.
+        if (RecordingFiles.TryParse(rebuilt) is { } rebuiltRecording) await drive.UploadAsync(rebuiltRecording);
         return 0;
     }
 
@@ -76,35 +84,41 @@ public sealed partial class RebuildCommand(
 
     /// <summary>
     /// The recording a folder stands for: the one started last among those with a saved answer, or, when none has one, the
-    /// one started last. A recording counts by any of its files, so one whose audio was deleted since counts, and so does
-    /// one known only by an answer kept as unread, though that is no saved answer. Each recording started later than the
-    /// one rebuilt is named with the reason it was passed over, so that the one rebuilt is not taken for it. Null when the
-    /// folder holds no recording. The folder is read strictly, so one that cannot be read is an error rather than a folder
-    /// without recordings.
+    /// one started last. The recordings of a folder are those in it and in its date folders (see
+    /// <see cref="ClassFolders.RecordingFoldersIn"/>), so a course's folder stands for its recordings in both layouts and a
+    /// date folder for its own. A recording counts by any of its files, so one whose audio was deleted since counts, and
+    /// so does one known only by an answer kept as unread, though that is no saved answer. Each recording started later
+    /// than the one rebuilt is named with the reason it was passed over, so that the one rebuilt is not taken for it. Null
+    /// when the folder holds no recording. The folders are read strictly, so one that cannot be read is an error rather
+    /// than a folder without recordings.
     /// </summary>
     private RecordingFiles? FindInFolder(string folder)
     {
-        var found = Directory.EnumerateFiles(folder)
+        var found = ClassFolders.RecordingFoldersIn(folder)
+            .SelectMany(Directory.EnumerateFiles)
             .Select(file => (Folder: Path.GetDirectoryName(file)!, Match: FileOfARecording().Match(Path.GetFileName(file))))
             .Where(file => file.Match.Success)
             .ToList();
         var answered = found
             .Where(file => file.Match.Groups["answer"].Success && !file.Match.Groups["unread"].Success)
-            .Select(file => file.Match.Groups["base"].Value)
+            .Select(file => Path.Combine(file.Folder, file.Match.Groups["base"].Value))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var recordings = found
             .Select(file => new RecordingFiles(file.Folder, file.Match.Groups["base"].Value))
-            .DistinctBy(files => files.BaseName, StringComparer.OrdinalIgnoreCase)
+            .DistinctBy(OwnPath, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(files => files.StartedUtc ?? DateTimeOffset.MinValue)
             .ThenByDescending(files => files.BaseName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var newestAnswered = recordings.FindIndex(files => answered.Contains(files.BaseName));
+        var newestAnswered = recordings.FindIndex(files => answered.Contains(OwnPath(files)));
         if (newestAnswered < 0) return recordings.FirstOrDefault();
 
         foreach (var newer in recordings.Take(newestAnswered)) SayPassedOver(newer, recordings[newestAnswered]);
         return recordings[newestAnswered];
     }
+
+    /// <summary>The recording's base name in its folder, which tells it apart from a recording of the same base name in another folder.</summary>
+    private static string OwnPath(RecordingFiles files) => Path.Combine(files.Folder, files.BaseName);
 
     /// <summary>
     /// Says why <paramref name="newer"/>, started later than <paramref name="rebuilt"/>, is passed over in a folder: the
@@ -151,17 +165,20 @@ public sealed partial class RebuildCommand(
 
     /// <summary>
     /// The recording an answer of <paramref name="files"/> is laid out beside: the files beside the answer when the
-    /// recording is there, or else those in the folder of the recording's name next to the answer, when the recording is
-    /// there. That is where the recording is when its answer was kept in the recordings folder, because the recording's
-    /// own folder would not take it; its transcript then goes beside the recording, with its marks and the time it was
-    /// recorded, and the recording counts as transcribed. When it is in neither place, the files beside the answer.
+    /// recording is there, or else those in the folder of the recording's name next to the answer, or in one of that
+    /// folder's date folders, when the recording is there. That is where the recording is when its answer was kept in the
+    /// recordings folder, because the recording's own folder would not take it; its transcript then goes beside the
+    /// recording, with its marks and the time it was recorded, and the recording counts as transcribed. When it is in
+    /// none of those places, the files beside the answer.
     /// </summary>
     private static RecordingFiles WhereRecorded(RecordingFiles files)
     {
         if (IsThere(files)) return files;
 
-        var inItsFolder = files with { Folder = Path.Combine(files.Folder, files.Name) };
-        return IsThere(inItsFolder) ? inItsFolder : files;
+        var course = Path.Combine(files.Folder, files.Name);
+        if (!Directory.Exists(course)) return files;
+
+        return ClassFolders.RecordingFoldersIn(course).Select(folder => files with { Folder = folder }).FirstOrDefault(IsThere) ?? files;
     }
 
     /// <summary>True when the recording's audio, marks or a transcript of it are in its <see cref="RecordingFiles.Folder"/>.</summary>

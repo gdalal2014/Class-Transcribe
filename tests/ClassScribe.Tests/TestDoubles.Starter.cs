@@ -1,6 +1,8 @@
 using ClassScribe.Commands;
+using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Storage;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ClassScribe.Tests;
 
@@ -274,13 +276,23 @@ public sealed class FakeRunViewer : IRunViewer
 
 /// <summary>
 /// The runs a test's <see cref="IRecordRun"/> stand-ins ran in this window: each request, and the scope it ran in, in order.
-/// Each run answers with the exit code the test queued, or 0.
+/// Each run answers with the exit code the test queued, or 0, or fails with the error the test queued; and Google Drive's
+/// part in it, when the scope has one, is told how it ended, as the record command tells it (see
+/// <see cref="IDriveAutoUpload.Ended"/>).
 /// </summary>
 public sealed class FakeRecordRuns
 {
     private readonly Lock _gate = new();
     private readonly List<(RecordRequest Request, IServiceProvider Scope)> _runs = [];
     private readonly Queue<int> _exitCodes = new();
+    private readonly Queue<Exception> _failures = new();
+
+    /// <summary>Queues the error the next run fails with, before any exit code queued.</summary>
+    public FakeRecordRuns ThenFail(Exception failure)
+    {
+        lock (_gate) _failures.Enqueue(failure);
+        return this;
+    }
 
     /// <summary>Every run in this window so far, with the scope's services it was resolved from, in order.</summary>
     public IReadOnlyList<(RecordRequest Request, IServiceProvider Scope)> Runs
@@ -298,14 +310,25 @@ public sealed class FakeRecordRuns
         return this;
     }
 
-    /// <summary>Notes a run of <paramref name="request"/> in the scope of <paramref name="scope"/>, and gives its exit code.</summary>
+    /// <summary>
+    /// Notes a run of <paramref name="request"/> in the scope of <paramref name="scope"/>, and gives its exit code, or throws
+    /// the error queued; Google Drive's part in the scope, when there is one, is told that the run ended with a transcript or
+    /// failed.
+    /// </summary>
     internal int Run(RecordRequest request, IServiceProvider scope)
     {
+        Exception? failure;
+        int exitCode;
         lock (_gate)
         {
             _runs.Add((request, scope));
-            return _exitCodes.TryDequeue(out var exitCode) ? exitCode : 0;
+            failure = _failures.TryDequeue(out var queued) ? queued : null;
+            exitCode = _exitCodes.TryDequeue(out var code) ? code : 0;
         }
+
+        var kind = failure is null ? OutcomeKind.Transcribed : OutcomeKind.TranscriptFailed;
+        scope.GetService<IDriveAutoUpload>()?.Ended(new RunOutcome(kind, failure is null ? exitCode : 1, $"{kind}.", null, null, null));
+        return failure is null ? exitCode : throw failure;
     }
 }
 

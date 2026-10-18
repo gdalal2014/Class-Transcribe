@@ -33,9 +33,12 @@ public class ClassFoldersTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Creates the folders under test, rooted in the temporary folder unless another root is given.</summary>
+    /// <summary>
+    /// Creates the folders under test, rooted in the temporary folder unless another root is given, on the test's clock
+    /// read in US Eastern time, where now is 14:30 on 14 October: a new recording's date folder is 2026-10-14 on every machine.
+    /// </summary>
     private ClassFolders Folders(string? outputFolder = null) =>
-        new(TestOptions.Create(new RecordingOptions { OutputFolder = outputFolder ?? _folder.Path }), _time, _log);
+        new(TestOptions.Create(new RecordingOptions { OutputFolder = outputFolder ?? _folder.Path }), new ZonedClock(_time, ZonedTimeProvider.EasternSummer.LocalTimeZone), _log);
 
     /// <summary>Holds a recording's first file open without sharing, as another program might.</summary>
     private static FileStream HoldOpen(RecordingFiles files) =>
@@ -237,7 +240,10 @@ public class ClassFoldersTests
         Assert.That(Folders(outputFolder: _folder.File("Classes")).DescribeRootProblem(), Does.Contain("is a file"));
     }
 
-    /// <summary>A recording's folder is its name; its files carry the name and the UTC start time. The folder is shared by later recordings of the same name.</summary>
+    /// <summary>
+    /// A recording's folder is the date folder of its start under the folder of its name; its files carry the name and the
+    /// UTC start time. The name's folder is shared by later recordings of the same name, each class in a date folder of its own.
+    /// </summary>
     [Test]
     public void A_recording_gets_its_name_as_folder_and_its_start_time_in_its_files()
     {
@@ -247,10 +253,10 @@ public class ClassFoldersTests
         TestAudio.WriteWav(first.Segment(1), 16000, [1]);
         var second = folders.CreateRecording("Kalam");
 
-        Assert.That(first.Folder, Is.EqualTo(_folder.File("Kalam")));
+        Assert.That(first.Folder, Is.EqualTo(_folder.File(@"Kalam\2026-10-14")));
         Assert.That(Directory.Exists(first.Folder), Is.True);
         Assert.That(first.BaseName, Is.EqualTo("Kalam_2026-10-14_18-30-00Z"));
-        Assert.That(second.Folder, Is.EqualTo(first.Folder), "recordings of one class share its folder");
+        Assert.That(second.Folder, Is.EqualTo(_folder.File(@"Kalam\2026-10-14 (2)")), "recordings of one class share the folder of its name");
         Assert.That(second.BaseName, Is.EqualTo("Kalam_2026-10-14_18-30-01Z"), "a recording started within the same second gets the next one, so nothing is overwritten");
     }
 
@@ -295,13 +301,13 @@ public class ClassFoldersTests
     public void A_name_windows_keeps_for_a_device_gets_an_underscore(string name, string safe) =>
         Assert.That(ClassFolders.SafeName(name), Is.EqualTo(safe));
 
-    /// <summary>A transcribed file gets a folder named after the file, and files stamped with the transcription time.</summary>
+    /// <summary>A transcribed file gets a folder named after the file, with the date folder of the transcription in it, and files stamped with the transcription time.</summary>
     [Test]
     public void A_file_gets_a_folder_named_after_it()
     {
         var files = Folders().CreateForFile(@"D:\Downloads\Lecture 5.mp4");
 
-        Assert.That(files.Folder, Is.EqualTo(_folder.File("Lecture 5")));
+        Assert.That(files.Folder, Is.EqualTo(Path.Combine(_folder.File("Lecture 5"), "2026-10-14")));
         Assert.That(files.BaseName, Is.EqualTo("Lecture 5_2026-10-14_18-30-00Z"));
         Assert.That(Directory.Exists(files.Folder), Is.True);
     }
@@ -319,7 +325,7 @@ public class ClassFoldersTests
     {
         var files = Folders().CreateForFile(source);
 
-        Assert.That(files.Folder, Is.EqualTo(_folder.File(folder)));
+        Assert.That(files.Folder, Is.EqualTo(Path.Combine(_folder.File(folder), "2026-10-14")));
         WriteTranscript(files);
     }
 
@@ -329,7 +335,7 @@ public class ClassFoldersTests
     {
         var files = Folders().CreateForFile(@"D:\Downloads\nul.wav");
 
-        Assert.That(files.Folder, Is.EqualTo(_folder.File("nul_")));
+        Assert.That(files.Folder, Is.EqualTo(Path.Combine(_folder.File("nul_"), "2026-10-14")));
         WriteTranscript(files);
     }
 
@@ -341,7 +347,7 @@ public class ClassFoldersTests
     {
         var files = Folders().CreateForFile(source);
 
-        Assert.That(files.Folder, Is.EqualTo(_folder.File("Untitled")));
+        Assert.That(files.Folder, Is.EqualTo(Path.Combine(_folder.File("Untitled"), "2026-10-14")));
         Assert.That(files.BaseName, Is.EqualTo("Untitled_2026-10-14_18-30-00Z"));
         WriteTranscript(files);
     }
@@ -504,9 +510,11 @@ public class ClassFoldersTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Recording:OutputFolder"] = _folder.Path })
             .Build();
+        using var runtime = new TestRuntime();
         using var services = new ServiceCollection()
             .AddLogging()
             .AddClassScribe(configuration)
+            .AddSingleton(runtime.Folder)
             .AddSingleton<ILogger<ClassFolders>>(_log)
             .BuildServiceProvider();
         using var stream = HoldOpen(held);
@@ -757,7 +765,7 @@ public class ClassFoldersTests
     }
 
     /// <summary>
-    /// A recording goes under the recordings folder given for its run (--output), in a folder of its name there, and
+    /// A recording goes under the recordings folder given for its run (--output), in a folder of its name and date there, and
     /// under the setting's folder when none is given; the setting's folder stays the root either way.
     /// </summary>
     [Test]
@@ -769,10 +777,10 @@ public class ClassFoldersTests
         var given = folders.CreateRecording("Kalam", elsewhere);
         var unset = folders.CreateRecording("Fiqh", root: null);
 
-        Assert.That(given.Folder, Is.EqualTo(Path.Combine(elsewhere, "Kalam")));
+        Assert.That(given.Folder, Is.EqualTo(Path.Combine(elsewhere, "Kalam", "2026-10-14")));
         Assert.That(given.BaseName, Is.EqualTo("Kalam_2026-10-14_18-30-00Z"));
         Assert.That(Directory.Exists(given.Folder), Is.True);
-        Assert.That(unset.Folder, Is.EqualTo(_folder.File("Fiqh")));
+        Assert.That(unset.Folder, Is.EqualTo(Path.Combine(_folder.File("Fiqh"), "2026-10-14")));
         Assert.That(folders.Root, Is.EqualTo(_folder.Path));
     }
 
@@ -782,7 +790,7 @@ public class ClassFoldersTests
     {
         var files = Folders().CreateForFile(@"D:\Downloads\Lecture 5.mp4", _folder.File("Elsewhere"));
 
-        Assert.That(files.Folder, Is.EqualTo(Path.Combine(_folder.File("Elsewhere"), "Lecture 5")));
+        Assert.That(files.Folder, Is.EqualTo(Path.Combine(_folder.File("Elsewhere"), "Lecture 5", "2026-10-14")));
         Assert.That(Directory.Exists(files.Folder), Is.True);
     }
 

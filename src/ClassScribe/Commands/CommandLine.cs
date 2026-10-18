@@ -46,6 +46,16 @@ public static class CommandLine
     public static string Rebuild(string path, string? processPath, string appFolder) => Command(processPath, appFolder, $"rebuild {Quote(path)}");
 
     /// <summary>
+    /// The PowerShell command that uploads <paramref name="path"/> to Google Drive with this very program: a recording's file,
+    /// a folder of recordings, or, when it is null, what waits in the queue.
+    /// </summary>
+    public static string DriveUpload(string? path) => DriveUpload(path, Environment.ProcessPath, AppContext.BaseDirectory);
+
+    /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
+    public static string DriveUpload(string? path, string? processPath, string appFolder) =>
+        Command(processPath, appFolder, path is null ? "drive upload" : $"drive upload {Quote(path)}");
+
+    /// <summary>
     /// The PowerShell command that continues, as its next part, the recording <paramref name="request"/>'s run made, with
     /// this very program: record, or record-only for a run that was not to be transcribed, with the run's name, its source
     /// (and, from phase 3, its microphone, with the app it was chosen to follow for the run), its recordings folder,

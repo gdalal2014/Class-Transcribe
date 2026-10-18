@@ -5,6 +5,7 @@ using ClassScribe.Desktop.Windows;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -302,6 +303,7 @@ public class AppHostTests
             recorder.Replace(ServiceDescriptor.Singleton<IPowerRequests>(new FakePowerRequests()));
             recorder.Replace(ServiceDescriptor.Singleton<IPowerSource>(new FakePowerSource()));
             recorder.Replace(ServiceDescriptor.Singleton<ISystemTimes>(new FakeSystemTimes(time)));
+            recorder.AddSingleton(new RoamingFolder(_folder.File("Roaming")));   // never the real %APPDATA%\ClassScribe
         });
         var services = host.Services;
         using var scope = services.CreateScope();

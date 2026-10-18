@@ -89,7 +89,7 @@ public class TranscriptionWorkflowTests
             _client.Object,
             new KeytermLoader(glossaryLogger ?? NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(transcript ?? TestOptions.Create(new TranscriptOptions())),
-            new ClassFolders(recording, new ManualTimeProvider(Started), NullLogger<ClassFolders>.Instance),
+            new ClassFolders(recording, ZonedClock.Eastern(new ManualTimeProvider(Started)), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") }),
             recording,
@@ -556,7 +556,10 @@ public class TranscriptionWorkflowTests
         Assert.That(glossaryLog.Problems, Is.Empty);
     }
 
-    /// <summary>A video goes up as it is, and its transcript gets a folder of its own in the recordings folder, named after it and stamped.</summary>
+    /// <summary>
+    /// A video goes up as it is, and its transcript gets a folder of its own in the recordings folder, named after it, with
+    /// the date folder of the day it was transcribed in it, and is stamped.
+    /// </summary>
     [Test]
     public async Task A_video_file_is_uploaded_as_it_is_and_its_transcript_goes_to_the_recordings_folder()
     {
@@ -567,8 +570,8 @@ public class TranscriptionWorkflowTests
 
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
         _client.Verify(Calls.TranscriptionOf(video), Times.Once);
-        Assert.That(files.TranscriptPath, Is.EqualTo(Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.md")));
-        Assert.That(files.JsonPath, Is.EqualTo(Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.json")));
+        Assert.That(files.TranscriptPath, Is.EqualTo(Path.Combine(_recordings, "class", "2026-10-15", "class_2026-10-15_20-55-27Z.md")));
+        Assert.That(files.JsonPath, Is.EqualTo(Path.Combine(_recordings, "class", "2026-10-15", "class_2026-10-15_20-55-27Z.json")));
         Assert.That(File.ReadAllText(files.TranscriptPath), Does.StartWith($"# class{Blank}[00:00:00] Hello world."), "a file has no recording time");
         Assert.That(File.Exists(video), Is.True);
     }
@@ -593,7 +596,7 @@ public class TranscriptionWorkflowTests
     public async Task A_wav_file_is_reduced_before_upload()
     {
         var wav = _folder.File("class.wav");
-        var upload = Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.upload.wav");
+        var upload = Path.Combine(_recordings, "class", "2026-10-15", "class_2026-10-15_20-55-27Z.upload.wav");
         File.WriteAllBytes(wav, [1, 2, 3]);
 
         await CreateWorkflow().TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None);
@@ -741,7 +744,7 @@ public class TranscriptionWorkflowTests
     {
         var wav = _folder.File("class.wav");
         File.WriteAllBytes(wav, [1, 2, 3]);
-        var upload = Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.upload.wav");
+        var upload = Path.Combine(_recordings, "class", "2026-10-15", "class_2026-10-15_20-55-27Z.upload.wav");
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
         var workflow = CreateWorkflow();
 
@@ -890,7 +893,7 @@ public class TranscriptionWorkflowTests
             var files = await CreateWorkflow(logger: log).TranscribeFileAsync(wav, outputRoot: null, CancellationToken.None);
 
             Assert.That(File.Exists(files.TranscriptPath), Is.True);
-            Assert.That(holder?.Name, Is.EqualTo(Path.Combine(_recordings, "class", "class_2026-10-15_20-55-27Z.upload.wav")), "the upload copy was sent");
+            Assert.That(holder?.Name, Is.EqualTo(Path.Combine(_recordings, "class", "2026-10-15", "class_2026-10-15_20-55-27Z.upload.wav")), "the upload copy was sent");
             Assert.That(log.Problems, Has.Some.Contains("class_2026-10-15_20-55-27Z.upload.wav"));
         }
         finally
@@ -1143,7 +1146,7 @@ public class TranscriptionWorkflowTests
     {
         var audio = _folder.File(fileName);
         File.WriteAllBytes(audio, [1, 2, 3]);
-        var folder = Path.Combine(_recordings, savedAs);
+        var folder = Path.Combine(_recordings, savedAs, "2026-10-15");
 
         var files = await CreateWorkflow().TranscribeFileAsync(audio, outputRoot: null, CancellationToken.None);
 
@@ -1475,7 +1478,7 @@ public class TranscriptionWorkflowTests
         File.Delete(_files.Segment(1));
         TestAudio.WriteWav(_files.Segment(1), 44100, new short[103_441]);   // the first run, until a device switch
         TestAudio.WriteWav(_files.Segment(2), 48000, new short[59_256]);    // the first run, after it
-        var folders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _recordings }), new ManualTimeProvider(Started), NullLogger<ClassFolders>.Instance);
+        var folders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _recordings }), ZonedClock.Eastern(new ManualTimeProvider(Started)), NullLogger<ClassFolders>.Instance);
         var marks = new ClassMarks(NullLogger<ClassMarks>.Instance);
 
         var files = folders.Open(_files.Folder, _files.BaseName);
@@ -1514,7 +1517,7 @@ public class TranscriptionWorkflowTests
 
         var files = await CreateWorkflow().TranscribeFileAsync(video, elsewhere, CancellationToken.None);
 
-        Assert.That(files.TranscriptPath, Is.EqualTo(Path.Combine(elsewhere, "class", "class_2026-10-15_20-55-27Z.md")));
+        Assert.That(files.TranscriptPath, Is.EqualTo(Path.Combine(elsewhere, "class", "2026-10-15", "class_2026-10-15_20-55-27Z.md")));
         Assert.That(File.Exists(video), Is.True);
         Assert.That(Directory.Exists(Path.Combine(_recordings, "class")), Is.False);
     }

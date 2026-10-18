@@ -72,6 +72,7 @@ public class RecordCommandTests
     private SourceChoice _choice = null!;
     private RunBookkeeping? _bookkeeping;
     private List<RunHandle> _hostRuns = null!;
+    private FakeDriveAutoUpload _drive = null!;
 
     /// <summary>
     /// Creates the recordings folder, ClassScribe's own folder, a simulated audio device with a capture ready, the
@@ -112,6 +113,7 @@ public class RecordCommandTests
         _loopLog = new RecordingLogger<RecordingLoop>();
         _bookkeeping = null;
         _hostRuns = [];
+        _drive = new FakeDriveAutoUpload();
     }
 
     /// <summary>
@@ -194,7 +196,7 @@ public class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance),
-            loop, workflow, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, recording, elevenLabs, time, logger ?? _log);
+            loop, workflow, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log);
     }
 
     /// <summary>
@@ -263,6 +265,51 @@ public class RecordCommandTests
     }
 
     /// <summary>
+    /// The recording goes into Google Drive's queue as its run starts, beside the run file, before anything is recorded, so
+    /// that a class whose recorder crashes still goes up later; how the run ended is noted at its end. The upload itself is
+    /// left to whoever ran the run, once the end is shown (see <see cref="RecorderHost"/> and <see cref="RecordStarter"/>).
+    /// </summary>
+    [Test]
+    public async Task The_recording_goes_into_Google_Drives_queue_as_its_run_starts()
+    {
+        (RunState State, bool Capturing)? atTheQueue = null;
+        _drive.OnQueue = _ => atTheQueue = (RunFile().State, _capture.Started);
+        var run = CreateCommand().RunAsync(Request());
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        var queued = _drive.Recordings.Single();
+        Assert.That((queued.Folder, queued.BaseName), Is.EqualTo((KalamFolder(), Path.GetFileNameWithoutExtension(Recording()))));
+        Assert.That(atTheQueue, Is.EqualTo((RunState.Recording, false)), "queued beside the run file, before the capture started");
+        Assert.That(_drive.Calls, Is.EqualTo(new[] { $"Queue {queued.BaseName}", "Ended Transcribed" }));
+    }
+
+    /// <summary>Record-only's end is noted for Google Drive as well, for the upload after it.</summary>
+    [Test]
+    public async Task Record_only_s_end_is_noted_for_Google_Drive()
+    {
+        var run = CreateCommand().RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(_drive.Calls.Last(), Is.EqualTo("Ended Recorded"));
+    }
+
+    /// <summary>A start the lock refused records nothing, so nothing goes into Google Drive's queue.</summary>
+    [Test]
+    public async Task A_refused_start_queues_nothing_for_Google_Drive()
+    {
+        using var other = OtherLock().TryTake();
+
+        Assert.That(await EndingByItselfAsync(CreateCommand().RunAsync(Request())), Is.EqualTo(1));
+        Assert.That(_drive.Calls, Is.Empty);
+    }
+
+    /// <summary>
     /// Waits for <paramref name="run"/>, which must end by itself, without a stop: a start that is refused, or one that fails
     /// before it records. Should it record instead, the test fails after 15 seconds, by name, rather than wait for a stop
     /// that never comes; the run is then stopped, and given a moment to let go of its files.
@@ -317,8 +364,19 @@ public class RecordCommandTests
     /// <summary>A capture of an app's sound, which like Windows' process loopback hands over audio all the time, silence included.</summary>
     private static FakeAudioCapture AppCapture(int processId) => new(Pcm16KMono, "chrome", $"process:{processId}") { DeliversContinuously = true };
 
-    /// <summary>The folder of the recording named Kalam.</summary>
-    private string KalamFolder() => Path.Combine(_folder.Path, "Kalam");
+    /// <summary>The folder of the course named Kalam, which holds a date folder for each of its classes.</summary>
+    private string KalamCourse() => Path.Combine(_folder.Path, "Kalam");
+
+    /// <summary>
+    /// The folder of the recording named Kalam: the one date folder in the course's folder, where a run puts a new
+    /// recording, found rather than worked out, so that a run across midnight finds it too.
+    /// </summary>
+    private string KalamFolder()
+    {
+        var dated = Directory.GetDirectories(KalamCourse()).Single();
+        Assert.That(ClassFolders.IsDateFolderName(Path.GetFileName(dated)), Is.True, $"{dated} is a date folder");
+        return dated;
+    }
 
     /// <summary>The one file in the Kalam folder matching the pattern.</summary>
     private string Only(string pattern) => Directory.GetFiles(KalamFolder(), pattern).Single();
@@ -585,7 +643,7 @@ public class RecordCommandTests
         var exitCode = await EndingByItselfAsync(CreateCommand().RunAsync(Request()));
 
         Assert.That(exitCode, Is.EqualTo(1));
-        Assert.That(Directory.Exists(KalamFolder()), Is.False, "no file made");
+        Assert.That(Directory.Exists(KalamCourse()), Is.False, "no file made");
         Assert.That(_runtime.FilesInRuns(), Is.Empty, "no run file");
         Assert.That(_provider.Created, Is.Empty, "no capture opened");
         Assert.That(_power.Holds, Is.Empty);
@@ -632,7 +690,7 @@ public class RecordCommandTests
         Assert.That(run.Current.State, Is.EqualTo(RunState.Refused));
         Assert.That(run.Current.Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.Refused, 1,
             "Only one recording at a time: another recording is running. Start ClassScribe to see it, or stop it first.", null, null, null)));
-        Assert.That(Directory.Exists(KalamFolder()), Is.False);
+        Assert.That(Directory.Exists(KalamCourse()), Is.False);
     }
 
     // ------------------------------------------------------------------ the run file
@@ -1000,6 +1058,61 @@ public class RecordCommandTests
         Assert.That(await run, Is.EqualTo(0));
         Assert.That(Path.GetFileName(Recording()), Does.Not.StartWith("Kalam_2026-10-15_23-00-02Z"));
         Assert.That(_log.Problems, Has.Some.StartsWith("Could not continue Kalam_2026-10-15_23-00-02Z (").And.Some.EndsWith("); recording \"Kalam\" as a new recording instead"));
+    }
+
+    /// <summary>
+    /// A continued recording keeps writing into its own folder in whichever layout it was made, even days later: flat in
+    /// the folder of its name, as recordings were kept before the course and date folders, or in its date folder, "(2)"
+    /// included. No date folder of today is made for it.
+    /// </summary>
+    [TestCase(null)]
+    [TestCase("2026-10-14 (2)")]
+    public async Task A_continued_recording_keeps_writing_into_its_own_folder_in_either_layout(string? dateFolder)
+    {
+        var earlier = RecordingFiles.ForNew(dateFolder is null ? KalamCourse() : Path.Combine(KalamCourse(), dateFolder), "Kalam",
+            new DateTimeOffset(2026, 10, 15, 0, 30, 0, TimeSpan.Zero));
+        Directory.CreateDirectory(earlier.Folder);
+        TestAudio.WriteWav(earlier.Segment(1), 16000, new short[16000]);
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 10, 16, 14, 0, 0, TimeSpan.Zero));
+        var run = CreateCommand(time: time).RunAsync(Request(transcribe: false, continueBaseName: earlier.BaseName));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(earlier.FindSegments(), Is.EqualTo(new[] { earlier.Segment(1), earlier.Segment(2) }));
+        Assert.That(Directory.GetDirectories(KalamCourse()), Is.EqualTo(dateFolder is null ? Array.Empty<string>() : new[] { earlier.Folder }), "no date folder of today");
+        Assert.That(_log.Messages, Has.Some.EqualTo($"Continuing \"Kalam\" as its next part ({earlier.BaseName}, 00:00:01 recorded so far), in {earlier.Folder}"));
+    }
+
+    /// <summary>
+    /// A class that runs past local midnight stays in the date folder of its start: a part opened after midnight, as after
+    /// the device failed, and a mark set then go beside the first part, and no folder of the new day is made.
+    /// </summary>
+    [Test]
+    public async Task A_class_that_runs_past_midnight_stays_in_the_folder_of_its_start()
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 10, 18, 3, 59, 30, TimeSpan.Zero));   // 23:59:30 on 17 October in US Eastern time
+        var next = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        var run = CreateCommand(time: ZonedClock.Eastern(clock)).RunAsync(Request(transcribe: false));
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+
+        clock.Advance(TimeSpan.FromSeconds(31));   // 00:00:01 on 18 October
+        _capture.Fail(new IOException("The device was unplugged."));
+        await Wait.UntilAsync(() => next.Started);
+        next.Deliver(TestAudio.Shorts(500, -500));
+        _ui.Type('m');
+        await Wait.UntilAsync(() => _loopLog.Messages.Any(message => message.StartsWith("Mark 1 at", StringComparison.Ordinal)));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        var startFolder = Path.Combine(KalamCourse(), "2026-10-17");
+        Assert.That(Directory.GetDirectories(KalamCourse()), Is.EqualTo(new[] { startFolder }));
+        var files = RecordingFiles.TryParse(Directory.GetFiles(startFolder, "*.wav").First())!;
+        Assert.That(files.BaseName, Is.EqualTo("Kalam_2026-10-18_03-59-30Z"));
+        Assert.That(files.FindSegments(), Has.Count.GreaterThanOrEqualTo(2).And.All.StartsWith(startFolder));
+        Assert.That(File.Exists(files.Marks), Is.True);
     }
 
     // ------------------------------------------------------------------ the end of the process or the session
@@ -1596,15 +1709,16 @@ public class RecordCommandTests
     }
 
     /// <summary>
-    /// An earlier transcript left under the same name, say of a recording whose audio was since deleted, is
-    /// not taken for an answer kept in this run: a failure that charged nothing gets the usual hint.
+    /// An earlier transcript left under the same name, say of a recording of the old layout whose audio was since deleted,
+    /// is not taken for an answer kept in this run: a failure that charged nothing gets the usual hint. The new recording
+    /// takes the next second, so that it never shares a name with a recording of its course.
     /// </summary>
     [Test]
     public async Task An_earlier_transcript_is_not_taken_for_a_kept_answer()
     {
         var started = new DateTimeOffset(2026, 10, 15, 20, 55, 27, TimeSpan.Zero);
-        var earlier = RecordingFiles.ForNew(KalamFolder(), "Kalam", started);
-        Directory.CreateDirectory(KalamFolder());
+        var earlier = RecordingFiles.ForNew(KalamCourse(), "Kalam", started);
+        Directory.CreateDirectory(KalamCourse());
         File.WriteAllText(earlier.Json(), "{}");
         File.WriteAllText(earlier.Transcript(), "# Kalam");
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
@@ -1614,7 +1728,7 @@ public class RecordCommandTests
         _signals.RequestStop();
 
         Assert.ThrowsAsync<TranscriptionException>(async () => await run);
-        Assert.That(Recording(), Is.EqualTo(earlier.Segment(1)), "the recording has the earlier one's name");
+        Assert.That(Path.GetFileName(Recording()), Is.EqualTo("Kalam_2026-10-15_20-55-28Z.wav"), "the next second, beside none of the earlier one's files");
         Assert.That(_log.Problems.Last(), Does.Contain("To try the transcript again").And.Not.Contain("kept in"));
     }
 
@@ -1627,9 +1741,9 @@ public class RecordCommandTests
     public async Task An_answer_kept_by_an_earlier_recording_of_the_name_is_not_pointed_to()
     {
         var started = new DateTimeOffset(2026, 10, 15, 20, 55, 27, TimeSpan.Zero);
-        var lastWeek = RecordingFiles.ForNew(KalamFolder(), "Kalam", started.AddDays(-7));
-        Directory.CreateDirectory(KalamFolder());
-        File.WriteAllText(Path.Combine(KalamFolder(), $"{lastWeek.BaseName}.unread.json"), "{\"text\": \"Hello");
+        var lastWeek = RecordingFiles.ForNew(KalamCourse(), "Kalam", started.AddDays(-7));
+        Directory.CreateDirectory(KalamCourse());
+        File.WriteAllText(Path.Combine(KalamCourse(), $"{lastWeek.BaseName}.unread.json"), "{\"text\": \"Hello");
         File.WriteAllText(_folder.File($"{lastWeek.BaseName}.unread.json"), "{\"text\": \"Hello");
         _client.Setup(Calls.AnyTranscription).ThrowsAsync(new TranscriptionException("ElevenLabs is down."));
         var run = CreateCommand(time: new ManualTimeProvider(started)).RunAsync("Kalam", transcribe: true);
@@ -1917,7 +2031,8 @@ public class RecordCommandTests
         File.WriteAllText(_folder.File("appsettings.json"), "{}");
         using var app = AppHost.Build(_folder.Path, "dummy-key-for-a-local-test", services => services
             .AddSingleton<ILoopbackCaptureProvider>(_provider)
-            .AddSingleton(_runtime.Folder));   // never the real %LOCALAPPDATA%\ClassScribe
+            .AddSingleton(_runtime.Folder)                               // never the real %LOCALAPPDATA%\ClassScribe
+            .AddSingleton(new RoamingFolder(_folder.File("Roaming"))));  // nor the real %APPDATA%\ClassScribe
         using var first = app.Services.CreateScope();
         using var second = app.Services.CreateScope();
         var run = first.ServiceProvider;

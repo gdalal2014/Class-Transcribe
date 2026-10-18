@@ -127,6 +127,24 @@ public class RecorderLogTests
         Assert.That(writing.Wait(Patience), Is.True, "writing a line waited");
     }
 
+    /// <summary>
+    /// The recording's log named now is known, so that an upload of the recording can tell that the log is still being
+    /// written by this process: none at first, the one named, and none again once it ends.
+    /// </summary>
+    [Test]
+    public void The_recordings_log_named_now_is_known()
+    {
+        var log = NewLog();
+        var path = _folder.File("Kalam_2026-10-15_23-00-02Z.log");
+        Assert.That(log.NamedFile, Is.Null);
+
+        log.WriteFileTo(path);
+        Assert.That(log.NamedFile, Is.EqualTo(path));
+
+        log.EndFile();
+        Assert.That(log.NamedFile, Is.Null);
+    }
+
     // ---- The lines held in memory ----
 
     /// <summary>

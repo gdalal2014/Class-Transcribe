@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
+using ClassScribe.Drive;
 using ClassScribe.Link;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
@@ -26,8 +27,10 @@ public sealed record RecorderStart(string RunId, RecordRequest Request, IReadOnl
 /// tells the window the pipe is up; then records at once, with or without a window, through the same run as the window
 /// would (see <see cref="IRecordRun"/>), stopping for the keys the windows pass on and for the stop asked for from another
 /// window (see <see cref="StopSignal"/>). At the end it sends every window how the run ended and waits a little for them to
-/// take it; opens the results itself when no window will; after a transcript, says what it cost the account, last of all
-/// (see <see cref="UsageReport"/>); and ends with the recorder's own exit codes: 0 done, 1 failed, 3 refused because
+/// take it; opens the results itself when no window will; after a transcript, says what it cost the account (see
+/// <see cref="UsageReport"/>); last of all, once Drive is set up, uploads the recording to Google Drive, then what waits in
+/// the queue (see <see cref="IDriveAutoUpload"/>), so the process lives on for the upload while the next class may already
+/// record; and ends with the recorder's own exit codes: 0 done, 1 failed, 3 refused because
 /// another recording held the lock, 4 for a request it could not take, 130 cancelled. It never touches the console, and
 /// never waits for Enter: nobody could press it.
 /// </summary>
@@ -45,8 +48,17 @@ public sealed class RecorderHost
     /// <summary>How long the end of the run waits for the windows to take it and go.</summary>
     public static readonly TimeSpan EndPatience = TimeSpan.FromSeconds(2);
 
-    /// <summary>ClassScribe's own folder, where the request, the run file, the lock and recorder.log are: %LOCALAPPDATA%\ClassScribe, unless a test gives another.</summary>
-    public RuntimeFolder Folder { get; init; } = new();
+    /// <summary>
+    /// ClassScribe's own folder, where the request, the run file, the lock and recorder.log are: %LOCALAPPDATA%\ClassScribe,
+    /// made only when first asked for, unless a test gives another.
+    /// </summary>
+    public RuntimeFolder Folder
+    {
+        get => _folder ??= new RuntimeFolder();
+        init => _folder = value;
+    }
+
+    private RuntimeFolder? _folder;
 
     /// <summary>The clock the recorder runs on: the computer's, unless a test gives another.</summary>
     public TimeProvider Time { get; init; } = TimeProvider.System;
@@ -167,7 +179,7 @@ public sealed class RecorderHost
         }
     }
 
-    /// <summary>Steps 3 to 7: the server, the run file, the run in its scope, the end and the transcript's cost, with the host built.</summary>
+    /// <summary>Steps 3 to 8: the server, the run file, the run in its scope, the end, the transcript's cost and the upload to Google Drive, with the host built.</summary>
     private async Task<int> RunWithAsync(IHost host, string runId, RecordRequest request, RecorderLog log)
     {
         var services = host.Services;
@@ -220,11 +232,12 @@ public sealed class RecorderHost
     }
 
     /// <summary>
-    /// Steps 5 to 7: the run in a scope of its own, with the keys and Ctrl+C from the windows and the stop from another
+    /// Steps 5 to 8: the run in a scope of its own, with the keys and Ctrl+C from the windows and the stop from another
     /// window wired to it; then the end to every window, and the results opened here when no window will; then, after a
     /// transcript, what it cost the account, which the run leaves to this step so that no read of the account holds the
-    /// end up (see <see cref="UsageReport"/>). The scope is still open, so the line goes into the recording's log and
-    /// recorder.log; the window that was shown the end has left by then.
+    /// end up (see <see cref="UsageReport"/>); and last the upload to Google Drive, of the recording and then of the queue,
+    /// which never changes the outcome or the exit code (see <see cref="IDriveAutoUpload"/>). The scope is still open, so
+    /// the lines go into the recording's log and recorder.log; the window that was shown the end has left by then.
     /// </summary>
     private static async Task<int> RecordAsync(IServiceProvider services, string runId, RecordRequest request, string pipe, RunHandle handle, RecorderServer server, ILogger logger)
     {
@@ -268,8 +281,12 @@ public sealed class RecorderHost
         var taken = await server.EndAsync(outcome, request.Open, EndPatience);
         if (!taken) run.GetRequiredService<RecorderResultShower>().OpenResults();
 
-        // 7. What the transcript cost, last of all: only a transcript was paid for, and the windows have the end.
+        // 7. What the transcript cost: only a transcript was paid for, and the windows have the end.
         if (outcome.Kind == OutcomeKind.Transcribed) await run.GetRequiredService<UsageReport>().ReportAsync(signals.Cancellation);
+
+        // 8. Google Drive, last of all: the recording, then the queue, while the run's scope is still open, so the lines go
+        // into the recording's log. It never changes the outcome or the exit code (see IDriveAutoUpload).
+        await run.GetRequiredService<IDriveAutoUpload>().AfterRunAsync();
         logger.LogDebug("The recorder ends with exit code {ExitCode}", exitCode);
         return exitCode;
     }

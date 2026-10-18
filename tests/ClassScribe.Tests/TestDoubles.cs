@@ -190,10 +190,35 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
     private DateTimeOffset _now = start;
     private TimeSpan _elapsed;
 
+    private int _made;
+
     /// <summary>Timers made from this clock that have not been disposed.</summary>
     public int ActiveTimers
     {
         get { lock (_gate) return _timers.Count; }
+    }
+
+    /// <summary>Every timer made from this clock so far, disposed or not: a new one is the sign that the code has gone on to its next wait.</summary>
+    public int TimersMade
+    {
+        get { lock (_gate) return _made; }
+    }
+
+    /// <summary>
+    /// How long until the next timer set to fire comes due, on the steady count; null when none is. A test that moves the
+    /// clock to just before a limit reads here that the limit is still to come, rather than waiting a moment to see that
+    /// nothing happened.
+    /// </summary>
+    public TimeSpan? UntilNextTimer
+    {
+        get
+        {
+            lock (_gate)
+            {
+                var next = _timers.Where(timer => timer.Due != TimeSpan.MaxValue).Select(timer => (TimeSpan?)timer.Due).Min();
+                return next - _elapsed;
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -216,7 +241,12 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
     {
         var timer = new ManualTimer(this, callback, state);
         timer.Change(dueTime, period);
-        lock (_gate) _timers.Add(timer);
+        lock (_gate)
+        {
+            _timers.Add(timer);
+            _made++;
+        }
+
         return timer;
     }
 

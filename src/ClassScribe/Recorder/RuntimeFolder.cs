@@ -4,11 +4,20 @@ namespace ClassScribe.Recorder;
 /// ClassScribe's own folder on this computer, %LOCALAPPDATA%\ClassScribe, which never roams and never syncs: the lock that
 /// allows one recording at a time (<see cref="LockFile"/>), and the runs folder with each run's file and the request a
 /// window hands the recorder it starts (<see cref="Runs"/>). It is also the recorder's working folder, so that nothing it
-/// runs holds the user's folders or anything under OneDrive open. Nothing is made until it is needed.
+/// runs holds the user's folders or anything under OneDrive open. Nothing is made until it is needed. Tests give a temporary
+/// folder instead: a test run turns on <see cref="RefuseTheRealFolderSwitch"/>, so that a test that forgets fails rather than
+/// reading the real run files and the real queue for Google Drive.
 /// </summary>
 /// <param name="root">The folder to use instead, for tests; null for %LOCALAPPDATA%\ClassScribe.</param>
 public sealed class RuntimeFolder(string? root = null)
 {
+    /// <summary>
+    /// The AppContext switch a test run turns on: with it on, the real %LOCALAPPDATA%\ClassScribe is refused, and only a folder
+    /// given is used. The real folder holds the run files and logs of real classes and the queue for Google Drive, which a test
+    /// must never read or write. ClassScribe itself never turns it on.
+    /// </summary>
+    public const string RefuseTheRealFolderSwitch = "ClassScribe.RuntimeFolder.RefuseTheRealFolder";
+
     /// <summary>The name of the lock file, in <see cref="Root"/>.</summary>
     public const string LockFileName = "recording.lock";
 
@@ -54,8 +63,20 @@ public sealed class RuntimeFolder(string? root = null)
         }
     }
 
-    /// <summary>%LOCALAPPDATA%\ClassScribe for the user ClassScribe runs as.</summary>
+    /// <summary>%LOCALAPPDATA%\ClassScribe for the user ClassScribe runs as; refused while <see cref="RefuseTheRealFolderSwitch"/> is on.</summary>
     private static string DefaultRoot()
+    {
+        if (AppContext.TryGetSwitch(RefuseTheRealFolderSwitch, out var refused) && refused)
+        {
+            throw new InvalidOperationException(
+                "A test asked for the real %LOCALAPPDATA%\\ClassScribe, which holds the run files of real classes and the queue for Google Drive. Register a TestRuntime's RuntimeFolder (AddSingleton(runtime.Folder)), or give one, instead.");
+        }
+
+        return RealRoot();
+    }
+
+    /// <summary>Where %LOCALAPPDATA%\ClassScribe is for the user ClassScribe runs as, worked out without looking at the folder or making it.</summary>
+    internal static string RealRoot()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify);
         if (string.IsNullOrEmpty(localAppData))

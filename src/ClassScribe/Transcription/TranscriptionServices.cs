@@ -40,9 +40,10 @@ public static class TranscriptionServices
     /// <summary>
     /// Opens the connection to the service with TCP keep-alive switched on. After the upload the
     /// connection is silent for minutes while the transcript is made, and without a sign of life
-    /// some routers and firewalls drop a connection that quiet.
+    /// some routers and firewalls drop a connection that quiet. Google Drive's clients use it too
+    /// (see <see cref="Drive.DriveServices"/>).
     /// </summary>
-    private static async ValueTask<Stream> ConnectWithKeepAliveAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
+    internal static async ValueTask<Stream> ConnectWithKeepAliveAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
     {
         var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
         try

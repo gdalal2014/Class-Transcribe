@@ -6,6 +6,8 @@ using ClassScribe.Audio.Windows;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
+using ClassScribe.Drive;
+using ClassScribe.Drive.Windows;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
@@ -49,8 +51,8 @@ public class ServiceRegistrationTests
 
     /// <summary>
     /// Writes the settings, given as setting names and values such as Recording:FlushSeconds, into an appsettings.json
-    /// and builds the app over it, the way Program builds it, with ClassScribe's own folder in the test's temporary folder.
-    /// The host validates scopes, so a per-run service taken from the root fails here.
+    /// and builds the app over it, the way Program builds it, with ClassScribe's own folder and its roaming folder in the
+    /// test's temporary folders. The host validates scopes, so a per-run service taken from the root fails here.
     /// </summary>
     private IHost BuildApp(Dictionary<string, string?> settings, string? apiKey = "test-key")
     {
@@ -65,7 +67,7 @@ public class ServiceRegistrationTests
         }
 
         File.WriteAllText(_folder.File("appsettings.json"), json.ToJsonString());
-        return AppHost.Build(_folder.Path, apiKey, services => services.AddSingleton(_runtime.Folder));
+        return AppHost.Build(_folder.Path, apiKey, services => services.AddSingleton(_runtime.Folder).AddSingleton(new RoamingFolder(_folder.File("Roaming"))));
     }
 
     /// <summary>The app's capture provider, as registered: the one made only when it is first used.</summary>
@@ -186,6 +188,103 @@ public class ServiceRegistrationTests
     }
 
     /// <summary>
+    /// Google Drive's services resolve with the app: the Drive settings bound; the store of the sign-in, which is Windows'
+    /// data protection in the roaming folder given, never the real one; one token cache for the process; the browser and the
+    /// listener; and in a run's scope the sign-in, the drive command and menu choice 9. The two Refit clients take their
+    /// addresses from the Drive settings, with HttpClient's own time limit off. Nothing is read or written by resolving them.
+    /// </summary>
+    [Test]
+    public void The_Google_Drive_services_resolve_with_the_settings_bound()
+    {
+        using var app = BuildApp(new()
+        {
+            ["Drive:FolderName"] = "Classes",
+            ["Drive:ApiBaseUrl"] = "http://127.0.0.1:5005/api",
+            ["Drive:OAuthBaseUrl"] = "http://127.0.0.1:5006"
+        });
+        var provider = app.Services;
+        using var scope = provider.CreateScope();
+
+        Assert.That(provider.GetRequiredService<IOptionsMonitor<DriveOptions>>().CurrentValue.FolderName, Is.EqualTo("Classes"));
+        Assert.That(provider.GetRequiredService<IGoogleCredentialStore>().Location, Is.EqualTo(Path.Combine(_folder.File("Roaming"), "google-drive.dat")));
+        Assert.That(provider.GetRequiredService<GoogleTokenCache>(), Is.SameAs(provider.GetRequiredService<GoogleTokenCache>()), "one cache for the process");
+        Assert.That(provider.GetRequiredService<IBrowser>(), Is.InstanceOf<ShellBrowser>());
+        Assert.That(provider.GetRequiredService<ILoopbackReceiver>(), Is.InstanceOf<HttpListenerLoopbackReceiver>());
+        Assert.That(scope.ServiceProvider.GetRequiredService<GoogleSignIn>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<DriveCommand>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<DriveMenu>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<DriveFolders>(), Is.Not.Null);
+
+        var clients = provider.GetRequiredService<IHttpClientFactory>();
+        var drive = clients.CreateClient(UniqueName.ForType<IDriveApi>());
+        var oauth = clients.CreateClient(UniqueName.ForType<IGoogleOAuthApi>());
+        Assert.That((drive.BaseAddress, drive.Timeout), Is.EqualTo((new Uri("http://127.0.0.1:5005/api/"), Timeout.InfiniteTimeSpan)));
+        Assert.That((oauth.BaseAddress, oauth.Timeout), Is.EqualTo((new Uri("http://127.0.0.1:5006/"), Timeout.InfiniteTimeSpan)));
+        Assert.That(Directory.Exists(_folder.File("Roaming")), Is.False, "nothing is made until a sign-in is stored");
+    }
+
+    /// <summary>
+    /// The uploads resolve with the app: in a run's scope the upload and free-space command, the pass, the upload of one
+    /// recording, the resumable upload with its retries and the freeing of room; for the process one manifest store and one
+    /// upload lock, in ClassScribe's folder given; and the class folders know of the audio kept on Drive alone, from the
+    /// manifests. Nothing is made by resolving them.
+    /// </summary>
+    [Test]
+    public void The_uploads_resolve_with_the_app()
+    {
+        using var app = BuildApp([]);
+        var provider = app.Services;
+        using var scope = provider.CreateScope();
+
+        Assert.That(scope.ServiceProvider.GetRequiredService<DriveUploadCommand>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<DriveUploadPass>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<RecordingUpload>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<ResumableUpload>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<LocalAudioFreer>(), Is.Not.Null);
+        Assert.That(provider.GetRequiredService<UploadManifests>(), Is.SameAs(provider.GetRequiredService<UploadManifests>()));
+        Assert.That(provider.GetRequiredService<UploadManifests>().Folder, Is.EqualTo(Path.Combine(_runtime.Folder.Root, "drive", "recordings")));
+        Assert.That(provider.GetRequiredService<DriveUploadLock>().LockFile, Is.EqualTo(Path.Combine(_runtime.Folder.Root, "drive", "upload.lock")));
+        Assert.That(provider.GetRequiredService<IAudioOnDrive>(), Is.InstanceOf<DriveCopies>());
+        Assert.That(provider.GetRequiredService<ClassFolders>().AudioOnDriveOf(new RecordingFiles(_folder.Path, "Kalam_2026-10-15_23-00-02Z")), Is.Null);
+        Assert.That(Directory.Exists(Path.Combine(_runtime.Folder.Root, "drive")), Is.False, "nothing is made by resolving them");
+    }
+
+    /// <summary>
+    /// The uploads that happen by themselves are one per run, shared by the run and whoever runs it, and the record command,
+    /// transcribe and rebuild resolve with them; what the menu and the report at the start read of the queue is one for the
+    /// process. Before Drive is set up the header has no line, and nothing is made by resolving them.
+    /// </summary>
+    [Test]
+    public void The_uploads_after_each_class_are_one_per_run()
+    {
+        using var app = BuildApp([]);
+        using var first = app.Services.CreateScope();
+        using var second = app.Services.CreateScope();
+        var run = first.ServiceProvider;
+
+        Assert.That(run.GetRequiredService<IDriveAutoUpload>(), Is.InstanceOf<DriveAutoUpload>());
+        Assert.That(run.GetRequiredService<IDriveAutoUpload>(), Is.SameAs(run.GetRequiredService<IDriveAutoUpload>()), "one per run");
+        Assert.That(run.GetRequiredService<IDriveAutoUpload>(), Is.Not.SameAs(second.ServiceProvider.GetRequiredService<IDriveAutoUpload>()), "each run its own");
+        Assert.That(run.GetRequiredService<TranscribeCommand>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<RebuildCommand>(), Is.Not.Null);
+        Assert.That(app.Services.GetRequiredService<DriveQueueReport>(), Is.SameAs(app.Services.GetRequiredService<DriveQueueReport>()));
+        Assert.That(app.Services.GetRequiredService<DriveQueueReport>().HeaderLine(), Is.Null, "not set up");
+        Assert.That(Directory.Exists(Path.Combine(_runtime.Folder.Root, "drive")), Is.False, "nothing is made by resolving them");
+    }
+
+    /// <summary>Without settings for it, the Drive section has its defaults: the ClassScribe folder, and Google's own addresses.</summary>
+    [Test]
+    public void The_Drive_section_has_its_defaults()
+    {
+        using var app = BuildApp([]);
+        var clients = app.Services.GetRequiredService<IHttpClientFactory>();
+
+        Assert.That(app.Services.GetRequiredService<IOptionsMonitor<DriveOptions>>().CurrentValue.FolderName, Is.EqualTo("ClassScribe"));
+        Assert.That(clients.CreateClient(UniqueName.ForType<IDriveApi>()).BaseAddress, Is.EqualTo(new Uri("https://www.googleapis.com/")));
+        Assert.That(clients.CreateClient(UniqueName.ForType<IGoogleOAuthApi>()).BaseAddress, Is.EqualTo(new Uri("https://oauth2.googleapis.com/")));
+    }
+
+    /// <summary>
     /// The command line resolves with the app, and the report at the start is the real one, one for the process and the
     /// only one registered, in place of the report that reports nothing.
     /// </summary>
@@ -255,6 +354,7 @@ public class ServiceRegistrationTests
             recorder.Replace(ServiceDescriptor.Singleton<IPowerRequests>(new FakePowerRequests()));
             recorder.Replace(ServiceDescriptor.Singleton<IPowerSource>(new FakePowerSource()));
             recorder.Replace(ServiceDescriptor.Singleton<ISystemTimes>(new FakeSystemTimes(time)));
+            recorder.AddSingleton(new RoamingFolder(_folder.File("Roaming")));
         });
         var services = host.Services;
         using var scope = services.CreateScope();
@@ -318,7 +418,11 @@ public class ServiceRegistrationTests
         var time = new ManualTimeProvider(TestRuns.Start);
         using var log = new RecorderLog(time);
         using var host = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, time,
-            recorder => ReplaceWindowsWithFakes(recorder, time));
+            recorder =>
+            {
+                ReplaceWindowsWithFakes(recorder, time);
+                recorder.AddSingleton(new RoamingFolder(_folder.File("Roaming")));
+            });
         using var scope = host.Services.CreateScope();
         var run = scope.ServiceProvider;
 
@@ -326,6 +430,7 @@ public class ServiceRegistrationTests
         using var recording = factory.Create(new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null)));
 
         Assert.That(run.GetRequiredService<IRecordRun>(), Is.InstanceOf<RecordCommand>());
+        Assert.That(run.GetRequiredService<IDriveAutoUpload>(), Is.InstanceOf<DriveAutoUpload>(), "the recorder uploads after its class");
         Assert.That(factory, Is.InstanceOf<TrackSetFactory>());
         Assert.That(recording, Is.InstanceOf<TrackSet>());
         Assert.That(((FakeMicrophoneProvider)host.Services.GetRequiredService<IMicrophoneProvider>()).Opened, Is.Empty, "nothing is opened before the recording starts");
