@@ -42,9 +42,13 @@ public sealed record YtDlpInfo(string? Id, string? Title, double? Duration, stri
     /// <summary>Its length; null when it is not known.</summary>
     public TimeSpan? Length => Duration is { } seconds and > 0 && double.IsFinite(seconds) ? TimeSpan.FromSeconds(seconds) : null;
 
-    /// <summary>Its channel's @handle: the uploader's id when it is one, else the one in the uploader's or the channel's address; null when none is given.</summary>
+    /// <summary>
+    /// Its channel's @handle: the uploader's id when it is one, else the one in the uploader's or the channel's address; null
+    /// when none is given. A handle written percent-encoded, as an address writes one of Arabic letters, is read as written,
+    /// so that it matches the handle a setting names.
+    /// </summary>
     public string? Handle =>
-        UploaderId is { } id && id.StartsWith('@') ? id
+        UploaderId is { } id && id.StartsWith('@') ? Unescaped(id)
         : new[] { UploaderUrl, ChannelUrl }.Select(HandleIn).FirstOrDefault(handle => handle is not null);
 
     /// <summary>When it was uploaded, as yyyy-MM-dd; null when not known.</summary>
@@ -69,9 +73,15 @@ public sealed record YtDlpInfo(string? Id, string? Title, double? Duration, stri
         }
     }
 
-    /// <summary>The @handle in a channel's address, https://www.youtube.com/@handle, or null.</summary>
+    /// <summary>The @handle in a channel's address, https://www.youtube.com/@handle, read as written, or null.</summary>
     private static string? HandleIn(string? address) =>
-        address is not null && address.LastIndexOf("/@", StringComparison.Ordinal) is var at and >= 0 ? address[(at + 1)..].Split('/', '?')[0] : null;
+        address is not null && address.LastIndexOf("/@", StringComparison.Ordinal) is var at and >= 0 ? Unescaped(address[(at + 1)..].Split('/', '?', '#')[0]) : null;
+
+    /// <summary>
+    /// <paramref name="handle"/> with its percent-encoding undone, as OEmbedTitles reads a handle from an address, and without
+    /// control characters; a % that starts no escape is left as it is.
+    /// </summary>
+    private static string Unescaped(string handle) => VideoTitles.Plain(Uri.UnescapeDataString(handle))!;
 }
 
 /// <summary>One entry of a playlist's flat listing.</summary>
@@ -116,7 +126,15 @@ public static partial class YtDlpRead
             throw new InvalidDataException($"yt-dlp's information in {where} cannot be read: {ex.Message}", ex);
         }
 
-        return info is { Id: not null } ? info : throw new InvalidDataException($"yt-dlp's information in {where} cannot be read: it names no video.");
+        if (info is not { Id: not null }) throw new InvalidDataException($"yt-dlp's information in {where} cannot be read: it names no video.");
+
+        // YouTube's words are shown and kept: none of them carries a control character from here on.
+        return info with
+        {
+            Title = VideoTitles.Plain(info.Title), Channel = VideoTitles.Plain(info.Channel), ChannelId = VideoTitles.Plain(info.ChannelId),
+            UploaderId = VideoTitles.Plain(info.UploaderId), UploaderUrl = VideoTitles.Plain(info.UploaderUrl), ChannelUrl = VideoTitles.Plain(info.ChannelUrl),
+            Availability = VideoTitles.Plain(info.Availability), LiveStatus = VideoTitles.Plain(info.LiveStatus)
+        };
     }
 
     /// <summary>The playlist <paramref name="playlistId"/>'s flat listing in <paramref name="json"/>. What is not a listing is refused with an <see cref="InvalidDataException"/>.</summary>
@@ -134,7 +152,11 @@ public static partial class YtDlpRead
         }
 
         if (listing is null) throw new InvalidDataException($"yt-dlp's listing of the playlist {playlistId} cannot be read: it is empty.");
-        return new YtDlpPlaylist(listing.Id, listing.Title, [.. (listing.Entries ?? []).OfType<YtDlpPlaylistEntry>().Where(entry => YouTubeLinks.IsVideoId(entry.Id))]);
+        return new YtDlpPlaylist(listing.Id, VideoTitles.Plain(listing.Title),
+        [
+            .. (listing.Entries ?? []).OfType<YtDlpPlaylistEntry>().Where(entry => YouTubeLinks.IsVideoId(entry.Id))
+                .Select(entry => entry with { Title = VideoTitles.Plain(entry.Title), Channel = VideoTitles.Plain(entry.Channel) })
+        ]);
     }
 
     /// <summary>The release date yt-dlp's version gives, such as 2026.08.19, or a nightly's 2026.08.30.232658; null for a line that is no version.</summary>

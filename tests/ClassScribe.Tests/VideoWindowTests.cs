@@ -125,6 +125,14 @@ public class VideoWindowTests
     public void A_title_is_cleaned_to_the_videos(string? raw, string? clean) => Assert.That(VideoTitles.Clean(raw), Is.EqualTo(clean));
 
     /// <summary>
+    /// A window's title loses every control character, which could ring a bell or start a sequence in the window: each
+    /// becomes a space. (Not a test case: a case whose arguments hold a control character never runs under a filter.)
+    /// </summary>
+    [Test]
+    public void A_titles_control_characters_are_taken_out() =>
+        Assert.That(VideoTitles.Clean("The creed\a, part\u001b[0m 1 - YouTube"), Is.EqualTo("The creed , part [0m 1"));
+
+    /// <summary>
     /// A close is WM_CLOSE posted to the window, never a kill: true once Chrome has ended; at once, without asking, when it had
     /// ended already.
     /// </summary>

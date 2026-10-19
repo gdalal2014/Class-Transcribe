@@ -99,7 +99,9 @@ public class YtDlpArgumentsTests
 
     /// <summary>
     /// A list that holds an option that signs in, hands over cookies or a browser's data, runs a command, reads more
-    /// configuration or updates yt-dlp is refused, in any of its forms; -P (paths) is not -p (a password).
+    /// configuration, updates yt-dlp or marks a video watched is refused, in any of its forms, those ClassScribe forbids
+    /// beyond the design's list included (-2, -n, --ap-list-mso, --exec-before-download, --config-location, --load-cookies,
+    /// --mark-watched); -P (paths) is not -p (a password).
     /// </summary>
     [TestCase("--cookies")]
     [TestCase("--cookies=C:\\cookies.txt")]
@@ -125,6 +127,13 @@ public class YtDlpArgumentsTests
     [TestCase("-U")]
     [TestCase("--update")]
     [TestCase("--update-to")]
+    [TestCase("-2")]
+    [TestCase("-n")]
+    [TestCase("--ap-list-mso")]
+    [TestCase("--exec-before-download")]
+    [TestCase("--config-location")]
+    [TestCase("--load-cookies")]
+    [TestCase("--mark-watched")]
     public void A_forbidden_option_is_refused(string option)
     {
         IReadOnlyList<string> list = [.. Arguments().Fixed, option, "x"];

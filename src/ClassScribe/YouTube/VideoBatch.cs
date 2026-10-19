@@ -161,6 +161,7 @@ public static class VideoPlan
 /// </summary>
 public sealed class VideoBatch(
     YouTubeBatch batch,
+    DownloadedAudio downloads,
     BrowserLocator browsers,
     OEmbedTitles titles,
     VideoWindow windows,
@@ -222,6 +223,9 @@ public sealed class VideoBatch(
 
         using var held = batch.TakeLock();
         if (held is null) return 1;
+
+        // What an earlier download batch left half done is cleared under the lock by any batch, this one included (design 1.4).
+        downloads.CleanUp();
 
         // Without a key the transcripts cannot be made, so no window is opened either.
         if (request.Transcribe && !batch.HasKey()) return 1;
@@ -299,11 +303,19 @@ public sealed class VideoBatch(
             await batch.Wait.WhileAClassRecordsAsync(stopping);
 
             // Y at the plan opens the first; every other window, and the first again after a class took its place, opens on Enter.
-            var answer = openFirst ? Next.Open : await AskAsync($"Next: {video.Number:00} {video.Title}. Enter opens it; {StopWords(request)}.", request);
+            var next = $"Next: {video.Number:00} {video.Title}. Enter opens it; {StopWords(request)}.";
+            var answer = openFirst ? Next.Open : await AskAsync(next, request);
             openFirst = false;
             OpenedWindow? window = null;
             while (answer == Next.Open)
             {
+                // A class that started while Gulzar was asked comes first: the window opens only once it has ended, on his Enter again.
+                if (await batch.Wait.WhileAClassRecordsAsync(stopping))
+                {
+                    answer = await AskAsync(next, request);
+                    continue;
+                }
+
                 var opening = await windows.OpenAsync(chrome, video.Link.UrlAtStart, stopping);
                 if (opening.Window is { } opened)
                 {

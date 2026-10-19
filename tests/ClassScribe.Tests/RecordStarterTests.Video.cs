@@ -13,11 +13,11 @@ namespace ClassScribe.Tests;
 /// </summary>
 public partial class RecordStarterTests
 {
-    /// <summary>The run of a YouTube video recording now, of the course Risala, as process 9000, in a separate recorder.</summary>
-    private RunRecord VideoRecordingNow()
+    /// <summary>The run of a YouTube video recording now, or in <paramref name="state"/>, of the course Risala, as process 9000, in a separate recorder.</summary>
+    private RunRecord VideoRecordingNow(RunState state = RunState.Recording)
     {
         var id = TestRuns.Id(3);
-        var record = TestRuns.Record(id, RunState.Recording, processId: 9000, name: "Risala") with
+        var record = TestRuns.Record(id, state, processId: 9000, name: "Risala") with
         {
             Pipe = $"ClassScribe-{id}",
             Request = TestRuns.Request(id, "Risala") with { Transcribe = false, Video = VideoOfTheBatch() }
@@ -110,6 +110,45 @@ public partial class RecordStarterTests
         Assert.That(_starter.Recorders, Is.Empty);
         Assert.That(_ui.Screen, Does.Contain("Only one recording at a time: the YouTube video \"The creed, part 1\" has been recording since"));
         Assert.That(_ui.Screen, Does.Contain("Press Q twice in the window that shows the video to stop it, then start the class again."));
+    }
+
+    /// <summary>
+    /// A class that starts in the first moment of a video's run, while its run file says it is starting and before the run
+    /// listens for its yield, asks it again at each look until it listens, and then waits for it as always; that the video
+    /// is stopping is said once, when it has been asked.
+    /// </summary>
+    [Test]
+    public async Task A_class_asks_a_video_still_starting_again_until_it_listens()
+    {
+        var video = VideoRecordingNow(RunState.Starting);
+        _runtime.Time.CreateTimer(_ => GivesWay(video), null, TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan);
+        _viewer.Then(Ends(_recorder, Transcribed));
+
+        var running = Starter().RunAsync(Request() with { Continue = ContinueChoice.New }, StartOrigin.Menu);
+        await _runtime.Time.AdvanceUntilAsync(() => running.IsCompleted, TimeSpan.FromMilliseconds(250), atMost: TimeSpan.FromSeconds(10));
+
+        Assert.That(await running, Is.Zero);
+        Assert.That(_videoYield.Asked, Has.Count.GreaterThan(1), "asked again while its run was starting");
+        Assert.That(_starter.Recorders, Has.Count.EqualTo(1));
+        Assert.That(_ui.Screen.Split(Environment.NewLine).Count(line => line.StartsWith("Stopping the YouTube video", StringComparison.Ordinal)), Is.EqualTo(1));
+    }
+
+    /// <summary>
+    /// A video's run that is starting and never listens for its yield within 30 seconds is explained, without the words that
+    /// it is stopping, since it was never asked, and with the keys that stop it.
+    /// </summary>
+    [Test]
+    public async Task A_video_still_starting_that_never_listens_is_never_said_to_stop()
+    {
+        VideoRecordingNow(RunState.Starting);
+
+        var running = Starter().RunAsync(Request() with { Continue = ContinueChoice.New }, StartOrigin.Menu);
+        await _runtime.Time.AdvanceUntilAsync(() => running.IsCompleted, TimeSpan.FromMilliseconds(250), atMost: TimeSpan.FromSeconds(40));
+
+        Assert.That(await running, Is.EqualTo(1));
+        Assert.That(_starter.Recorders, Is.Empty);
+        Assert.That(_ui.Screen, Does.Not.Contain("Stopping the YouTube video"));
+        Assert.That(_ui.Screen, Does.Contain("It could not be asked to stop: press Q twice in the window that shows the video to stop it, then start the class again."));
     }
 
     /// <summary>A video's run that does not listen for a class, as one of an older build, is explained at once.</summary>

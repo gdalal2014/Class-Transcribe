@@ -173,39 +173,52 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
     }
 
     /// <summary>A run as the words name it: "Kalam" in quotes, or the YouTube video "The creed, part 1" for a video's.</summary>
-    private static string Named(RunRecord run) =>
+    internal static string Named(RunRecord run) =>
         run.Request.Video is { } video ? $"the YouTube video \"{video.Title}\"" : $"\"{run.Request.Name}\"";
+
+    /// <summary>A run as the words name it at the start of a sentence: "Kalam" in quotes, or The YouTube video "The creed, part 1".</summary>
+    internal static string NamedFirst(RunRecord run) => Named(run) is var named && named.StartsWith("the ", StringComparison.Ordinal) ? "T" + named[1..] : named;
 
     /// <summary>
     /// Asks <paramref name="video"/>, a YouTube video's run that records, to give way to <paramref name="request"/>'s class
-    /// (design 2.5), says so, and waits up to <see cref="YieldPatience"/> on the steady clock, looking at its run file every
-    /// <see cref="YieldPoll"/>, for it to stop recording. True once it has; otherwise, as when nothing listens for its yield,
-    /// it is explained as any recording is, with the keys that stop it, and false.
+    /// (design 2.5), and waits up to <see cref="YieldPatience"/> on the steady clock, looking at its run file every
+    /// <see cref="YieldPoll"/>, for it to stop recording. A run still starting listens for its yield only once its run has
+    /// begun, so while it says it is starting, it is asked again at each look. That the video is stopping is said once it has
+    /// been asked. True once it has stopped; otherwise, as when nothing listens for its yield, it is explained as any recording
+    /// is, with whether it could be asked and the keys that stop it, and false.
     /// </summary>
     private async Task<bool> YieldAsync(RunRecord video, RecordRequest request, StartOrigin origin)
     {
-        ui.WriteLine($"Stopping the YouTube video \"{video.Request.Video!.Title}\" so that \"{request.Name}\" can record; what it recorded is kept.");
-        if (yield?.Ask(video.RunId) == true)
+        var since = time.GetTimestamp();
+        var asked = false;
+        while (time.GetElapsedTime(since) < YieldPatience)
         {
-            var since = time.GetTimestamp();
-            while (time.GetElapsedTime(since) < YieldPatience)
+            var now = journal.Find(video.RunId);
+            if (now is not { IsRecordingNow: true })
             {
-                if (journal.Find(video.RunId) is not { IsRecordingNow: true })
-                {
-                    logger.LogDebug("Run {RunId} of the YouTube video gave way to \"{Name}\"", video.RunId, request.Name);
-                    return true;
-                }
-
-                await Task.Delay(YieldPoll, time);
+                logger.LogDebug("Run {RunId} of the YouTube video gave way to \"{Name}\"", video.RunId, request.Name);
+                return true;
             }
-        }
-        else
-        {
-            logger.LogDebug("Run {RunId} of the YouTube video does not listen for a class, so it could not be asked to give way", video.RunId);
+
+            if (!asked && yield?.Ask(video.RunId) == true)
+            {
+                asked = true;
+                ui.WriteLine($"Stopping the YouTube video \"{video.Request.Video!.Title}\" so that \"{request.Name}\" can record; what it recorded is kept.");
+            }
+            else if (!asked && now.Record.State != RunState.Starting)
+            {
+                // A run that records and does not listen, as one of an older build, will not hear a later ask either.
+                break;
+            }
+
+            await Task.Delay(YieldPoll, time);
         }
 
+        if (!asked) logger.LogDebug("Run {RunId} of the YouTube video does not listen for a class, so it could not be asked to give way", video.RunId);
         Explain(video, origin);
-        ui.WriteLine("Press Q twice in the window that shows the video to stop it, then start the class again.");
+        ui.WriteLine(asked
+            ? "Press Q twice in the window that shows the video to stop it, then start the class again."
+            : "It could not be asked to stop: press Q twice in the window that shows the video to stop it, then start the class again.");
         return false;
     }
 

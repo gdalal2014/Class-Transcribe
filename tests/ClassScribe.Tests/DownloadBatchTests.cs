@@ -502,4 +502,221 @@ public class DownloadBatchTests
 
         Assert.That(async () => await _world.RunAsync(_world.Request([Link(Second)], again: true)), Throws.InstanceOf<OperationCanceledException>());
     }
+
+    /// <summary>
+    /// In the menu, videos taken on his word are costed, timed and checked for room before YES, as the plan does for the rest:
+    /// with only unlisted videos, the plan says they wait for his word and what they would cost, never "Nothing to download.";
+    /// once he has said Y to each, the cost and the room are worked out again, and a batch that no longer fits is refused
+    /// before YES, with nothing downloaded; exit code 1.
+    /// </summary>
+    [Test]
+    public async Task In_the_menu_videos_taken_on_his_word_are_costed_and_checked_for_room_before_YES()
+    {
+        _world.Tools.With(Third, YtDlpReadTests.Info(Third, "Own upload 1", duration: 3 * 3600, availability: "unlisted"), 3)
+            .With("defghijklmn", YtDlpReadTests.Info("defghijklmn", "Own upload 2", duration: 3 * 3600, availability: "unlisted"), 3);
+        _world.FreeSpace.Bytes = 1_000_000;
+        _world.Ui.Type('y', 'y');
+        _world.Ui.TypeLine("YES");
+
+        var exitCode = await _world.RunAsync(_world.Request([Link(Third), Link("defghijklmn")], BatchConfirmation.Ask));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_world.Tools.Downloads, Is.Empty);
+        var screen = _world.Screen.ToList();
+        Assert.That(screen, Has.None.EqualTo("Nothing to download."));
+        Assert.That(screen, Does.Contain("Ready: 0 videos."));
+        Assert.That(screen, Does.Contain("Waiting for your word: 2 videos, 6 h 0 min: about $1.32 to transcribe ($0.22 an hour)."));
+        var asked = screen.FindLastIndex(line => line.Contains("Did you upload it", StringComparison.Ordinal));
+        var ready = screen.IndexOf("Ready: 2 videos, 6 h 0 min: about $1.32 to transcribe ($0.22 an hour).");
+        Assert.That(ready, Is.GreaterThan(asked), "the cost of what he took on his word is shown once he has given it");
+        Assert.That(screen.Skip(ready), Has.Some.StartsWith("Room: about ").And.Some.StartsWith("There is not room enough"));
+        Assert.That(screen, Has.None.EqualTo("Type YES and press Enter to go ahead; Enter alone goes back."));
+    }
+
+    /// <summary>
+    /// In the menu, once he has given his word, what is ready is shown again, its cost, time, room and Drive, before YES; then
+    /// YES downloads it.
+    /// </summary>
+    [Test]
+    public async Task After_his_word_what_is_ready_is_shown_again_before_YES()
+    {
+        _world.Tools.With(Third, YtDlpReadTests.Info(Third, "Own upload", duration: 3, availability: "unlisted"), 3);
+        _world.Ui.Type('y');
+        _world.Ui.TypeLine("YES");
+
+        var exitCode = await _world.RunAsync(_world.Request([Link(Third), Link(First)], BatchConfirmation.Ask));
+
+        Assert.That(exitCode, Is.Zero);
+        Assert.That(_world.Tools.Downloads, Is.EqualTo([Third, First]));
+        var screen = _world.Screen.ToList();
+        var asked = screen.FindIndex(line => line.Contains("Did you upload it", StringComparison.Ordinal));
+        var again = screen.FindIndex(asked, line => line == "Ready: 2 videos, 1 min: less than a cent to transcribe ($0.22 an hour).");
+        var yes = screen.IndexOf("Type YES and press Enter to go ahead; Enter alone goes back.");
+        Assert.That(again, Is.GreaterThan(asked).And.LessThan(yes));
+        Assert.That(screen.Skip(again).Take(yes - again), Has.Some.StartsWith("2 downloads: about").And.Some.StartsWith("Room: about").And.Some.StartsWith("Google Drive:"));
+    }
+
+    /// <summary>
+    /// Room is kept on the recordings folder's drive for a class after the batch: a batch whose audio would fit only by leaving
+    /// less than a 3-hour class needs is refused before any download, and the plan says why; exit code 1.
+    /// </summary>
+    [Test]
+    public async Task Room_for_a_class_is_kept()
+    {
+        _world.FreeSpace.Bytes = 10_000_000;
+
+        var exitCode = await _world.RunAsync(_world.Request([Link(First), Link(Second)]));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_world.Tools.Downloads, Is.Empty);
+        Assert.That(_world.Screen, Has.Some.StartsWith("There is not room enough for the audio and its download while keeping room for a 3-hour class"));
+    }
+
+    /// <summary>
+    /// A class started while the batch's first video downloads takes a date folder of its own, as a class does: the batch makes
+    /// a video's recording only once its audio is downloaded, so its date folder holds nothing of the video until then; the
+    /// batch's videos then go into a date folder of their own, and the class's holds none.
+    /// </summary>
+    [Test]
+    public async Task A_class_started_during_the_first_download_keeps_its_own_date_folder()
+    {
+        RecordingFiles? classFiles = null;
+        _world.Tools.OnCall = call =>
+        {
+            if (classFiles is null && call.Arguments.Contains("--newline"))
+            {
+                classFiles = _world.ClassFolders.CreateRecording("Risala", _world.Recordings.Path);
+                using var writer = new Audio.WavSegmentWriter(classFiles.Segment(1), 10);
+                writer.Write(new byte[20]);
+            }
+
+            return Task.CompletedTask;
+        };
+
+        Assert.That(await _world.RunAsync(_world.Request([Link(First), Link(Second)])), Is.Zero);
+
+        var videoFolders = Directory.GetFiles(Path.Combine(_world.Recordings.Path, "Risala"), "*.source.json", SearchOption.AllDirectories).Select(Path.GetDirectoryName).Distinct().ToList();
+        Assert.That(videoFolders, Has.Count.EqualTo(1), "the batch's videos share one date folder");
+        Assert.That(videoFolders, Does.Not.Contain(classFiles!.Folder), "the class's date folder holds no video");
+    }
+
+    /// <summary>
+    /// The same command run again reads nothing it has done: a video transcribed, or fetched whole, is planned from its source
+    /// file, with its title, channel and length, and nothing of it is asked of YouTube; what was fetched whole is transcribed.
+    /// </summary>
+    [Test]
+    public async Task A_rerun_reads_nothing_already_done()
+    {
+        Assert.That(await _world.RunAsync(_world.Request([Link(First), Link(Second)], transcribe: false)), Is.Zero);
+        File.WriteAllText(Made()[0].Files.Transcript(), "# done");
+        var readsBefore = _world.Tools.Reads.Count;
+        _world.Runtime.Time.Advance(TimeSpan.FromMinutes(5));
+
+        var exitCode = await _world.RunAsync(_world.Request([Link(First), Link(Second)]));
+
+        Assert.That(exitCode, Is.Zero);
+        Assert.That(_world.Tools.Reads.Skip(readsBefore), Is.Empty, "nothing already done is read from YouTube again");
+        Assert.That(_world.Screen, Has.Some.StartsWith("  01  The creed, part 1  Your Channel  00:00:03  public").And.Some.Contains("already transcribed on"));
+        Assert.That(_world.Screen, Has.Some.StartsWith("  02  The creed, part 2  Your Channel  00:00:03  public").And.Some.Contains("fetched before, not transcribed yet"));
+        Assert.That(_world.Transcriber.Asked.Select(asked => asked.Video.VideoId), Is.EqualTo([Second]));
+        Assert.That(_world.Transcriber.Asked.Single().Length, Is.EqualTo(TimeSpan.FromSeconds(3)));
+    }
+
+    /// <summary>
+    /// A watch link copied from an embedded player's YouTube button, most likely on the course page, is never read or
+    /// downloaded, --allow-unlisted or not: the plan and the summary say why, with the command that records it as it plays
+    /// instead; the rest goes on; exit code 1.
+    /// </summary>
+    [Test]
+    public async Task A_link_from_an_embedded_player_is_never_downloaded()
+    {
+        var exitCode = await _world.RunAsync(_world.Request(
+            [$"{Link(First)}&embeds_referring_euri=https%3A%2F%2Fcourse.example%2Flesson%2F3&feature=emb_imp_woyt", Link(Second)], allowUnlisted: true));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_world.Tools.Reads, Is.EqualTo([Second]));
+        Assert.That(_world.Tools.Downloads, Is.EqualTo([Second]));
+        Assert.That(_world.Screen, Has.Some.EndsWith(BatchVideo.FromEmbeddedPlayerWords));
+        Assert.That(_world.Screen, Has.Some.EqualTo(
+            $"  01  {First}: {BatchVideo.FromEmbeddedPlayerSaid}; record it as it plays instead: {CommandLine.YouTube([Link(First)], "Risala", _world.Recordings.Path)}"));
+    }
+
+    /// <summary>
+    /// --allow-unlisted takes only what yt-dlp says is unlisted: a video it is not sure is public still needs a word, and the
+    /// summary does not offer the flag for it.
+    /// </summary>
+    [Test]
+    public async Task Allow_unlisted_takes_only_unlisted_videos()
+    {
+        _world.Tools.With(Third, YtDlpReadTests.Info(Third, "Not known to be public", duration: 3, availability: null), 3);
+
+        var exitCode = await _world.RunAsync(_world.Request([Link(Third)], allowUnlisted: true));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_world.Tools.Downloads, Is.Empty);
+        var line = _world.Screen.Single(text => text.Contains("Not known to be public: needs your word:", StringComparison.Ordinal));
+        Assert.That(line, Does.Not.Contain("--allow-unlisted"));
+    }
+
+    /// <summary>
+    /// While YouTube:CourseChannels is empty, the summary's advice for an unlisted video says to list the course's channels
+    /// before --allow-unlisted, which the command refuses without them.
+    /// </summary>
+    [Test]
+    public async Task Without_the_course_channels_the_advice_says_to_list_them_before_allow_unlisted()
+    {
+        _world.YouTube.Set(new Settings.YouTubeOptions());
+        _world.Tools.With(Third, YtDlpReadTests.Info(Third, "Your own upload", duration: 3, availability: "unlisted"), 3);
+
+        await _world.RunAsync(_world.Request([Link(Third)]));
+
+        var line = _world.Screen.Single(text => text.Contains("Your own upload: needs your word:", StringComparison.Ordinal));
+        Assert.That(line, Does.Contain("needs your word: in the menu (Y > D), or list your course's channels in YouTube:CourseChannels, then add --allow-unlisted, or its channel"));
+    }
+
+    /// <summary>
+    /// A yt-dlp that Windows will not start, as when Bitdefender blocks it after the check, is said as that, with Windows'
+    /// reason and what to look at, never as a missing helper; it stops the fetching.
+    /// </summary>
+    [Test]
+    public async Task A_yt_dlp_that_Windows_will_not_start_is_said_and_stops_the_fetching()
+    {
+        _world.Tools.OnCall = call => call.Arguments.Contains("--newline")
+            ? throw new System.ComponentModel.Win32Exception(5, "Access is denied")
+            : Task.CompletedTask;
+
+        var exitCode = await _world.RunAsync(_world.Request([Link(First), Link(Second)]));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_world.Tools.Downloads, Is.EqualTo([First]));
+        Assert.That(_world.Screen, Has.Some.EqualTo($"  01  The creed, part 1: {DownloadBatch.NotStartedWords("Access is denied")}"));
+        Assert.That(DownloadBatch.NotStartedWords("Access is denied"), Does.StartWith("Windows did not start yt-dlp (Access is denied). Bitdefender may have blocked it"));
+        Assert.That(_world.Screen, Has.None.Contains("missing a helper"));
+        Assert.That(_world.Screen, Has.Some.StartsWith("  02  The creed, part 2: not fetched: Windows did not start yt-dlp"));
+    }
+
+    /// <summary>
+    /// A recording fetched before is looked at again just before its transcript: one transcribed meanwhile, in another window,
+    /// is not sent again, and counts as done with its transcript.
+    /// </summary>
+    [Test]
+    public async Task A_recording_transcribed_meanwhile_is_not_sent_again()
+    {
+        await _world.RunAsync(_world.Request([Link(First)], transcribe: false));
+        var before = Made().Single().Files;
+        _world.Runtime.Time.Advance(TimeSpan.FromMinutes(5));
+        _world.Tools.OnCall = call =>
+        {
+            // While the new video downloads, Gulzar transcribes the older recording in another window.
+            if (call.Arguments.Contains("--newline")) File.WriteAllText(before.Transcript(), "# made in another window\n");
+            return Task.CompletedTask;
+        };
+
+        var exitCode = await _world.RunAsync(_world.Request([Link(First), Link(Second)]));
+
+        Assert.That(exitCode, Is.Zero);
+        Assert.That(_world.Transcriber.Asked.Select(asked => asked.Video.VideoId), Is.EqualTo([Second]), "nothing is billed twice");
+        Assert.That(_world.Logs.Messages, Has.Some.StartsWith("\"The creed, part 1\" was transcribed meanwhile").And.Some.EndsWith("it is not sent again"));
+        Assert.That(_world.Screen, Has.Some.EqualTo($"  01  The creed, part 1: fetched before; transcribed: {before.Transcript()}"));
+    }
 }

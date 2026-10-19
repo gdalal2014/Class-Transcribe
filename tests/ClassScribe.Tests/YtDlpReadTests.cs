@@ -73,6 +73,39 @@ public class YtDlpReadTests
     public void The_handle_comes_from_the_channels_address_when_none_is_given() =>
         Assert.That(YtDlpRead.Info("""{"id":"abcdefghijk","uploader_id":"UCxx","uploader_url":"https://www.youtube.com/@Teacher"}""", "x").Handle, Is.EqualTo("@Teacher"));
 
+    /// <summary>
+    /// A handle yt-dlp gives percent-encoded, as an address writes one of Arabic letters, is read as written, from the
+    /// uploader's id and from an address alike, so that it matches the handle YouTube:CourseChannels names.
+    /// </summary>
+    [Test]
+    public void An_encoded_handle_is_read_as_written()
+    {
+        var fromId = YtDlpRead.Info("""{"id":"abcdefghijk","uploader_id":"@%D9%82%D9%86%D8%A7%D8%A9"}""", "x");
+        var fromAddress = YtDlpRead.Info("""{"id":"abcdefghijk","uploader_id":"UCxx","uploader_url":"https://www.youtube.com/@%D9%82%D9%86%D8%A7%D8%A9/videos"}""", "x");
+
+        Assert.That(fromId.Handle, Is.EqualTo("@قناة"));
+        Assert.That(fromAddress.Handle, Is.EqualTo("@قناة"));
+    }
+
+    /// <summary>
+    /// What ClassScribe shows and keeps of a video's read and of a playlist's listing carries no control character, which
+    /// could ring a bell or start a sequence in the window: each becomes a space.
+    /// </summary>
+    [Test]
+    public void Control_characters_are_taken_out_of_what_is_shown()
+    {
+        var info = YtDlpRead.Info("""
+            {"id":"abcdefghijk","title":"The creed\u0007, part\u001b[31m 1","channel":"Your\u0007 Channel","availability":"public\u0007",
+             "uploader_id":"@your\u0007channel","channel_id":"UC\u0007x","live_status":"not_live\u001b","channel_url":"https://x/\u0007","uploader_url":"https://y/\u0007"}
+            """, "x");
+        var playlist = YtDlpRead.Playlist("""{"id":"PLxyz","title":"Risala\u0007","entries":[{"id":"abcdefghijk","title":"Part\u001b 1","channel":"Your\u0007 Channel"}]}""", "PLxyz");
+
+        string?[] shown = [info.Title, info.Channel, info.Availability, info.Handle, info.ChannelId, info.LiveStatus, info.ChannelUrl, info.UploaderUrl,
+            playlist.Title, playlist.Entries[0].Title, playlist.Entries[0].Channel];
+        Assert.That(shown.Any(text => text is null || text.Any(char.IsControl)), Is.False);
+        Assert.That(info.Title, Is.EqualTo("The creed , part [31m 1"));
+    }
+
     /// <summary>What is not a video's information is refused, naming where it came from.</summary>
     [TestCase("not json")]
     [TestCase("null")]

@@ -122,9 +122,12 @@ public sealed record TranscriptOutcome(VideoToTranscribe Video, TranscriptStep S
 /// client's own tries are spent (429) would fail every transcript left the same way, so the transcripts stop there, with
 /// ElevenLabs' words, the recordings left, and that the same command transcribes them once it is fixed; the audio is all
 /// kept. Any other failure is that recording's alone. After the first transcript, when the account was read before and
-/// after it, one line projects the rest in the account's own credits; dollars are never turned into credits.
+/// after it, one line projects the rest in the account's own credits; dollars are never turned into credits. Each recording
+/// is looked at again just before its transcript, since the plan that chose it may be hours old: one transcribed meanwhile,
+/// in another window or by another command, one with an answer from ElevenLabs kept for it, one still being written, and one
+/// a live run records or transcribes, is not sent again, so that nothing is billed twice.
 /// </summary>
-public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wait, ILogger<BatchTranscripts> logger)
+public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wait, ClassFolders folders, RunJournal journal, ILogger<BatchTranscripts> logger)
 {
     /// <summary>The statuses at which ElevenLabs would refuse every transcript left.</summary>
     private static readonly HashSet<HttpStatusCode> StopsAll = [HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.PaymentRequired, HttpStatusCode.TooManyRequests];
@@ -146,6 +149,12 @@ public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wa
             }
 
             await wait.WhileAClassRecordsAsync(cancellationToken);
+            if (Meanwhile(video) is { } done)
+            {
+                outcomes.Add(done);
+                continue;
+            }
+
             logger.LogInformation("Transcript {Number} of {Count}: \"{Title}\" ({Recording})", i + 1, videos.Count, video.Video.Title, video.Files.BaseName);
             try
             {
@@ -174,6 +183,33 @@ public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wa
         }
 
         return outcomes;
+    }
+
+    /// <summary>
+    /// What became of <paramref name="video"/>'s recording since the plan chose it, looked at just before its transcript, so
+    /// that nothing is billed twice: transcribed meanwhile, which counts as done, with its transcript; an answer ElevenLabs was
+    /// paid for kept beside it, which the free rebuild lays out; still being written, or recorded or transcribed by a live run,
+    /// which is left to it. Each is said. Null when it is still to be transcribed.
+    /// </summary>
+    private TranscriptOutcome? Meanwhile(VideoToTranscribe video)
+    {
+        var files = video.Files;
+        if (files.HasTranscript)
+        {
+            var transcript = TranscriptCopies.Transcripts(files).LastOrDefault() ?? files.Transcript();
+            logger.LogInformation("\"{Title}\" was transcribed meanwhile ({Transcript}); it is not sent again", video.Video.Title, transcript);
+            return new TranscriptOutcome(video, TranscriptStep.Transcribed, transcript, null);
+        }
+
+        string? why = null;
+        if (folders.KeptAnswerOf(files) is { } kept)
+            why = $"ElevenLabs' answer, paid for, was kept for it meanwhile in {kept}; it is not sent again. To lay it out for free: {CommandLine.Rebuild(kept)}";
+        else if (ClassFolders.IsBeingWritten(files) || journal.List().Any(run => (run.IsRecordingNow || run.IsTranscribingNow) && ListCommand.IsRunOf(run.Record, files)))
+            why = "it is being recorded or transcribed elsewhere now, so it is not sent from here";
+        if (why is null) return null;
+
+        logger.LogWarning("\"{Title}\" ({Recording}): {Why}", video.Video.Title, files.BaseName, why);
+        return new TranscriptOutcome(video, TranscriptStep.Left, null, why);
     }
 
     /// <summary>

@@ -61,6 +61,46 @@ public class DownloadPlanTests
         Assert.That(new PlanRoom(100, 50, @"D:\", null, @"C:\", null).Fits, Is.True);
     }
 
+    /// <summary>
+    /// The recordings folder's drive keeps room for a class after the batch, as long as a class's start warns below (3 hours
+    /// of its track at 48 kHz and its upload copy, about 1.3 GB): audio that fits only by leaving less does not fit, and the
+    /// plan says why.
+    /// </summary>
+    [Test]
+    public void The_room_keeps_room_for_a_class()
+    {
+        Assert.That(DownloadPlan.KeptForAClass, Is.EqualTo(TimeSpan.FromHours(3)));
+        Assert.That(DownloadPlan.ClassReserveBytes, Is.EqualTo(3L * 3600 * (48_000 * 2 + 16_000 * 2)));
+        Assert.That(new PlanRoom(100, 50, @"C:\", 159, @"C:\", 999, ClassReserve: 10).Fits, Is.False, "the audio and its staging fit, but not with a class's room kept");
+        Assert.That(new PlanRoom(100, 50, @"C:\", 160, @"C:\", 999, ClassReserve: 10).Fits, Is.True);
+        Assert.That(new PlanRoom(100, 50, @"D:\", 109, @"C:\", 999, ClassReserve: 10).Fits, Is.False, "the room for a class is kept on the recordings folder's drive");
+        Assert.That(new PlanRoom(0, 0, @"C:\", 0, @"C:\", 0, ClassReserve: 10).Fits, Is.True, "nothing to download needs no room");
+
+        var lines = DownloadPlan.FetchLines([Ready(1, 1)], transcribe: true, new PlanRoom(158_760_044, 230_760_044, @"C:\", 1_000_000_000, @"C:\", 1_000_000_000, DownloadPlan.ClassReserveBytes));
+
+        Assert.That(lines[^1], Is.EqualTo("There is not room enough for the audio and its download while keeping room for a 3-hour class (about 1.3 GB): free some room, or download fewer videos at a time."));
+    }
+
+    /// <summary>
+    /// While videos wait for his word, the plan says how many, their length and their cost, after what is ready, which may be
+    /// nothing yet; never "Nothing to download." while any waits.
+    /// </summary>
+    [Test]
+    public void Videos_that_wait_for_his_word_are_counted_and_costed()
+    {
+        var unlisted = Ready(1, 3);
+        unlisted.Verdict = new GuardVerdict(GuardVerdictKind.NeedsWord, "needs your word", null);
+        var other = Ready(2, 3);
+        other.Verdict = new GuardVerdict(GuardVerdictKind.NeedsWord, "needs your word", null);
+
+        Assert.That(DownloadPlan.ReadyLines([unlisted, other], transcribe: true, keyterms: 0, new ElevenLabsOptions()), Is.EqualTo(new[]
+        {
+            "Ready: 0 videos.",
+            "Waiting for your word: 2 videos, 6 h 0 min: about $1.32 to transcribe ($0.22 an hour)."
+        }));
+        Assert.That(DownloadPlan.ReadyLines([], transcribe: true, keyterms: 0, new ElevenLabsOptions()), Is.EqualTo(new[] { "Nothing to download." }));
+    }
+
     /// <summary>Each download is reckoned 15 seconds and a minute an hour of audio; more than 60 wait for the hour.</summary>
     [Test]
     public void The_downloads_time_is_reckoned_with_the_hourly_limit()
@@ -69,7 +109,10 @@ public class DownloadPlanTests
         Assert.That(DownloadPlan.DownloadTime([.. Enumerable.Range(1, 61).Select(number => Ready(number, 0.1))]), Is.EqualTo(TimeSpan.FromHours(1)));
     }
 
-    /// <summary>The plan's lines: the table, the cost, the account, the downloads' time, the room, Drive, and the channels that could be named.</summary>
+    /// <summary>
+    /// The plan's lines: the table, the cost of what is ready and of what waits for his word, the account, the downloads'
+    /// time, the room, Drive, and the channels that could be named.
+    /// </summary>
     [Test]
     public void The_plans_lines()
     {
@@ -87,6 +130,7 @@ public class DownloadPlanTests
         Assert.That(lines.Skip(4), Is.EqualTo(new[]
         {
             "Ready: 1 video, 1 h 0 min: about $0.27 to transcribe ($0.22 an hour plus $0.05 for the glossary of 75 terms).",
+            "Waiting for your word: 1 video, 30 min: about $0.14 to transcribe ($0.22 an hour plus $0.05 for the glossary of 75 terms).",
             "ElevenLabs account: 43,362 of 100,000 credits used this period; 56,638 left.",
             "1 download: about 2 minutes, 10 to 20 seconds apart, depending on your connection; then the transcripts, a few minutes each.",
             "Room: about 151 MB on C:\\ for the audio (mono, at YouTube's own rate), with 1.7 GB to spare.",

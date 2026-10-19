@@ -25,7 +25,13 @@ public enum YouTubeLinkKind
 /// <param name="Kind">What it names.</param>
 /// <param name="Id">The video's ID (11 characters) or the playlist's.</param>
 /// <param name="StartSeconds">Where a video's link starts it, in seconds (t=), kept for the record path; null when it names none.</param>
-public sealed record YouTubeLink(YouTubeLinkKind Kind, string Id, int? StartSeconds = null)
+/// <param name="FromEmbeddedPlayer">
+/// True for a video's link that says it was copied from a player embedded in a web page, most likely the course's: it names
+/// the page that embedded the player (embeds_referring_euri, embeds_referring_origin), or a feature of the embedded player
+/// (feature=emb_...), as the player's own YouTube button gives it. The record path takes it, as it takes any video he can
+/// watch; the download path never does.
+/// </param>
+public sealed record YouTubeLink(YouTubeLinkKind Kind, string Id, int? StartSeconds = null, bool FromEmbeddedPlayer = false)
 {
     /// <summary>The link rebuilt from the ID: https://www.youtube.com/watch?v=ID for a video, https://www.youtube.com/playlist?list=ID for a playlist.</summary>
     public string Url => Kind == YouTubeLinkKind.Playlist ? YouTubeLinks.PlaylistUrl(Id) : YouTubeLinks.WatchUrl(Id);
@@ -53,6 +59,12 @@ public static partial class YouTubeLinks
 
     /// <summary>The advice after <see cref="EmbeddedPlayer"/>: the player's own button gives the video's link, which can be recorded as it plays.</summary>
     public const string EmbeddedPlayerAdvice = "Use the YouTube button on the player for the video's own link.";
+
+    /// <summary>The words of a watch link's query that name the page that embedded the player it was copied from.</summary>
+    private static readonly string[] EmbeddingPageWords = ["embeds_referring_euri", "embeds_referring_origin"];
+
+    /// <summary>How the feature of a link copied from an embedded player begins, as in feature=emb_logo, emb_title or emb_imp_woyt.</summary>
+    private const string EmbeddedFeature = "emb_";
 
     /// <summary>The hosts of YouTube's own pages, in any letter case.</summary>
     private static readonly HashSet<string> PageHosts = new(StringComparer.OrdinalIgnoreCase) { "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com" };
@@ -112,9 +124,20 @@ public static partial class YouTubeLinks
         };
     }
 
-    /// <summary>A video of <paramref name="kind"/> when <paramref name="id"/> is a video's ID, with the time the link starts at; otherwise the refusal.</summary>
+    /// <summary>
+    /// A video of <paramref name="kind"/> when <paramref name="id"/> is a video's ID, with the time the link starts at and
+    /// whether it was copied from an embedded player; otherwise the refusal.
+    /// </summary>
     private static LinkReading Video(YouTubeLinkKind kind, string? id, Uri address, string typed) =>
-        IsVideoId(id) ? new LinkReading(new YouTubeLink(kind, id, StartOf(Query(address, "t"))), null) : NamesNoVideo(typed);
+        IsVideoId(id) ? new LinkReading(new YouTubeLink(kind, id, StartOf(Query(address, "t")), FromEmbeddedPlayer(address)), null) : NamesNoVideo(typed);
+
+    /// <summary>
+    /// True when the link's query says it was copied from a player embedded in a web page: it names the page that embedded
+    /// the player, or a feature of the embedded player (feature=emb_...).
+    /// </summary>
+    private static bool FromEmbeddedPlayer(Uri address) =>
+        EmbeddingPageWords.Any(word => Query(address, word) is not null)
+        || (Query(address, "feature")?.StartsWith(EmbeddedFeature, StringComparison.OrdinalIgnoreCase) ?? false);
 
     /// <summary>The refusal of a YouTube link that names no video.</summary>
     private static LinkReading NamesNoVideo(string typed) => Refused($"\"{typed}\" is a YouTube link that names no video or playlist.");
@@ -141,6 +164,7 @@ public static partial class YouTubeLinks
         if (string.IsNullOrEmpty(text)) return null;
         if (StartTime().Match(text) is not { Success: true } match) return null;
 
+        // One part of the start time, in its unit; 0 when the link does not give it.
         int Part(string group) => match.Groups[group].Success ? int.Parse(match.Groups[group].Value, CultureInfo.InvariantCulture) : 0;
         var seconds = Part("h") * 3600L + Part("m") * 60L + Part("s");
         return seconds is > 0 and < int.MaxValue ? (int)seconds : null;

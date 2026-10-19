@@ -17,8 +17,9 @@ public sealed record LinkListReading(IReadOnlyList<YouTubeLink> Links, IReadOnly
 /// Reads the links of a batch (design 1.2): the words of the command line and of a list file, joined in order. A list file
 /// is UTF-8, with or without a byte-order mark; several links may stand on a line, separated by spaces; a # at the start of
 /// a line, or after a space, starts a comment that runs to the line's end; blank lines are passed over. A link given twice,
-/// by its video's or its playlist's ID, is taken once, with a line that names the second. A word that is no link the batch
-/// takes is named by where it stands, with its reason.
+/// by its video's or its playlist's ID, is taken once, with a line that names the second, and marked as copied from an
+/// embedded player when any of its links was. A word that is no link the batch takes is named by where it stands, with its
+/// reason.
 /// </summary>
 public static class LinkList
 {
@@ -66,6 +67,11 @@ public static class LinkList
             if (!seen.Add((isPlaylist, link.Id)))
             {
                 notes.Add($"{Capitalised(word.Where)} lists the {(isPlaylist ? "playlist" : "video")} {link.Id} again; it is taken once");
+
+                // A video given again from an embedded player's button is marked so, wherever it was given first: the
+                // download path never takes a video any of its links says came from a web page's player.
+                if (link.FromEmbeddedPlayer && links.FindIndex(taken => taken.Kind != YouTubeLinkKind.Playlist && taken.Id == link.Id) is var first and >= 0)
+                    links[first] = links[first] with { FromEmbeddedPlayer = true };
                 continue;
             }
 

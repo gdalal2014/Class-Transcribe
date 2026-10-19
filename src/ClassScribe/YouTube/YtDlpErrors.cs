@@ -59,6 +59,7 @@ public static partial class YtDlpErrors
     public static DownloadFailure Classify(int exitCode, IReadOnlyList<string> errorLines)
     {
         var text = string.Join('\n', errorLines).ToLowerInvariant().Replace('’', '\'');
+        // True when the error lines say any of the words.
         bool Says(params string[] words) => words.Any(word => text.Contains(word, StringComparison.Ordinal));
 
         if (Says("not a bot"))

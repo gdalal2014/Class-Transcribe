@@ -159,6 +159,32 @@ public class YouTubeCommandLineTests
         Assert.That(world.Tools.Calls, Is.Empty);
     }
 
+    /// <summary>
+    /// On the download path one Ctrl+C cancels at once (design 3.9): nothing records in the window, so the first press is no
+    /// half of a pair. Pressed while yt-dlp downloads, the batch is cancelled there, with no transcript, and what was read of
+    /// the video stays in its staging folder for the same command later.
+    /// </summary>
+    [Test]
+    public void One_Ctrl_C_during_a_download_cancels_at_once()
+    {
+        using var world = new YouTubeWorld();
+        world.Tools.With("abcdefghijk", YtDlpReadTests.Info("abcdefghijk", duration: 3), 3);
+        using var signals = new ConsoleUserSignals(world.Runtime.Time, NullLogger<ConsoleUserSignals>.Instance);
+        world.Tools.OnCall = call =>
+        {
+            if (call.Arguments.Contains("--newline")) signals.CtrlCPressed();
+            return Task.CompletedTask;
+        };
+        var command = new YouTubeCommand(world.Batch(), null!, signals, world.Ui, world.YouTube, new RecordingLogger<YouTubeCommand>());
+
+        Assert.That(async () => await command.RunAsync(world.Request(["https://youtu.be/abcdefghijk"])).WaitAsync(TimeSpan.FromMinutes(1)),
+            Throws.InstanceOf<OperationCanceledException>());
+
+        Assert.That(world.Tools.Downloads, Is.EqualTo(["abcdefghijk"]));
+        Assert.That(world.Transcriber.Asked, Is.Empty);
+        Assert.That(File.Exists(Path.Combine(world.Folders.StagingOf("abcdefghijk"), "abcdefghijk.info.json")), Is.True, "what was read stays in staging");
+    }
+
     /// <summary>More than 500 videos, once the ones given twice are taken once, is a mistake of the command line.</summary>
     [Test]
     public async Task More_than_five_hundred_videos_is_a_mistake()

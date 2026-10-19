@@ -23,13 +23,13 @@ public enum PastKind
     /// <summary>Never fetched: it is fetched.</summary>
     None,
 
-    /// <summary>A recording of it has a transcript: it is left out.</summary>
+    /// <summary>A recording of it that holds the whole video has a transcript: it is left out.</summary>
     Transcribed,
 
     /// <summary>A recording of it holds the whole video and has no transcript: it is not fetched again, and its transcript is made when asked.</summary>
     Whole,
 
-    /// <summary>Its recordings hold no audio, or may be cut short: it is fetched again, as a new recording.</summary>
+    /// <summary>Its recordings hold no audio, or may be cut short, transcribed or not: it is fetched again, as a new recording.</summary>
     Unfinished
 }
 
@@ -41,8 +41,9 @@ public sealed record PastVerdict(PastKind Kind, PastVideo? Recording, string Wor
 
 /// <summary>
 /// The videos fetched before (design 2.6): every video's source file under the recordings folder, in every course folder and
-/// its date folders, read once per batch and found by the video's ID. A video is done when a recording of it has a
-/// transcript, or holds the whole video; otherwise it is fetched again as a new recording, the old one staying as it is.
+/// its date folders, read once per batch and found by the video's ID. A video is done when a recording of it holds the whole
+/// video (a download, or a recording whose end was confirmed), transcribed or not; otherwise, a recording that may be cut
+/// short included, transcribed or not, it is fetched again as a new recording, the old one staying as it is.
 /// With --again every video is fetched again. So the same command run again, after a crash, a closed window, YouTube's bot
 /// check or ElevenLabs' refusal, picks up where it stopped, and nothing is fetched or billed twice unless asked.
 /// </summary>
@@ -122,7 +123,9 @@ public sealed class VideoIndex
         if (recordings.Count == 0) return new(PastKind.None, null, "");
         if (again) return new(PastKind.None, null, "fetched before; --again fetches it again");
 
-        if (recordings.FirstOrDefault(past => past.HasTranscript) is { } transcribed)
+        // A transcript counts only for a recording that holds the whole video: one that may be cut short is recorded again,
+        // as its summary said, its transcript staying as it is. The audio need not be there still: Drive may hold it alone.
+        if (recordings.FirstOrDefault(past => past.HasTranscript && past.Source.EndConfirmed) is { } transcribed)
         {
             var transcript = TranscriptCopies.Transcripts(transcribed.Files).LastOrDefault() ?? transcribed.Files.Transcript();
             var on = TimeZoneInfo.ConvertTime(new DateTimeOffset(File.GetLastWriteTimeUtc(transcript), TimeSpan.Zero), zone).ToString("d MMM", CultureInfo.InvariantCulture);

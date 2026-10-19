@@ -159,8 +159,8 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// <summary>How often the free space is read again after the start.</summary>
     private static readonly TimeSpan SpaceCheckEvery = TimeSpan.FromMinutes(5);
 
-    /// <summary>At the start, room for less recording than this is warned about.</summary>
-    private static readonly TimeSpan SpaceWarningBelow = TimeSpan.FromHours(3);
+    /// <summary>At the start, room for less recording than this is warned about; a YouTube batch keeps this much room for a class.</summary>
+    public static readonly TimeSpan SpaceWarningBelow = TimeSpan.FromHours(3);
 
     /// <summary>Room for less recording than this is an Alert.</summary>
     private static readonly TimeSpan SpaceAlertBelow = TimeSpan.FromMinutes(30);
@@ -581,6 +581,12 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
 
         return (paused, true);
     }
+
+    /// <summary>
+    /// The room a class of <paramref name="length"/> takes on its drive, as the checks below count it: its one track and the
+    /// upload copy. A YouTube batch keeps this much free for the next class (see <see cref="SpaceWarningBelow"/>).
+    /// </summary>
+    public static long RoomFor(TimeSpan length) => (long)Math.Ceiling(length.TotalHours * (TrackBytesPerHour + UploadBytesPerHour));
 
     /// <summary>
     /// Reads the free space of the recording's drive and says how much recording still fits there, counting each track

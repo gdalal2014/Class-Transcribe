@@ -51,24 +51,58 @@ public sealed class BatchVideo(int Number, string VideoId, VideoPlaylist? Playli
     /// <summary>What came of its transcript, when one was asked for.</summary>
     public TranscriptOutcome? Transcript { get; set; }
 
-    /// <summary>Its title: as its read gave it, else as its playlist gave it, else its ID.</summary>
-    public string Title => Info?.Title is { Length: > 0 } title ? title : ListedTitle ?? VideoId;
+    /// <summary>What the plan says of a video whose link was copied from an embedded player.</summary>
+    public const string FromEmbeddedPlayerWords = "copied from a player embedded in a web page: never downloaded";
+
+    /// <summary>What the summary says of a video whose link was copied from an embedded player.</summary>
+    public const string FromEmbeddedPlayerSaid = "copied from a player embedded in a web page, most likely your course page: never downloaded";
+
+    /// <summary>
+    /// True when a link that gave it was copied from a player embedded in a web page, most likely the course's (see
+    /// <see cref="YouTubeLink.FromEmbeddedPlayer"/>): the download path never reads nor downloads it.
+    /// </summary>
+    public bool FromEmbeddedPlayer { get; init; }
+
+    /// <summary>Its title: as its read gave it, else as its recording made before keeps it, else as its playlist gave it, else its ID.</summary>
+    public string Title =>
+        Info?.Title is { Length: > 0 } title ? title
+        : Past.Recording?.Source.Title is { Length: > 0 } kept ? kept
+        : ListedTitle ?? VideoId;
 
     /// <summary>Its title as its playlist's listing gave it, before it was read.</summary>
     public string? ListedTitle { get; init; }
 
-    /// <summary>Its length, when known.</summary>
-    public TimeSpan? Length => Info?.Length;
+    /// <summary>Its channel's name: as its read gave it, or, when it was not read, as its recording made before keeps it; null when neither says.</summary>
+    public string? Channel => Info is not null ? Info.Channel : Past.Recording?.Source.Channel;
+
+    /// <summary>Its length: as its read gave it, or, when it was not read, as its recording made before keeps it; null when neither says.</summary>
+    public TimeSpan? Length =>
+        Info is not null ? Info.Length
+        : Past.Recording?.Source.Duration is { } kept && TimeSpan.TryParse(kept, CultureInfo.InvariantCulture, out var length) ? length
+        : null;
+
+    /// <summary>
+    /// Its availability as the plan's column shows it: as its read gave it, "not given" when the read did not say, or, when it
+    /// was not read, as its recording made before keeps it, else "-".
+    /// </summary>
+    public string AvailabilityWords => Info is not null ? Info.Availability ?? "not given" : Past.Recording?.Source.Availability ?? "-";
+
+    /// <summary>True while it is still to be fetched: never fetched whole before, nor transcribed, or --again asks for it again.</summary>
+    public bool ToFetch => Past.Kind is PastKind.None or PastKind.Unfinished;
+
+    /// <summary>True when it is still to be fetched but its link came from an embedded player, which the download path never takes.</summary>
+    public bool RefusedForItsLink => FromEmbeddedPlayer && ToFetch;
 
     /// <summary>True when it is to be downloaded: read, never fetched whole before, and ready by the guard's verdict.</summary>
-    public bool IsReady => Info is not null && Past.Kind is PastKind.None or PastKind.Unfinished && Verdict is { Kind: GuardVerdictKind.Ready };
+    public bool IsReady => Info is not null && ToFetch && !RefusedForItsLink && Verdict is { Kind: GuardVerdictKind.Ready };
 
-    /// <summary>True when it waits for Gulzar's word: read, never fetched whole before, and unlisted or not known to be public.</summary>
-    public bool NeedsWord => Info is not null && Past.Kind is PastKind.None or PastKind.Unfinished && Verdict is { Kind: GuardVerdictKind.NeedsWord };
+    /// <summary>True when it waits for Gulzar's word: read, never fetched whole before, and unlisted, not known to be public, or of a channel not known.</summary>
+    public bool NeedsWord => Info is not null && ToFetch && !RefusedForItsLink && Verdict is { Kind: GuardVerdictKind.NeedsWord };
 
     /// <summary>What the plan's last column says of it.</summary>
     public string Words =>
-        NotRead is { } notRead ? $"not read: {notRead}"
+        RefusedForItsLink ? FromEmbeddedPlayerWords
+        : NotRead is { } notRead ? $"not read: {notRead}"
         : Past.Kind is PastKind.Transcribed or PastKind.Whole ? Past.Words
         : Past.Kind == PastKind.Unfinished && Verdict is { Kind: GuardVerdictKind.Ready } ? $"{Verdict.Words}; {Past.Words}"
         : Verdict?.Words ?? "";
@@ -81,28 +115,47 @@ public sealed class BatchVideo(int Number, string VideoId, VideoPlaylist? Playli
 /// <param name="RecordingsFree">The room left on it; null when it cannot be read.</param>
 /// <param name="StagingDrive">ClassScribe's own folder's drive.</param>
 /// <param name="StagingFree">The room left on it; null when it cannot be read.</param>
-public sealed record PlanRoom(long AudioBytes, long StagingBytes, string RecordingsDrive, long? RecordingsFree, string StagingDrive, long? StagingFree)
+/// <param name="ClassReserve">
+/// The room kept on the recordings folder's drive for a class after the batch (see <see cref="DownloadPlan.KeptForAClass"/>),
+/// so that a large batch never leaves the next class without room; 0 to keep none.
+/// </param>
+public sealed record PlanRoom(long AudioBytes, long StagingBytes, string RecordingsDrive, long? RecordingsFree, string StagingDrive, long? StagingFree,
+    long ClassReserve = 0)
 {
     /// <summary>True when both drives share the room, the recordings folder's and ClassScribe's own folder's being one.</summary>
     private bool OneDrive => string.Equals(RecordingsDrive, StagingDrive, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>The room the recordings folder's drive must have: the audio, and the staging too when they share the drive.</summary>
-    private long RecordingsNeed => AudioBytes + (OneDrive ? StagingBytes : 0);
+    /// <summary>
+    /// The room the recordings folder's drive must have: the audio, the staging too when they share the drive, and the room
+    /// kept for a class.
+    /// </summary>
+    private long RecordingsNeed => AudioBytes + (OneDrive ? StagingBytes : 0) + ClassReserve;
 
-    /// <summary>True when the audio fits, as far as the room can be read.</summary>
-    public bool Fits => (RecordingsFree is not { } free || free >= RecordingsNeed) && (OneDrive || StagingFree is not { } staging || staging >= StagingBytes);
+    /// <summary>True when the audio fits, with the room kept for a class, as far as the room can be read; always when there is no audio to fit.</summary>
+    public bool Fits =>
+        AudioBytes <= 0
+        || (RecordingsFree is not { } free || free >= RecordingsNeed) && (OneDrive || StagingFree is not { } staging || staging >= StagingBytes);
 }
 
 /// <summary>
 /// The plan of a download batch (design 3.6), before anything is fetched or sent: each video read, with its channel, length,
-/// availability and the verdict on it; what is ready, its length and about what its transcripts cost; the account's
-/// credits; how long the downloads take; the room the audio needs; what goes to Google Drive; and the channels of the videos
-/// that need a word, which YouTube:MayDownloadChannels could name.
+/// availability and the verdict on it; what is ready, its length and about what its transcripts cost, and what waits for
+/// Gulzar's word; the account's credits; how long the downloads take; the room the audio needs, with room kept for a class;
+/// what goes to Google Drive; and the channels of the videos that need a word, which YouTube:MayDownloadChannels could name.
 /// </summary>
 public static class DownloadPlan
 {
     /// <summary>What a download is reckoned to take besides its pause: a minute for each hour of audio, fetched and converted.</summary>
     private static readonly TimeSpan PerHourOfAudio = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// The class a batch keeps room for on the recordings folder's drive: as long as a class's start warns below
+    /// (<see cref="RecordingMonitor.SpaceWarningBelow"/>), so that a batch never leaves the next class short of room.
+    /// </summary>
+    public static readonly TimeSpan KeptForAClass = RecordingMonitor.SpaceWarningBelow;
+
+    /// <summary>The room a class of <see cref="KeptForAClass"/> takes, its track and its upload copy (see <see cref="RecordingMonitor.RoomFor"/>).</summary>
+    public static long ClassReserveBytes => RecordingMonitor.RoomFor(KeptForAClass);
 
     /// <summary>
     /// The plan's lines: <paramref name="videos"/> as read from <paramref name="links"/> links of which <paramref name="playlists"/>
@@ -121,38 +174,75 @@ public static class DownloadPlan
         lines.Add($"Read {Count(videos.Count, "video")} from {Count(links, "link")}{from}:");
 
         var titleWidth = Math.Min(40, Math.Max(5, videos.Select(video => video.Title.Length).DefaultIfEmpty(0).Max()));
-        var channelWidth = Math.Min(24, Math.Max(7, videos.Select(video => video.Info?.Channel?.Length ?? 1).DefaultIfEmpty(0).Max()));
+        var channelWidth = Math.Min(24, Math.Max(7, videos.Select(video => video.Channel?.Length ?? 1).DefaultIfEmpty(0).Max()));
         lines.Add($"  #   {"Title".PadRight(titleWidth)}  {"Channel".PadRight(channelWidth)}  Length    Availability  Verdict");
         foreach (var video in videos)
         {
             lines.Add(string.Create(CultureInfo.InvariantCulture,
-                $"  {video.Number:00}  {Cut(video.Title, titleWidth).PadRight(titleWidth)}  {Cut(video.Info?.Channel ?? "-", channelWidth).PadRight(channelWidth)}  {(video.Length is { } length ? Durations.Format(length) : "-"),-8}  {(video.Info?.Availability ?? (video.Info is null ? "-" : "not given")),-12}  {video.Words}"));
+                $"  {video.Number:00}  {Cut(video.Title, titleWidth).PadRight(titleWidth)}  {Cut(video.Channel ?? "-", channelWidth).PadRight(channelWidth)}  {(video.Length is { } length ? Durations.Format(length) : "-"),-8}  {video.AvailabilityWords,-12}  {video.Words}"));
         }
 
-        var ready = videos.Where(video => video.IsReady).ToList();
         var before = videos.Where(video => video.Past.Kind == PastKind.Whole && video.Past.Recording?.KeptAnswer is null).ToList();
-        var readyLength = Sum(ready.Select(video => video.Length ?? TimeSpan.Zero));
         var beforeLength = Sum(before.Select(video => video.Past.Recording is { } past ? Sum(past.Files.FindSegments().Select(Storage.ClassFolders.MeasureSegment)) : TimeSpan.Zero));
 
-        lines.Add(ready.Count == 0 ? "Nothing to download." : $"Ready: {Count(ready.Count, "video")}, {BatchTranscripts.Hours(readyLength)}{CostOf(readyLength, transcribe, keyterms, prices)}");
+        lines.AddRange(ReadyLines(videos, transcribe, keyterms, prices));
         if (transcribe && before.Count > 0)
             lines.Add($"Also transcribed: {Count(before.Count, "recording")} fetched before, {BatchTranscripts.Hours(beforeLength)}{CostOf(beforeLength, transcribe, keyterms, prices)}");
         if (transcribe && accountLine is not null) lines.Add($"{accountLine}.");
 
-        if (ready.Count > 0)
-        {
-            lines.Add($"{Count(ready.Count, "download")}: about {Minutes(DownloadTime(ready))}, 10 to 20 seconds apart, depending on your connection{(transcribe ? "; then the transcripts, a few minutes each" : "")}.");
-            var spare = room.RecordingsFree is { } free ? $", with {DriveCommand.Size(Math.Max(0, free - room.AudioBytes))} to spare" : "";
-            lines.Add($"Room: about {DriveCommand.Size(room.AudioBytes)} on {room.RecordingsDrive} for the audio (mono, at YouTube's own rate){spare}.");
-            if (!room.Fits) lines.Add("There is not room enough for the audio and its download: free some room, or download fewer videos at a time.");
-        }
-
+        lines.AddRange(FetchLines(videos, transcribe, room));
         lines.Add(driveLine);
 
         var unsure = videos.Where(video => video.NeedsWord && video.Info is { Channel: not null }).Select(video => $"{video.Info!.Channel}{(video.Info.Handle is { } handle ? $" {handle}" : "")}")
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (unsure.Count > 0)
             lines.Add($"Channels: {string.Join(", ", unsure)} (add one to {YouTubeOptions.SectionName}:{nameof(YouTubeOptions.MayDownloadChannels)} if it is yours, or its owner allows downloading).");
+        return lines;
+    }
+
+    /// <summary>
+    /// What is ready to download, its length and about what its transcripts cost: "Ready: 9 videos, 9 h 41 min: about $2.61
+    /// to transcribe (...)."; "Nothing to download." when nothing is ready nor waits; and, while videos wait for Gulzar's word,
+    /// how many, their length and their cost: "Waiting for your word: 2 videos, 6 h 0 min: about $1.62 to transcribe (...).",
+    /// after "Ready: 0 videos." when nothing else is ready. Shown in the plan, and again once he has given his word.
+    /// </summary>
+    public static IReadOnlyList<string> ReadyLines(IReadOnlyList<BatchVideo> videos, bool transcribe, int keyterms, ElevenLabsOptions prices)
+    {
+        var ready = videos.Where(video => video.IsReady).ToList();
+        var waiting = videos.Where(video => video.NeedsWord).ToList();
+        if (ready.Count == 0 && waiting.Count == 0) return ["Nothing to download."];
+
+        var readyLength = Sum(ready.Select(video => video.Length ?? TimeSpan.Zero));
+        List<string> lines = [ready.Count == 0 ? "Ready: 0 videos." : $"Ready: {Count(ready.Count, "video")}, {BatchTranscripts.Hours(readyLength)}{CostOf(readyLength, transcribe, keyterms, prices)}"];
+        if (waiting.Count > 0)
+        {
+            var waitingLength = Sum(waiting.Select(video => video.Length ?? TimeSpan.Zero));
+            lines.Add($"Waiting for your word: {Count(waiting.Count, "video")}, {BatchTranscripts.Hours(waitingLength)}{CostOf(waitingLength, transcribe, keyterms, prices)}");
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// How long the downloads of what is ready take, and the room their audio needs on the recordings folder's drive, with
+    /// what is left to spare; and, when that does not fit, with the room kept for a class, that it does not. Nothing when
+    /// nothing is ready.
+    /// </summary>
+    public static IReadOnlyList<string> FetchLines(IReadOnlyList<BatchVideo> videos, bool transcribe, PlanRoom room)
+    {
+        var ready = videos.Where(video => video.IsReady).ToList();
+        if (ready.Count == 0) return [];
+
+        List<string> lines = [$"{Count(ready.Count, "download")}: about {Minutes(DownloadTime(ready))}, 10 to 20 seconds apart, depending on your connection{(transcribe ? "; then the transcripts, a few minutes each" : "")}."];
+        var spare = room.RecordingsFree is { } free ? $", with {DriveCommand.Size(Math.Max(0, free - room.AudioBytes))} to spare" : "";
+        lines.Add($"Room: about {DriveCommand.Size(room.AudioBytes)} on {room.RecordingsDrive} for the audio (mono, at YouTube's own rate){spare}.");
+        if (!room.Fits)
+        {
+            lines.Add(room.ClassReserve > 0
+                ? $"There is not room enough for the audio and its download while keeping room for a {Hours(KeptForAClass)} class (about {DriveCommand.Size(room.ClassReserve)}): free some room, or download fewer videos at a time."
+                : "There is not room enough for the audio and its download: free some room, or download fewer videos at a time.");
+        }
+
         return lines;
     }
 
@@ -203,6 +293,9 @@ public static class DownloadPlan
 
         return (audio, staging);
     }
+
+    /// <summary>A length in whole hours, as "3-hour", for a class's length before a noun.</summary>
+    private static string Hours(TimeSpan length) => string.Create(CultureInfo.InvariantCulture, $"{(int)Math.Round(length.TotalHours)}-hour");
 
     /// <summary>A length in minutes, or hours and minutes from an hour, rounded up.</summary>
     private static string Minutes(TimeSpan length) =>

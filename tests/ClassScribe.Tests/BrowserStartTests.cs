@@ -8,10 +8,10 @@ namespace ClassScribe.Tests;
 
 /// <summary>
 /// Starting Chrome for the record path's video window (design 4.1), through the starter's own start of a process: the
-/// program and its arguments quoted as Windows reads them back; a normal window, no inherited handle, the profile folder as
-/// the working folder; outside ClassScribe's job where the job allows it, and inside where it does not; and this process's
-/// environment without the ElevenLabs key or any ElevenLabs setting. Windows is played by a stand-in, so nothing starts; and
-/// in a test, Windows' own start refuses a browser outright.
+/// program and its arguments quoted as Windows reads them back; a normal window, no inherited handle, the YouTube feature's
+/// own folder as the working folder, never the profile's; outside ClassScribe's job where the job allows it, and inside
+/// where it does not; and this process's environment without the ElevenLabs key or any ElevenLabs setting. Windows is played
+/// by a stand-in, so nothing starts; and in a test, Windows' own start refuses a browser outright.
 /// </summary>
 [TestFixture, Platform("Win")]
 [SupportedOSPlatform("windows")]
@@ -19,6 +19,9 @@ public class BrowserStartTests
 {
     private const string Chrome = @"C:\Program Files\Google\Chrome\Application\chrome.exe";
     private const string Profile = @"C:\Users\gdala\AppData\Local\ClassScribe\video-browser";
+
+    /// <summary>The YouTube feature's own folder, which Chrome runs in, as the video window starts it: never the profile's.</summary>
+    private const string Feature = @"C:\Users\gdala\AppData\Local\ClassScribe\youtube";
     private const string Link = "https://www.youtube.com/watch?v=abcdefghijk";
 
     /// <summary>The browser's arguments as the video window gives them.</summary>
@@ -47,7 +50,7 @@ public class BrowserStartTests
     [Test]
     public void Chrome_is_started_with_its_arguments_quoted_as_Windows_reads_them()
     {
-        var started = Starter().StartBrowser(Chrome, Arguments, Profile);
+        var started = Starter().StartBrowser(Chrome, Arguments, Feature);
 
         var launch = _api.Launches.Single();
         Assert.That(launch.Application, Is.EqualTo(Chrome));
@@ -56,25 +59,26 @@ public class BrowserStartTests
         Assert.That(started.ProcessId, Is.EqualTo(_api.Next.ProcessId));
         Assert.That(_log.Messages, Has.None.Contains("video-browser"), "the profile, which may hold a Google sign-in, is never logged");
 
-        Starter().StartBrowser(Chrome, [@"--user-data-dir=C:\Users\Some One\AppData\Local\ClassScribe\video-browser"], Profile);
+        Starter().StartBrowser(Chrome, [@"--user-data-dir=C:\Users\Some One\AppData\Local\ClassScribe\video-browser"], Feature);
         Assert.That(_api.Launches[1].CommandLine, Is.EqualTo($"\"{Chrome}\" \"--user-data-dir=C:\\Users\\Some One\\AppData\\Local\\ClassScribe\\video-browser\""),
             "a folder with a space is quoted whole, as Windows reads it back");
     }
 
     /// <summary>
-    /// A normal window, which Windows shows as Chrome asks; no handle of this process; the profile folder as its working
-    /// folder; no job of its own, and outside ClassScribe's job, so that the video plays on when the window is closed.
+    /// A normal window, which Windows shows as Chrome asks; no handle of this process; the YouTube feature's own folder as its
+    /// working folder, never the profile's; no job of its own, and outside ClassScribe's job, so that the video plays on when
+    /// the window is closed.
     /// </summary>
     [Test]
-    public void Chrome_gets_a_normal_window_no_handles_its_profile_folder_and_breaks_away_from_the_job()
+    public void Chrome_gets_a_normal_window_no_handles_the_features_folder_and_breaks_away_from_the_job()
     {
-        Starter().StartBrowser(Chrome, Arguments, Profile);
+        Starter().StartBrowser(Chrome, Arguments, Feature);
 
         var launch = _api.Launches.Single();
         Assert.That(launch.Flags, Is.EqualTo(ProcessCreationFlags.UnicodeEnvironment | ProcessCreationFlags.BreakawayFromJob));
         Assert.That(launch.InheritHandles, Is.False);
         Assert.That(launch.Show, Is.Null);
-        Assert.That(launch.WorkingFolder, Is.EqualTo(Profile));
+        Assert.That(launch.WorkingFolder, Is.EqualTo(Feature), "ClassScribe never touches the profile folder, which may hold a Google sign-in");
         Assert.That(launch.Handles, Is.Null);
         Assert.That(launch.Job, Is.Null);
     }
@@ -92,7 +96,7 @@ public class BrowserStartTests
             ["LOCALAPPDATA"] = @"C:\Users\gdala\AppData\Local"
         };
 
-        Starter(current).StartBrowser(Chrome, Arguments, Profile);
+        Starter(current).StartBrowser(Chrome, Arguments, Feature);
 
         var environment = _api.Launches.Single().Environment!;
         Assert.That(environment.Keys, Is.EquivalentTo(new[] { "PATH", "LOCALAPPDATA" }));
@@ -106,7 +110,7 @@ public class BrowserStartTests
     {
         _api.RefusalFor = launch => launch.Flags.HasFlag(ProcessCreationFlags.BreakawayFromJob) ? IProcessStarter.AccessDenied : 0;
 
-        var started = Starter().StartBrowser(Chrome, Arguments, Profile);
+        var started = Starter().StartBrowser(Chrome, Arguments, Feature);
 
         Assert.That(_api.Launches.Select(launch => launch.Flags.HasFlag(ProcessCreationFlags.BreakawayFromJob)), Is.EqualTo(new[] { true, false }));
         Assert.That(started, Is.SameAs(_api.Next));
@@ -118,7 +122,7 @@ public class BrowserStartTests
     {
         _api.Refusal = 2;
 
-        var refused = Assert.Throws<Win32Exception>(() => Starter().StartBrowser(Chrome, Arguments, Profile));
+        var refused = Assert.Throws<Win32Exception>(() => Starter().StartBrowser(Chrome, Arguments, Feature));
 
         Assert.That(refused!.NativeErrorCode, Is.EqualTo(2));
         Assert.That(refused.Message, Does.StartWith("Windows did not start Chrome:").And.EndWith("(error 2)"));

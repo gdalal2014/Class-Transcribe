@@ -122,10 +122,22 @@ public sealed class FakeVideoYield : ClassScribe.Recorder.IVideoYield
     /// <summary>True while run <paramref name="runId"/> listens for its yield.</summary>
     public bool IsListening(string runId) => _listening.ContainsKey(runId);
 
+    /// <summary>
+    /// True to play a class asking the moment a run begins to listen, before the run has done anything else, its run file not
+    /// yet written: the yield reaches it at once, on the listening thread.
+    /// </summary>
+    public bool AskedAsItListens { get; set; }
+
     /// <inheritdoc />
     public IDisposable? Listen(string runId, Action onYield)
     {
         _listening[runId] = onYield;
+        if (AskedAsItListens)
+        {
+            _asked.Enqueue(runId);
+            onYield();
+        }
+
         return new LetGo(() => _listening.TryRemove(runId, out _));
     }
 

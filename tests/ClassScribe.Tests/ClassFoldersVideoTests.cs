@@ -118,6 +118,25 @@ public class ClassFoldersVideoTests
         Assert.That(lesson.Folder, Is.EqualTo(failed.Folder));
     }
 
+    /// <summary>
+    /// A date folder into which a downloaded video's audio is being written, its unfinished parts (.wav.partial) beside its
+    /// source file and log, is taken: a class that starts meanwhile goes to the next date folder, never into the batch's.
+    /// </summary>
+    [Test]
+    public void A_date_folder_a_videos_audio_is_being_written_into_is_taken()
+    {
+        var folders = Folders();
+        var converting = folders.CreateRecording("Risala");
+        MakeVideo(converting);
+        File.WriteAllText(converting.Log, "Downloading 1 of 1");
+        File.WriteAllBytes(converting.Segment(1) + ".partial", new byte[100]);
+        _time.Advance(TimeSpan.FromSeconds(5));
+
+        var lesson = folders.CreateRecording("Risala");
+
+        Assert.That(lesson.Folder, Is.EqualTo(Under("Risala", "2026-10-18 (2)")));
+    }
+
     /// <summary>A recording with a source file is a video's; one without is a class's.</summary>
     [Test]
     public void A_recording_with_a_source_file_is_a_videos()

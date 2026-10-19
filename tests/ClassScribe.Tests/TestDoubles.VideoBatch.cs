@@ -103,8 +103,8 @@ public sealed class VideoWorld : IDisposable
     /// <summary>The console.</summary>
     public FakeConsoleUi Ui { get; } = new();
 
-    /// <summary>Ctrl+C, in the batch's scope.</summary>
-    public FakeUserSignals Signals { get; } = new();
+    /// <summary>Ctrl+C, in the batch's scope; a test that runs two batches gives the second its own, as each batch's scope has.</summary>
+    public FakeUserSignals Signals { get; set; } = new();
 
     /// <summary>The transcripts, played.</summary>
     public FakeVideoTranscriber Transcriber { get; } = new();
@@ -163,13 +163,13 @@ public sealed class VideoWorld : IDisposable
     {
         var wait = new ClassWait(Runtime.Journal, Runtime.Time, Log<ClassWait>());
         var usage = new UsageReport(Account, Time, Log<UsageReport>());
-        var batch = new YouTubeBatch(new YouTubeLock(Folders, Log<YouTubeLock>()), wait, new BatchTranscripts(Transcriber, wait, Log<BatchTranscripts>()), Account, usage, Power,
+        var batch = new YouTubeBatch(new YouTubeLock(Folders, Log<YouTubeLock>()), wait, new BatchTranscripts(Transcriber, wait, ClassFolders, Runtime.Journal, Log<BatchTranscripts>()), Account, usage, Power,
             new FakePowerSource(), Ui, Desktop.Object, Recording, ElevenLabs, Runtime.Time, Log<YouTubeBatch>());
         var http = new HttpClient(new YouTubeHostGuard { InnerHandler = Http }) { BaseAddress = new Uri("http://127.0.0.1:5005/") };
         var titles = new OEmbedTitles(RestService.ForGenerated<IYouTubeOEmbedApi>(http, YouTubeJson.Default, OEmbedTitles.RefitSettings()), Runtime.Time, Log<OEmbedTitles>());
         var browsers = new BrowserLocator(new FakeRegistryValues(), Files, YouTube, Log<BrowserLocator>()) { ProgramFiles = @"C:\Program Files", ProgramFilesX86 = @"C:\Program Files (x86)", LocalAppData = @"C:\Users\gdala\AppData\Local" };
         var windows = new VideoWindow(Starter, Browsers.Windows, Folders, Runtime.Time, Log<VideoWindow>());
-        return new VideoBatch(batch, browsers, titles, windows, Commands.Object, Runtime.Journal, ClassFolders, new KeytermLoader(NullLogger<KeytermLoader>.Instance), Signals, Ui,
+        return new VideoBatch(batch, new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), browsers, titles, windows, Commands.Object, Runtime.Journal, ClassFolders, new KeytermLoader(NullLogger<KeytermLoader>.Instance), Signals, Ui,
             YouTube, Recording, ElevenLabs, Time, Log<VideoBatch>());
     }
 

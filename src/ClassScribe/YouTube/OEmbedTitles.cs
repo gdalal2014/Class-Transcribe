@@ -115,10 +115,11 @@ public sealed class OEmbedTitles(IYouTubeOEmbedApi api, TimeProvider time, ILogg
             return null;
         }
 
-        if (answer?.Title?.Trim() is not { Length: > 0 } title) return null;
+        // YouTube's words are shown and kept: none of them carries a control character from here on.
+        if (VideoTitles.Plain(answer?.Title)?.Trim() is not { Length: > 0 } title) return null;
 
-        var channel = string.IsNullOrWhiteSpace(answer.AuthorName) ? null : answer.AuthorName.Trim();
-        var url = string.IsNullOrWhiteSpace(answer.AuthorUrl) ? null : answer.AuthorUrl.Trim();
+        var channel = string.IsNullOrWhiteSpace(answer!.AuthorName) ? null : VideoTitles.Plain(answer.AuthorName)!.Trim();
+        var url = string.IsNullOrWhiteSpace(answer.AuthorUrl) ? null : VideoTitles.Plain(answer.AuthorUrl)!.Trim();
         return new VideoTitle(title, channel, HandleOf(url), url);
     }
 

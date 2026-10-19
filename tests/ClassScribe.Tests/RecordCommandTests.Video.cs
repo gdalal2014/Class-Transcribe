@@ -148,6 +148,23 @@ public partial class RecordCommandTests
     }
 
     /// <summary>
+    /// A class that asks the moment the video's run begins to listen, before its run file is written, still stops it as a class
+    /// does: the run file, once written, says a class started, and the source file says the end is not confirmed, so that the
+    /// same command records the video again, never as one Gulzar stopped with Q.
+    /// </summary>
+    [Test]
+    public async Task A_class_that_asks_before_the_run_file_is_written_stops_the_video_unconfirmed()
+    {
+        var (playback, _) = VideoWindowOpen();
+        _yield.AskedAsItListens = true;
+
+        await CreateCommand(video: playback, yield: _yield).RunAsync(VideoRunRequest()).WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.That(RunFile().EndedBy, Is.EqualTo(RunEndCause.ClassStarted));
+        Assert.That((SourceFile().Ended, SourceFile().EndConfirmed), Is.EqualTo(("stopped so that a class could record", false)));
+    }
+
+    /// <summary>
     /// A window gone before the run records fails the run closed: nothing is captured, never another Chrome; the source file
     /// says why; and the date folder, holding only traces, is free for the day's class.
     /// </summary>

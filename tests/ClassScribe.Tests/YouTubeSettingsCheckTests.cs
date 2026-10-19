@@ -165,6 +165,7 @@ public class YouTubeSettingsCheckTests
     [Test]
     public void The_longest_video_above_the_safety_stop_is_a_warning_not_a_refusal()
     {
+        // The warnings the check gives about the YouTube section for these settings.
         static IReadOnlyList<string> Warnings(Dictionary<string, string?> settings) =>
             new SettingsCheck().FindWarnings(new ConfigurationBuilder().AddInMemoryCollection(settings).Build()).Where(warning => warning.StartsWith("YouTube:", StringComparison.Ordinal)).ToList();
         Dictionary<string, string?> above = new() { ["YouTube:LongestVideoHours"] = "6", ["Recording:StopAfterHours"] = "5" };

@@ -98,8 +98,11 @@ public sealed class ClassWait(RunJournal journal, TimeProvider time, ILogger<Cla
     /// <summary>How often a batch held up by a class looks whether it has stopped.</summary>
     public static readonly TimeSpan Poll = TimeSpan.FromSeconds(30);
 
-    /// <summary>Waits while a class records, in this window or in the background, as its run file says.</summary>
-    public async Task WhileAClassRecordsAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Waits while a class records, in this window or in the background, as its run file says. True when it had to wait, so
+    /// that the record path asks Gulzar again before it opens a video's window; false when no class recorded.
+    /// </summary>
+    public async Task<bool> WhileAClassRecordsAsync(CancellationToken cancellationToken)
     {
         string? waitedFor = null;
         while (journal.List().FirstOrDefault(run => run.IsRecordingNow && !run.IsVideo) is { } run)
@@ -114,5 +117,6 @@ public sealed class ClassWait(RunJournal journal, TimeProvider time, ILogger<Cla
         }
 
         if (waitedFor is not null) logger.LogInformation("YouTube: going on, now that \"{Name}\" has stopped recording", waitedFor);
+        return waitedFor is not null;
     }
 }

@@ -30,8 +30,10 @@ public static class YouTubeServices
         services.AddSingleton<YouTubeMenuMemory>();
 
         // YouTube's public oEmbed address, for the record path's titles: its base address read from the settings each time a
-        // client is made, once per batch; HttpClient's own limit off, as the reader holds its own; the guard that keeps a test
-        // away from youtube.com itself; and nothing of these requests logged by Microsoft.Extensions.Http.
+        // client is made, once per batch; HttpClient's own limit off, as the reader holds its own; a transport of its own that
+        // keeps no cookie, so that a cookie one answer sets never goes back with the next request and links the batch's reads;
+        // the guard that keeps a test away from youtube.com itself; and nothing of these requests logged by
+        // Microsoft.Extensions.Http.
         services
             .AddRefitGeneratedClient<IYouTubeOEmbedApi>(YouTubeJson.Default, _ => OEmbedTitles.RefitSettings())
             .ConfigureHttpClient((provider, http) =>
@@ -40,6 +42,7 @@ public static class YouTubeServices
                 http.BaseAddress = new Uri(settings.OEmbedBaseUrl.TrimEnd('/') + "/");
                 http.Timeout = Timeout.InfiniteTimeSpan;
             })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false })
             .AddHttpMessageHandler(() => new YouTubeHostGuard())
             .RemoveAllLoggers();
 

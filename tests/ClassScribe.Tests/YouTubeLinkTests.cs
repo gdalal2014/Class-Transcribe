@@ -94,6 +94,38 @@ public class YouTubeLinkTests
         Assert.That(reading.Problem, Does.Contain("YouTube button"));
     }
 
+    /// <summary>
+    /// A watch link copied from an embedded player's YouTube button carries what says so (the page that embedded the player,
+    /// or a feature of the embedded player): it is read as the video, and marked as from an embedded player, which the
+    /// download path never takes.
+    /// </summary>
+    [TestCase("https://www.youtube.com/watch?v=abcdefghijk&embeds_referring_euri=https%3A%2F%2Fcourse.example%2Flesson%2F3&source_ve_path=MjM4NTE&feature=emb_imp_woyt")]
+    [TestCase("https://www.youtube.com/watch?v=abcdefghijk&embeds_referring_origin=https%3A%2F%2Fcourse.example")]
+    [TestCase("https://www.youtube.com/watch?v=abcdefghijk&feature=emb_logo")]
+    [TestCase("https://youtu.be/abcdefghijk?feature=EMB_TITLE")]
+    public void A_link_from_an_embedded_players_button_is_marked(string text)
+    {
+        var link = YouTubeLinks.Read(text).Link!;
+
+        Assert.That((link.Kind, link.Id, link.FromEmbeddedPlayer), Is.EqualTo((YouTubeLinkKind.Video, "abcdefghijk", true)));
+        Assert.That(link.Url, Is.EqualTo("https://www.youtube.com/watch?v=abcdefghijk"), "rebuilt from its ID all the same");
+    }
+
+    /// <summary>Other watch links are not marked: a share's feature, a share's si=, a playlist's list=.</summary>
+    [TestCase("https://www.youtube.com/watch?v=abcdefghijk&feature=share")]
+    [TestCase("https://youtu.be/abcdefghijk?si=Zx-123")]
+    [TestCase("https://www.youtube.com/watch?v=abcdefghijk&list=PLxyz123")]
+    public void Other_links_are_not_marked(string text) => Assert.That(YouTubeLinks.Read(text).Link!.FromEmbeddedPlayer, Is.False);
+
+    /// <summary>A video given twice, once from an embedded player's button, is taken once, marked as from an embedded player.</summary>
+    [Test]
+    public void A_video_given_again_from_an_embedded_player_is_marked()
+    {
+        var reading = LinkList.Read([new LinkWord("https://youtu.be/abcdefghijk", "line 1"), new LinkWord("https://www.youtube.com/watch?v=abcdefghijk&feature=emb_logo", "line 2")]);
+
+        Assert.That(reading.Links.Single().FromEmbeddedPlayer, Is.True);
+    }
+
     /// <summary>What is not YouTube's, or names no video, is refused with its reason.</summary>
     [TestCase("https://vimeo.com/12345")]
     [TestCase("https://www.youtube.com.evil.example/watch?v=abcdefghijk")]

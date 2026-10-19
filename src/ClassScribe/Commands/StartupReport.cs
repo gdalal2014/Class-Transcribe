@@ -127,16 +127,20 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
     /// <summary>The recording in the background now, which the menu shows at once; null when there is none. A recording in another window has no recorder to show.</summary>
     public RunRecord? RecordingNow() => journal.List().FirstOrDefault(run => run.IsRecordingNow && run.Record.Home == RunHome.Separate)?.Record;
 
-    /// <summary>The lines about the runs going on now, for the menu's header (<paramref name="header"/>) or before a command.</summary>
+    /// <summary>
+    /// The lines about the runs going on now, for the menu's header (<paramref name="header"/>) or before a command. A YouTube
+    /// video's run is named as the video, never as its course, which a class of that name would be taken for; a transcript a
+    /// YouTube batch makes in another window is said to be made there.
+    /// </summary>
     private List<string> LinesAboutRunsNow(IReadOnlyList<RunView> runs, bool header)
     {
         var lines = new List<string>();
         foreach (var run in runs.Where(run => run.IsRecordingNow))
         {
             var record = run.Record;
-            var since = $"\"{record.Request.Name}\" since {When(record.StartedUtc)} ({Durations.Format(time.GetUtcNow() - record.StartedUtc)})";
+            var since = $"{RecordStarter.Named(record)} since {When(record.StartedUtc)} ({Durations.Format(time.GetUtcNow() - record.StartedUtc)})";
             lines.Add(record.Home == RunHome.InWindow
-                ? $"\"{record.Request.Name}\" is being recorded in another ClassScribe window (process {record.ProcessId}), which shows it; closing that window ends the recording."
+                ? $"{RecordStarter.NamedFirst(record)} is being recorded in another ClassScribe window (process {record.ProcessId}), which shows it; closing that window ends the recording."
                 : header
                     ? $"Recording now: {since}. A shows it."
                     : $"Recording now in the background: {since}. Start ClassScribe to see it.");
@@ -150,7 +154,9 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
                 >= 100 => " (uploaded; waiting for the transcript)",
                 var percent => string.Create(CultureInfo.InvariantCulture, $" (uploading {percent}%)")
             };
-            lines.Add($"Being transcribed in the background: \"{run.Record.Request.Name}\"{progress}.");
+            lines.Add(run.Record.Home == RunHome.InWindow
+                ? $"Being transcribed in another ClassScribe window (process {run.Record.ProcessId}): {RecordStarter.Named(run.Record)}{progress}."
+                : $"Being transcribed in the background: {RecordStarter.Named(run.Record)}{progress}.");
         }
 
         return lines;
@@ -166,24 +172,24 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
     {
         journal.MarkSeen(run.RunId);
         var outcome = run.Outcome!;
-        var name = run.Request.Name;
+        var name = RecordStarter.NamedFirst(run);
         switch (outcome.Kind)
         {
             case OutcomeKind.Transcribed when outcome.TranscriptPath is { } transcript:
                 var canOpen = interactive && File.Exists(transcript);
-                ui.WriteLine($"\"{name}\" was transcribed in the background: {transcript}.{(canOpen ? " O opens it; any other key goes on." : "")}");
+                ui.WriteLine($"{name} was transcribed in the background: {transcript}.{(canOpen ? " O opens it; any other key goes on." : "")}");
                 if (!canOpen || (await ui.ReadKeyAsync(CancellationToken.None))?.Key != ConsoleKey.O) return null;
 
                 desktop.OpenFile(transcript);
                 return new StartupChoice(run.RunId, StartupAction.Open);
 
             case OutcomeKind.Recorded:
-                ui.WriteLine($"\"{name}\" was recorded in the background: {outcome.Folder ?? run.Folder}.");
+                ui.WriteLine($"{name} was recorded in the background: {outcome.Folder ?? run.Folder}.");
                 if (outcome.RetryCommand is { } transcribe) ui.WriteLine($"To transcribe it: {transcribe}");
                 return null;
 
             default:
-                ui.WriteLine($"\"{name}\" ended in the background: {Sentence.Of(outcome.Message)}");
+                ui.WriteLine($"{name} ended in the background: {Sentence.Of(outcome.Message)}");
                 if (outcome.RetryCommand is { } retry && !outcome.Message.Contains(retry, StringComparison.Ordinal)) ui.WriteLine($"To try again: {retry}");
                 return null;
         }
@@ -222,14 +228,15 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
             if (run.TranscriptionInterrupted)
             {
                 return new RunReport(record, files,
-                    [$"The transcript of \"{record.Request.Name}\" ({record.BaseName}) was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again."],
+                    [$"The transcript of {RecordStarter.Named(record)} ({record.BaseName}) was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again."],
                     CanContinue: false);
             }
 
             var endedAt = EndedAt(record, files);
+            var recording = record.Request.Video is null ? $"The recording \"{record.Request.Name}\"" : $"The recording of {RecordStarter.Named(record)}";
             return new RunReport(record, files,
             [
-                $"The recording \"{record.Request.Name}\" ({record.BaseName}) ended unexpectedly at about {When(endedAt)}, {Durations.Format(LengthOf(record, files))} in. Its audio is kept.",
+                $"{recording} ({record.BaseName}) ended unexpectedly at about {When(endedAt)}, {Durations.Format(LengthOf(record, files))} in. Its audio is kept.",
                 Cause(record, files, endedAt)
             ], CanContinue(record, files, runs));
         }

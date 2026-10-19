@@ -1,6 +1,7 @@
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using ClassScribe.YouTube;
 using Moq;
 
@@ -416,8 +417,127 @@ public class VideoBatchTests
         Assert.That(_world.Http.Requests, Is.Empty);
     }
 
+    /// <summary>
+    /// A video whose recording may be cut short is recorded again by the same command, as its summary says, even once the
+    /// batch transcribed what it holds: a transcript counts only for a recording of the whole video; the earlier recording
+    /// and its transcript stay as they are.
+    /// </summary>
+    [Test]
+    public async Task A_video_cut_short_is_recorded_again_though_it_was_transcribed()
+    {
+        var before = RecordedBefore("abcdefghijk", confirmed: false, transcribed: true);
+        _world.Ui.Type('y');
+
+        var exitCode = await _world.RunAsync(_world.Request([First], BatchConfirmation.Ask));
+
+        Assert.That(exitCode, Is.Zero);
+        Assert.That(_world.Started.Select(request => request.Video!.VideoId), Is.EqualTo(new[] { "abcdefghijk" }), "the same command records it again");
+        Assert.That(_world.Screen, Has.Some.StartsWith("  01  The creed, part 1  Shaykh X  fetched before (").And.Some.EndsWith("so it may be cut short: fetched again"));
+        Assert.That(File.Exists(before.Transcript()), Is.True, "the earlier transcript stays");
+    }
+
+    /// <summary>
+    /// The command the summary gives for the rest of a video stopped at its longest records the rest, from where it stopped,
+    /// once the batch has transcribed what it recorded.
+    /// </summary>
+    [Test]
+    public async Task The_command_for_the_rest_of_a_video_records_it()
+    {
+        using var world = new VideoWorld();
+        world.Title("A long lecture").Title("A long lecture");
+        world.Plays["abcdefghijk"] = new PlayedVideoRun(TimeSpan.FromHours(4), RunEndCause.VideoLimit);
+        world.Ui.Type('y');
+        await world.RunAsync(world.Request(["https://youtu.be/abcdefghijk"], BatchConfirmation.Ask));
+        Assert.That(world.Transcriber.Asked, Has.Count.EqualTo(1), "what it recorded was transcribed");
+        world.Runtime.Time.Advance(TimeSpan.FromMinutes(1));
+        world.Plays["abcdefghijk"] = new PlayedVideoRun(TimeSpan.FromMinutes(30));
+        world.Signals = new FakeUserSignals();
+        world.Ui.Type('y');
+
+        await world.RunAsync(world.Request(["https://www.youtube.com/watch?v=abcdefghijk&t=14400s"], BatchConfirmation.Ask));
+
+        Assert.That(world.Started, Has.Count.EqualTo(2), "the command for the rest records it");
+        Assert.That(world.Started[1].Video!.StartSeconds, Is.EqualTo(14400));
+    }
+
+    /// <summary>
+    /// A class that starts while the batch waits for Enter comes first: the next video's window opens only once the class has
+    /// ended, and on Enter again, never while the class records.
+    /// </summary>
+    [Test]
+    public async Task A_class_that_starts_while_Enter_is_awaited_comes_first()
+    {
+        var classRecordingWhenTheSecondOpened = false;
+        _world.Plays["bcdefghijkl"] = new PlayedVideoRun(TimeSpan.FromMinutes(1))
+        {
+            During = world => classRecordingWhenTheSecondOpened = world.Runtime.Journal.List().Any(run => run.IsRecordingNow && !run.IsVideo)
+        };
+        _world.Ui.BeforeKeyRead = reads =>
+        {
+            // Y at the plan is the first key read; at the prompt for the second video, a class starts in another window.
+            if (reads == 2) _world.StartAClass(TimeSpan.FromMinutes(2));
+        };
+        _world.Ui.Type('y', '\r', '\r');
+
+        Assert.That(await _world.RunAsync(_world.Request([First, Second], BatchConfirmation.Ask)), Is.Zero);
+
+        Assert.That(classRecordingWhenTheSecondOpened, Is.False, "no video window opens while a class records");
+        Assert.That(_world.Started, Has.Count.EqualTo(2));
+        Assert.That(_world.Lines, Has.Some.EqualTo("YouTube: waiting while \"Kalam\" records; the videos go on after it"));
+        Assert.That(_world.Screen.Count(line => line.StartsWith("Next: 02 The creed, part 2. Enter opens it", StringComparison.Ordinal)), Is.EqualTo(2),
+            "Enter is asked for again once the class has ended");
+    }
+
+    /// <summary>
+    /// The record path cleans up what an earlier download batch left half done, under the lock, as the download path does: the
+    /// unfinished parts of a conversion a crash cut short, and the note that names them.
+    /// </summary>
+    [Test]
+    public async Task A_conversion_left_half_done_is_cleaned_up()
+    {
+        var target = RecordingFiles.ForNew(Path.Combine(_world.Recordings.Path, "Risala", "2026-10-14"), "Risala", new DateTimeOffset(2026, 10, 14, 23, 0, 0, TimeSpan.Zero));
+        Directory.CreateDirectory(target.Folder);
+        File.WriteAllBytes(target.Segment(1) + DownloadedAudio.PartialEnding, new byte[100]);
+        Directory.CreateDirectory(_world.Folders.Root);
+        File.WriteAllText(_world.Folders.ConvertingNote,
+            $$"""{"videoId":"abcdefghijk","title":"The creed, part 1","folder":{{System.Text.Json.JsonSerializer.Serialize(target.Folder)}},"baseName":"{{target.BaseName}}"}""");
+
+        Assert.That(await _world.RunAsync(_world.Request([First], BatchConfirmation.PlanOnly)), Is.Zero);
+
+        Assert.That(File.Exists(target.Segment(1) + DownloadedAudio.PartialEnding), Is.False);
+        Assert.That(File.Exists(_world.Folders.ConvertingNote), Is.False);
+        Assert.That(_world.Lines, Has.Some.StartsWith("Deleted the unfinished conversion of \"The creed, part 1\" left by an earlier batch"));
+    }
+
+    /// <summary>
+    /// A recording made before is looked at again just before its transcript: one transcribed meanwhile in another window, as
+    /// with menu choice 3 while the batch records, is not sent to ElevenLabs again.
+    /// </summary>
+    [Test]
+    public async Task A_recording_transcribed_meanwhile_is_not_sent_again()
+    {
+        var before = RecordedBefore("bcdefghijkl", confirmed: true, transcribed: false);
+        _world.Plays["abcdefghijk"] = new PlayedVideoRun(TimeSpan.FromMinutes(10)) { During = _ => File.WriteAllText(before.Transcript(), "# made in another window\n") };
+        _world.Ui.Type('y');
+
+        Assert.That(await _world.RunAsync(_world.Request([First, Second], BatchConfirmation.Ask)), Is.Zero);
+
+        Assert.That(_world.Transcriber.Asked.Select(video => video.Video.VideoId), Is.EqualTo(new[] { "abcdefghijk" }), "nothing is billed twice");
+        Assert.That(_world.Screen, Has.Some.EqualTo($"  02  The creed, part 2: made before; transcribed: {before.Transcript()}"));
+    }
+
+    /// <summary>A link copied from an embedded player's YouTube button is recorded as it plays, as any video he can watch (Gulzar's answer 3 B).</summary>
+    [Test]
+    public async Task A_link_from_an_embedded_players_button_is_recorded_as_it_plays()
+    {
+        _world.Ui.Type('y');
+
+        Assert.That(await _world.RunAsync(_world.Request(["https://www.youtube.com/watch?v=abcdefghijk&feature=emb_logo"], BatchConfirmation.Ask)), Is.Zero);
+        Assert.That(_world.Started.Single().Video!.Url, Is.EqualTo(YouTubeLinks.WatchUrl("abcdefghijk")));
+    }
+
     /// <summary>A recording of <paramref name="videoId"/> made before, whole or not, with a transcript or not.</summary>
-    private void RecordedBefore(string videoId, bool confirmed, bool transcribed)
+    private RecordingFiles RecordedBefore(string videoId, bool confirmed, bool transcribed)
     {
         var files = _world.ClassFolders.CreateRecording("Risala", _world.Recordings.Path);
         using (var writer = new Audio.WavSegmentWriter(files.Segment(1), 10)) writer.Write(new byte[600 * 2]);
@@ -425,5 +545,6 @@ public class VideoBatchTests
             VideoSource.Recorded, "Chrome", TestRuns.Start, null, null, confirmed ? "the video window was closed" : "ended after 2 minutes of silence", confirmed));
         if (transcribed) File.WriteAllText(files.Transcript(), "# done\n");
         _world.Runtime.Time.Advance(TimeSpan.FromSeconds(5));
+        return files;
     }
 }

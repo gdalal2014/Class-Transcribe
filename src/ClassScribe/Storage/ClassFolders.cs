@@ -566,8 +566,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
     /// <summary>
     /// True when a new recording may go into the date folder <paramref name="folder"/>: it is not there yet, or it is a
-    /// folder that holds no class (see <see cref="IsClass"/>), such as one with only a false start's log and marks. A
-    /// file of that name is not free, and nor is a folder that cannot be looked into, which is said.
+    /// folder that holds no class (see <see cref="IsClass"/>), such as one with only a false start's log and marks, and no
+    /// YouTube video's audio being written into it (see <see cref="IsAudioBeingConverted"/>). A file of that name is not free,
+    /// and nor is a folder that cannot be looked into, which is said.
     /// </summary>
     private bool IsFree(string folder)
     {
@@ -576,7 +577,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
         try
         {
-            return !Directory.EnumerateFiles(folder).Any(IsClass);
+            return !Directory.EnumerateFiles(folder).Any(file => IsClass(file) || IsAudioBeingConverted(file));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -605,6 +606,14 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
             || kind.Equals(".source.json", StringComparison.OrdinalIgnoreCase);
         return !trace || _onDrive.Find(files) is not null;
     }
+
+    /// <summary>
+    /// True when <paramref name="file"/> is an unfinished part of a downloaded YouTube video's audio, &lt;segment&gt;.wav.partial,
+    /// which its batch writes before it renames it to its segment's name: the date folder is taken by that video, so that a
+    /// class starting meanwhile takes its own. One a crash left is deleted by the next YouTube batch.
+    /// </summary>
+    private static bool IsAudioBeingConverted(string file) =>
+        file.EndsWith(".wav.partial", StringComparison.OrdinalIgnoreCase) && RecordingFiles.TryParseSegment(file[..^".partial".Length]) is not null;
 
     /// <summary>
     /// True when a file of the recording <paramref name="baseName"/> is in <paramref name="course"/> or in any of its date

@@ -1083,8 +1083,8 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
         Without --download, each video opens in a Chrome window of ClassScribe's own when you press Enter; you press play there, and it is recorded until it ends: at most 10 videos, each at most YouTube:LongestVideoHours.
         Q twice stops the video in hand; Ctrl+C twice stops the batch. Leave YouTube's Autoplay on: its move to the next video is how ClassScribe knows one has ended.
-        --download: only videos you uploaded, or whose owner allows you to download them, and never your course's: YouTube:CourseChannels names its channels, which are never downloaded.
-        An unlisted video, or one YouTube does not say is public, needs your word: in the menu (Y), its channel in YouTube:MayDownloadChannels, or --allow-unlisted for the whole batch.
+        --download: only videos you uploaded, or whose owner allows you to download them, and never your course's: YouTube:CourseChannels names its channels, which are never downloaded, nor is a link copied from a player embedded in a web page.
+        An unlisted video, or one YouTube does not say is public, needs your word: in the menu (Y), or its channel in YouTube:MayDownloadChannels. --allow-unlisted gives it for every video YouTube says is unlisted, and needs YouTube:CourseChannels.
         The plan comes first, with the cost, the time and the room; --yes goes ahead, --plan stops there. The same command run again skips what is done.
         Downloading, Q stops after the video in hand; Q twice, or Ctrl+C, stops at once. yt-dlp is installed with: winget install --source winget --id yt-dlp.yt-dlp
         """;

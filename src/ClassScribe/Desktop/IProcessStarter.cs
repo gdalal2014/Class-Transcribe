@@ -55,7 +55,8 @@ public interface IProcessStarter
     /// Starts Chrome, <paramref name="program"/>, for a YouTube video's window (design 4.1): <c>"&lt;chrome&gt;"</c> and
     /// <paramref name="arguments"/>, each quoted as Windows reads it back; a normal window; inheriting no handle; with this
     /// process's environment without ELEVENLABS_API_KEY or any ElevenLabs__ setting, so the key never reaches it; in
-    /// <paramref name="workingFolder"/>, the window's profile folder; and outside the job ClassScribe runs in where the job
+    /// <paramref name="workingFolder"/>, the YouTube feature's own folder, never the window's profile folder, which may hold a
+    /// Google sign-in and which ClassScribe never touches; and outside the job ClassScribe runs in where the job
     /// allows it, so that the video plays on when ClassScribe's window is closed, as its recorder records on. Throws a
     /// <see cref="Win32Exception"/> carrying Windows' error when Windows does not start it.
     /// </summary>

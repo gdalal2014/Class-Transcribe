@@ -1,5 +1,7 @@
 using System.Net;
 using ClassScribe.YouTube;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using Refit;
 
 namespace ClassScribe.Tests;
@@ -66,6 +68,47 @@ public class OEmbedTitlesTests
         var title = await Create().ReadAsync("abcdefghijk", CancellationToken.None);
 
         Assert.That(title, Is.EqualTo(new VideoTitle("العقيدة 1", "Shaykh X", null, "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv")));
+    }
+
+    /// <summary>
+    /// A title and a channel's name lose every control character, which could ring a bell or start a sequence in the window:
+    /// each becomes a space, and a title that is nothing else is no title.
+    /// </summary>
+    [Test]
+    public async Task Control_characters_are_taken_out_of_a_title_and_its_channel()
+    {
+        _handler.EnqueueFor("/oembed", HttpStatusCode.OK, """{"title":"The creed\u0007, part 1\u001b[0m","author_name":"Shaykh\u0007X","author_url":"https://www.youtube.com/@shaykhx"}""");
+        _handler.EnqueueFor("/oembed", HttpStatusCode.OK, """{"title":"\u0007\u001b","author_name":"Shaykh X"}""");
+        var titles = Create();
+
+        var title = await titles.ReadAsync("abcdefghijk", CancellationToken.None);
+        _time.Advance(OEmbedTitles.Every);
+        var nothing = await titles.ReadAsync("bcdefghijkl", CancellationToken.None);
+
+        Assert.That((title!.Title, title.Channel), Is.EqualTo(("The creed , part 1 [0m", "Shaykh X")));
+        Assert.That(nothing, Is.Null);
+    }
+
+    /// <summary>
+    /// The client's own transport keeps no cookie (design 2.2): a cookie one of YouTube's answers sets never goes back with the
+    /// next request, so the batch's reads are not linked by it.
+    /// </summary>
+    [Test]
+    public void The_clients_transport_keeps_no_cookie()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOptions();
+        services.AddYouTube();
+        List<HttpMessageHandler?> primaries = [];
+        services.ConfigureAll<HttpClientFactoryOptions>(options => options.HttpMessageHandlerBuilderActions.Add(builder => primaries.Add(builder.PrimaryHandler)));
+        using var provider = services.BuildServiceProvider();
+
+        // The client, as a batch's scope makes it: the only one made here, so the only transport built.
+        Assert.That(provider.GetRequiredService<IYouTubeOEmbedApi>(), Is.Not.Null);
+
+        Assert.That(primaries.Single(), Is.InstanceOf<SocketsHttpHandler>());
+        Assert.That(((SocketsHttpHandler)primaries.Single()!).UseCookies, Is.False);
     }
 
     /// <summary>

@@ -13,14 +13,15 @@ namespace ClassScribe.YouTube;
 
 /// <summary>
 /// A batch on the download path (design 1.4 and 3), in the window: one batch at a time; what an earlier batch left half done
-/// cleaned up; yt-dlp and its helpers found and asked their versions; each video read, paced, a playlist from its flat
-/// listing; each found among the videos fetched before and judged by the guard; the key checked and the account read; the
-/// plan shown; then, once confirmed (YES in the menu, after a word for each video that needs one; --yes on the command line),
-/// each video downloaded in turn, paced and after any class that records, and turned into an ordinary recording of the
-/// course, all of the batch in one date folder, with its source file; then each new recording transcribed, with those
-/// fetched before that have no transcript; then a summary, the course folder opened once, and the exit code: 0 when every
-/// video ended as asked or was done before, 1 when anything was left out, failed or waits, 2 for more videos than a batch
-/// takes. Nothing is fetched or sent before the plan is confirmed, and --plan stops at the plan.
+/// cleaned up; yt-dlp and its helpers found and asked their versions; each video found among the videos fetched before, and
+/// each still to fetch read, paced, a playlist from its flat listing, and judged by the guard, a link copied from an embedded
+/// player never read nor downloaded; the key checked and the account read; the plan shown; then, once confirmed (YES in the
+/// menu, after a word for each video that needs one and the plan's cost, time and room worked out again for what is then
+/// ready; --yes on the command line), each video downloaded in turn, paced and after any class that records, and turned into
+/// an ordinary recording of the course, all of the batch in one date folder, with its source file; then each new recording
+/// transcribed, with those fetched before that have no transcript; then a summary, the course folder opened once, and the
+/// exit code: 0 when every video ended as asked or was done before, 1 when anything was left out, failed or waits, 2 for more
+/// videos than a batch takes. Nothing is fetched or sent before the plan is confirmed, and --plan stops at the plan.
 /// </summary>
 public sealed class DownloadBatch(
     YouTubeBatch batch,
@@ -59,6 +60,19 @@ public sealed class DownloadBatch(
     /// <summary>The batch's id, which each transcript's run file carries (see <see cref="VideoRequest.BatchId"/>).</summary>
     private string _batchId = "";
 
+    /// <summary>What the batch's confirmation came to.</summary>
+    private enum Confirmed
+    {
+        /// <summary>Go ahead.</summary>
+        Go,
+
+        /// <summary>Gulzar went back: nothing is fetched or sent.</summary>
+        Back,
+
+        /// <summary>The videos he gave his word for do not fit with the rest: nothing is fetched or sent.</summary>
+        NoRoom
+    }
+
     /// <summary>Runs the batch <paramref name="request"/> describes, and returns the exit code. A cancel is thrown.</summary>
     public async Task<int> RunAsync(YouTubeRequest request, CancellationToken cancellationToken)
     {
@@ -80,31 +94,38 @@ public sealed class DownloadBatch(
 
         _paths = paths;
         var arguments = new YtDlpArguments(paths, folders);
-        var (videos, playlists, stopped) = await ReadAsync(request, arguments, cancellationToken);
+        var index = VideoIndex.Read(request.OutputRoot, classFolders, logger);
+        var (videos, playlists, stopped) = await ReadAsync(request, arguments, index, cancellationToken);
         if (videos is null)
         {
             logger.LogError("This batch holds more than {Most} videos; give fewer links, or a shorter playlist, at a time", MostVideos);
             return Mistake;
         }
 
-        var index = VideoIndex.Read(request.OutputRoot, classFolders, logger);
         var guard = new DownloadGuard(youTube.Value);
         foreach (var video in videos)
         {
-            video.Past = index.Judge(video.VideoId, request.Again, time.LocalTimeZone);
             if (video.Info is { } info) video.Verdict = guard.Judge(info, request.AllowUnlisted);
         }
 
+        var glossary = keyterms.Load(KeytermLoader.ResolvePath(elevenLabs.Value.KeytermsFile)).Count;
         var accountLine = request.Transcribe ? await batch.AccountLineAsync(cancellationToken) : null;
         var (audioBytes, stagingBytes) = DownloadPlan.BytesOf([.. videos.Where(video => video.IsReady)]);
         var room = Room(request.OutputRoot, audioBytes, stagingBytes);
-        var plan = DownloadPlan.Lines(videos, request.Links.Count, playlists, request.Transcribe, keyterms.Load(KeytermLoader.ResolvePath(elevenLabs.Value.KeytermsFile)).Count,
-            elevenLabs.Value, accountLine, room, await DriveLineAsync(audioBytes, cancellationToken));
+        var plan = DownloadPlan.Lines(videos, request.Links.Count, playlists, request.Transcribe, glossary, elevenLabs.Value, accountLine, room,
+            await DriveLineAsync(audioBytes, cancellationToken));
         foreach (var line in plan) ui.WriteLine(line);
 
         if (request.Confirmation == BatchConfirmation.PlanOnly) return 0;
         if (!room.Fits) return 1;
-        if (!await ConfirmAsync(request, videos)) return 0;
+
+        switch (await ConfirmAsync(request, videos, glossary, cancellationToken))
+        {
+            case Confirmed.Back:
+                return 0;
+            case Confirmed.NoRoom:
+                return 1;
+        }
 
         using var keys = batch.WatchKeys(cancellationToken);
         if (videos.Any(video => video.IsReady)) logger.LogInformation("{Keys}", YouTubeBatch.KeysLine);
@@ -130,14 +151,16 @@ public sealed class DownloadBatch(
     }
 
     /// <summary>
-    /// Reads the batch's videos: each playlist from its flat listing, then each video, paced, its information into its staging
-    /// folder. The first failure that stops the fetching, such as a bot check, stops the reads too: what is left is not read,
-    /// and nothing is downloaded. Null videos for more than <see cref="MostVideos"/>.
+    /// Reads the batch's videos: each playlist from its flat listing, then each video still to fetch, paced, its information
+    /// into its staging folder. A video done before, as <paramref name="index"/> finds it (transcribed, or fetched whole,
+    /// without --again), is not read again: the plan shows it from its source file. A link copied from an embedded player is
+    /// never read: the download path never takes it. The first failure that stops the fetching, such as a bot check, stops the
+    /// reads too: what is left is not read, and nothing is downloaded. Null videos for more than <see cref="MostVideos"/>.
     /// </summary>
     private async Task<(List<BatchVideo>? Videos, IReadOnlyList<string> Playlists, string? Stopped)> ReadAsync(YouTubeRequest request, YtDlpArguments arguments,
-        CancellationToken cancellationToken)
+        VideoIndex index, CancellationToken cancellationToken)
     {
-        List<(string Id, VideoPlaylist? Playlist, string? Title)> wanted = [];
+        List<(string Id, VideoPlaylist? Playlist, string? Title, bool Embedded)> wanted = [];
         List<string> playlists = [];
         string? stopped = null;
         Directory.CreateDirectory(folders.Root);
@@ -145,7 +168,7 @@ public sealed class DownloadBatch(
         {
             if (link.Kind != YouTubeLinkKind.Playlist)
             {
-                wanted.Add((link.Id, null, null));
+                wanted.Add((link.Id, null, null, link.FromEmbeddedPlayer));
                 continue;
             }
 
@@ -157,16 +180,16 @@ public sealed class DownloadBatch(
 
             await pace.BeforeReadAsync(cancellationToken);
             logger.LogInformation("Reading the playlist {Playlist}", link.Id);
-            var result = await RunAsync(arguments.ReadPlaylist(link.Id), folders.Root, null, cancellationToken);
-            foreach (var hidden in result.Errors.Where(line => line.Contains("unavailable video", StringComparison.OrdinalIgnoreCase)))
+            var run = await RunAsync(arguments.ReadPlaylist(link.Id), folders.Root, null, cancellationToken);
+            foreach (var hidden in run.Result.Errors.Where(line => line.Contains("unavailable video", StringComparison.OrdinalIgnoreCase)))
                 logger.LogWarning("Playlist {Playlist}: {Warning}", link.Id, hidden.Replace("WARNING:", "", StringComparison.Ordinal).Trim());
 
             YtDlpPlaylist? playlist = null;
-            if (result.ExitCode == 0)
+            if (run.NotStarted is null && run.Result.ExitCode == 0)
             {
                 try
                 {
-                    playlist = YtDlpRead.Playlist(string.Join('\n', result.Output), link.Id);
+                    playlist = YtDlpRead.Playlist(string.Join('\n', run.Result.Output), link.Id);
                 }
                 catch (InvalidDataException ex)
                 {
@@ -179,7 +202,7 @@ public sealed class DownloadBatch(
 
             if (playlist is null)
             {
-                var failure = YtDlpErrors.Classify(result.ExitCode, result.Errors);
+                var failure = FailureOf(run);
                 logger.LogError("The playlist {Playlist} could not be read: {Reason}", link.Id, failure.Said);
                 if (failure.StopsFetching) stopped = failure.Said;
                 continue;
@@ -187,7 +210,7 @@ public sealed class DownloadBatch(
 
             playlists.Add(playlist.Title ?? link.Id);
             for (var i = 0; i < playlist.Entries.Count; i++)
-                wanted.Add((playlist.Entries[i].Id!, new VideoPlaylist(playlist.Id ?? link.Id, playlist.Title, i + 1), playlist.Entries[i].Title));
+                wanted.Add((playlist.Entries[i].Id!, new VideoPlaylist(playlist.Id ?? link.Id, playlist.Title, i + 1), playlist.Entries[i].Title, false));
         }
 
         var unique = wanted.DistinctBy(item => item.Id).ToList();
@@ -195,15 +218,25 @@ public sealed class DownloadBatch(
             logger.LogInformation("The video {VideoId} is in this batch {Count} times; it is taken once", twice.Key, twice.Count());
         if (unique.Count > MostVideos) return (null, playlists, stopped);
 
-        var readTime = BatchPace.ReadEvery * Math.Max(0, unique.Count - 1);
-        if (stopped is null && readTime > TimeSpan.FromMinutes(1))
-            logger.LogInformation("Reading {Count} videos from YouTube takes about {Minutes} minutes; Q stops", unique.Count, (int)Math.Ceiling(readTime.TotalMinutes));
+        // A video any of whose links came from an embedded player is never read: it is never downloaded.
+        var embedded = wanted.Where(item => item.Embedded).Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        List<BatchVideo> videos =
+        [
+            .. unique.Select((item, i) => new BatchVideo(i + 1, item.Id, item.Playlist)
+            {
+                ListedTitle = item.Title,
+                FromEmbeddedPlayer = embedded.Contains(item.Id),
+                Past = index.Judge(item.Id, request.Again, time.LocalTimeZone)
+            })
+        ];
 
-        List<BatchVideo> videos = [];
-        foreach (var (id, playlist, listed) in unique)
+        var toRead = videos.Where(video => video is { ToFetch: true, RefusedForItsLink: false }).ToList();
+        var readTime = BatchPace.ReadEvery * Math.Max(0, toRead.Count - 1);
+        if (stopped is null && readTime > TimeSpan.FromMinutes(1))
+            logger.LogInformation("Reading {Count} videos from YouTube takes about {Minutes} minutes; Q stops", toRead.Count, (int)Math.Ceiling(readTime.TotalMinutes));
+
+        foreach (var video in toRead)
         {
-            var video = new BatchVideo(videos.Count + 1, id, playlist) { ListedTitle = listed };
-            videos.Add(video);
             if (stopped is not null)
             {
                 video.NotRead = "the reads stopped before it";
@@ -223,9 +256,9 @@ public sealed class DownloadBatch(
         Directory.CreateDirectory(staging);
         await pace.BeforeReadAsync(cancellationToken);
         logger.LogInformation("Reading {Number}: {VideoId}", Number(video), video.VideoId);
-        var result = await RunAsync(arguments.ReadVideo(video.VideoId), staging, null, cancellationToken);
+        var run = await RunAsync(arguments.ReadVideo(video.VideoId), staging, null, cancellationToken);
         var infoFile = arguments.InfoFile(video.VideoId);
-        if (result.ExitCode == 0 && File.Exists(infoFile))
+        if (run.NotStarted is null && run.Result.ExitCode == 0 && File.Exists(infoFile))
         {
             try
             {
@@ -244,7 +277,7 @@ public sealed class DownloadBatch(
             }
         }
 
-        var failure = YtDlpErrors.Classify(result.ExitCode, result.Errors);
+        var failure = FailureOf(run);
         video.NotRead = failure.Said;
         logger.LogError("{Video} could not be read: {Reason}", video.VideoId, failure.Said);
         return failure;
@@ -252,17 +285,21 @@ public sealed class DownloadBatch(
 
     /// <summary>
     /// Asks for what the batch needs before it goes on: on the command line --yes is that, and nothing is asked. In the menu,
-    /// each video that needs a word is asked about, Y taking it and N leaving it out; then YES for the downloads, or Y for
-    /// transcripts alone. False when Gulzar went back: nothing is fetched or sent.
+    /// each video that needs a word is asked about, Y taking it and N leaving it out; once any was asked about, the cost, the
+    /// time, the room and what goes to Google Drive are worked out again for the videos then ready, and shown, and a batch
+    /// that no longer fits is refused; then YES for the downloads, or Y for transcripts alone. <see cref="Confirmed.Back"/>
+    /// when Gulzar went back and <see cref="Confirmed.NoRoom"/> when the room ran out: nothing is fetched or sent either way.
     /// </summary>
-    private async Task<bool> ConfirmAsync(YouTubeRequest request, IReadOnlyList<BatchVideo> videos)
+    private async Task<Confirmed> ConfirmAsync(YouTubeRequest request, IReadOnlyList<BatchVideo> videos, int glossary, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
         var stamp = now.UtcDateTime.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture) + " UTC";
         if (request.Confirmation == BatchConfirmation.Ask)
         {
+            var asked = false;
             foreach (var video in videos.Where(video => video.NeedsWord))
             {
+                asked = true;
                 var length = video.Length is { } known ? Durations.Format(known) : "length unknown";
                 ui.WriteLine($"{Number(video)}  {video.Title} ({video.Info?.Channel ?? "channel unknown"}, {length}) is {video.Info?.Availability ?? "not known to be public"}. Did you upload it, or does its owner allow you");
                 ui.WriteLine("    to download it? It must not be one of your course's videos.");
@@ -270,7 +307,7 @@ public sealed class DownloadBatch(
                 while (true)
                 {
                     var key = await ui.ReadKeyAsync(CancellationToken.None);
-                    if (key is not { } pressed || pressed.Key == ConsoleKey.Escape) return false;
+                    if (key is not { } pressed || pressed.Key == ConsoleKey.Escape) return Confirmed.Back;
                     if (pressed.Key == ConsoleKey.Y)
                     {
                         video.Verdict = new GuardVerdict(GuardVerdictKind.Ready, "ready (your word)", VideoSource.ByWord);
@@ -286,6 +323,8 @@ public sealed class DownloadBatch(
             }
 
             var downloads = videos.Count(video => video.IsReady);
+            if (asked && downloads > 0 && !await ShowWhatIsReadyAsync(request, videos, glossary, cancellationToken)) return Confirmed.NoRoom;
+
             if (downloads > 0)
             {
                 ui.WriteLine($"Download the audio of {DownloadPlan.Count(downloads, "video")} with yt-dlp?");
@@ -295,12 +334,12 @@ public sealed class DownloadBatch(
                 ui.WriteLine("ClassScribe never signs in to YouTube and never gives yt-dlp your browser's cookies.");
                 ui.WriteLine("Type YES and press Enter to go ahead; Enter alone goes back.");
                 ui.Write("> ");
-                if (!string.Equals((await ui.ReadLineAsync(CancellationToken.None))?.Trim(), "YES", StringComparison.Ordinal)) return false;
+                if (!string.Equals((await ui.ReadLineAsync(CancellationToken.None))?.Trim(), "YES", StringComparison.Ordinal)) return Confirmed.Back;
             }
             else if (request.Transcribe && videos.Any(video => video.Past.Kind == PastKind.Whole && video.Past.Recording?.KeptAnswer is null))
             {
                 ui.WriteLine("Nothing to download. Transcribe the recordings fetched before? Y starts; any other key goes back.");
-                if (await ui.ReadKeyAsync(CancellationToken.None) is not { Key: ConsoleKey.Y }) return false;
+                if (await ui.ReadKeyAsync(CancellationToken.None) is not { Key: ConsoleKey.Y }) return Confirmed.Back;
             }
         }
 
@@ -315,15 +354,32 @@ public sealed class DownloadBatch(
             };
         }
 
-        return true;
+        return Confirmed.Go;
+    }
+
+    /// <summary>
+    /// Shows the plan's cost, time, room and Google Drive lines again for the videos ready now that Gulzar has given his word
+    /// on each that needed it, so that what he confirms with YES is what will be fetched. False when they no longer fit on
+    /// the drives, which the lines say: nothing is fetched then.
+    /// </summary>
+    private async Task<bool> ShowWhatIsReadyAsync(YouTubeRequest request, IReadOnlyList<BatchVideo> videos, int glossary, CancellationToken cancellationToken)
+    {
+        var (audioBytes, stagingBytes) = DownloadPlan.BytesOf([.. videos.Where(video => video.IsReady)]);
+        var room = Room(request.OutputRoot, audioBytes, stagingBytes);
+        foreach (var line in DownloadPlan.ReadyLines(videos, request.Transcribe, glossary, elevenLabs.Value)) ui.WriteLine(line);
+        foreach (var line in DownloadPlan.FetchLines(videos, request.Transcribe, room)) ui.WriteLine(line);
+        ui.WriteLine(await DriveLineAsync(audioBytes, cancellationToken));
+        return room.Fits;
     }
 
     /// <summary>
     /// Downloads each video ready, in turn: after any class that records, paced, read again first when its read is more than
-    /// 5 hours old; each into a recording of the course, the batch's first taking its date folder as a class does and the
-    /// others going into it; its lines into the recording's log. The first failure that stops the fetching, three failures to
-    /// reach YouTube in a row, or Q, stops the downloads; what was fetched is transcribed all the same. Returns the batch's
-    /// date folder, once the first recording was made.
+    /// 5 hours old; once its audio is downloaded, into a recording of the course, the batch's first that makes a recording
+    /// taking its date folder as a class does and the others going into it; its lines into the recording's log. The recording
+    /// is made only once its audio is downloaded, so that a date folder holds nothing of a video while it downloads, and a class
+    /// that starts meanwhile takes its own. The first failure that stops the fetching, three failures to reach YouTube in a
+    /// row, or Q, stops the downloads; what was fetched is transcribed all the same. Returns the batch's date folder, once a
+    /// recording is whole in it.
     /// </summary>
     private async Task<string?> FetchAsync(YouTubeRequest request, IReadOnlyList<BatchVideo> videos, YtDlpArguments arguments, string? version,
         string? stopped, BatchKeys keys)
@@ -341,16 +397,12 @@ public sealed class DownloadBatch(
             }
 
             await batch.Wait.WhileAClassRecordsAsync(keys.Token);
-            var files = batchFolder is null ? classFolders.CreateRecording(request.Name, request.OutputRoot) : classFolders.CreateRecordingIn(batchFolder, request.Name);
-            batchFolder ??= files.Folder;
-            video.Recording = files;
+
+            // The video's lines from here on go into its recording's log, once it has one.
             log.KeepFromNow();
-            log.WriteFileTo(files.Log);
             try
             {
-                VideoSourceFile.Write(files.Source, SourceOf(video, version, ended: "Downloading", endConfirmed: false));
-                logger.LogInformation("Downloading {Number} of {Count}: \"{Title}\" ({Length}) into {Recording}", i + 1, ready.Count, video.Title,
-                    Durations.Format(video.Length!.Value), files.BaseName);
+                logger.LogInformation("Downloading {Number} of {Count}: \"{Title}\" ({Length})", i + 1, ready.Count, video.Title, Durations.Format(video.Length!.Value));
                 var failure = await DownloadAsync(video, arguments, keys.Token);
                 if (failure is not null)
                 {
@@ -364,8 +416,14 @@ public sealed class DownloadBatch(
 
                 networkInARow = 0;
                 var staged = StagedWav(video, arguments);
+                var files = batchFolder is null ? classFolders.CreateRecording(request.Name, request.OutputRoot) : classFolders.CreateRecordingIn(batchFolder, request.Name);
+                video.Recording = files;
+                log.WriteFileTo(files.Log);
+                VideoSourceFile.Write(files.Source, SourceOf(video, version, ended: "Downloading", endConfirmed: false));
+                logger.LogDebug("Turning \"{Title}\" into {Recording}", video.Title, files.BaseName);
                 video.Downloaded = audio.Convert(staged, files, video.Length!.Value, video.Title, keys.Token);
                 VideoSourceFile.Write(files.Source, SourceOf(video, version, VideoSource.DownloadedEnd, endConfirmed: true));
+                batchFolder ??= files.Folder;
                 DeleteStaging(video);
                 logger.LogInformation("Downloaded \"{Title}\": {Recording} ({Length})", video.Title, files.BaseName, Durations.Format(video.Downloaded.Value));
             }
@@ -401,7 +459,7 @@ public sealed class DownloadBatch(
 
             await pace.BeforeDownloadAsync(cancellationToken);
             var tenth = 0;
-            var result = await RunAsync(arguments.Download(video.VideoId, fromInfoFile: true), folders.StagingOf(video.VideoId), line =>
+            var run = await RunAsync(arguments.Download(video.VideoId, fromInfoFile: true), folders.StagingOf(video.VideoId), line =>
             {
                 if (!line.IsError && Percent(line.Text) is { } percent && (int)(percent / 10) > tenth)
                 {
@@ -409,9 +467,9 @@ public sealed class DownloadBatch(
                     logger.LogInformation("\"{Title}\": {Percent}% downloaded", video.Title, tenth * 10);
                 }
             }, cancellationToken);
-            if (result.ExitCode == 0) return null;
+            if (run.NotStarted is null && run.Result.ExitCode == 0) return null;
 
-            var forbidden = result.Errors.Any(error => error.Contains("HTTP Error 403", StringComparison.OrdinalIgnoreCase));
+            var forbidden = run.Result.Errors.Any(error => error.Contains("HTTP Error 403", StringComparison.OrdinalIgnoreCase));
             if (forbidden && attempt == 1)
             {
                 logger.LogInformation("YouTube refused \"{Title}\"'s download with HTTP 403; reading it again and trying once more", video.Title);
@@ -419,7 +477,7 @@ public sealed class DownloadBatch(
                 continue;
             }
 
-            return YtDlpErrors.Classify(result.ExitCode, result.Errors);
+            return FailureOf(run);
         }
     }
 
@@ -455,35 +513,51 @@ public sealed class DownloadBatch(
         throw new InvalidDataException($"yt-dlp finished \"{video.Title}\", but did not say where its WAV is, or it is not in {staging}; run the same command again");
     }
 
-    /// <summary>Runs yt-dlp with <paramref name="arguments"/> in <paramref name="folder"/>, each of its lines logged at Debug as it was, and handed to <paramref name="onLine"/>.</summary>
-    private async Task<ToolResult> RunAsync(IReadOnlyList<string> arguments, string folder, Action<ToolLine>? onLine, CancellationToken cancellationToken)
+    /// <summary>
+    /// Runs yt-dlp with <paramref name="arguments"/> in <paramref name="folder"/>, each of its lines logged at Debug as it was,
+    /// and handed to <paramref name="onLine"/>. A yt-dlp that Windows will not start is a run of its own kind
+    /// (<see cref="ToolRun.NotStarted"/>), with Windows' reason, which stops the fetching.
+    /// </summary>
+    private async Task<ToolRun> RunAsync(IReadOnlyList<string> arguments, string folder, Action<ToolLine>? onLine, CancellationToken cancellationToken)
     {
         try
         {
-            return await tools.RunAsync(new ToolCall(Program, arguments, folder), line =>
+            return new ToolRun(await tools.RunAsync(new ToolCall(Program, arguments, folder), line =>
             {
                 logger.LogDebug("yt-dlp: {Line}", line.Text);
                 onLine?.Invoke(line);
-            }, cancellationToken);
+            }, cancellationToken), NotStarted: null);
         }
         catch (Win32Exception ex)
         {
-            // Deliberately not rethrown: yt-dlp that cannot be started is a failure of the batch's set-up, said as one and
-            // stopping the fetching, as a missing helper does.
+            // Deliberately not rethrown: a yt-dlp that Windows will not start, as when Bitdefender blocks it, fails this batch's
+            // set-up; it is said with Windows' reason and what to look at, and stops the fetching, as a missing helper does.
             logger.LogDebug(ex, "Could not start yt-dlp");
-            return new ToolResult(-1, [], [$"ERROR: yt-dlp could not be started ({ex.Message}); ffmpeg not found or blocked"]);
+            return new ToolRun(new ToolResult(-1, [], []),
+                new DownloadFailure(DownloadFailureKind.Setup, NotStartedWords(ex.Message), StopsFetching: true));
         }
     }
+
+    /// <summary>What is said when Windows will not start yt-dlp, with Windows' <paramref name="reason"/>.</summary>
+    internal static string NotStartedWords(string reason) =>
+        $"Windows did not start yt-dlp ({reason.TrimEnd('.')}). Bitdefender may have blocked it (README, Set up once); ClassScribe youtube check says more.";
+
+    /// <summary>The failure <paramref name="run"/> ended with: Windows' refusal to start yt-dlp, or what yt-dlp's lines say.</summary>
+    private static DownloadFailure FailureOf(ToolRun run) => run.NotStarted ?? YtDlpErrors.Classify(run.Result.ExitCode, run.Result.Errors);
 
     /// <summary>yt-dlp's program, as the check found it.</summary>
     private string Program => _paths?.YtDlp ?? throw new InvalidOperationException("yt-dlp's path is known only once the check has found it.");
 
-    /// <summary>The room the audio needs, on the recordings folder's drive and on ClassScribe's own folder's.</summary>
+    /// <summary>
+    /// The room the audio needs, on the recordings folder's drive and on ClassScribe's own folder's, with room kept on the
+    /// recordings folder's drive for a class of <see cref="DownloadPlan.KeptForAClass"/>, as a class's start warns below it.
+    /// </summary>
     private PlanRoom Room(string outputRoot, long audioBytes, long stagingBytes)
     {
         var recordings = Path.GetPathRoot(Path.GetFullPath(outputRoot)) ?? outputRoot;
         var staging = Path.GetPathRoot(folders.Root) ?? folders.Root;
-        return new PlanRoom(audioBytes, stagingBytes, recordings, freeSpace.AvailableBytes(recordings), staging, freeSpace.AvailableBytes(staging));
+        return new PlanRoom(audioBytes, stagingBytes, recordings, freeSpace.AvailableBytes(recordings), staging, freeSpace.AvailableBytes(staging),
+            DownloadPlan.ClassReserveBytes);
     }
 
     /// <summary>
@@ -520,9 +594,9 @@ public sealed class DownloadBatch(
     private VideoToTranscribe? ToTranscribe(YouTubeRequest request, BatchVideo video, int count) =>
         Recording(video) is { } files
             ? new VideoToTranscribe(files,
-                new VideoRequest(YouTubeLinks.WatchUrl(video.VideoId), video.VideoId, video.Title, video.Info?.Channel, VideoSource.Downloaded, files.Folder,
+                new VideoRequest(YouTubeLinks.WatchUrl(video.VideoId), video.VideoId, video.Title, video.Channel, VideoSource.Downloaded, files.Folder,
                     BrowserProcessId: null, BrowserStartedUtc: null, video.Number, count, _batchId),
-                request.Name, request.OutputRoot, video.Downloaded ?? video.Length ?? TimeSpan.Zero)
+                request.Name, request.OutputRoot, video.Downloaded ?? video.Length ?? classFolders.LengthOnDisk(files))
             : null;
 
     /// <summary>
@@ -546,10 +620,13 @@ public sealed class DownloadBatch(
 
     /// <summary>
     /// Whether <paramref name="video"/> ended as asked, and what the summary says of it. A video the download path may not
-    /// take, or could not, but which can be watched (it needs a word, it is the course's, it needs a sign-in, or YouTube
-    /// asked to confirm this is not a bot) is given the command that records it as it plays instead (Gulzar's answer 3 B).
+    /// take, or could not, but which can be watched (it needs a word, it is the course's, its link came from an embedded
+    /// player, it needs a sign-in, or YouTube asked to confirm this is not a bot) is given the command that records it as it
+    /// plays instead (Gulzar's answer 3 B). A video that needs a word is told the ways to give it that apply to it:
+    /// --allow-unlisted only for one yt-dlp says is unlisted, of a channel it names, and only once YouTube:CourseChannels
+    /// lists the course's channels, which the flag needs.
     /// </summary>
-    private static (bool Done, string Line) Outcome(YouTubeRequest request, BatchVideo video)
+    private (bool Done, string Line) Outcome(YouTubeRequest request, BatchVideo video)
     {
         var recordIt = CommandLine.YouTube([YouTubeLinks.WatchUrl(video.VideoId)], request.Name, request.OutputRoot);
         if (video.Transcript is { Step: TranscriptStep.Transcribed, TranscriptPath: { } transcript })
@@ -569,6 +646,8 @@ public sealed class DownloadBatch(
             return request.Transcribe ? (false, $"fetched before; not transcribed: {CommandLine.Transcribe(past.Files.Segment(1))}") : (true, video.Past.Words);
         }
 
+        if (video.RefusedForItsLink) return (false, $"{BatchVideo.FromEmbeddedPlayerSaid}; record it as it plays instead: {recordIt}");
+
         if (video.FetchProblem is { } problem)
         {
             // The bot check's and the sign-in's words end by saying the video can be recorded as it plays: the command follows.
@@ -579,8 +658,17 @@ public sealed class DownloadBatch(
 
         if (video.NeedsWord)
         {
-            return (false,
-                $"needs your word: in the menu (Y > D), or add --allow-unlisted, or its channel {video.Info?.Handle ?? video.Info?.ChannelId ?? ""} to YouTube:MayDownloadChannels if it is yours; or record it as it plays: {recordIt}");
+            List<string> ways = ["in the menu (Y > D)"];
+            if (video.Info is { } info && DownloadGuard.AllowUnlistedTakes(info))
+            {
+                ways.Add(youTube.Value.CourseChannels.Length == 0
+                    ? $"or list your course's channels in {YouTubeOptions.SectionName}:{nameof(YouTubeOptions.CourseChannels)}, then add --allow-unlisted"
+                    : "or add --allow-unlisted");
+            }
+
+            if ((video.Info?.Handle ?? video.Info?.ChannelId) is { } channel)
+                ways.Add($"or its channel {channel} to {YouTubeOptions.SectionName}:{nameof(YouTubeOptions.MayDownloadChannels)} if it is yours");
+            return (false, $"needs your word: {string.Join(", ", ways)}; or record it as it plays: {recordIt}");
         }
 
         return video.Verdict?.Kind is GuardVerdictKind.CourseChannel or GuardVerdictKind.NeedsSignIn or GuardVerdictKind.Declined
@@ -602,4 +690,9 @@ public sealed class DownloadBatch(
         var start = line.LastIndexOf(' ', percent) + 1;
         return double.TryParse(line[start..percent], NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ? value : null;
     }
+
+    /// <summary>One run of yt-dlp: what it came to, or, when Windows would not start it, the failure that says so.</summary>
+    /// <param name="Result">What the run came to; empty when it did not start.</param>
+    /// <param name="NotStarted">The failure of a yt-dlp that Windows would not start; null when it ran.</param>
+    private sealed record ToolRun(ToolResult Result, DownloadFailure? NotStarted);
 }

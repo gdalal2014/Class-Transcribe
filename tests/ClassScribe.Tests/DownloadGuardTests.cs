@@ -41,11 +41,52 @@ public class DownloadGuardTests
         Assert.That(Guard().Judge(Video(availability), allowUnlisted: false).Kind, Is.EqualTo(GuardVerdictKind.NeedsWord));
 
     /// <summary>--allow-unlisted gives his word for every unlisted video of the batch, and the verdict says so.</summary>
-    [TestCase("unlisted")]
-    [TestCase(null)]
-    public void Allow_unlisted_gives_his_word_for_the_batch(string? availability) =>
-        Assert.That(Guard().Judge(Video(availability), allowUnlisted: true),
+    [Test]
+    public void Allow_unlisted_gives_his_word_for_the_batch() =>
+        Assert.That(Guard().Judge(Video("unlisted"), allowUnlisted: true),
             Is.EqualTo(new GuardVerdict(GuardVerdictKind.Ready, "ready (--allow-unlisted)", VideoSource.ByAllowUnlisted)));
+
+    /// <summary>
+    /// --allow-unlisted takes only what yt-dlp says is unlisted (Gulzar's answer 7): a video yt-dlp is not sure is public still
+    /// needs his word, in the menu.
+    /// </summary>
+    [Test]
+    public void Allow_unlisted_never_takes_a_video_not_known_to_be_public() =>
+        Assert.That(Guard().Judge(Video(availability: null), allowUnlisted: true), Is.EqualTo(new GuardVerdict(GuardVerdictKind.NeedsWord, "needs your word", null)));
+
+    /// <summary>
+    /// While the course's channels are listed, a video whose read names no channel cannot be checked against them: it needs his
+    /// word, public or not, and --allow-unlisted never gives it. Without channels listed, a public one is ready as always.
+    /// </summary>
+    [TestCase("public")]
+    [TestCase("unlisted")]
+    public void A_video_whose_channel_is_unknown_needs_his_word(string availability)
+    {
+        var unknown = YtDlpRead.Info($$"""{"id":"abcdefghijk","duration":60,"availability":"{{availability}}","live_status":"not_live","age_limit":0}""", "x");
+
+        Assert.That(Guard().Judge(unknown, allowUnlisted: true), Is.EqualTo(new GuardVerdict(GuardVerdictKind.NeedsWord, DownloadGuard.ChannelUnknown, null)));
+        Assert.That(new DownloadGuard(new YouTubeOptions()).Judge(YtDlpRead.Info("""{"id":"abcdefghijk","duration":60,"availability":"public"}""", "x"), allowUnlisted: false).Kind,
+            Is.EqualTo(GuardVerdictKind.Ready));
+    }
+
+    /// <summary>A course's channel is found by its /channel/ address too, when the read gives no channel id: never downloaded.</summary>
+    [Test]
+    public void A_courses_channel_is_found_by_its_address()
+    {
+        var info = YtDlpRead.Info($$"""{"id":"abcdefghijk","duration":60,"availability":"unlisted","channel_url":"https://www.youtube.com/channel/{{Course}}","uploader_id":"@other"}""", "x");
+
+        Assert.That(Guard().Judge(info, allowUnlisted: true).Kind, Is.EqualTo(GuardVerdictKind.CourseChannel));
+    }
+
+    /// <summary>A course's channel named by a handle of Arabic letters is found when yt-dlp gives the handle percent-encoded.</summary>
+    [Test]
+    public void A_courses_handle_is_found_when_yt_dlp_gives_it_encoded()
+    {
+        var info = YtDlpRead.Info(
+            """{"id":"abcdefghijk","duration":60,"availability":"public","uploader_id":"@%D9%82%D9%86%D8%A7%D8%A9","uploader_url":"https://www.youtube.com/@%D9%82%D9%86%D8%A7%D8%A9"}""", "x");
+
+        Assert.That(new DownloadGuard(new YouTubeOptions { CourseChannels = ["@قناة"] }).Judge(info, allowUnlisted: false).Kind, Is.EqualTo(GuardVerdictKind.CourseChannel));
+    }
 
     /// <summary>A course's channel is never downloaded, by its UC id or its @handle in any letter case, whatever else holds, --allow-unlisted included.</summary>
     [TestCase(Course, "@x")]
