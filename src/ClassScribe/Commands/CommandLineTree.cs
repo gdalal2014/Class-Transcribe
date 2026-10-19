@@ -52,7 +52,7 @@ public enum CommandKind
 /// ClassScribe drive status
 /// ClassScribe drive upload ["&lt;recording file, a folder of recordings&gt;"]    without a path: what waits to go up
 /// ClassScribe drive free-space "&lt;recording file or folder&gt;" --yes      deletes local audio once Drive has it, checked
-/// ClassScribe youtube &lt;link&gt;... [--list "&lt;file&gt;"] --name "&lt;course&gt;" --output "&lt;folder&gt;" --download (--yes | --plan)
+/// ClassScribe youtube &lt;link&gt;... [--list "&lt;file&gt;"] --name "&lt;course&gt;" --output "&lt;folder&gt;" [--download] (--yes | --plan)
 ///                                                     [--no-transcribe] [--no-open] [--again] [--allow-unlisted]
 /// ClassScribe youtube check                         yt-dlp and its helpers, their versions, what to install
 /// ClassScribe &lt;command&gt; --help                    also -h, -?, /? and help &lt;command&gt;
@@ -338,19 +338,30 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// youtube: links, a --list file of links, or both, joined in order; --name, the course; --output, the recordings folder;
-    /// --download (this build's one way, recording as they play coming next); exactly one of --yes and --plan; and
-    /// --no-transcribe, --no-open, --again and --allow-unlisted. Each word that is no link the batch takes is named by where it
-    /// stands, a line of the file by its number. youtube check takes nothing else.
+    /// without --download, each video recorded as it plays in a Chrome window of ClassScribe's own, with --download its audio
+    /// downloaded with yt-dlp; exactly one of --yes and --plan; and --no-transcribe, --no-open, --again and --allow-unlisted,
+    /// which is for --download alone. Each word that is no link the batch takes is named by where it stands, a line of the file
+    /// by its number; a playlist's or a live stream's link, and more than 10 videos, need --download. youtube check takes
+    /// nothing else.
     /// </summary>
     private Command YouTubeCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
     {
-        var links = new Argument<string[]>("links") { Arity = ArgumentArity.ZeroOrMore, Description = "One or more YouTube links, separated by spaces: videos, or playlists." };
+        var links = new Argument<string[]>("links")
+        {
+            Arity = ArgumentArity.ZeroOrMore, Description = "One or more YouTube links, separated by spaces: videos, or with --download playlists too."
+        };
         var list = new Option<string>("--list") { HelpName = "file", Description = "A text file of links: several on a line, separated by spaces; # starts a comment." };
         var name = new Option<string>("--name") { HelpName = "course", Description = "The course the videos belong to, such as Risala: the folder they go to, as a class's name names it." };
         var output = new Option<string>("--output") { HelpName = "folder", Description = "The folder the recordings go to, such as \"D:\\Classes\": the course gets a folder inside it." };
-        var download = new Option<bool>("--download") { Description = "Download the audio with yt-dlp: only for videos you uploaded or whose owner allows it, never your course's." };
-        var yes = new Option<bool>("--yes") { Description = "Go ahead after the plan is printed, with the videos that need no word of yours." };
-        var plan = new Option<bool>("--plan") { Description = "Print the plan and stop: nothing is fetched or sent." };
+        var download = new Option<bool>("--download")
+        {
+            Description = "Download the audio with yt-dlp instead of recording it as it plays: only for videos you uploaded or whose owner allows it, never your course's."
+        };
+        var yes = new Option<bool>("--yes")
+        {
+            Description = "Go ahead after the plan is printed. Recording as they play, you are still asked for Enter before each video, and play it yourself."
+        };
+        var plan = new Option<bool>("--plan") { Description = "Print the plan and stop: nothing is fetched, recorded or sent." };
         var noTranscribe = new Option<bool>("--no-transcribe") { Description = "Only fetch the audio; the summary gives each recording's transcribe command." };
         var noOpen = new Option<bool>("--no-open") { Description = "Open nothing at the end; otherwise the course's folder opens once." };
         var again = new Option<bool>("--again") { Description = "Fetch videos fetched before as new recordings; transcribing them is billed again." };
@@ -363,14 +374,15 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         check.SetAction(_ => commands.YouTubeCheckAsync());
         examples[check] = YouTubeCheckExamples;
 
-        var command = new Command("youtube", "Download YouTube videos' audio with yt-dlp, each into a recording of the course, then transcribe them.")
+        var command = new Command("youtube",
+            "Record YouTube videos as they play, in a Chrome window of ClassScribe's own, or download their audio with yt-dlp (--download), each into a recording of the course, then transcribe them.")
         {
             links, list, name, output, download, yes, plan, noTranscribe, noOpen, again, allowUnlisted, check
         };
         command.Validators.Add(result =>
         {
             if (result.Children.OfType<CommandResult>().Any()) return;
-            foreach (var problem in YouTubeProblems(result, links, list, name, output, download, yes, plan, optionNames)) result.AddError(problem);
+            foreach (var problem in YouTubeProblems(result, links, list, name, output, download, yes, plan, allowUnlisted, optionNames)) result.AddError(problem);
         });
         command.SetAction(parsed =>
         {
@@ -394,10 +406,11 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// What keeps a youtube command line from running, one sentence each: --name, --output, the links and the --list file,
-    /// each word that is no link the batch takes, --yes and --plan, --download, and more videos than a batch takes.
+    /// each word that is no link the batch takes, --yes and --plan, and more videos than a batch takes; and without
+    /// --download, a playlist's or a live stream's link, which only a download's read can take, and --allow-unlisted.
     /// </summary>
     private static IEnumerable<string> YouTubeProblems(CommandResult result, Argument<string[]> links, Option<string> list, Option<string> name, Option<string> output,
-        Option<bool> download, Option<bool> yes, Option<bool> plan, HashSet<string> optionNames)
+        Option<bool> download, Option<bool> yes, Option<bool> plan, Option<bool> allowUnlisted, HashSet<string> optionNames)
     {
         var course = TokenOf(result.GetResult(name));
         if (result.GetResult(name) is null || string.IsNullOrWhiteSpace(course))
@@ -446,12 +459,22 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         if (isYes == isPlan)
             yield return isYes ? "--yes and --plan cannot go together" : "youtube needs --yes to go ahead after the plan, or --plan to print the plan alone";
 
-        if (!result.GetValue(download))
-            yield return "youtube needs --download: recording YouTube videos as they play is not part of this build yet";
-
         var videos = reading.Links.Count(link => link.Kind != YouTube.YouTubeLinkKind.Playlist);
-        if (videos > YouTube.DownloadBatch.MostVideos)
-            yield return $"youtube takes at most {YouTube.DownloadBatch.MostVideos} videos at a time; these links name {videos}";
+        if (result.GetValue(download))
+        {
+            if (videos > YouTube.DownloadBatch.MostVideos)
+                yield return $"youtube takes at most {YouTube.DownloadBatch.MostVideos} videos at a time; these links name {videos}";
+            yield break;
+        }
+
+        // Recording as they play: one video's own link at a time, each for as long as it plays.
+        foreach (var playlist in reading.Links.Where(link => link.Kind == YouTube.YouTubeLinkKind.Playlist))
+            yield return $"{playlist.Url} is a playlist's link, which only --download takes; give each video's own link to record it as it plays";
+        foreach (var live in reading.Links.Where(link => link.Kind == YouTube.YouTubeLinkKind.Live))
+            yield return $"The live link of {live.Id} is taken only with --download, whose read tells a live stream from a video; give the video's watch link to record it as it plays";
+        if (videos > YouTube.VideoBatch.MostVideos)
+            yield return $"youtube records at most {YouTube.VideoBatch.MostVideos} videos at a time as they play, each for as long as it plays; these links name {videos}. Give fewer, or add --download";
+        if (result.GetValue(allowUnlisted)) yield return ClassScribe.Commands.YouTubeCommand.AllowUnlistedNeedsDownload;
     }
 
     /// <summary>The words of the links on the command line, then of the list file, each with where it stands.</summary>
@@ -1052,15 +1075,18 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// <summary>The examples and notes under the help of youtube.</summary>
     private const string YouTubeExamples = """
         Examples:
+          ClassScribe youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --yes
           ClassScribe youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --download --plan
           ClassScribe youtube --list "risala-links.txt" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --download --yes
           ClassScribe youtube "https://www.youtube.com/playlist?list=PL..." --name "Lectures" --output "D:\Classes" --download --no-transcribe --yes
           ClassScribe youtube check
 
-        Only videos you uploaded, or whose owner allows you to download them, and never your course's: YouTube:CourseChannels names its channels, which are never downloaded.
+        Without --download, each video opens in a Chrome window of ClassScribe's own when you press Enter; you press play there, and it is recorded until it ends: at most 10 videos, each at most YouTube:LongestVideoHours.
+        Q twice stops the video in hand; Ctrl+C twice stops the batch. Leave YouTube's Autoplay on: its move to the next video is how ClassScribe knows one has ended.
+        --download: only videos you uploaded, or whose owner allows you to download them, and never your course's: YouTube:CourseChannels names its channels, which are never downloaded.
         An unlisted video, or one YouTube does not say is public, needs your word: in the menu (Y), its channel in YouTube:MayDownloadChannels, or --allow-unlisted for the whole batch.
         The plan comes first, with the cost, the time and the room; --yes goes ahead, --plan stops there. The same command run again skips what is done.
-        Q stops after the video in hand; Q twice, or Ctrl+C, stops at once. yt-dlp is installed with: winget install --source winget --id yt-dlp.yt-dlp
+        Downloading, Q stops after the video in hand; Q twice, or Ctrl+C, stops at once. yt-dlp is installed with: winget install --source winget --id yt-dlp.yt-dlp
         """;
 
     /// <summary>The examples under the help of youtube check.</summary>

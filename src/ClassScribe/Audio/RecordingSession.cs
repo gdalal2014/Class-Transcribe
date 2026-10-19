@@ -86,9 +86,10 @@ public sealed record RecordingResult(string Folder, IReadOnlyList<string> Segmen
 /// since it was opened or since the last other sample, as a microphone muted in Windows or blocked by its privacy
 /// settings gives. False before its first packet, and while no capture is open.
 /// </param>
+/// <param name="HeardSound">True once audible sound has reached the segment files in this run; sound heard only while paused does not count.</param>
 public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound, string DeviceName, int SegmentCount, bool Paused, string? WaitingFor,
     TimeSpan? SinceLastPacket = null, bool DeliversContinuously = false, float? RecordedLevel = null, bool SoundWhilePaused = false,
-    bool WriteFailing = false, bool Off = false, bool OnlyZeros = false);
+    bool WriteFailing = false, bool Off = false, bool OnlyZeros = false, bool HeardSound = false);
 
 /// <summary>
 /// Records what its source picks into WAV segment files: for the class, the output device it plays through, the one
@@ -468,7 +469,8 @@ public sealed class RecordingSession(
                 SoundWhilePaused: _paused && _pausedSound is { } heard && time.GetElapsedTime(heard, now) <= PausedSoundGap,
                 WriteFailing: _writeFailing,
                 Off: !_enabled,
-                OnlyZeros: open && _anyPacket && time.GetElapsedTime(_lastNonZero ?? _captureOpened, now) >= OnlyZerosAfter);
+                OnlyZeros: open && _anyPacket && time.GetElapsedTime(_lastNonZero ?? _captureOpened, now) >= OnlyZerosAfter,
+                HeardSound: _heardSound);
         }
     }
 

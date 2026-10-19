@@ -35,6 +35,30 @@ public sealed partial class YouTubeOptions
     public DriveUploadScope DriveUpload { get; init; } = DriveUploadScope.Everything;
 
     /// <summary>
+    /// Chrome's chrome.exe, as a full path, for ClassScribe's own video window on the record path; empty finds it through
+    /// Windows' App Paths, then in Program Files and %LOCALAPPDATA%.
+    /// </summary>
+    public string BrowserPath { get; init; } = "";
+
+    /// <summary>
+    /// The longest a video is recorded for as it plays, in hours, ads included: its recording stops there. From 0.25 to 9, and
+    /// not above Recording:StopAfterHours.
+    /// </summary>
+    public double LongestVideoHours { get; init; } = 4;
+
+    /// <summary>
+    /// The address the videos' titles are read from on the record path (YouTube's public oEmbed answers): YouTube's own, or a
+    /// local stub's in a dry run, as ElevenLabs:BaseUrl can be.
+    /// </summary>
+    public string OEmbedBaseUrl { get; init; } = "https://www.youtube.com/";
+
+    /// <summary>The smallest <see cref="LongestVideoHours"/> may be: a quarter of an hour.</summary>
+    public const double ShortestLongestVideoHours = 0.25;
+
+    /// <summary>The largest <see cref="LongestVideoHours"/> may be: 9 hours, under what ElevenLabs takes in one file.</summary>
+    public const double LargestLongestVideoHours = 9;
+
+    /// <summary>
     /// True when <paramref name="entry"/> is a channel as these settings name them: UC and 22 of A-Z, a-z, 0-9, _ and -, or an
     /// @handle, @ and 3 to 30 letters, digits, _, - or dots.
     /// </summary>

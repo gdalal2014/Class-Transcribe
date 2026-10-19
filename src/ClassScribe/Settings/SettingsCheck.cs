@@ -153,33 +153,34 @@ public sealed class SettingsCheck
         CheckRange(problems, Name(driveSection, nameof(DriveOptions.ChunkMegabytes)), drive.ChunkMegabytes, DriveOptions.SmallestChunkMegabytes, DriveOptions.LargestChunkMegabytes);
 
         var defaults = new DriveOptions();
-        CheckGoogleAddress(problems, Name(driveSection, nameof(DriveOptions.ApiBaseUrl)), drive.ApiBaseUrl, defaults.ApiBaseUrl);
-        CheckGoogleAddress(problems, Name(driveSection, nameof(DriveOptions.OAuthBaseUrl)), drive.OAuthBaseUrl, defaults.OAuthBaseUrl);
+        CheckLocalOrHttpsAddress(problems, Name(driveSection, nameof(DriveOptions.ApiBaseUrl)), drive.ApiBaseUrl, defaults.ApiBaseUrl);
+        CheckLocalOrHttpsAddress(problems, Name(driveSection, nameof(DriveOptions.OAuthBaseUrl)), drive.OAuthBaseUrl, defaults.OAuthBaseUrl);
     }
 
     /// <summary>
-    /// The YouTube section: yt-dlp's path, when given, must be a full path to an .exe that is there; each channel in
-    /// YouTube:MayDownloadChannels and YouTube:CourseChannels must be a UC id or an @handle, and none may be in both, since a
-    /// course's channel is never downloaded. YouTube:DriveUpload, an enum, is checked by its names when the section is bound,
-    /// and a list written as one value as a value that cannot be read.
+    /// The YouTube section: yt-dlp's path and Chrome's, when given, must each be a full path to an .exe that is there; each
+    /// channel in YouTube:MayDownloadChannels and YouTube:CourseChannels must be a UC id or an @handle, and none may be in
+    /// both, since a course's channel is never downloaded; the longest a video is recorded for is from a quarter of an hour
+    /// to 9 hours (one above the safety stop is a warning, see <see cref="FindWarnings"/>); and the address the
+    /// titles are read from must be https, or http to this computer only, for a local stub. YouTube:DriveUpload, an enum, is
+    /// checked by its names when the section is bound, and a list written as one value as a value that cannot be read.
     /// </summary>
     private static void CheckYouTube(IConfiguration configuration, List<string> problems)
     {
         const string youTubeSection = YouTubeOptions.SectionName;
         var youTube = Bind<YouTubeOptions>(configuration, youTubeSection, problems);
 
-        var ytDlp = Name(youTubeSection, nameof(YouTubeOptions.YtDlpPath));
-        CheckPath(problems, ytDlp, youTube.YtDlpPath);
-        var path = YouTubeOptions.Expanded(youTube.YtDlpPath);
-        if (path.Length > 0 && path.IndexOfAny(Path.GetInvalidPathChars()) < 0)
-        {
-            if (!Path.IsPathFullyQualified(path))
-                problems.Add($"{ytDlp} is \"{youTube.YtDlpPath}\"; it must be the full path of yt-dlp.exe, such as %LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\yt-dlp.exe, or empty to find it. {PathAdvice}");
-            else if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                problems.Add($"{ytDlp} is \"{youTube.YtDlpPath}\"; it must name yt-dlp's .exe file, or be empty to find it.");
-            else if (!File.Exists(path))
-                problems.Add($"{ytDlp} is \"{youTube.YtDlpPath}\", which is not there; install yt-dlp (winget install --source winget --id yt-dlp.yt-dlp), or leave it empty to find it.");
-        }
+        CheckExe(problems, Name(youTubeSection, nameof(YouTubeOptions.YtDlpPath)), youTube.YtDlpPath,
+            "yt-dlp.exe, such as %LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\yt-dlp.exe", "yt-dlp's", "install yt-dlp (winget install --source winget --id yt-dlp.yt-dlp)");
+        CheckExe(problems, Name(youTubeSection, nameof(YouTubeOptions.BrowserPath)), youTube.BrowserPath,
+            "chrome.exe, such as C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "Chrome's", "install Chrome");
+
+        // A video's recording stops at this length. One above the safety stop is only warned about (see FindWarnings): a
+        // refusal would hold up every class over a setting of the videos', and the safety stop ends the video first anyway.
+        CheckRange(problems, Name(youTubeSection, nameof(YouTubeOptions.LongestVideoHours)), youTube.LongestVideoHours,
+            YouTubeOptions.ShortestLongestVideoHours, YouTubeOptions.LargestLongestVideoHours, "hours", "4");
+
+        CheckLocalOrHttpsAddress(problems, Name(youTubeSection, nameof(YouTubeOptions.OEmbedBaseUrl)), youTube.OEmbedBaseUrl, new YouTubeOptions().OEmbedBaseUrl);
 
         var mayDownload = Name(youTubeSection, nameof(YouTubeOptions.MayDownloadChannels));
         var course = Name(youTubeSection, nameof(YouTubeOptions.CourseChannels));
@@ -202,10 +203,31 @@ public sealed class SettingsCheck
     }
 
     /// <summary>
-    /// Adds a problem when <paramref name="value"/> is not an https address, nor an http one to 127.0.0.1 or localhost, with
-    /// Google's own address, <paramref name="example"/>, as the example.
+    /// Adds a problem when the program setting <paramref name="name"/>, when given, is not the full path of an .exe file that
+    /// is there: <paramref name="what"/> names the file and gives an example, <paramref name="whose"/> says whose .exe it must
+    /// name, and <paramref name="install"/> how to get it. Environment variables are expanded and quotes around it taken off,
+    /// as the program is found with it. Empty finds the program, and passes.
     /// </summary>
-    private static void CheckGoogleAddress(List<string> problems, string name, string? value, string example)
+    private static void CheckExe(List<string> problems, string name, string? value, string what, string whose, string install)
+    {
+        CheckPath(problems, name, value);
+        var path = YouTubeOptions.Expanded(value);
+        if (path.Length == 0 || path.IndexOfAny(Path.GetInvalidPathChars()) >= 0) return;
+
+        if (!Path.IsPathFullyQualified(path))
+            problems.Add($"{name} is \"{value}\"; it must be the full path of {what}, or empty to find it. {PathAdvice}");
+        else if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            problems.Add($"{name} is \"{value}\"; it must name {whose} .exe file, or be empty to find it.");
+        else if (!File.Exists(path))
+            problems.Add($"{name} is \"{value}\", which is not there; {install}, or leave it empty to find it.");
+    }
+
+    /// <summary>
+    /// Adds a problem when <paramref name="value"/> is not an https address, nor an http one to 127.0.0.1 or localhost, with
+    /// the service's own address, <paramref name="example"/>, as the example: a request's answer, or a secret, must never
+    /// travel unencrypted beyond this computer.
+    /// </summary>
+    private static void CheckLocalOrHttpsAddress(List<string> problems, string name, string? value, string example)
     {
         var usable = Uri.TryCreate(value, UriKind.Absolute, out var address)
             && (address.Scheme == Uri.UriSchemeHttps
@@ -216,7 +238,8 @@ public sealed class SettingsCheck
 
     /// <summary>
     /// Lists what is worth saying about <paramref name="configuration"/> without refusing it: an API key written into the
-    /// settings, which is never used, and a recordings folder inside OneDrive.
+    /// settings, which is never used; a recordings folder inside OneDrive; and a YouTube video's longest recording above the
+    /// safety stop, which then ends it first.
     /// </summary>
     public IReadOnlyList<string> FindWarnings(IConfiguration configuration)
     {
@@ -233,8 +256,22 @@ public sealed class SettingsCheck
                 warnings.Add($"{Name(RecordingOptions.SectionName, nameof(RecordingOptions.OutputFolder))} is inside OneDrive ({root}). OneDrive uploads a recording again and again while it grows, and can hold files that ClassScribe needs to delete; a folder outside OneDrive, such as %USERPROFILE%\\ClassScribe, is safer");
         }
 
+        // A video's longest recording above the safety stop is not refused, since a refusal would hold up every class over a
+        // setting of the videos'; the safety stop then ends a video first, which is said here.
+        var longestName = Name(YouTubeOptions.SectionName, nameof(YouTubeOptions.LongestVideoHours));
+        var stopName = Name(RecordingOptions.SectionName, nameof(RecordingOptions.StopAfterHours));
+        var longest = Hours(configuration[longestName]) ?? new YouTubeOptions().LongestVideoHours;
+        var stop = Hours(configuration[stopName]) ?? new RecordingOptions().StopAfterHours;
+        if (stop > 0 && longest > stop)
+            warnings.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{longestName} is {longest}, above {stopName} ({stop}), so a YouTube video's recording stops at {stop} hours, at the safety stop. Make {longestName} at most {stop} if that is not what you want"));
+
         return warnings;
     }
+
+    /// <summary>A number of hours as a setting's text gives it; null when it is not given, or is not a finite number.</summary>
+    private static double? Hours(string? text) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) && double.IsFinite(hours) ? hours : null;
 
     /// <summary>True when <paramref name="folder"/> is a OneDrive folder that Windows names, or lies inside one.</summary>
     private static bool IsInsideOneDrive(string folder) =>

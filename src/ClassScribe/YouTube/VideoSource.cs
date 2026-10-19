@@ -81,11 +81,13 @@ public sealed record VideoSource(
 
 /// <summary>
 /// JSON for a video's source file, generated at compile time: camelCase names, written indented and with every character as
-/// it is (an Arabic title stays readable), and a field the reader does not know passed over.
+/// it is (an Arabic title stays readable), and a field the reader does not know passed over. YouTube's oEmbed answer is read
+/// with it too, its fields named as YouTube writes them.
 /// </summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
 [JsonSerializable(typeof(VideoSource))]
 [JsonSerializable(typeof(ConversionNote))]
+[JsonSerializable(typeof(OEmbedAnswer))]
 public sealed partial class YouTubeJson : JsonSerializerContext
 {
     /// <summary>The context with the options the source file is written with.</summary>

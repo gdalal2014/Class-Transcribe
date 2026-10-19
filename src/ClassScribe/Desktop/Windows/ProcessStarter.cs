@@ -88,7 +88,7 @@ internal sealed record ProcessLaunch(string Application, string CommandLine, boo
     /// </summary>
     public SafeHandle? Job { get; init; }
 
-    /// <summary>True when the launch gives any of the optional parts, as a tool's launch does.</summary>
+    /// <summary>True when the launch gives any of the optional parts, as a tool's launch and a browser's do.</summary>
     public bool IsToolLaunch => Environment is not null || Handles is not null || Job is not null;
 }
 
@@ -172,6 +172,42 @@ public sealed class ProcessStarter(string workingFolder, ILogger<ProcessStarter>
             $"{ProcessArguments.Attach} {ProcessArguments.Alert} {Checked(runId)}",
             AlertWindowFlags,
             ProcessWindowShow.MinimizedNotActive);
+
+    /// <summary>This process's environment, from which a browser's is made without the key; a test gives its own.</summary>
+    internal Func<System.Collections.IDictionary> CurrentEnvironment { get; init; } = Environment.GetEnvironmentVariables;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Outside the job first; a job that does not allow breakaway refuses that with Access Denied, and Chrome is then started
+    /// inside it, once more and no other way. In a test run Windows' own start refuses a browser outright (see
+    /// <see cref="YouTube.YouTubeGuards"/>).
+    /// </remarks>
+    public StartedProcess StartBrowser(string program, IReadOnlyList<string> arguments, string workingFolder)
+    {
+        var launch = new ProcessLaunch(program, YouTube.WindowsCommandLine.Of(program, arguments), InheritHandles: false,
+            ProcessCreationFlags.UnicodeEnvironment | ProcessCreationFlags.BreakawayFromJob, workingFolder, Show: null)
+        {
+            Environment = ChildEnvironment.WithoutTheKey(CurrentEnvironment())
+        };
+
+        var started = _api.Start(launch, out var error);
+        if (started is null && error == IProcessStarter.AccessDenied)
+        {
+            logger.LogDebug("The job ClassScribe runs in does not let Chrome out of it; starting it inside the job");
+            launch = launch with { Flags = launch.Flags & ~ProcessCreationFlags.BreakawayFromJob };
+            started = _api.Start(launch, out error);
+        }
+
+        if (started is not null)
+        {
+            // The command line names the window's profile, which may hold a Google sign-in: it is kept out of every log.
+            logger.LogDebug("Started {What} for a video's window: process {ProcessId}, {Program}, flags {Flags}", StartRefusal.Browser, started.ProcessId, program, launch.Flags);
+            return started;
+        }
+
+        logger.LogDebug("Windows did not start {What} for a video's window ({Error}): {Program}, flags {Flags}", StartRefusal.Browser, Describe(error), program, launch.Flags);
+        throw StartRefusal.For(StartRefusal.Browser, error);
+    }
 
     /// <summary>
     /// <paramref name="runId"/>, when it is a run id (<see cref="ProcessArguments.IsRunId"/>), since it goes on a command

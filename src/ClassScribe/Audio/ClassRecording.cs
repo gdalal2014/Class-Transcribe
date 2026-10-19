@@ -90,7 +90,8 @@ public sealed class ClassRecording(RecordingSession session, ILogger<ClassRecord
             Capturing: status.WaitingFor is null,
             Off: status.Off,
             WriteFailing: status.WriteFailing,
-            OnlyZeros: status.OnlyZeros);
+            OnlyZeros: status.OnlyZeros,
+            HeardSound: status.HeardSound);
         return new RecordingSnapshot(offset + status.Captured, status.Paused, main, Microphone: null);
     }
 
@@ -140,7 +141,8 @@ public sealed class ClassRecordingFactory(
     TimeProvider time,
     ILogger<RecordingSession> sessionLogger,
     ILogger<CaptureChooser> chooserLogger,
-    ILogger<ClassRecording> logger) : IRecordingFactory
+    ILogger<ClassRecording> logger,
+    YouTube.VideoPlayback? video = null) : IRecordingFactory
 {
     /// <summary>
     /// A recording, not started yet, of the class from what <paramref name="source"/> names (see
@@ -162,7 +164,7 @@ public sealed class ClassRecordingFactory(
                 "This build of ClassScribe records the class alone: recording your microphone, with the class or in person, comes with a later build.");
         }
 
-        var chooser = new CaptureChooser(time, source.Class ?? new ClassSource.Automatic(), chooserLogger);
+        var chooser = new CaptureChooser(time, source.Class ?? new ClassSource.Automatic(), chooserLogger, video);
         return new RecordingSession(new LoopbackSource(provider, chooser), options, time, sessionLogger);
     }
 }

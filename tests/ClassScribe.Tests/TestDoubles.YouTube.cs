@@ -27,16 +27,22 @@ public static class YouTubeTestRuns
             Position: 1, Count: 1, BatchId);
 }
 
-/// <summary>Files a test says are there; any other path is not. Paths compare without regard to case, as Windows compares them.</summary>
+/// <summary>Files a test says are there, and their versions; any other path is not. Paths compare without regard to case, as Windows compares them.</summary>
 public sealed class FakeFileProbe : IFileProbe
 {
     private readonly HashSet<string> _files = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The product version of each program's file that carries one, by path.</summary>
+    public Dictionary<string, string> Versions { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Says that files are at <paramref name="paths"/>.</summary>
     public void Add(params string[] paths)
     {
         foreach (var path in paths) _files.Add(path);
     }
+
+    /// <inheritdoc />
+    public string? VersionOf(string path) => Versions.TryGetValue(path, out var version) ? version : null;
 
     /// <inheritdoc />
     public bool FileExists(string path) => _files.Contains(path);

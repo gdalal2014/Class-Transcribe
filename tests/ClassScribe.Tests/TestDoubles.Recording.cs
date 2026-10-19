@@ -196,7 +196,8 @@ public sealed class FakeRecording : IRecording
     /// <summary>
     /// A track as a check sees it: by default one that captures from "Fake Speakers", has just heard sound and has just
     /// received audio, with nothing wrong. Name only what a test needs to differ. A track that does not capture has no
-    /// open capture, so it has no time since its last packet, whatever <paramref name="sinceLastPacket"/> says.
+    /// open capture, so it has no time since its last packet, whatever <paramref name="sinceLastPacket"/> says. Whether sound
+    /// has reached its files at all (<paramref name="heardSound"/>) is no, unless the test says so: only a video's run reads it.
     /// </summary>
     public static TrackSnapshot Track(
         string source = "Fake Speakers",
@@ -210,9 +211,10 @@ public sealed class FakeRecording : IRecording
         bool capturing = true,
         bool off = false,
         bool writeFailing = false,
-        bool onlyZeros = false) =>
+        bool onlyZeros = false,
+        bool heardSound = false) =>
         new(source, waitingFor, written, sinceLastSound, capturing ? sinceLastPacket : null, deliversContinuously, recordedLevel, soundWhilePaused, capturing, off,
-            writeFailing, onlyZeros);
+            writeFailing, onlyZeros, heardSound);
 
     /// <inheritdoc />
     public void Start(RecordingFiles files, TimeSpan offset)

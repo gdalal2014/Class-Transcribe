@@ -1117,7 +1117,7 @@ public class MenuCommandTests
 
         Assert.That(await RunMenuAsync(), Is.EqualTo(0));
 
-        Assert.That(_ui.Screen, Does.Contain("  Y  YouTube: download videos you may download, then transcribe them"));
+        Assert.That(_ui.Screen, Does.Contain("  Y  YouTube: record videos as they play, or download them, then transcribe"));
         _commands.Verify(c => c.YouTubeMenuAsync(), Times.Once);
         _commands.VerifyNoOtherCalls();
         Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back afterwards");

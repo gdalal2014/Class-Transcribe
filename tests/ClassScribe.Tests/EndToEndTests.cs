@@ -99,6 +99,8 @@ public class EndToEndTests
     private bool _mixForUpload;
     private FakeGoogle _google = null!;
     private FakeCredentialStore _driveStore = null!;
+    private FakeVideoBrowsers _videoBrowsers = null!;
+    private FakeProcessTree _videoProcesses = null!;
 
     /// <summary>
     /// The folders, the window's console, window and desktop, the recorder's device and microphone, with chrome's
@@ -147,6 +149,10 @@ public class EndToEndTests
             _recorders.Add(recorder);
             _ = recorder.ContinueWith(ended => launch.Exit(ended.IsCompletedSuccessfully ? ended.Result : RecorderHost.FailedExitCode), TaskScheduler.Default);
         };
+
+        // Chrome, for a YouTube video's window, is played on top: alive for the run files, with a window of its own.
+        _videoBrowsers = new FakeVideoBrowsers(_starts, _runtime.Processes);
+        _videoProcesses = new FakeProcessTree();
     }
 
     /// <summary>Stops the pumps, waits for every recorder to end, closes the connections and deletes the folders; a file left open fails the deletion, which is the point.</summary>
@@ -175,7 +181,8 @@ public class EndToEndTests
         File.WriteAllText(_settingsFolder.File("appsettings.json"), JsonSerializer.Serialize(new
         {
             Recording = new { OutputFolder = _recordings.Path, ReopenWindow = "Never", ClassAppMute = classAppMute },
-            ElevenLabs = new { BaseUrl = "http://localhost:9/", KeytermsFile = "", MaxAttempts = 1 }
+            ElevenLabs = new { BaseUrl = "http://localhost:9/", KeytermsFile = "", MaxAttempts = 1 },
+            YouTube = new { OEmbedBaseUrl = "http://localhost:9/" }
         }));
         return AppHost.Build(_settingsFolder.Path, Key, services => Extra(services, extra)
             .AddSingleton(_runtime.Folder)
@@ -242,6 +249,9 @@ public class EndToEndTests
             services.Replace(ServiceDescriptor.Scoped<ISessionEvents>(_ => new FakeSessionEvents()));
             if (!_mixForUpload) services.Replace(ServiceDescriptor.Singleton(Mocks.AudioPreparer().Object));
             services.Replace(ServiceDescriptor.Singleton(_recorderDesktop.Object));
+            services.Replace(ServiceDescriptor.Singleton<IVideoWindows>(_videoBrowsers.Windows));
+            services.Replace(ServiceDescriptor.Scoped(provider => new YouTube.VideoPlayback(_runtime.Processes, _videoBrowsers.Windows, new ProcessFamily(_videoProcesses),
+                provider.GetRequiredService<RunJournal>(), TimeProvider.System, provider.GetRequiredService<ILogger<YouTube.VideoPlayback>>())));
             services.Replace(ServiceDescriptor.Singleton(provider => _server = new RecorderServer(
                 provider.GetRequiredService<RecorderLog>(), provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<ILogger<RecorderServer>>())));
             services.ConfigureAll<HttpClientFactoryOptions>(options => options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = new GoogleOrElse(_google, _elevenLabs)));
@@ -664,5 +674,95 @@ public class EndToEndTests
 
         Assert.That(_google.Destructive, Is.Empty);
         Assert.That(_starts.Launches, Is.Empty, "the batch runs in the window");
+    }
+
+    /// <summary>
+    /// A batch of two YouTube videos from the command line, recorded as they play (design 4, with Gulzar's answers 2 A and 3
+    /// B), each in a recorder of its own, as a class is: the titles read from a stub at a stub address; Chrome found on a
+    /// played disk and started for each video's window, with its own profile, never playing by itself; Enter asked before
+    /// each; each window's browser process recorded through process loopback, from before anything plays; the first ended by
+    /// its window closed, the second by Q twice in the window's view; both in one date folder, each with its source file,
+    /// confirmed; both transcribed through the stub, in this window, headed by the video's title; every window closed; and
+    /// exit code 0. Nothing reaches YouTube or ElevenLabs.
+    /// </summary>
+    [Test]
+    public async Task A_batch_of_two_YouTube_videos_is_recorded_as_they_play_and_transcribed()
+    {
+        _elevenLabs.EnqueueFor("/oembed", HttpStatusCode.OK, """{"title":"The creed, part 1","author_name":"Shaykh X","author_url":"https://www.youtube.com/@shaykhx"}""");
+        _elevenLabs.EnqueueFor("/oembed", HttpStatusCode.OK, """{"title":"The creed, part 2","author_name":"Shaykh X","author_url":"https://www.youtube.com/@shaykhx"}""");
+        _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
+        _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
+        _elevenLabs.EnqueueFor(StubHttpHandler.SubscriptionPath, HttpStatusCode.Unauthorized, """{"detail":{"status":"missing_permissions"}}""");
+        var chrome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolderOption.DoNotVerify), "Google", "Chrome", "Application", "chrome.exe");
+        var disk = new FakeFileProbe();
+        disk.Add(chrome);
+        disk.Versions[chrome] = "141.0.7390.108";
+
+        // Each window's browser process plays through process loopback, its capture ready and kept alive as Windows' is.
+        List<FakeAudioCapture> windows = [];
+        var before = _starts.OnStart;
+        _starts.OnStart = launch =>
+        {
+            before?.Invoke(launch);
+            if (launch.Kind != FakeLaunchKind.Browser) return;
+
+            _videoProcesses.Add(launch.ProcessId, Environment.ProcessId, "chrome.exe", launch.StartedUtc);
+            var capture = new FakeAudioCapture(Pcm16KMono, "ClassScribe's video window", $"process:{launch.ProcessId}") { DeliversContinuously = true };
+            _devices.Enqueue(capture);
+            lock (windows) windows.Add(capture);
+            Pump(capture);
+        };
+        using var app = BuildWindow(extra: services => services
+            .AddSingleton<IFileProbe>(disk)
+            .AddSingleton<IRegistryValues>(_registry)
+            .AddSingleton<IVideoWindows>(_videoBrowsers.Windows)
+            .AddSingleton<IPowerRequests>(new FakePowerRequests()));
+
+        var command = Task.Run(() => app.Services.GetRequiredService<App>().RunAsync(
+            ["youtube", "https://youtu.be/abcdefghijk", "https://youtu.be/bcdefghijkl", "--name", "Risala", "--output", _recordings.Path, "--yes", "--no-open"]));
+
+        await UntilShownAsync("Next: 01 The creed, part 1. Enter opens it");
+        _ui.Type('\r');
+        await UntilShownAsync("Press play in the video window");
+        await Wait.UntilAsync(() => windows.Count == 1 && windows[0].Started, StepSeconds);
+        windows[0].Deliver(Tone(), Now);
+        await Task.Delay(1500);
+        _videoBrowsers.End(_videoBrowsers.Started[0].ProcessId);
+
+        await UntilShownAsync("Next: 02 The creed, part 2. Enter opens it");
+        _ui.Type('\r');
+        await UntilShownAsync("Press play in the video window", times: 2);
+        await Wait.UntilAsync(() => windows.Count == 2 && windows[1].Started, StepSeconds);
+        windows[1].Deliver(Tone(), Now);
+        await Task.Delay(1500);
+        _ui.Type('q', 'q');
+
+        Assert.That(await command.WaitAsync(EndPatience), Is.EqualTo(0));
+        foreach (var recorder in _recorders) Assert.That(await recorder.WaitAsync(EndPatience), Is.EqualTo(0));
+        var dateFolder = Directory.GetDirectories(Path.Combine(_recordings.Path, "Risala")).Single();
+        var sources = Directory.GetFiles(dateFolder, "*.source.json").Order(StringComparer.Ordinal).Select(path => YouTube.VideoSourceFile.Read(path)!).ToList();
+        var transcripts = Directory.GetFiles(dateFolder, "*.md").Order(StringComparer.Ordinal).ToList();
+        var browsers = _videoBrowsers.Started;
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(sources.Select(source => (source.Title, source.Obtained, source.Ended, source.EndConfirmed, source.Tool)), Is.EqualTo(new[]
+            {
+                ("The creed, part 1", YouTube.VideoSource.Recorded, "the video window was closed", true, "Chrome 141.0.7390.108"),
+                ("The creed, part 2", YouTube.VideoSource.Recorded, "stopped with Q", true, "Chrome 141.0.7390.108")
+            }));
+            Assert.That(transcripts.Select(path => File.ReadAllLines(path)[0]), Is.EqualTo(["# The creed, part 1", "# The creed, part 2"]));
+            Assert.That(File.ReadAllText(transcripts[0]), Does.Contain("recorded as it played in ClassScribe's window"));
+            Assert.That(browsers.Select(browser => (browser.Program, browser.Arguments[^1])), Is.EqualTo(new[]
+            {
+                (chrome, "--app=https://www.youtube.com/watch?v=abcdefghijk"), (chrome, "--app=https://www.youtube.com/watch?v=bcdefghijkl")
+            }));
+            Assert.That(browsers.SelectMany(browser => browser.Arguments), Has.None.Contains("autoplay"));
+            Assert.That(browsers.Select(browser => browser.ExitCode), Has.All.Not.Null, "every window closed");
+            Assert.That(_devices.Created.Select(capture => capture.DeviceId), Is.EqualTo(browsers.Select(browser => $"process:{browser.ProcessId}")),
+                "each window's own browser process, and nothing else");
+            Assert.That(_starts.Recorders, Has.Count.EqualTo(2), "a recorder for each video");
+            Assert.That(_runtime.Journal.List().Count(run => run.IsVideo && run.Record.Outcome?.Kind == OutcomeKind.Transcribed), Is.EqualTo(2), "each transcript's run file");
+            Assert.That(_elevenLabs.Requests.Where(request => request.Method == HttpMethod.Post).Select(request => request.ApiKey), Is.EqualTo(new[] { Key, Key }));
+        }
     }
 }

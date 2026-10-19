@@ -88,7 +88,13 @@ public enum StartOrigin
     /// The same from a window the recorder opened by itself (attach --alert): the continued run is shown with its keys
     /// waiting for Enter, as that window showed the lost one, and never records in that window.
     /// </summary>
-    AutoContinueFromAlert
+    AutoContinueFromAlert,
+
+    /// <summary>
+    /// A YouTube batch recording one of its videos as it plays (design 4.5): a new recording without a question, shown as its
+    /// owner, never another run; a recording running already is explained, and the batch waits for it.
+    /// </summary>
+    VideoBatch
 }
 
 /// <summary>
@@ -133,8 +139,12 @@ public sealed record RecordRequest(string RunId, string Name, bool Transcribe, S
 /// <param name="Position">The video's place in the batch, from 1.</param>
 /// <param name="Count">How many videos the batch takes.</param>
 /// <param name="BatchId">The batch's id, made as a run's is (see <see cref="RunIds"/>).</param>
+/// <param name="ChannelHandle">Its channel's @handle, when known, for its source file; null when not known, and in an older run file.</param>
+/// <param name="Tool">What obtains its audio, for its source file, such as "Chrome 141.0.7390.108" on the record path; null when not known.</param>
+/// <param name="StartSeconds">Where its link starts it, in seconds (t=), on the record path, which the window opens at; null for its start.</param>
 public sealed record VideoRequest(string Url, string VideoId, string Title, string? Channel, string Obtained, string? Folder,
-    int? BrowserProcessId, DateTimeOffset? BrowserStartedUtc, int Position, int Count, string BatchId);
+    int? BrowserProcessId, DateTimeOffset? BrowserStartedUtc, int Position, int Count, string BatchId,
+    string? ChannelHandle = null, string? Tool = null, int? StartSeconds = null);
 
 /// <summary>
 /// Run ids. One names a run in its files, its pipe and its stop event, and on the command line (--recorder, attach --alert):

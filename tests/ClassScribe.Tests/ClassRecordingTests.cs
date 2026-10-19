@@ -76,7 +76,8 @@ public class ClassRecordingTests
     /// <summary>
     /// The snapshot shows the class track as its session sees it: what it records, how much this run has written, how long
     /// ago sound and audio last arrived, whether its capture hands over audio all the time, the level Windows' meter shows,
-    /// and that nothing is wrong. The recording has no microphone track, and its position is what was written.
+    /// that sound has reached its files, and that nothing is wrong. The recording has no microphone track, and its position is
+    /// what was written.
     /// </summary>
     [Test]
     public void The_snapshot_shows_the_class_track_as_its_session_sees_it()
@@ -94,7 +95,7 @@ public class ClassRecordingTests
             Paused: false,
             Main: new TrackSnapshot(
                 Source: "Speakers", WaitingFor: null, Written: TimeSpan.FromSeconds(1), SinceLastSound: TimeSpan.Zero, SinceLastPacket: TimeSpan.Zero,
-                DeliversContinuously: false, RecordedLevel: 0.4f, SoundWhilePaused: false, Capturing: true, Off: false, WriteFailing: false, OnlyZeros: false),
+                DeliversContinuously: false, RecordedLevel: 0.4f, SoundWhilePaused: false, Capturing: true, Off: false, WriteFailing: false, OnlyZeros: false, HeardSound: true),
             Microphone: null)));
     }
 

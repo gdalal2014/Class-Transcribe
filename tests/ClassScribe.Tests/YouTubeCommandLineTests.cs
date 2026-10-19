@@ -88,8 +88,7 @@ public class YouTubeCommandLineTests
             "youtube needs --name \"<course>\", the course the videos belong to, such as --name \"Risala\"",
             "youtube needs --output \"<folder>\", the folder the recordings go to",
             "youtube needs at least one YouTube link, or --list \"<file>\" of links",
-            "youtube needs --yes to go ahead after the plan, or --plan to print the plan alone",
-            "youtube needs --download: recording YouTube videos as they play is not part of this build yet"
+            "youtube needs --yes to go ahead after the plan, or --plan to print the plan alone"
         }));
         Assert.That(_line.Output.ToString(), Does.Contain("Examples:"));
         _commands.Verify(c => c.YouTubeAsync(It.IsAny<YouTubeRequest>()), Times.Never);
@@ -171,5 +170,42 @@ public class YouTubeCommandLineTests
 
         Assert.That(exitCode, Is.EqualTo(CommandLineTree.Mistake));
         Assert.That(_line.Mistakes, Has.Some.EqualTo("youtube takes at most 500 videos at a time; these links name 501"));
+    }
+
+    /// <summary>Without --download the videos are recorded as they play: the request says so, with the links as given.</summary>
+    [Test]
+    public async Task Without_download_the_videos_are_recorded_as_they_play()
+    {
+        var exitCode = await RunAsync("youtube", "https://www.youtube.com/watch?v=abcdefghijk&t=754s", "https://youtu.be/bcdefghijkl", "--name", "Risala", "--output", Classes, "--yes");
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        var request = _asked.Single();
+        Assert.That((request.Download, request.Confirmation), Is.EqualTo((false, BatchConfirmation.Yes)));
+        Assert.That(request.Links.Select(link => (link.Id, link.StartSeconds)), Is.EqualTo(new (string, int?)[] { ("abcdefghijk", 754), ("bcdefghijkl", null) }));
+    }
+
+    /// <summary>
+    /// Recording as they play takes each video's own link: a playlist's, a live stream's, more than 10 videos, and
+    /// --allow-unlisted, which only a download needs, are each a mistake without --download, named with the help and exit
+    /// code 2; nothing runs.
+    /// </summary>
+    [Test]
+    public async Task Without_download_playlists_live_links_many_videos_and_allow_unlisted_are_mistakes()
+    {
+        var list = _folder.File("eleven.txt");
+        File.WriteAllLines(list, Enumerable.Range(0, VideoBatch.MostVideos + 1).Select(i => $"https://youtu.be/v{i:0000000000}"));
+
+        var exitCode = await RunAsync("youtube", "https://www.youtube.com/playlist?list=PLxyz", "https://www.youtube.com/live/abcdefghijk", "--list", list, "--name", "Risala",
+            "--output", Classes, "--yes", "--allow-unlisted");
+
+        Assert.That(exitCode, Is.EqualTo(CommandLineTree.Mistake));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[]
+        {
+            "https://www.youtube.com/playlist?list=PLxyz is a playlist's link, which only --download takes; give each video's own link to record it as it plays",
+            "The live link of abcdefghijk is taken only with --download, whose read tells a live stream from a video; give the video's watch link to record it as it plays",
+            "youtube records at most 10 videos at a time as they play, each for as long as it plays; these links name 12. Give fewer, or add --download",
+            YouTubeCommand.AllowUnlistedNeedsDownload
+        }));
+        _commands.Verify(c => c.YouTubeAsync(It.IsAny<YouTubeRequest>()), Times.Never);
     }
 }

@@ -43,4 +43,30 @@ public class VideoRunRecordTests
         Assert.That(read!.Record.Request.Video, Is.Null);
         Assert.That(read.IsVideo, Is.False);
     }
+
+    /// <summary>
+    /// A recorded video's request, with its window's browser process, its channel's handle, Chrome's version and where it
+    /// starts, is read back whole; one written without those fields, as the download path's first build wrote them, reads
+    /// with none of them.
+    /// </summary>
+    [Test]
+    public void A_recorded_videos_request_is_read_back_and_an_older_one_reads_without_its_new_fields()
+    {
+        using var runtime = new TestRuntime();
+        var id = TestRuns.Id();
+        var video = YouTubeTestRuns.Video() with
+        {
+            Obtained = YouTube.VideoSource.Recorded, BrowserProcessId = 7100, BrowserStartedUtc = TestRuns.Start, ChannelHandle = "@yourchannel",
+            Tool = "Chrome 141.0.7390.108", StartSeconds = 754
+        };
+        runtime.Journal.Write(runtime.Journal.RunFile(id), TestRuns.Record(id) with { Request = TestRuns.Request(id) with { Video = video } });
+
+        Assert.That(runtime.Journal.Find(id)!.Record.Request.Video, Is.EqualTo(video));
+
+        var json = JsonNode.Parse(File.ReadAllText(runtime.Journal.RunFile(id)))!;
+        foreach (var field in new[] { "channelHandle", "tool", "startSeconds" }) json["request"]!["video"]!.AsObject().Remove(field);
+        File.WriteAllText(runtime.Journal.RunFile(id), json.ToJsonString());
+
+        Assert.That(runtime.Journal.Find(id)!.Record.Request.Video, Is.EqualTo(video with { ChannelHandle = null, Tool = null, StartSeconds = null }));
+    }
 }

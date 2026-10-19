@@ -11,8 +11,8 @@ namespace ClassScribe.Desktop;
 /// Registers ClassScribe's own Windows integration: keeping the laptop awake while it records and uploads, where the
 /// laptop takes its power from, the computer's clocks, the watch for times when ClassScribe did not run, the registry
 /// values the microphone advice reads, whether the process a run file names still runs, Windows' record of which apps use
-/// the microphone, the names of processes and which of them are ClassScribe's own, the window's title, taskbar button
-/// and flash, and Windows' end of the session.
+/// the microphone, the names of processes and which of them are ClassScribe's own, the processes and windows of a YouTube
+/// video's Chrome, the window's title, taskbar button and flash, and Windows' end of the session.
 /// </summary>
 public static class DesktopServices
 {
@@ -58,6 +58,16 @@ public static class DesktopServices
             ? new ProcessNames()
             : throw new PlatformNotSupportedException("Naming the processes that use a microphone needs Windows."));
         services.AddSingleton<IOwnProcesses, OwnProcesses>();
+
+        // A YouTube video's window (the record path): the tree of processes its browser heads, from Windows' process list, and
+        // its windows' titles and close, from Windows' windows. Each only reads, but the close, which is posted as a click on
+        // the close button is; nothing is touched before the first use.
+        services.AddSingleton<IProcessFamily>(_ => OperatingSystem.IsWindows()
+            ? new ProcessFamily(NativeProcessTree.Instance)
+            : throw new PlatformNotSupportedException("Reading the processes a video's window started needs Windows."));
+        services.AddSingleton<IVideoWindows>(_ => OperatingSystem.IsWindows()
+            ? new ChromeWindows()
+            : throw new PlatformNotSupportedException("Reading the windows of a video's Chrome needs Windows."));
 
         // The window ClassScribe runs in: its title, its taskbar button and the flash, one for the process, which puts the
         // window back as it was when ClassScribe ends. A run in this window shows its states there, and flashes once for

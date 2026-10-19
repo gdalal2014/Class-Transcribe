@@ -1,4 +1,5 @@
 using System.Net;
+using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Storage;
@@ -124,7 +125,9 @@ public class DownloadBatchTests
         Assert.That(withoutWord, Is.EqualTo(1));
         Assert.That(_world.Tools.Downloads, Is.Empty);
         Assert.That(_world.Screen, Has.Some.EndsWith("needs your word"));
-        Assert.That(_world.Screen, Has.Some.Contains("Your own upload: needs your word: in the menu (Y), or add --allow-unlisted"));
+        var wordLine = _world.Screen.Single(line => line.Contains("Your own upload: needs your word:", StringComparison.Ordinal));
+        Assert.That(wordLine, Does.Contain("needs your word: in the menu (Y > D), or add --allow-unlisted").And.Contain("; or record it as it plays: ")
+            .And.Contain(" youtube \"https://www.youtube.com/watch?v=cdefghijklm\" --name \"Risala\""));
 
         var withWord = await _world.RunAsync(_world.Request([Link(Third)], allowUnlisted: true));
 
@@ -303,6 +306,30 @@ public class DownloadBatchTests
         Assert.That(_world.Tools.Downloads, Is.EqualTo([First, Second]));
         Assert.That(_world.Transcriber.Asked.Select(asked => asked.Video.VideoId), Is.EqualTo([First]));
         Assert.That(_world.Logs.Messages, Has.Some.StartsWith("The downloads stopped: YouTube asked to confirm you are not a bot"));
+    }
+
+    /// <summary>
+    /// A video the download path may not take, or could not, but which can be watched, is given the command that records it
+    /// as it plays instead (Gulzar's answer 3 B): a course's video, one that needs a sign-in, and one a bot check left.
+    /// </summary>
+    [Test]
+    public async Task What_may_not_be_downloaded_is_given_the_command_that_records_it_as_it_plays()
+    {
+        _world.Tools.With(Third, YtDlpReadTests.Info(Third, "A lesson", duration: 3, availability: "unlisted", channelId: "UCcoursecoursecoursecour"), 3)
+            .With(Second, YtDlpReadTests.Info(Second, "Members only", duration: 3, availability: "subscriber_only"), 3)
+            .With("defghijklmn", YtDlpReadTests.Info("defghijklmn", "A public talk", duration: 3), 3,
+                video => video with { DownloadError = "ERROR: [youtube] defghijklmn: Sign in to confirm you're not a bot" });
+
+        var exitCode = await _world.RunAsync(_world.Request([Link(Third), Link(Second), Link("defghijklmn")]));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        // The command that records the video id names as it plays, as the summary gives it.
+        string RecordIt(string id) => CommandLine.YouTube([YouTubeLinks.WatchUrl(id)], "Risala", _world.Recordings.Path);
+        Assert.That(_world.Screen, Has.Some.EqualTo($"  01  A lesson: your course's channel: never downloaded; record it as it plays instead: {RecordIt(Third)}"));
+        Assert.That(_world.Screen, Has.Some.EqualTo($"  02  Members only: needs a sign-in: left out; record it as it plays instead: {RecordIt(Second)}"));
+        var botLine = _world.Screen.Single(line => line.StartsWith("  03  A public talk: ", StringComparison.Ordinal));
+        Assert.That(botLine, Does.StartWith("  03  A public talk: YouTube asked to confirm you are not a bot.")
+            .And.EndWith($"These videos can be recorded as they play instead: {RecordIt("defghijklmn")}"));
     }
 
     /// <summary>Three failures to reach YouTube in a row stop the downloads.</summary>

@@ -155,6 +155,20 @@ public class CommandLineTests
         Assert.That(CommandLine.Rebuild(@"D:\Kalam “intro”\x.md", Exe, ExeFolder), Does.EndWith(@" rebuild ""D:\Kalam `“intro`”\x.md"""));
     }
 
+    /// <summary>
+    /// The youtube command that records videos as they play, as the download path's summary offers it for a video it may not
+    /// download, and as a video stopped at YouTube:LongestVideoHours gives for the rest: the links, the course, the recordings
+    /// folder and --yes, each quoted and escaped for PowerShell.
+    /// </summary>
+    [Test]
+    public void The_youtube_command_records_the_videos_as_they_play()
+    {
+        Assert.That(CommandLine.YouTube(["https://www.youtube.com/watch?v=abcdefghijk&t=14400s"], "Risala $1", @"C:\Users\gdala\ClassScribe", Exe, ExeFolder),
+            Is.EqualTo(@"& ""C:\Program Files\ClassScribe\ClassScribe.exe"" youtube ""https://www.youtube.com/watch?v=abcdefghijk&t=14400s"" --name ""Risala `$1"" --output ""C:\Users\gdala\ClassScribe"" --yes"));
+        Assert.That(CommandLine.YouTube(["https://www.youtube.com/watch?v=abcdefghijk"], "Risala", @"D:\Classes"),
+            Is.EqualTo(CommandLine.YouTube(["https://www.youtube.com/watch?v=abcdefghijk"], "Risala", @"D:\Classes", Environment.ProcessPath, AppContext.BaseDirectory)));
+    }
+
     /// <summary>A request to record Kalam from <paramref name="source"/> into D:\Classes and transcribe it.</summary>
     private static RecordRequest Request(ClassSource source) =>
         new(TestRuns.Id(), "Kalam", Transcribe: true, new SourcePlan(RecordingMode.Class, source, null), @"D:\Classes", ContinueChoice.Ask, ContinueBaseName: null,

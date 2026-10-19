@@ -26,7 +26,8 @@ internal sealed partial class NativeProcessCreationApi
     private static string CommandProcessor => Path.Combine(Environment.SystemDirectory, "cmd.exe");
 
     /// <summary>
-    /// Starts a tool as <paramref name="launch"/> says (see the class summary). Null when Windows refuses, or when the job would
+    /// Starts a tool, or a browser, which gives an environment block alone, as <paramref name="launch"/> says (see the class
+    /// summary). Null when Windows refuses, or when the job would
     /// not take it, which ends it first, with Windows' error in <paramref name="error"/>. In a test run, any program but
     /// Windows' own command processor is refused with an <see cref="InvalidOperationException"/> before anything starts (see
     /// <see cref="YouTubeGuards"/>).
@@ -34,7 +35,7 @@ internal sealed partial class NativeProcessCreationApi
     private static StartedProcess? StartTool(ProcessLaunch launch, out int error)
     {
         if (!string.Equals(Path.GetFullPath(launch.Application), CommandProcessor, StringComparison.OrdinalIgnoreCase))
-            YouTubeGuards.RefuseInTests($"Windows' start of {Path.GetFileName(launch.Application)}", "FakeToolRunner, or FakeProcessCreationApi under ProcessToolRunner");
+            YouTubeGuards.RefuseInTests($"Windows' start of {Path.GetFileName(launch.Application)}", "FakeToolRunner for a tool, FakeProcessStarter for a browser, or FakeProcessCreationApi under either");
 
         var added = new List<SafeHandle>();
         var environment = IntPtr.Zero;

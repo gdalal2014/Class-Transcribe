@@ -107,7 +107,8 @@ public static class MicrophoneWords
 /// capture to replace. All of it is timed on the steady clock (<see cref="TimeProvider.GetTimestamp"/>), so Windows setting
 /// its time of day neither hurries nor holds up a check; only the times shown to Gulzar are read from the time of day.
 /// One monitor watches one run. The checks about your microphone are made beside the class's in the modes that record
-/// it (see <see cref="MicrophoneChecks"/>).
+/// it (see <see cref="MicrophoneChecks"/>). A YouTube video's run also ends by itself when its video does (see
+/// <see cref="VideoEndWatch"/>), before the safety stop.
 /// </summary>
 /// <remarks>
 /// <para>What needs attention, most pressing first: nothing recorded for 15 seconds; files that cannot be written; audio
@@ -123,8 +124,22 @@ public static class MicrophoneWords
 /// first seen at a look began after the look before it, so it is counted from that look, at most a second early, or from
 /// the end of a time ClassScribe did not run.</para>
 /// </remarks>
+/// <param name="freezes">The run's watch for times ClassScribe did not run.</param>
+/// <param name="space">The free space of the recording's drive.</param>
+/// <param name="recording">The run's recording settings.</param>
+/// <param name="advice">The advice about your microphone.</param>
+/// <param name="outputs">Windows' output devices and apps with sound, for the echo check.</param>
+/// <param name="bluetooth">The watch for the class app on a Bluetooth microphone.</param>
+/// <param name="time">The clock everything is timed on.</param>
+/// <param name="video">
+/// The run's YouTube video window: a video's run ends by the rules of <see cref="VideoEndWatch"/>, its silence is warned about
+/// in its own words, and the Bluetooth watch, which is for a class app, is left out. Null, as for the tests that need none,
+/// for a run of the class alone.
+/// </param>
+/// <param name="youTube">The run's YouTube settings, for the longest a video is recorded for; null for the default.</param>
 public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOptionsSnapshot<RecordingOptions> recording, MicrophoneAdvice advice,
-    ILoopbackCaptureProvider outputs, BluetoothMicrophoneWatch bluetooth, TimeProvider time)
+    ILoopbackCaptureProvider outputs, BluetoothMicrophoneWatch bluetooth, TimeProvider time, YouTube.VideoPlayback? video = null,
+    IOptionsSnapshot<YouTubeOptions>? youTube = null)
 {
     /// <summary>How long nothing may be recorded, other than while paused, before it is an Alert. A device being replaced takes less.</summary>
     public static readonly TimeSpan NotRecordingAlertAfter = TimeSpan.FromSeconds(15);
@@ -179,6 +194,12 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
 
     /// <summary>True once the first look has taken its bearings from the run's context.</summary>
     private bool _begun;
+
+    /// <summary>How a YouTube video's recording ends by itself, for a video's run; null for a class's.</summary>
+    private VideoEndWatch? _videoEnds;
+
+    /// <summary>Why a video's recording stopped by itself, once it did, so that it is said once.</summary>
+    private string? _videoStopped;
 
     /// <summary>When the last look was made, on the steady clock.</summary>
     private long _lastLook;
@@ -257,6 +278,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         {
             _begun = true;
             _lastLook = _awakeSince = _lastStatus = context.StartedTimestamp;
+            if (context.Request.Video is not null && video is { IsVideo: true } window) _videoEnds = new VideoEndWatch(window, time);
         }
 
         var lines = new List<(LogLevel Level, string Text)>();
@@ -296,7 +318,9 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         // most: the time asleep is no sign that the class does not reach the recording.
         var silenceAfter = TimeSpan.FromSeconds(Math.Max(1, options.SilenceWarningSeconds));
         var silence = Shorter(main.SinceLastSound, time.GetElapsedTime(_awakeSince, now));
-        var silent = main.Capturing && !snapshot.Paused && silence >= silenceAfter;
+
+        // A video's run warns of its silence in its own words, since its silence ends it (see VideoEndWatch).
+        var silent = _videoEnds is null && main.Capturing && !snapshot.Paused && silence >= silenceAfter;
         var silenceText = SilenceText(main, mode, silence);
         if (silent && (_lastSilenceWarning is not { } warned || time.GetElapsedTime(warned, now) >= silenceAfter))
         {
@@ -325,8 +349,14 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         }
 
         // The stops are worked out before the status line, which says when the recording stops by itself, and said after it.
+        // A video's own ends come before the safety stop, and only one stop is said.
         List<(LogLevel Level, string Text)> stopLines = [];
-        var (stopBecause, stopsAt) = WatchStops(snapshot, context, options, now, stopLines);
+        List<Condition> videoConditions = [];
+        var videoStop = WatchTheVideo(snapshot, context, silenceAfter, now, stopLines, videoConditions);
+        List<(LogLevel Level, string Text)> safetyLines = [];
+        var (stopBecause, stopsAt) = WatchStops(snapshot, context, options, now, safetyLines);
+        if (videoStop is not null) stopBecause = videoStop;
+        else stopLines.AddRange(safetyLines);
         if (time.GetElapsedTime(_lastStatus, now) >= TimeSpan.FromSeconds(Math.Max(1, options.StatusIntervalSeconds)))
         {
             _lastStatus = now;
@@ -352,6 +382,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
             conditions.Add((string.Create(CultureInfo.InvariantCulture, $"Freeze{frozen.Number}"), AttentionLevel.Alert, frozen.Short, frozen.Text));
         if (silent)
             conditions.Add(("NoSound", AttentionLevel.Notice, string.Create(CultureInfo.InvariantCulture, $"no sound {Math.Max(1, (int)silence.TotalMinutes)} min"), silenceText));
+        conditions.AddRange(videoConditions);
         conditions.AddRange(bluetoothConditions);
         if (_microphoneArrival.Stalled) conditions.Add(("MicrophoneNoAudio", AttentionLevel.Notice, "no audio from the microphone", _microphoneArrival.Stall.Text));
         conditions.AddRange(microphoneConditions);
@@ -372,7 +403,8 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// </summary>
     private void WatchBluetoothMicrophones(MonitorContext context, long now, List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
     {
-        if (context.Request.Source.Mode == RecordingMode.Microphone) return;
+        // In person there is no class to lose; in a YouTube video's window no class app listens on a microphone.
+        if (context.Request.Source.Mode == RecordingMode.Microphone || context.Request.Video is not null) return;
 
         if (bluetooth.Look(WatchedApps(context), now) is { Problem: null } look)
         {
@@ -636,6 +668,21 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
 
         if (stopBecause is not null) _stopSaid = true;
         return (stopBecause, stopsAt);
+    }
+
+    /// <summary>
+    /// A YouTube video's own ends (see <see cref="VideoEndWatch"/>), for a video's run: why it stops now, or null; nothing for a
+    /// class's run. A stop is said once; the looks after it, until the loop stops, give the same cause and say nothing more.
+    /// </summary>
+    private string? WatchTheVideo(RecordingSnapshot snapshot, MonitorContext context, TimeSpan silenceWarning, long now, List<(LogLevel Level, string Text)> lines,
+        List<Condition> conditions)
+    {
+        if (_videoEnds is null) return null;
+        if (_videoStopped is not null) return _videoStopped;
+
+        var longest = TimeSpan.FromHours((youTube?.Value ?? new YouTubeOptions()).LongestVideoHours);
+        _videoStopped = _videoEnds.Look(snapshot, context, now, _awakeSince, silenceWarning, longest, lines, conditions);
+        return _videoStopped;
     }
 
     /// <summary>The line for a time ClassScribe did not run, from the last look before it to the first after it, in local time.</summary>

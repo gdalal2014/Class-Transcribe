@@ -232,7 +232,7 @@ public sealed class MenuCommand(
         ui.WriteLine("  7  Microphone: none, with the class, or in person");
         ui.WriteLine("  8  Check the microphone: watch what apps do with it (opens nothing)");
         ui.WriteLine("  9  Google Drive: upload, free room on this laptop, sign in");
-        ui.WriteLine($"  {YouTubeKey}  YouTube: download videos you may download, then transcribe them");
+        ui.WriteLine($"  {YouTubeKey}  YouTube: record videos as they play, or download them, then transcribe");
         if (report.RecordingNow() is { Home: RunHome.Separate }) ui.WriteLine($"  {ShowKey}  Show the recording in progress");
         ui.WriteLine("  Q  Quit");
         ui.WriteLine();

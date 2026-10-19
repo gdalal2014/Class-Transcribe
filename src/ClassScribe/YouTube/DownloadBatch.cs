@@ -544,9 +544,14 @@ public sealed class DownloadBatch(
         return allDone ? 0 : 1;
     }
 
-    /// <summary>Whether <paramref name="video"/> ended as asked, and what the summary says of it.</summary>
+    /// <summary>
+    /// Whether <paramref name="video"/> ended as asked, and what the summary says of it. A video the download path may not
+    /// take, or could not, but which can be watched (it needs a word, it is the course's, it needs a sign-in, or YouTube
+    /// asked to confirm this is not a bot) is given the command that records it as it plays instead (Gulzar's answer 3 B).
+    /// </summary>
     private static (bool Done, string Line) Outcome(YouTubeRequest request, BatchVideo video)
     {
+        var recordIt = CommandLine.YouTube([YouTubeLinks.WatchUrl(video.VideoId)], request.Name, request.OutputRoot);
         if (video.Transcript is { Step: TranscriptStep.Transcribed, TranscriptPath: { } transcript })
             return (true, $"{(video.Downloaded is null ? "fetched before; " : "downloaded; ")}transcribed: {transcript}");
         if (video.Transcript is { } failed) return (false, $"{(video.Downloaded is null ? "" : "downloaded; ")}not transcribed: {failed.Problem}");
@@ -564,10 +569,23 @@ public sealed class DownloadBatch(
             return request.Transcribe ? (false, $"fetched before; not transcribed: {CommandLine.Transcribe(past.Files.Segment(1))}") : (true, video.Past.Words);
         }
 
-        if (video.FetchProblem is { } problem) return (false, problem);
+        if (video.FetchProblem is { } problem)
+        {
+            // The bot check's and the sign-in's words end by saying the video can be recorded as it plays: the command follows.
+            return (false, problem.Contains("as it plays", StringComparison.Ordinal) || problem.Contains("as they play", StringComparison.Ordinal)
+                ? $"{problem.TrimEnd('.')}: {recordIt}"
+                : problem);
+        }
+
         if (video.NeedsWord)
-            return (false, $"needs your word: in the menu (Y), or add --allow-unlisted, or its channel {video.Info?.Handle ?? video.Info?.ChannelId ?? ""} to YouTube:MayDownloadChannels if it is yours");
-        return (false, video.Words);
+        {
+            return (false,
+                $"needs your word: in the menu (Y > D), or add --allow-unlisted, or its channel {video.Info?.Handle ?? video.Info?.ChannelId ?? ""} to YouTube:MayDownloadChannels if it is yours; or record it as it plays: {recordIt}");
+        }
+
+        return video.Verdict?.Kind is GuardVerdictKind.CourseChannel or GuardVerdictKind.NeedsSignIn or GuardVerdictKind.Declined
+            ? (false, $"{video.Words}; record it as it plays instead: {recordIt}")
+            : (false, video.Words);
     }
 
     /// <summary>A video's number as the plan shows it: 01, 02 and so on.</summary>

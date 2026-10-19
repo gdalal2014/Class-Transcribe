@@ -45,6 +45,7 @@ public class YouTubeMenuTests
         _world.Ui.TypeLine("https://youtu.be/abcdefghijk  hello");
         _world.Ui.TypeLine("");
         _world.Ui.TypeLine("Risala");
+        _world.Ui.Type('d');
         _world.Ui.Type('t');
         _world.Ui.TypeLine("YES");
 
@@ -69,6 +70,7 @@ public class YouTubeMenuTests
         _world.Ui.TypeLine($"\"{list}\"");
         _world.Ui.TypeLine("");
         _world.Ui.TypeLine("");
+        _world.Ui.Type('d');
         _world.Ui.Type('o');
         _world.Ui.TypeLine("YES");
 
@@ -108,5 +110,95 @@ public class YouTubeMenuTests
         Assert.That(await Menu().RunAsync().WaitAsync(TimeSpan.FromMinutes(1)), Is.EqualTo(0));
         Assert.That(_world.Screen, Has.Some.EqualTo("No link was given; nothing to do."));
         Assert.That(_world.Tools.Calls, Is.Empty);
+    }
+}
+
+/// <summary>
+/// Menu choice Y, recording the videos as they play (design 1.3, R): the question R or D; a playlist's or a live link left out
+/// with its reason, which only D takes; the record path's batch asking Y to start; and nothing to do without a video's link.
+/// </summary>
+[TestFixture]
+public class YouTubeMenuRecordTests
+{
+    private VideoWorld _world = null!;
+
+    /// <summary>A world with one video's title at YouTube.</summary>
+    [SetUp]
+    public void SetUp()
+    {
+        _world = new VideoWorld();
+        _world.Title("The creed, part 1");
+    }
+
+    /// <summary>Deletes the world's folders.</summary>
+    [TearDown]
+    public void TearDown() => _world.Dispose();
+
+    /// <summary>Runs the menu over the world's record path, the clock moving on until it is done.</summary>
+    private async Task<int> RunMenuAsync()
+    {
+        var command = new YouTubeCommand(null!, null!, _world.Signals, _world.Ui, _world.YouTube, _world.Log<YouTubeCommand>(), _world.Batch());
+        var running = new YouTubeMenu(command, _world.Ui, _world.ClassFolders, new YouTubeMenuMemory(), new KeytermLoader(NullLogger<KeytermLoader>.Instance), _world.ElevenLabs).RunAsync();
+        await _world.Runtime.Time.AdvanceUntilAsync(() => running.IsCompleted, TimeSpan.FromMilliseconds(500), timeoutSeconds: 60);
+        return await running;
+    }
+
+    /// <summary>
+    /// R records as they play: the question names both ways; a playlist's link is left out with its reason; the video is
+    /// recorded once Y starts, into the recordings folder of the settings, and transcribed.
+    /// </summary>
+    [Test]
+    public async Task R_records_the_videos_as_they_play_and_leaves_a_playlist_out()
+    {
+        _world.Ui.TypeLine("https://youtu.be/abcdefghijk https://www.youtube.com/playlist?list=PLxyz");
+        _world.Ui.TypeLine("");
+        _world.Ui.TypeLine("Risala");
+        _world.Ui.Type('r', 't', 'y');
+
+        Assert.That(await RunMenuAsync(), Is.Zero);
+
+        var screen = _world.Screen;
+        Assert.That(screen, Is.SupersetOf(new[]
+        {
+            "YouTube videos, each transcribed like a class.",
+            "How should ClassScribe get their audio?",
+            "  R  Record each as it plays, in a Chrome window of ClassScribe's own. You press play there, and it takes",
+            "     as long as the videos do. For any video you can watch.",
+            "  D  Download the audio with yt-dlp: fast, but only for videos you uploaded or whose owner allows",
+            "     downloading, and never your course's.",
+            "Left out: https://www.youtube.com/playlist?list=PLxyz is a playlist's link, which only D takes; paste each video's own link to record it as it plays.",
+            "Y starts; any other key goes back."
+        }));
+        Assert.That(_world.Started.Single().Video!.VideoId, Is.EqualTo("abcdefghijk"));
+        Assert.That(_world.Transcriber.Asked, Has.Count.EqualTo(1));
+    }
+
+    /// <summary>R with no video's own link left does nothing, and says so.</summary>
+    [Test]
+    public async Task R_without_a_videos_own_link_does_nothing()
+    {
+        _world.Ui.TypeLine("https://www.youtube.com/playlist?list=PLxyz");
+        _world.Ui.TypeLine("");
+        _world.Ui.TypeLine("Risala");
+        _world.Ui.Type('r');
+
+        Assert.That(await RunMenuAsync(), Is.Zero);
+        Assert.That(_world.Screen, Has.Some.EqualTo("No video to record; nothing to do."));
+        Assert.That(_world.Http.Requests, Is.Empty);
+    }
+
+    /// <summary>R with more than 10 videos is refused, with what to do: recording takes as long as the videos play.</summary>
+    [Test]
+    public async Task R_with_more_than_ten_videos_is_refused()
+    {
+        _world.Ui.TypeLine(string.Join(' ', Enumerable.Range(0, VideoBatch.MostVideos + 1).Select(i => $"https://youtu.be/v{i:0000000000}")));
+        _world.Ui.TypeLine("");
+        _world.Ui.TypeLine("Risala");
+        _world.Ui.Type('r');
+
+        Assert.That(await RunMenuAsync(), Is.Zero);
+        Assert.That(_world.Screen, Has.Some.EqualTo(
+            "ClassScribe records at most 10 videos at a time as they play, each for as long as it plays; these are 11. Paste fewer, or download them with D."));
+        Assert.That(_world.Http.Requests, Is.Empty);
     }
 }

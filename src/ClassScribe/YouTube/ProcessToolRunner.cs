@@ -5,7 +5,6 @@ using System.Runtime.Versioning;
 using System.Text;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
-using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.YouTube;
@@ -115,16 +114,7 @@ public sealed class ProcessToolRunner : IToolRunner
     /// </summary>
     internal static IReadOnlyDictionary<string, string> ToolEnvironment(IDictionary current)
     {
-        var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (DictionaryEntry variable in current)
-        {
-            if (variable.Key is not string name || name.Length == 0 || name.StartsWith('=')) continue;
-            if (name.Equals(ElevenLabsOptions.ApiKeyVariable, StringComparison.OrdinalIgnoreCase)) continue;
-            if (name.StartsWith(ElevenLabsOptions.SectionName + "__", StringComparison.OrdinalIgnoreCase)) continue;
-
-            environment[name] = variable.Value as string ?? "";
-        }
-
+        var environment = ChildEnvironment.WithoutTheKey(current);
         environment["PYTHONIOENCODING"] = "utf-8";
         return environment;
     }
