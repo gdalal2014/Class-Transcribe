@@ -21,6 +21,9 @@ public static class SettingsServices
         services.Configure<DriveOptions>(configuration.GetSection(DriveOptions.SectionName));
         services.Configure<YouTubeOptions>(configuration.GetSection(YouTubeOptions.SectionName));
         services.AddSingleton<SettingsCheck>();
+
+        // The saved classes, read from the settings in force at each use, as the gate last accepted them.
+        services.AddSingleton<SavedClasses>();
         return services;
     }
 

@@ -47,13 +47,17 @@ public enum CommandKind
 /// <code>
 /// ClassScribe                                     the menu
 /// ClassScribe &lt;path&gt;                              as transcribe &lt;path&gt;; a file dropped on the exe
-/// ClassScribe record "&lt;name&gt;" SOURCE --output "&lt;folder&gt;" [--mic ["&lt;microphone&gt;"] [--mic-follows &lt;app&gt;|auto|none]]
+/// ClassScribe record "&lt;name&gt;" SOURCE [--output "&lt;folder&gt;"] [--mic ["&lt;microphone&gt;"] [--mic-follows &lt;app&gt;|auto|none]]
 ///                                                     [--camera ["&lt;camera&gt;"] [--resolution &lt;size&gt;]]
 ///                                                     [--minutes &lt;n&gt;] [--no-open] [--continue | --new]
+/// ClassScribe record --class "&lt;saved class&gt;" ["&lt;name&gt;"] [the options above, over the class's own, in groups]
 /// ClassScribe record-only "&lt;name&gt;" ...          the same options
 ///     SOURCE is --device "&lt;part of its name&gt;", --device auto, --app &lt;process&gt; or --in-person ["&lt;microphone&gt;"]
 ///     --mic adds your microphone to --device or --app; --in-person records it alone; --camera, only with --in-person,
-///     records a lesson's picture too (refused before anything records until the camera's recording is built)
+///     records a lesson's picture too (refused before anything records until the camera's recording is built);
+///     without --output, Recording:OutputFolder, or the saved class's own folder
+/// ClassScribe settings path | list [--json] | get &lt;setting&gt; [--json] | set &lt;setting&gt; &lt;value&gt;... | reset (&lt;setting&gt; | --all) | open | fill
+/// ClassScribe class list [--json] | show "&lt;name&gt;" [--json] | add "&lt;name&gt;" ... | set "&lt;name&gt;" ... | rename "&lt;name&gt;" "&lt;new&gt;" | remove "&lt;name&gt;"
 /// ClassScribe transcribe &lt;path&gt; [--output "&lt;folder&gt;"] [--no-open] [--again]
 /// ClassScribe rebuild &lt;path&gt; [--no-open]
 /// ClassScribe list [--output "&lt;folder&gt;"]
@@ -78,9 +82,14 @@ public enum CommandKind
 /// its own missing pieces nor the values it cannot read. --minutes is read with a dot and the invariant culture, so 1,5
 /// is refused rather than read as 15. --mic and --in-person may take a microphone's name, and --camera a camera's, so a
 /// recording's name right after them is taken as the microphone's or the camera's, which the message points out. An
-/// argument that starts with @ stays a path, and Ctrl+C stays with ClassScribe.
+/// argument that starts with @ stays a path, and Ctrl+C stays with ClassScribe. <paramref name="classes"/>, the saved
+/// classes, and <paramref name="recording"/>, the recording settings, are read as a command runs: record --class starts a
+/// saved class, a saved class's name without a source is pointed at --class (N5), and a run without --output records into
+/// Recording:OutputFolder (N6); without them, as in tests that do not need them, there are no saved classes and the
+/// recordings folder is the default.
 /// </summary>
-public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand menu, IConsoleUi ui, TimeProvider time, TextWriter output, TextWriter errors)
+public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand menu, IConsoleUi ui, TimeProvider time, TextWriter output, TextWriter errors,
+    Settings.SavedClasses? classes = null, Microsoft.Extensions.Options.IOptionsMonitor<Settings.RecordingOptions>? recording = null)
 {
     /// <summary>The exit code of a command line with a mistake in it.</summary>
     public const int Mistake = 2;
@@ -269,6 +278,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(DriveCommand(optionNames, examples));
         root.Add(YouTubeCommand(optionNames, examples));
         root.Add(SettingsCommandTree(examples));
+        root.Add(ClassCommandTree(optionNames, examples));
         root.Add(AttachCommand(examples));
 
         var help = new HelpWithExamples(examples);
@@ -544,7 +554,16 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     private Command RecordCommand(string word, bool transcribe, HashSet<string> optionNames, Dictionary<Command, string> examples)
     {
         var symbols = new RecordSymbols(
-            new Argument<string>("name") { Description = "The recording's name, such as Kalam. Its folder and files are named after it." },
+            new Argument<string?>("name")
+            {
+                Arity = ArgumentArity.ZeroOrOne,
+                Description = "The recording's name, such as Kalam. Its folder and files are named after it. With --class, it replaces the saved class's course."
+            },
+            new Option<string>("--class")
+            {
+                HelpName = "saved class",
+                Description = "Record the saved class of this name as it is saved, its name matched in any case (ClassScribe class list shows them); options given beside it replace its own, in groups: a source replaces its whole source, --mic its microphone."
+            },
             new Option<string>("--device")
             {
                 HelpName = "part of its name",
@@ -586,8 +605,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             new Option<string>("--output")
             {
                 HelpName = "folder",
-                Required = true,
-                Description = "The folder the recording goes to, such as \"D:\\Classes\": the recording gets a folder of its name inside it."
+                Description = "The folder the recording goes to, such as \"D:\\Classes\": the recording gets a folder of its name inside it. Without it, a saved class's own folder, else Recording:OutputFolder."
             },
             new Option<double?>("--minutes")
             {
@@ -606,7 +624,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             ? "Record now under that name, then transcribe the recording."
             : "Record now under that name; transcribe it later with transcribe, or from the menu.")
         {
-            symbols.Name, symbols.Device, symbols.App, symbols.InPerson, symbols.Mic, symbols.MicFollows, symbols.Camera, symbols.Resolution, symbols.Output, symbols.Minutes,
+            symbols.Name, symbols.Class, symbols.Device, symbols.App, symbols.InPerson, symbols.Mic, symbols.MicFollows, symbols.Camera, symbols.Resolution, symbols.Output, symbols.Minutes,
             symbols.NoOpen, symbols.Continue, symbols.New
         };
         command.Validators.Add(result =>
@@ -621,15 +639,25 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// <summary>
     /// What keeps a record or record-only command line from running, one sentence each, in the order its pieces go: the
     /// name, the source, the microphone and the app it follows, the camera and its size, --output, --minutes, then
-    /// --continue with --new.
+    /// --continue with --new. With --class the name and the source may be left out, and what depends on the class (--mic-follows
+    /// without --mic, --camera and --resolution) is checked as the run starts, over the class; without it, a name that is a
+    /// saved class's, given without a source, is pointed at --class (N5). --output may always be left out (N6).
     /// </summary>
-    private static IEnumerable<string> RecordProblems(string word, CommandResult result, RecordSymbols symbols, HashSet<string> optionNames)
+    private IEnumerable<string> RecordProblems(string word, CommandResult result, RecordSymbols symbols, HashSet<string> optionNames)
     {
+        var withClass = result.GetResult(symbols.Class) is not null;
+        if (withClass && ValueProblem(TokenOf(result.GetResult(symbols.Class)), "--class needs a saved class's name after it, such as --class \"Mantiq\"", optionNames) is { } classProblem)
+            yield return classProblem;
+
         var name = TokenOf(result.GetResult(symbols.Name));
         if (string.IsNullOrWhiteSpace(name))
-            yield return $"{word} needs a name, right after the word {word}: ClassScribe {word} \"Kalam\" ...{NameTakenBy(result, symbols)}";
+        {
+            if (!withClass) yield return $"{word} needs a name, right after the word {word}: ClassScribe {word} \"Kalam\" ...{NameTakenBy(result, symbols)}";
+        }
         else if (ClassFolders.SafeName(name).Length == 0)
+        {
             yield return $"{word} cannot use \"{name}\" as a name: nothing is left of it once the characters Windows does not allow in a folder's name are taken out";
+        }
 
         var device = result.GetResult(symbols.Device);
         var app = result.GetResult(symbols.App);
@@ -638,7 +666,13 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             .Where(source => source.Given is not null)
             .Select(source => source.Name)
             .ToList();
-        if (sources.Count == 0) yield return $"{word} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person";
+        if (sources.Count == 0 && !withClass)
+        {
+            yield return $"{word} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person";
+            if (!string.IsNullOrWhiteSpace(name) && classes?.Find(name) is { } saved)
+                yield return $"{name} is a saved class: ClassScribe {word} --class \"{saved.Name}\"";
+        }
+
         if (sources.Count > 1) yield return $"{word} takes one source; you gave {Listed(sources)}";
         if (device is not null && ValueProblem(TokenOf(device), DeviceNeedsValue, optionNames) is { } deviceProblem) yield return deviceProblem;
         if (app is not null && ValueProblem(TokenOf(app) is { } process ? ProcessName(process) : null, AppNeedsValue, optionNames) is { } appProblem) yield return appProblem;
@@ -648,20 +682,19 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         if (result.GetResult(symbols.MicFollows) is { } follows)
         {
             if (inPerson is not null) yield return "--mic-follows cannot go with --in-person: in person there is no class app";
-            else if (mic is null) yield return "--mic-follows goes with --mic: it names the app whose microphone use your microphone follows";
+            else if (mic is null && !withClass) yield return "--mic-follows goes with --mic: it names the app whose microphone use your microphone follows";
             if (FollowProblem(TokenOf(follows), optionNames) is { } followProblem) yield return followProblem;
         }
 
         var camera = result.GetResult(symbols.Camera);
-        if (camera is not null && inPerson is null) yield return "--camera records only in person in this build: give it with --in-person";
+        if (camera is not null && inPerson is null && !withClass) yield return "--camera records only in person in this build: give it with --in-person";
         if (result.GetResult(symbols.Resolution) is { } resolution)
         {
-            if (camera is null) yield return "--resolution needs --camera";
+            if (camera is null && !withClass) yield return "--resolution needs --camera";
             if (ResolutionProblem(TokenOf(resolution), optionNames) is { } resolutionProblem) yield return resolutionProblem;
         }
 
-        if (result.GetResult(symbols.Output) is not { } output) yield return $"{word} needs --output \"<folder>\", the folder the recording goes to";
-        else if (FolderProblem(symbols.Output.Name, TokenOf(output), optionNames) is { } outputProblem) yield return outputProblem;
+        if (result.GetResult(symbols.Output) is { } output && FolderProblem(symbols.Output.Name, TokenOf(output), optionNames) is { } outputProblem) yield return outputProblem;
 
         if (result.GetResult(symbols.Minutes) is { } minutes && ReadMinutes(TokenOf(minutes), out _) is { } minutesProblem) yield return minutesProblem;
 
@@ -694,10 +727,13 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// alone, the class and the microphone, or the microphone alone in person, with the camera when --camera asks for it. A
     /// microphone without a name, and the app it follows without --mic-follows, are left to the run, which reads
     /// Recording:Microphone and Recording:MicrophoneFollows, or follows the app it records; a picture's size without
-    /// --resolution is left to the starter, which resolves it before the run starts.
+    /// --resolution is left to the starter, which resolves it before the run starts. Without --output the recording goes
+    /// to Recording:OutputFolder (N6). With --class, the saved class is started instead (see <see cref="RecordClassAsync"/>).
     /// </summary>
     private Task<int> RecordAsync(ParseResult parsed, RecordSymbols symbols, bool transcribe)
     {
+        if (parsed.GetResult(symbols.Class) is not null) return RecordClassAsync(parsed, symbols, transcribe);
+
         var inPerson = parsed.GetResult(symbols.InPerson) is not null;
         var mic = parsed.GetResult(symbols.Mic) is not null;
         ClassSource? source = inPerson ? null
@@ -708,21 +744,88 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         var plan = inPerson ? new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice(NamePart(parsed.GetValue(symbols.InPerson))), camera)
             : mic ? new SourcePlan(RecordingMode.ClassAndMicrophone, source, new MicrophoneChoice(NamePart(parsed.GetValue(symbols.Mic)), FollowRuleOf(parsed.GetValue(symbols.MicFollows))))
             : new SourcePlan(RecordingMode.Class, source, Microphone: null);
-        var continueChoice = parsed.GetValue(symbols.Continue) ? ContinueChoice.Continue
-            : parsed.GetValue(symbols.New) ? ContinueChoice.New
-            : ContinueChoice.Ask;
 
         var request = new RecordRequest(
             RunIds.New(time.GetUtcNow()),
             ClassFolders.SafeName(parsed.GetValue(symbols.Name)!),
             transcribe,
             plan,
-            Path.GetFullPath(parsed.GetValue(symbols.Output)!),
-            continueChoice,
+            OutputRoot(parsed.GetValue(symbols.Output), classFolder: null),
+            ContinueOf(parsed, symbols),
             ContinueBaseName: null,
             parsed.GetValue(symbols.Minutes),
             Open: !parsed.GetValue(symbols.NoOpen));
         return commands.RecordAsync(request, StartOrigin.CommandLine);
+    }
+
+    /// <summary>
+    /// record --class: the saved class named, matched exactly in any case, with the options given over it in groups (see
+    /// <see cref="Settings.ClassChoices"/>): a source replaces its whole source, --mic its microphone, --mic-follows what it
+    /// follows, --camera and --resolution its camera; a name given replaces its course; --output, --minutes, --no-open,
+    /// --continue and --new apply as to any run. An unknown class, a mix the class refuses, and a class that cannot be used
+    /// are mistakes, exit 2, said on standard error with the help. The run is the class's own, and says so (ClassName).
+    /// </summary>
+    private async Task<int> RecordClassAsync(ParseResult parsed, RecordSymbols symbols, bool transcribe)
+    {
+        var name = parsed.GetValue(symbols.Class)!.Trim();
+        var saved = classes?.All() ?? [];
+        if (classes?.FieldsOf(name) is not { } fields || saved.FirstOrDefault(entry => entry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is not { } entry)
+            return Refuse(parsed, ClassCommand.NoSuchClass(name, saved.Select(known => known.Name)));
+
+        var source = parsed.GetResult(symbols.InPerson) is not null ? new Settings.SourceGiven(Settings.SourceOption.InPerson, NamePart(parsed.GetValue(symbols.InPerson)))
+            : parsed.GetValue(symbols.App) is { } app ? new Settings.SourceGiven(Settings.SourceOption.App, ProcessName(app))
+            : parsed.GetValue(symbols.Device) is { } device ? new Settings.SourceGiven(Settings.SourceOption.Device, device)
+            : null;
+        var choices = new Settings.ClassChoices
+        {
+            Course = parsed.GetValue(symbols.Name) is { } course && !string.IsNullOrWhiteSpace(course) ? ClassFolders.SafeName(course) : null,
+            Source = source,
+            Mic = parsed.GetResult(symbols.Mic) is not null,
+            MicName = NamePart(parsed.GetValue(symbols.Mic)),
+            Follows = parsed.GetValue(symbols.MicFollows),
+            Camera = parsed.GetResult(symbols.Camera) is not null,
+            CameraName = NamePart(parsed.GetValue(symbols.Camera)),
+            Resolution = ResolutionOf(parsed.GetValue(symbols.Resolution))
+        };
+        if (choices.ApplyTo(fields) is { } mix) return Refuse(parsed, $"{mix}, over the saved class \"{entry.Name}\"");
+
+        var chosen = Settings.SavedClasses.Check(entry.Name, fields);
+        if (chosen.Class is not { } ready)
+            return Refuse(parsed, $"The saved class \"{entry.Name}\" cannot be used{(entry.Usable ? " with these options" : "")}: {string.Join(" ", chosen.Problems)}");
+
+        var request = new RecordRequest(
+            RunIds.New(time.GetUtcNow()),
+            ready.Course,
+            transcribe,
+            ready.Plan,
+            OutputRoot(parsed.GetValue(symbols.Output), ready.OutputFolder),
+            ContinueOf(parsed, symbols),
+            ContinueBaseName: null,
+            parsed.GetValue(symbols.Minutes),
+            Open: !parsed.GetValue(symbols.NoOpen),
+            ClassName: ready.Name);
+        return await commands.RecordAsync(request, StartOrigin.CommandLine);
+    }
+
+    /// <summary>
+    /// The recordings folder for a run, as a full path: --output when given; else a saved class's own folder,
+    /// <paramref name="classFolder"/>; else Recording:OutputFolder, as the settings in force say it (N6).
+    /// </summary>
+    private string OutputRoot(string? given, string? classFolder) =>
+        given is not null ? Path.GetFullPath(given) : ClassFolders.RootFor(classFolder ?? recording?.CurrentValue.OutputFolder);
+
+    /// <summary>What --continue or --new say about a recent recording of the same name; neither asks, which the command line never does.</summary>
+    private static ContinueChoice ContinueOf(ParseResult parsed, RecordSymbols symbols) =>
+        parsed.GetValue(symbols.Continue) ? ContinueChoice.Continue
+        : parsed.GetValue(symbols.New) ? ContinueChoice.New
+        : ContinueChoice.Ask;
+
+    /// <summary>A mistake found as a command runs: said on standard error, followed by the command's help; exit 2.</summary>
+    private int Refuse(ParseResult parsed, string why)
+    {
+        Invocation.Error.WriteLine(why);
+        WriteHelp(parsed);
+        return Mistake;
     }
 
     /// <summary>Part of a microphone's name as --mic or --in-person gave it, trimmed; null when none was given, which leaves the microphone to the settings.</summary>
@@ -1059,8 +1162,13 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
           ClassScribe {word} "Kalam" --app chrome --output "D:\Classes" --continue
           ClassScribe {word} "Kalam" --app chrome --mic --mic-follows chrome --output "D:\Classes"
           ClassScribe {word} "Kalam" --in-person --output "D:\Classes"
+          ClassScribe {word} "Kalam" --app chrome
+          ClassScribe {word} --class "Mantiq"
+          ClassScribe {word} --class "Mantiq" --app zoom --mic-follows zoom
 
-        The name, one source (--device, --app or --in-person) and --output are needed, and nothing is asked.
+        The name and one source (--device, --app or --in-person) are needed, or --class and a saved class's name; nothing is asked.
+        Without --output the recording goes to the saved class's own folder, else Recording:OutputFolder.
+        Options beside --class replace the class's own in groups: a source replaces its whole source and the app its microphone follows, --mic its microphone, a name its course.
         --mic adds your microphone to --device or --app, as a second track mixed into one transcript; --in-person records it alone. Either takes part of a microphone's name, or nothing for Recording:Microphone.
         --camera, with --in-person, asks for a lesson's picture too; this build cannot record it yet and refuses such a recording before anything records. ClassScribe camera-check shows the cameras.
         While recording, Q twice or Ctrl+C twice stops, P pauses or resumes, M marks a moment, and V switches your microphone off and on; Esc leaves the view of a recording in the background, which carries on.
@@ -1212,7 +1320,8 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         """;
 
     /// <summary>The symbols of record and record-only, which their check and their action share.</summary>
-    /// <param name="Name">The recording's name.</param>
+    /// <param name="Name">The recording's name; with --class, the course in place of the class's.</param>
+    /// <param name="Class">--class: the saved class to record.</param>
     /// <param name="Device">--device: part of a device's name, or auto.</param>
     /// <param name="App">--app: an app's process name.</param>
     /// <param name="InPerson">--in-person: the microphone alone, with part of its name or nothing.</param>
@@ -1225,7 +1334,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// <param name="NoOpen">--no-open: open nothing at the end.</param>
     /// <param name="Continue">--continue: continue a recent recording of this name.</param>
     /// <param name="New">--new: start a new recording without a word.</param>
-    private sealed record RecordSymbols(Argument<string> Name, Option<string> Device, Option<string> App, Option<string> InPerson, Option<string> Mic,
+    private sealed record RecordSymbols(Argument<string?> Name, Option<string> Class, Option<string> Device, Option<string> App, Option<string> InPerson, Option<string> Mic,
         Option<string> MicFollows, Option<string> Camera, Option<string> Resolution, Option<string> Output, Option<double?> Minutes, Option<bool> NoOpen,
         Option<bool> Continue, Option<bool> New);
 

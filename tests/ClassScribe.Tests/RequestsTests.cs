@@ -102,6 +102,23 @@ public class RequestsTests
     }
 
     /// <summary>
+    /// The saved class a run was started as travels with it as classname (layout-config 4.1), read back as written; a run
+    /// started from its own options writes none, so its files are as before, and a file without one reads with none.
+    /// </summary>
+    [Test]
+    public void A_saved_classs_name_round_trips_and_is_written_only_when_set()
+    {
+        var request = Request(new SourcePlan(RecordingMode.Class, new ClassSource.App("chrome"), null)) with { ClassName = "Mantiq (Chrome)" };
+
+        var json = JsonSerializer.Serialize(request, RecorderJson.Default.RecordRequest);
+
+        Assert.That(JsonNode.Parse(json)!["className"]!.GetValue<string>(), Is.EqualTo("Mantiq (Chrome)"));
+        Assert.That(JsonSerializer.Deserialize(json, RecorderJson.Default.RecordRequest), Is.EqualTo(request));
+        Assert.That(JsonSerializer.Serialize(request with { ClassName = null }, RecorderJson.Default.RecordRequest), Does.Not.Contain("className"));
+        Assert.That(JsonSerializer.Deserialize(RequestJson("""{ "kind": "automatic" }"""), RecorderJson.Default.RecordRequest)!.ClassName, Is.Null);
+    }
+
+    /// <summary>
     /// Each kind of class source is named in the file by "kind", next to its own field, so that a reader can tell a device
     /// from an app; a recording in person has no class source at all.
     /// </summary>

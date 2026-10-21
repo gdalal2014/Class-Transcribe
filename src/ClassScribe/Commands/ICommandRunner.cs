@@ -102,6 +102,9 @@ public interface ICommandRunner
 
     /// <summary>settings: shows or changes the settings as <paramref name="request"/> asks (see <see cref="SettingsCommand"/>). Returns the exit code.</summary>
     Task<int> SettingsAsync(SettingsRequest request);
+
+    /// <summary>class: lists, shows or changes the saved classes as <paramref name="request"/> asks (see <see cref="ClassCommand"/>). Returns the exit code.</summary>
+    Task<int> ClassAsync(ClassRequest request);
 }
 
 /// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>
@@ -300,6 +303,13 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     {
         await using var scope = scopes.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<SettingsCommand>().RunAsync(request);
+    }
+
+    /// <summary>Runs the class command (<see cref="ClassCommand"/>) as <paramref name="request"/> asks, in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> ClassAsync(ClassRequest request)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ClassCommand>().RunAsync(request);
     }
 
     /// <summary>

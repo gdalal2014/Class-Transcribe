@@ -150,9 +150,15 @@ public enum StartOrigin
 /// last and has a default, so that a window of an older build still reads a run file that has it, and one that lacks it;
 /// a class's run file is written without it, as before videos.
 /// </param>
+/// <param name="ClassName">
+/// The saved class the run was started as (layout-config 4.1), so that the menu's header and the run's first line can say
+/// "Mantiq (saved class)"; null for a run started from its own options. Last, with a default, and written only when set, as
+/// <paramref name="Video"/> is, so that a run without one writes its files as before and an older window passes it over.
+/// </param>
 public sealed record RecordRequest(string RunId, string Name, bool Transcribe, SourcePlan Source, string OutputRoot,
     ContinueChoice Continue, string? ContinueBaseName, double? Minutes, bool Open,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VideoRequest? Video = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VideoRequest? Video = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassName = null)
 {
     /// <summary>
     /// Fields of the request this build does not know, as a later build wrote them, kept so that a run file this build writes

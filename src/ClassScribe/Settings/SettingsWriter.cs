@@ -17,6 +17,9 @@ public sealed record SettingsEdit(IReadOnlyList<string> Lines, int ExitCode = 0)
     /// <summary>The settings the edit changed, by their full names, so that one an environment variable overrides is pointed out.</summary>
     public IReadOnlyList<string> Keys { get; init; } = [];
 
+    /// <summary>The saved class the edit makes or changes, by its name after the edit; null when it changes none.</summary>
+    public string? ClassName { get; init; }
+
     /// <summary>The edit made its change, said in <paramref name="lines"/>.</summary>
     public static SettingsEdit Changed(params string[] lines) => new(lines);
 
@@ -120,6 +123,12 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
             if (NewProblems(stagedBefore, stagedAfter, freshCopy) is [_, ..] problems)
                 return Refuse(2, [.. problems.Select(problem => problem.Text), "Nothing was changed."]);
 
+            // A saved class the change makes or changes is held to the same rule as the file: a problem the change adds to it
+            // refuses the change, in the class check's words, while one it had already does not block it (layout-config 4.2).
+            if (outcome.ClassName is { } className
+                && stagedAfter.ProblemsOf(className).Except(stagedBefore.ProblemsOf(className), StringComparer.Ordinal).ToList() is [_, ..] classProblems)
+                return Refuse(2, [$"The saved class \"{className}\" would not be usable: {string.Join(" ", classProblems)}", "Nothing was changed."]);
+
             BeforeSecondRead?.Invoke();
             if (!Unchanged(target, firstChange, before.Hash))
             {
@@ -180,8 +189,15 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
         return Change(string.Join(", ", changes.Select(change => change.Name)), document =>
         {
             var lines = new List<string>();
+            string? className = null;
             foreach (var (name, value) in changes)
             {
+                if (ClassField(name) is { } field)
+                {
+                    if (document.FindClass(field.Class) is null) return SettingsEdit.Refused(NoSuchClass(field.Class, document));
+                    className = document.FindClass(field.Class)!.Value.Key;
+                }
+
                 var before = document.Get(name)?.DeepClone();
                 document.Set(name, value?.DeepClone());
                 lines.Add(JsonNode.DeepEquals(before, value)
@@ -189,7 +205,7 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
                     : $"{name} is now {Shown(value)} (it was {Shown(before)}) in {places.UserFile}.");
             }
 
-            return SettingsEdit.Changed([.. lines]) with { Keys = [.. changes.Select(change => change.Name)] };
+            return SettingsEdit.Changed([.. lines]) with { Keys = [.. changes.Select(change => change.Name)], ClassName = className };
         });
     }
 
@@ -207,12 +223,40 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
 
         return Change($"reset {key}", document =>
         {
+            string? className = null;
+            if (ClassField(key) is { } field)
+            {
+                if (document.FindClass(field.Class) is not { } found) return SettingsEdit.Refused(NoSuchClass(field.Class, document));
+                className = found.Key;
+            }
+
             var before = document.Get(key)?.DeepClone();
             if (value is null) document.Remove(key);
             else document.Set(key, value.DeepClone());
             var now = value is null ? "removed" : $"back at its default, {Shown(value)}";
-            return SettingsEdit.Changed($"{key} is {now} (it was {Shown(before)}) in {places.UserFile}.") with { Keys = [key] };
+            return SettingsEdit.Changed($"{key} is {now} (it was {Shown(before)}) in {places.UserFile}.") with { Keys = [key], ClassName = className };
         });
+    }
+
+    /// <summary>
+    /// The saved class's field <paramref name="name"/> names, as Classes:&lt;class&gt;:&lt;field&gt; with a field this build
+    /// knows, in any case: the class's name as given and the field's own name; null for any other name.
+    /// </summary>
+    public static (string Class, string Field)? ClassField(string name)
+    {
+        var parts = name.Trim().Split(':');
+        if (parts.Length != 3 || !parts[0].Equals(SettingsCatalog.ClassesSection, StringComparison.OrdinalIgnoreCase) || parts[1].Trim().Length == 0) return null;
+
+        return ClassFields.All.FirstOrDefault(field => field.Equals(parts[2].Trim(), StringComparison.OrdinalIgnoreCase)) is { } known ? (parts[1].Trim(), known) : null;
+    }
+
+    /// <summary>What a name that is no saved class of <paramref name="document"/> is told: that it is not one, and the saved ones.</summary>
+    private static string NoSuchClass(string name, SettingsDocument document)
+    {
+        var names = document.Classes()?.Select(pair => $"\"{pair.Key}\"").ToList() ?? [];
+        return names.Count == 0
+            ? $"There is no saved class \"{name}\", and no saved class yet: ClassScribe class add \"{name}\" ... saves one."
+            : $"There is no saved class \"{name}\". The saved classes are: {string.Join(", ", names)}.";
     }
 
     /// <summary>
@@ -370,8 +414,33 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
 
         var classes = SettingsDocument.Find(root, SettingsCatalog.ClassesSection);
         foreach (var other in root.Select(property => property.Key).Where(key => key != classes).ToList()) ordered[other] = Take(root, other);
-        if (classes is not null) ordered[SettingsCatalog.ClassesSection] = Take(root, classes);
+        if (classes is not null) ordered[SettingsCatalog.ClassesSection] = OrderClasses(Take(root, classes));
         return ordered;
+    }
+
+    /// <summary>
+    /// The saved classes as the file writes them: each class's known fields in their order (see <see cref="ClassFields.All"/>),
+    /// then any field a newer build wrote, as it was. Anything that is not an object stays as it is.
+    /// </summary>
+    private static JsonNode? OrderClasses(JsonNode? classes)
+    {
+        if (classes is not JsonObject all) return classes;
+
+        foreach (var name in all.Select(property => property.Key).ToList())
+        {
+            if (all[name] is not JsonObject fields) continue;
+
+            var arranged = new JsonObject();
+            foreach (var field in ClassFields.All)
+            {
+                if (SettingsDocument.Find(fields, field) is { } found) arranged[field] = Take(fields, found);
+            }
+
+            foreach (var rest in fields.Select(property => property.Key).ToList()) arranged[rest] = Take(fields, rest);
+            all[name] = arranged;
+        }
+
+        return all;
     }
 
     /// <summary>True when <paramref name="name"/> is ElevenLabs:ApiKey, in any case: never set, reset or listed.</summary>
@@ -395,6 +464,16 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
 
         if (SettingsCatalog.FindEntry(name) is { } entry)
             return One($"{entry.Map.Name}:{entry.Entry}", entry.Map.EntryKind!.Value, entry.Map.ChoiceType, values);
+
+        // A saved class's field, Classes:<class>:<field>: text, Transcribe true or false; the class check judges the value.
+        if (ClassField(name) is { } field)
+        {
+            var path = $"{SettingsCatalog.ClassesSection}:{field.Class}:{field.Field}";
+            if (values.Length > 1) return (path, null, $"{path} takes one value, and {values.Length} were given; put a value with spaces in quotes.");
+            return field.Field == ClassFields.Transcribe && bool.TryParse(values[0].Trim(), out var yes)
+                ? (path, JsonValue.Create(yes), null)
+                : (path, JsonValue.Create(values[0].Trim()), null);
+        }
 
         return (name, null, Unknown(name));
     }
@@ -420,6 +499,9 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
             var own = ((JsonObject)entry.Map.Default!).FirstOrDefault(pair => pair.Key.Equals(entry.Entry, StringComparison.OrdinalIgnoreCase));
             return ($"{entry.Map.Name}:{(own.Key ?? entry.Entry)}", own.Value, null);
         }
+
+        // A saved class's field has no default of its own: reset empties it, so the class takes the settings' value.
+        if (ClassField(name) is { } field) return ($"{SettingsCatalog.ClassesSection}:{field.Class}:{field.Field}", null, null);
 
         return (name, null, Unknown(name));
     }

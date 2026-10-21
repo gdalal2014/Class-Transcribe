@@ -38,6 +38,13 @@ public sealed class StagedSettings : IDisposable
     /// <summary>What the check would warn about.</summary>
     public IReadOnlyList<string> Warnings { get; }
 
+    /// <summary>The saved classes the file holds, each checked on its own (see <see cref="SavedClasses"/>); none when it cannot be read.</summary>
+    public IReadOnlyList<SavedClassEntry> Classes => Configuration is { } settings ? SavedClasses.Read(settings) : [];
+
+    /// <summary>Why the saved class <paramref name="name"/> cannot be used, in any case; empty when it can, or is not there.</summary>
+    public IReadOnlyList<string> ProblemsOf(string name) =>
+        Classes.FirstOrDefault(entry => entry.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase))?.Problems ?? [];
+
     /// <summary>A file that cannot be read as a settings file, for <paramref name="why"/>.</summary>
     internal static StagedSettings Unusable(IReadOnlyList<string> why) =>
         new(why, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase), configuration: null, [], []);

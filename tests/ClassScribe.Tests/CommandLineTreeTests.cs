@@ -807,8 +807,8 @@ public class CommandLineTreeTests
     // ---- Mistakes: named, all at once, with that command's help and exit code 2, and nothing asked ----
 
     /// <summary>
-    /// record without its name, its source and --output names all three in one run, in the order they go, with record's
-    /// help, exit code 2 and no question, even with someone at the keyboard.
+    /// record without its name and its source names both in one run, in the order they go, with record's help, exit code 2
+    /// and no question, even with someone at the keyboard. --output may be left out (N6).
     /// </summary>
     [TestCase("record")]
     [TestCase("record-only")]
@@ -821,8 +821,7 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[]
         {
             $"{command} needs a name, right after the word {command}: ClassScribe {command} \"Kalam\" ...",
-            $"{command} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person",
-            $"{command} needs --output \"<folder>\", the folder the recording goes to"
+            $"{command} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person"
         }));
         Assert.That(_line.Output.ToString(), Does.Contain("--device").And.Contain("--minutes").And.Not.Contain("Commands:"), "the help is record's own");
     }
@@ -830,8 +829,6 @@ public class CommandLineTreeTests
     /// <summary>Each piece, missing on its own, is named on its own.</summary>
     [TestCase(new[] { "record", "--device", "auto", "--output", @"D:\Classes" }, "record needs a name, right after the word record: ClassScribe record \"Kalam\" ...")]
     [TestCase(new[] { "record", "Kalam", "--output", @"D:\Classes" }, "record needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person")]
-    [TestCase(new[] { "record", "Kalam", "--app", "chrome" }, "record needs --output \"<folder>\", the folder the recording goes to")]
-    [TestCase(new[] { "record", "Kalam", "--in-person" }, "record needs --output \"<folder>\", the folder the recording goes to")]
     public async Task A_single_missing_piece_is_named(string[] args, string mistake)
     {
         AssertRefused(await RunAsync(args));
@@ -940,7 +937,6 @@ public class CommandLineTreeTests
         {
             "record needs a name, right after the word record: ClassScribe record \"Kalam\" ...",
             "record needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person",
-            "record needs --output \"<folder>\", the folder the recording goes to",
             "--minutes takes a number of minutes written with a dot, such as 1.5"
         }));
     }

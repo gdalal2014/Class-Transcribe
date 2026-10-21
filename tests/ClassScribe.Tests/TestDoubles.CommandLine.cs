@@ -3,6 +3,7 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -19,9 +20,11 @@ public sealed class TestCommandLine
     /// <summary>
     /// Puts the command line together over <paramref name="commands"/>, with <paramref name="ui"/> as the console, the
     /// settings in <paramref name="settings"/> read through <paramref name="gate"/> (or a gate of their own), recordings
-    /// under <paramref name="recordingsFolder"/>, and <paramref name="time"/> as the clock (or the system's).
+    /// under <paramref name="recordingsFolder"/>, which is Recording:OutputFolder, and <paramref name="time"/> as the clock
+    /// (or the system's). <paramref name="classes"/> are the saved classes record --class finds, none when not given.
     /// </summary>
-    public TestCommandLine(ICommandRunner commands, FakeConsoleUi ui, TestSettings settings, string recordingsFolder, TimeProvider? time = null, RunGate? gate = null)
+    public TestCommandLine(ICommandRunner commands, FakeConsoleUi ui, TestSettings settings, string recordingsFolder, TimeProvider? time = null, RunGate? gate = null,
+        SavedClasses? classes = null)
     {
         Time = time ?? TimeProvider.System;
         Gate = gate ?? settings.Gate();
@@ -29,7 +32,7 @@ public sealed class TestCommandLine
         var folders = new ClassFolders(recording, Time, NullLogger<ClassFolders>.Instance);
         Menu = new MenuCommand(commands, ui, Gate, settings.File, TestOptions.Create(new ElevenLabsOptions { ApiKey = "test-key" }), folders, new FakeCaptureProvider(),
             new SourceChoice(recording), new RecordingNamePrompt(ui), Mock.Of<IDesktop>(), Time, NullLogger<MenuCommand>.Instance);
-        Tree = new CommandLineTree(commands, Menu, ui, Time, Output, Errors);
+        Tree = new CommandLineTree(commands, Menu, ui, Time, Output, Errors, classes ?? new SavedClasses(new ConfigurationBuilder().Build()), recording);
     }
 
     /// <summary>What the tree wrote as standard output: the help, and the usage shown when the menu cannot be.</summary>

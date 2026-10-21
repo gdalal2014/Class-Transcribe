@@ -68,6 +68,17 @@ public static class CommandLine
         Command(processPath, appFolder, $"youtube {string.Join(' ', links.Select(Quote))} --name {Quote(name)} --output {Quote(outputRoot)} --yes");
 
     /// <summary>
+    /// The PowerShell command that records the saved class <paramref name="name"/> as saved with this very program, record
+    /// --class (layout-config 4.4), or record-only --class when <paramref name="transcribe"/> is false: what class add, rename
+    /// and the menu's C print for a launcher of one line.
+    /// </summary>
+    public static string RecordClass(string name, bool transcribe = true) => RecordClass(name, transcribe, Environment.ProcessPath, AppContext.BaseDirectory);
+
+    /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
+    public static string RecordClass(string name, bool transcribe, string? processPath, string appFolder) =>
+        Command(processPath, appFolder, $"{(transcribe ? "record" : "record-only")} --class {Quote(name)}");
+
+    /// <summary>
     /// The PowerShell command that continues, as its next part, the recording <paramref name="request"/>'s run made, with
     /// this very program: record, or record-only for a run that was not to be transcribed, with the run's name, its source
     /// (and, from phase 3, its microphone, with the app it was chosen to follow for the run; in person, its camera and the

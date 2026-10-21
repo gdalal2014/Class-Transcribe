@@ -391,6 +391,29 @@ public class SettingsWriterTests
         Assert.That(Directory.EnumerateFileSystemEntries(overridden.State.Path), Is.Empty);
     }
 
+    /// <summary>
+    /// A saved class's field is set and reset by its key path, Classes:&lt;class&gt;:&lt;field&gt;, the class found in any
+    /// case: a change that adds a problem to that class is refused in the class check's words, exit 2; reset empties the
+    /// field; a class that is not there is refused, exit 2.
+    /// </summary>
+    [Test]
+    public void A_classs_field_is_set_and_reset_by_its_key_path()
+    {
+        _files.WriteUser("""{ "Classes": { "Mantiq": { "Course": "Mantiq", "App": "chrome" } } }""");
+
+        Assert.That(_files.Writer.Set("classes:mantiq:outputfolder", @"D:\Classes").ExitCode, Is.EqualTo(0));
+        Assert.That(_files.UserValue("Classes:Mantiq:OutputFolder")!.GetValue<string>(), Is.EqualTo(@"D:\Classes"));
+
+        var refused = _files.Writer.Set("Classes:Mantiq:Device", "Speakers");
+        Assert.That(refused.ExitCode, Is.EqualTo(2));
+        Assert.That(refused.Lines[0], Is.EqualTo("The saved class \"Mantiq\" would not be usable: App and Device are both set; a class records one app or one output device."));
+
+        Assert.That(_files.Writer.Reset("Classes:Mantiq:OutputFolder").ExitCode, Is.EqualTo(0));
+        Assert.That(_files.UserValue("Classes:Mantiq:OutputFolder"), Is.Null);
+        var unknown = _files.Writer.Set("Classes:Kalam:App", "zoom");
+        Assert.That((unknown.ExitCode, unknown.Lines.Single()), Is.EqualTo((2, "There is no saved class \"Kalam\". The saved classes are: \"Mantiq\".")));
+    }
+
     /// <summary>Two changes compared by their exit codes and lines.</summary>
     private static bool SameChange(SettingsChange first, SettingsChange second) => first.ExitCode == second.ExitCode && first.Lines.SequenceEqual(second.Lines);
 }
