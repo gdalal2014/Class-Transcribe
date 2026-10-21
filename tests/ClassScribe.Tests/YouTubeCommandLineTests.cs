@@ -76,6 +76,16 @@ public class YouTubeCommandLineTests
         Assert.That(_asked.Single(), Is.EqualTo(new YouTubeRequest(_asked.Single().Links, "Risala", Classes, true, BatchConfirmation.PlanOnly)));
     }
 
+    /// <summary>Without --output the videos go to Recording:OutputFolder, as a full path, as a recording's do (N6).</summary>
+    [Test]
+    public async Task Without_output_the_videos_go_to_the_recordings_folder_of_the_settings()
+    {
+        var exitCode = await RunAsync("youtube", "https://youtu.be/abcdefghijk", "--name", "Risala", "--download", "--plan");
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(_asked.Single().OutputRoot, Is.EqualTo(_folder.Path));
+    }
+
     /// <summary>Every mistake is named in one run, with the help and exit code 2, and nothing runs.</summary>
     [Test]
     public async Task Every_mistake_is_named_at_once()
@@ -86,7 +96,6 @@ public class YouTubeCommandLineTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[]
         {
             "youtube needs --name \"<course>\", the course the videos belong to, such as --name \"Risala\"",
-            "youtube needs --output \"<folder>\", the folder the recordings go to",
             "youtube needs at least one YouTube link, or --list \"<file>\" of links",
             "youtube needs --yes to go ahead after the plan, or --plan to print the plan alone"
         }));

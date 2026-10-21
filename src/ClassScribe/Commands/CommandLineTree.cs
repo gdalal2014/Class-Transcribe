@@ -384,8 +384,8 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     }
 
     /// <summary>
-    /// youtube: links, a --list file of links, or both, joined in order; --name, the course; --output, the recordings folder;
-    /// without --download, each video recorded as it plays in a Chrome window of ClassScribe's own, with --download its audio
+    /// youtube: links, a --list file of links, or both, joined in order; --name, the course; --output, the recordings folder,
+    /// Recording:OutputFolder when it is not given (N6); without --download, each video recorded as it plays in a Chrome window of ClassScribe's own, with --download its audio
     /// downloaded with yt-dlp; exactly one of --yes and --plan; and --no-transcribe, --no-open, --again and --allow-unlisted,
     /// which is for --download alone. Each word that is no link the batch takes is named by where it stands, a line of the file
     /// by its number; a playlist's or a live stream's link, and more than 10 videos, need --download. youtube check takes
@@ -399,7 +399,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         };
         var list = new Option<string>("--list") { HelpName = "file", Description = "A text file of links: several on a line, separated by spaces; # starts a comment." };
         var name = new Option<string>("--name") { HelpName = "course", Description = "The course the videos belong to, such as Risala: the folder they go to, as a class's name names it." };
-        var output = new Option<string>("--output") { HelpName = "folder", Description = "The folder the recordings go to, such as \"D:\\Classes\": the course gets a folder inside it." };
+        var output = new Option<string>("--output") { HelpName = "folder", Description = "The folder the recordings go to, such as \"D:\\Classes\": the course gets a folder inside it. Without it, Recording:OutputFolder." };
         var download = new Option<bool>("--download")
         {
             Description = "Download the audio with yt-dlp instead of recording it as it plays: only for videos you uploaded or whose owner allows it, never your course's."
@@ -439,7 +439,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             return commands.YouTubeAsync(new YouTube.YouTubeRequest(
                 reading.Links,
                 ClassFolders.SafeName(parsed.GetValue(name)!),
-                Path.GetFullPath(parsed.GetValue(output)!),
+                OutputRoot(parsed.GetValue(output), classFolder: null),
                 parsed.GetValue(download),
                 parsed.GetValue(plan) ? YouTube.BatchConfirmation.PlanOnly : YouTube.BatchConfirmation.Yes,
                 Transcribe: !parsed.GetValue(noTranscribe),
@@ -452,7 +452,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     }
 
     /// <summary>
-    /// What keeps a youtube command line from running, one sentence each: --name, --output, the links and the --list file,
+    /// What keeps a youtube command line from running, one sentence each: --name, --output when given, the links and the --list file,
     /// each word that is no link the batch takes, --yes and --plan, and more videos than a batch takes; and without
     /// --download, a playlist's or a live stream's link, which only a download's read can take, and --allow-unlisted.
     /// </summary>
@@ -467,8 +467,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         else if (ClassFolders.SafeName(course).Length == 0)
             yield return $"youtube cannot use \"{course}\" as a course's name: nothing is left of it once the characters Windows does not allow in a folder's name are taken out";
 
-        if (result.GetResult(output) is not { } folder) yield return "youtube needs --output \"<folder>\", the folder the recordings go to";
-        else if (FolderProblem(output.Name, TokenOf(folder), optionNames) is { } outputProblem) yield return outputProblem;
+        if (result.GetResult(output) is { } folder && FolderProblem(output.Name, TokenOf(folder), optionNames) is { } outputProblem) yield return outputProblem;
 
         var given = result.GetResult(links)?.Tokens.Select(token => token.Value).ToList() ?? [];
         string? listFile = null;
