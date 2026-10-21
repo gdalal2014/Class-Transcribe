@@ -43,6 +43,15 @@ downloaded with yt-dlp (see [YouTube videos](#youtube-videos)).
    in a background process of its own, so closing the window does not end it, and rebuilding the
    repo during a class never touches it. Under `dotnet run` the recording runs in the window
    instead, and ClassScribe says so: `dotnet run` ends every program it started when it ends.
+
+   Your settings are your own and never part of the program folder: the published copy reads
+   `%APPDATA%\ClassScribe\appsettings.json`, which ClassScribe makes at your first change, as a full
+   copy of every setting, and which an update never changes. Until then the menu's header says it
+   reads the defaults (`Settings: ...\appsettings.json (the defaults; your own file, ..., is made at
+   your first change in S or C, or with settings set)`). There are three ways to change a setting:
+   the menu (S for the recordings folder and the camera's picture size, C for saved classes, and S
+   after a pick in choices 6 and 7), `ClassScribe settings set` in PowerShell, or Notepad
+   (`ClassScribe settings open`). See [Settings](#settings).
 5. In Bitdefender, add an exception for that `ClassScribe.exe` under Protection > Advanced Threat
    Defense (ATD) > Settings > Manage exceptions, with the exact path, and add it again after each
    publish, since a changed file may count as new. ATD watches programs that start copies of
@@ -158,6 +167,8 @@ ClassScribe starts with a menu. Press the number of what you want:
   8  Check the microphone or a camera (opens nothing)
   9  Google Drive: upload, free room on this laptop, sign in
   Y  YouTube: record videos as they play, or download them, then transcribe
+  C  Saved classes: start, add, change or remove one
+  S  Settings: recordings folder, camera picture size, the settings file
   A  Show the recording in progress        (only while one records)
   Q  Quit
 ```
@@ -201,7 +212,11 @@ never counted as waiting; it goes up once it has stopped.
   The recording runs in a background process of its own (`Recording:SeparateProcess`), and the window
   says `Recording in the background: closing this window does not stop it. Esc leaves this view;
   start ClassScribe again to see it.` Only one recording runs at a time; while one runs, 1 and 2 say
-  so, and A shows it.
+  so, and A shows it. When the name you type is a saved class's, or its course (see
+  [Saved classes](#saved-classes)), it asks first: `Mantiq is a saved class (chrome, with your
+  microphone (...)). Enter records it as saved; O records with choice 6's source instead.` Enter
+  records the class with its own source and folder; O records under that name as 6 and 7 say, into
+  the settings' folder. A course that two saved classes share lists both, and a number picks one.
 - **2 Record and transcribe** does the same, then sends the recording to ElevenLabs and, once the
   transcript is saved, says what it cost (see [Cost and privacy](#cost-and-privacy)).
 - **3 Transcribe a recent recording** lists the last nine recordings, newest first, in the course and
@@ -230,12 +245,18 @@ never counted as waiting; it goes up once it has stopped.
   layout), gets the same care as in choice 3: R or Y first when it would be billed again, only R for
   a class whose audio is on Google Drive alone, and nothing sent while it is being recorded.
 - **5 Open the recordings folder** shows it in Explorer.
-- **6 Choose what to record** lists the output devices and the apps with sound; see below.
+- **6 Choose what to record** lists the output devices and the apps with sound; see below. After a
+  pick it says `Press S to keep this as the default (saved in ...\appsettings.json), or any other key
+  to use it until ClassScribe is closed.` S saves it as `Recording:App` or `Recording:Device` (the
+  other emptied), or both emptied for A, automatic.
 - **7 Microphone and camera** asks whether to record your microphone with the class (W), alone for a
   class in the room (I) or not at all (N), then which microphone, and with the class which app it
   follows; see [Your microphone](#your-microphone). In person it then lists the cameras for a lesson
   video (a number, or Enter for none) and, for a camera, the picture's size; see
-  [Recording with the camera](#recording-with-the-camera). The pick holds until ClassScribe is closed.
+  [Recording with the camera](#recording-with-the-camera). The pick holds until ClassScribe is closed,
+  unless you press S when asked, which saves it as the default: `Recording:Mode`, the microphone
+  picked as `Recording:Microphone`, the app it follows as `Recording:MicrophoneFollows` and the
+  picture's size as `Recording:CameraResolution`. The camera itself is never a setting.
 - **8 Check the microphone or a camera** asks W or C. **W** watches what the programs on your computer
   do with the microphone and writes a line for each change, without opening it; see
   [Checking what your class page does with your microphone](#checking-what-your-class-page-does-with-your-microphone).
@@ -265,16 +286,39 @@ never counted as waiting; it goes up once it has stopped.
   fetch only the audio. The plan follows; nothing is fetched, recorded or sent before you confirm it.
   Esc goes back at every step. The videos go to `Recording:OutputFolder`, as the menu's classes do.
   See [YouTube videos](#youtube-videos).
+- **C Saved classes** lists your saved classes, each with what it records, or why it cannot be used
+  (see [Saved classes](#saved-classes)). A class's number records it now, as saved: its course, its
+  source and microphone, its own folder or the settings', transcribed unless it says to record only
+  (`Recording Mantiq (saved class): chrome, with your microphone (...), into D:\Classes\Mantiq,
+  then transcribed.`). N adds a class: L starts from the Lesson video preset (in person, with a
+  camera), Enter answers each question; then the name, the course, what it records (A an app, D an
+  output device, W whatever device the class plays on, P in person), your microphone and the app it
+  follows, the recordings folder and whether to transcribe. E and a number changes a class, with its
+  own answers for Enter; D and a number removes it after Y (no recording is touched). Esc goes back.
+- **S Settings** shows the settings file and offers 1, the recordings folder (drag a folder onto the
+  window or type it, then Enter): it says where the next class would go (`The next class of Mantiq
+  would go to D:\Classes\Mantiq\2026-10-21.`), saves it, gives the warnings about that folder (see
+  [Settings](#settings)), and says that nothing moved (`Recordings made before stay in
+  C:\Users\you\ClassScribe; nothing was moved. ClassScribe list --output "C:\Users\you\ClassScribe"
+  lists them.`); P, the camera's picture size (1 480p, 2 720p, 3 1080p, T to type a size); and O,
+  which opens the settings file in Notepad. S opens even while the file has a problem, so that it can
+  be fixed there.
 
 When a choice is done, the menu comes back, after an error too. Q or Ctrl+C leaves it.
 
 Above the choices, the menu shows the settings file it reads (`Settings: ...`), where recordings go
 and what is recorded (`Recording from: the device the class plays on`, or with the microphone
-`..., and Windows' default microphone (following chrome)`, or `your microphone "OBSBOT", in person`).
+`..., and Windows' default microphone (following any app that holds the microphone)`, or `your microphone "OBSBOT", in person`).
 Each choice reads the settings again first, so an edit counts from the next
 choice, without a restart (see [Settings](#settings)). When the file cannot be used, `ERROR` lines
-under its name say why. ClassScribe starts all the same, but a choice then starts nothing: it says
-what to fix, and the menu comes back. Once the file is fixed, the next choice runs.
+under its name say why, then `ERROR  Until the file is fixed, only recordings run (1, 2 and C),
+without the settings above; the other choices wait.` A recording then runs with every setting that
+passes and leaves out each one that does not, with a warning that names the value used in its place
+(see [Settings](#settings)); the other choices start nothing, say what to fix, and the menu comes
+back. Once the file is fixed, the next choice runs. The header also names a saved class that cannot
+be used (`WARNING  The saved class "Broken" cannot be used: ...`), and says when your file holds a
+setting whose default has changed since (`1 setting holds an older default; settings list shows it`).
+While your own settings file is missing, an `ERROR` line says so and how to put it back.
 
 If the recordings folder cannot be used, a `WARNING` line right under its name says why:
 `Recording:OutputFolder` uses a `%VARIABLE%` that is not set, its drive is not there (an unplugged
@@ -397,7 +441,7 @@ through, at the price of up to a quarter of a second at each edge, which is near
 around a click. The watch only reads Windows' lists; it never opens the microphone itself.
 
 Which app is followed: in app mode (`--app chrome`, `Recording:App` or menu choice 6) the app being
-recorded; otherwise `Recording:MicrophoneFollows`, `chrome` unless you change it (`auto` follows any
+recorded; otherwise `Recording:MicrophoneFollows`, `auto` unless you change it (`auto` follows any
 app that has the microphone open; `none` records whenever V is on, as in person). Menu choice 7 and
 `--mic-follows` can name another app for a run. Chrome takes the microphone in a helper process of its
 own, so the app is matched by its process name, as `--app` matches it.
@@ -704,8 +748,9 @@ time asleep is not taken for a fault of the device.
 
 ### Where things go
 
-Recordings and transcripts go to the folder set as `Recording:OutputFolder` in `appsettings.json`,
-which is `%USERPROFILE%\ClassScribe` unless you change it. Each name is a course and gets a folder;
+Recordings and transcripts go to the folder set as `Recording:OutputFolder` in your settings, which
+is `%USERPROFILE%\ClassScribe` unless you change it (menu S, then 1), or to a saved class's own
+folder, or to the one `--output` names for a run. Each name is a course and gets a folder;
 each class of it gets a folder inside that one, named after the local date the class started on;
 and every file of a recording carries the name and the time the recording started, in UTC (the `Z`):
 
@@ -827,6 +872,10 @@ or syncs, and nothing in it holds the API key:
 ```
 %LOCALAPPDATA%\ClassScribe\
     recording.lock                   held open while a recording captures; Windows frees it when the process ends
+    settings-home.txt                the full path of your settings file, written when ClassScribe makes it, so
+                                     that a file missing later is said rather than silently replaced
+    settings.lock                    held open for the moment a change to your settings is written, so that two
+                                     ClassScribe windows never write it at once
     recorder.log                     the recorder's lines until the recording's folder is known; recorder.old.log
                                      keeps the generation before, at about 1 MB
     runs\<run id>.json               one file per run: its state, a heartbeat every 10 seconds, and how it ended
@@ -852,6 +901,17 @@ The recorder also runs in this folder, so it holds nothing under OneDrive or in 
 never reads, lists, copies, uploads or deletes anything in it, and once you sign in to YouTube there
 it holds your Google sign-in, so keep it out of anything you copy or share.
 
+Your own things live in `%APPDATA%\ClassScribe`, which roams with your Windows account:
+
+```
+%APPDATA%\ClassScribe\
+    appsettings.json                 your settings: a full copy of every setting, made at your first change
+    appsettings.previous.json        the file as it was before ClassScribe's last change to it
+    keyterms.txt                     a glossary of your own, if you put one here; beside your settings file, it
+                                     wins over the one shipped beside the program
+    google-drive.dat                 the Google Drive sign-in (below)
+```
+
 The Google Drive sign-in lives in `%APPDATA%\ClassScribe\google-drive.dat`: the Google client you
 gave ClassScribe (its id and secret) and, while you are signed in, the sign-in itself, the account's
 email and when you signed in. It is encrypted with Windows' data protection for your Windows account,
@@ -864,9 +924,14 @@ file. A sign-out forgets the sign-in and keeps the client, so signing in again n
 
 ```powershell
 ClassScribe record "Kalam" --device auto --output "D:\Classes"          # record, then transcribe
-ClassScribe record-only "Kalam" --app chrome --output "D:\Classes"      # record only
+ClassScribe record-only "Kalam" --app chrome                            # record only, into Recording:OutputFolder
 ClassScribe record "Kalam" --app chrome --mic --output "D:\Classes"     # the class and your microphone
 ClassScribe record "Kalam" --in-person --output "D:\Classes"            # your microphone alone, in person
+ClassScribe record --class "Mantiq"                                     # a saved class, as it is saved
+ClassScribe class add "Mantiq" --app chrome --mic --mic-follows chrome  # save a class
+ClassScribe class list                                                  # the saved classes
+ClassScribe settings set Recording:OutputFolder "D:\Classes"            # change a setting
+ClassScribe settings list                                               # every setting, its value and its default
 ClassScribe transcribe "C:\path\to\recording folder or file"
 ClassScribe rebuild "C:\path\to\recording folder or file"
 ClassScribe list                                                        # the recordings, newest first
@@ -892,15 +957,18 @@ ClassScribe --help                                                      # the co
 `dotnet run --project src/ClassScribe -- record ...` the same lines work, but the recording then
 runs in the window, and closing the window ends it.
 
-In short: `record "<name>" SOURCE --output "<folder>" [--mic ["<microphone>"] [--mic-follows <app>|auto|none]]
+In short: `record "<name>" SOURCE [--output "<folder>"] [--mic ["<microphone>"] [--mic-follows <app>|auto|none]]
 [--camera ["<camera>"] [--resolution <size>]] [--minutes <n>] [--no-open] [--continue | --new]` (`--camera` only
-with `--in-person`, and refused before anything records in this build), `record-only` with the same options,
+with `--in-person`, and refused before anything records in this build), or `record --class "<saved class>" ["<name>"]`
+with any of those options over the class's own, `record-only` with the same options,
 `transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
 `list [--output "<folder>"]`, `devices`, `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
 `camera-check ["<camera>"] [--resolution <size>]`, `drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]`,
 `drive free-space "<path>" --yes`,
-`youtube <link>... [--list "<file>"] --name "<course>" --output "<folder>" [--download] (--yes | --plan)
-[--no-transcribe] [--no-open] [--again] [--allow-unlisted]` and `youtube check`,
+`youtube <link>... [--list "<file>"] --name "<course>" [--output "<folder>"] [--download] (--yes | --plan)
+[--no-transcribe] [--no-open] [--again] [--allow-unlisted]` and `youtube check`, `settings path|list|get|set|reset|open|fill`
+and `class list|show|add|set|rename|remove` (see [Settings from PowerShell](#settings-from-powershell) and
+[Saved classes](#saved-classes)),
 where the parts in brackets may be left out, `(--yes | --plan)` means exactly one of the two, and SOURCE is `--device "<part of its name>"`,
 `--device auto`, `--app <process>` or `--in-person ["<microphone>"]`. `<command> --help` (also `-h`,
 `-?`, `/?` or `help <command>`) lists a command's options with examples.
@@ -930,17 +998,23 @@ since it asks nothing; it ends with 1 when any recording kept its audio or Drive
 Ctrl+C stops either with exit code 130; an upload then goes on from where it stopped the next time,
 and free space deletes nothing it has not checked. See [Google Drive](#google-drive).
 
-`youtube` needs `--name`, the course, `--output`, the recordings folder, at least one link or a
-`--list` file, and exactly one of `--yes`, which goes ahead after the plan, and `--plan`, which prints
-the plan and stops. Without `--download` each video is recorded as it plays, at most 10 videos, each
+`youtube` needs `--name`, the course, at least one link or a `--list` file, and exactly one of `--yes`, which goes ahead after the plan, and `--plan`, which prints
+the plan and stops; without `--output` the videos go to `Recording:OutputFolder`. Without `--download` each video is recorded as it plays, at most 10 videos, each
 by its own link, and `--yes` still waits for Enter before each video; with `--download` the audio is
 downloaded with yt-dlp, at most 500 videos, playlists included. `youtube check` takes nothing else. A
 mistake is named with the command's help and exit code 2, before anything starts. See
 [YouTube videos](#youtube-videos).
 
-For `record` and `record-only` the name, a source and `--output` are required, and nothing is ever
-asked: every missing piece and every value ClassScribe cannot use is named at once, followed by that
-command's help, with exit code 2, before the settings are read and before anything starts.
+For `record` and `record-only` the name and a source are required, or `--class` and a saved class's
+name, and nothing is ever asked: every missing piece and every value ClassScribe cannot use is named
+at once, followed by that command's help, with exit code 2, before the settings are read and before
+anything starts. A saved class's name given as the name, without a source, is pointed at `--class`:
+`Mantiq is a saved class: ClassScribe record --class "Mantiq"`. Without `--output` the recording goes
+to the saved class's own folder, else to `Recording:OutputFolder`, and its first line names the
+folder. With `--class`, a name after `record` replaces the class's course, and options beside it
+replace the class's own in groups: a source (`--device`, `--app` or `--in-person`) replaces its whole
+source, `--mic` its microphone, `--mic-follows` the app followed, `--output` its folder. A class that
+cannot be used, or that the options would make unusable, is refused with why, exit code 2.
 `transcribe` on a folder takes the recording started last in it and in its date folders: for a
 course's folder, its newest class in either layout; for a class's date folder, that class; for a
 folder of the old layout, its newest recording. On one of a recording's files it takes that whole
@@ -981,7 +1055,8 @@ and the free `rebuild` command (see [Google Drive](#google-drive)); given its co
 | `--in-person ["<microphone>"]` | `record`, `record-only` | Records your microphone alone, for a class in the room: part of its name, such as `"OBSBOT"`, or nothing for `Recording:Microphone`, else Windows' default microphone (never a Bluetooth one). It is the third kind of source. The recording's name must come right after the word `record`, before `--in-person` or `--mic`, which would otherwise take it as the microphone's name. |
 | `--mic ["<microphone>"]` | `record`, `record-only` | Records your microphone too, beside `--device` or `--app`, as a second track mixed into one transcript; it takes a microphone's name the same way. Not with `--in-person`, where the microphone is already the source. |
 | `--mic-follows <app>` | `record`, `record-only` | With `--mic`: the app whose microphone use your microphone follows, by part of its process name, such as `chrome`; `auto` follows any app that holds the microphone; `none` records whenever V is on. Without it, the app recorded with `--app`, else `Recording:MicrophoneFollows`. Not with `--in-person`, and never ClassScribe itself. |
-| `--output "<folder>"` | `record`, `record-only`, `transcribe`, `list`, `youtube` | The recordings folder: the recording goes to the folder of its name inside it, and there to the date folder of the day it started (see [Where things go](#where-things-go)). Required for `record`, `record-only` and `youtube`. For `transcribe` it is used only for a file that is not a recording's; a recording's transcript goes beside the recording. |
+| `--class "<saved class>"` | `record`, `record-only` | Records the saved class of that name as it is saved, the name matched in any case (`ClassScribe class list` shows them; see [Saved classes](#saved-classes)). A name after `record` replaces its course; the other options replace its own in groups. |
+| `--output "<folder>"` | `record`, `record-only`, `transcribe`, `list`, `youtube` | The recordings folder: the recording goes to the folder of its name inside it, and there to the date folder of the day it started (see [Where things go](#where-things-go)). Optional: without it, `record` and `record-only` use a saved class's own folder, else `Recording:OutputFolder`, and `youtube` uses `Recording:OutputFolder`. For `transcribe` it is used only for a file that is not a recording's; a recording's transcript goes beside the recording. |
 | `--name "<course>"` | `youtube` | Required. The course the videos belong to, such as `"Risala"`: the folder they go to, as a class's name names it. |
 | `--list "<file>"` | `youtube` | A text file of links, several on a line, separated by spaces, `#` starting a comment (see [Links and a list file](#links-and-a-list-file)). It may be given beside links on the line; they are joined in order. |
 | `--download` | `youtube` | Downloads the audio with yt-dlp instead of recording each video as it plays: only for videos you uploaded or whose owner allows you to download them, never your course's (see [Downloading with yt-dlp](#downloading-with-yt-dlp)). |
@@ -1037,9 +1112,9 @@ At the end, ClassScribe hands Windows an exit code, which a script can check (in
 
 | Exit code | Meaning |
 | --- | --- |
-| 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, when `mic-check` stopped normally, when `drive upload` found everything it took on Drive, and when `drive free-space` freed the audio of every recording it took (or found none left). For `youtube`: every video ended as asked (recorded with a confirmed end, or downloaded, and transcribed when asked) or was done before; `--plan` printed its plan; `youtube check` found all four tools, and yt-dlp at most 90 days old. An upload to Google Drive after a class or a transcript never changes the exit code. |
-| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recording with `--camera`, which this build refuses before anything records (as it does a camera that Windows keeps from desktop apps), `camera-check` when a set-up line is a problem, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked. For `youtube`: any video refused, left out, waiting for your word, not fetched, recorded but possibly cut short, not transcribed, or left recording in the background; another YouTube batch running; Chrome, yt-dlp or a helper not found; no API key while transcripts are asked; too little room for a download; `youtube check` finding a tool missing, or yt-dlp more than 90 days old. |
-| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, `--camera` without `--in-person`, `--resolution` without `--camera` or with a size it cannot take, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. For `youtube`: no `--name`, `--output` or link, a word that is no link it takes, neither or both of `--yes` and `--plan`, a playlist's or `/live/` link or more than 10 videos without `--download`, more than 500 videos with it, and `--allow-unlisted` without `--download` or while `YouTube:CourseChannels` is empty. Nothing was started. (A batch whose playlists turn out to hold more than 500 videos once they are read ends with 2 as well, before anything is downloaded.) |
+| 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, when `mic-check` stopped normally, when `drive upload` found everything it took on Drive, when `drive free-space` freed the audio of every recording it took (or found none left), when `settings` or `class` did what was asked (a setting set to the value it had included), and when `class show` found the class usable. For `youtube`: every video ended as asked (recorded with a confirmed end, or downloaded, and transcribed when asked) or was done before; `--plan` printed its plan; `youtube check` found all four tools, and yt-dlp at most 90 days old. An upload to Google Drive after a class or a transcript never changes the exit code. |
+| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use (except for a recording, which runs without them), nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recording with `--camera`, which this build refuses before anything records (as it does a camera that Windows keeps from desktop apps), `camera-check` when a set-up line is a problem, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked, and `settings` or `class` when your settings file is not valid JSON, has comments of your own, is missing, cannot be written, or keeps changing while ClassScribe writes it. For `youtube`: any video refused, left out, waiting for your word, not fetched, recorded but possibly cut short, not transcribed, or left recording in the background; another YouTube batch running; Chrome, yt-dlp or a helper not found; no API key while transcripts are asked; too little room for a download; `youtube check` finding a tool missing, or yt-dlp more than 90 days old. |
+| 2 | A mistake on the command line, named with that command's help: a missing name or source, two sources, a saved class's name without `--class`, an unknown saved class or one that cannot be used, `--mic` with `--in-person`, `--mic-follows` without `--mic`, `--camera` without `--in-person`, `--resolution` without `--camera` or with a size it cannot take, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. For `settings` and `class`: an unknown setting or class, the ElevenLabs key, or a value the check refuses (and `class show` for a class that cannot be used). For `youtube`: no `--name` or link, a word that is no link it takes, neither or both of `--yes` and `--plan`, a playlist's or `/live/` link or more than 10 videos without `--download`, more than 500 videos with it, and `--allow-unlisted` without `--download` or while `YouTube:CourseChannels` is empty. Nothing was started. (A batch whose playlists turn out to hold more than 500 videos once they are read ends with 2 as well, before anything is downloaded.) |
 | 130 | Cancelled with Ctrl+C, or with Esc while `drive signin` waits for Google; Ctrl+C during `drive upload` too, which goes on from where it stopped the next time, and during `drive free-space`. For `youtube`: Ctrl+C twice while videos are recorded as they play (no transcripts follow), Ctrl+C or Q twice during a download, and Ctrl+C during a transcript. |
 | none | The window was closed while the recording ran in the background; the next start reports how it ended. Likewise for a `youtube` batch whose window was closed: a video being recorded carries on in its recorder to its end, nothing else goes on, and the same command later picks up where it stopped. |
 
@@ -1945,13 +2020,18 @@ Neither decides anything for your own uploads or for lectures whose owners allow
 
 ## Dry run before the first real class
 
-Take two minutes to check the whole path on your machine:
+Take two minutes to check the whole path on your machine. To try settings without touching your
+own, first run `$env:CLASSSCRIBE_SETTINGS_FOLDER = "$env:TEMP\ClassScribe-dry-run"` in the
+PowerShell window you start ClassScribe from: it then reads and writes its settings in that folder
+alone, and the menu's header names it. Close that window afterwards, or run
+`Remove-Item Env:CLASSSCRIBE_SETTINGS_FOLDER`.
 
 1. Start ClassScribe, press 2 and type a name, such as `Dry run`.
 2. Play any video with speech for 30 seconds.
 3. Press Q twice and read the transcript when it opens.
-4. If you will use your microphone: press 7, W, Enter, then Enter again to follow `chrome`; press 2
-   and a name; press V when the start lines say the microphone starts switched off; say a few words
+4. If you will use your microphone: press 7, W, Enter, then type `chrome` and Enter to follow the
+   class page (Enter alone follows any app that holds the microphone), and any key but S, so that
+   the dry run's pick is not kept as your default; press 2 and a name; press V when the start lines say the microphone starts switched off; say a few words
    while the video plays; press Q twice and check that the transcript holds both. For a class in the
    room, 7 then I, then 1: speak, stop, and play the `.wav` file back. Run the microphone check once
    during your first real class, as above.
@@ -2034,41 +2114,89 @@ Edit it freely:
 - lines starting with `#` are comments
 - if a term keeps coming out wrong, try a plainer spelling of it
 
+An update of ClassScribe replaces the `keyterms.txt` beside the program. To keep a glossary of your
+own, copy it to `%APPDATA%\ClassScribe\keyterms.txt`, beside your settings file: once your settings
+file is there, ClassScribe takes the glossary from that folder when it holds one, and from beside the
+program otherwise. A glossary in neither place is reported with both places.
+
 After changing the glossary you can transcribe an old recording again (menu choice 3, then Y).
 That is billed as a new transcription.
 
 ## Settings
 
-`appsettings.json` holds the settings. ClassScribe reads the copy next to the app, and the menu
-names it at the top (`Settings: ...`). A published app reads the copy beside `ClassScribe.exe`. With
-`dotnet run` it is the copy in `src\ClassScribe\bin\Debug\net10.0-windows10.0.19041.0`, which a build makes from
+Your settings are kept in `%APPDATA%\ClassScribe\appsettings.json`, apart from the program, and the
+menu names the file it reads at the top (`Settings: ...`). That file is yours: ClassScribe makes it
+at your first change (in the menu, with `settings set` or `class add`, or with `settings open`), as
+a full copy of every setting, each at its default unless you changed it, under a short header that
+says what the file is, and says once `Your settings are now kept in ...; an update of ClassScribe
+never changes that file.` From then on an update of ClassScribe never changes it: a later build that
+adds a setting uses its default until you add it, and `ClassScribe settings fill` adds every setting
+your file lacks, at its default, and lists them. When a later build changes a default, your file
+keeps the value it holds, and `settings list` marks it (`newer default: auto`), as the menu's header
+does (`1 setting holds an older default; settings list shows it`): `settings reset <setting>` takes
+the new default. Before each change ClassScribe keeps the file as it was in
+`appsettings.previous.json` beside it.
+
+Until you change something, ClassScribe reads the defaults, from the `appsettings.json` shipped
+beside the program, and the menu says so. Once your own file is there, every ClassScribe you start
+reads it, `dotnet run` included. Before that, `dotnet run` reads the copy in
+`src\ClassScribe\bin\Debug\net10.0-windows10.0.19041.0`, which a build makes from
 `src\ClassScribe\appsettings.json` and replaces only when that file is the newer of the two. So edit
 `src\ClassScribe\appsettings.json` and build again (`dotnet run` builds each time it starts), or edit
 the copy itself, which a build then leaves alone until the project's file changes again. While the
 project's file is newer than the copy and differs from it, the menu and each command say so in a
 `WARNING` line, and the change does not count until the build.
 
+There are three ways to change a setting, and each checks the value before it is saved:
+
+- the menu: S for the recordings folder and the camera's picture size, C for saved classes, and S
+  when asked after a pick in choices 6 and 7;
+- PowerShell: `ClassScribe settings set Recording:OutputFolder "D:\Classes"` (see
+  [Settings from PowerShell](#settings-from-powershell));
+- Notepad: `ClassScribe settings open` opens your file (made first, as a full copy, if you have none
+  yet). A comment you write there is kept as long as you edit by hand, but ClassScribe will not
+  change a file with comments of its own: it says so and points to Notepad.
+
+If your settings file is deleted or moved, ClassScribe does not quietly make a new one. It uses the
+defaults, says `Your settings file ... is missing. If it was moved or deleted by mistake, put it back
+(appsettings.previous.json beside it is the version before your last change). To start again from
+the defaults: ClassScribe settings reset --all.` in the menu's header and at each command, and
+refuses every change until the file is back or you reset.
+
 ClassScribe reads the file again before each menu choice and each command, and checks it before
 anything uses it, so an edit counts from the next choice, without a restart. A recording that is
-running keeps the settings it started with. A value ClassScribe cannot use stops that choice or
-command before it records or uploads anything, with a message that names the setting and says what
-it must be, then `Nothing was started. Fix the settings above in ..., then choose again` (for a
-command, `then run the command again`, with exit code 1). The menu shows the problems at the top as
-well, and comes back after each refused choice. Such a file does not keep ClassScribe from starting:
-until it is fixed, the settings stay as they were last read, or the defaults if they never could be
-read, and fixing the file is all it takes. If the file is deleted or renamed while ClassScribe runs,
-the settings also stay as they were, and choices are refused until it is back; to go back to the
-defaults on purpose, start ClassScribe again without the file.
+running keeps the settings it started with. A value ClassScribe cannot use stops a choice or command
+other than a recording before it uploads anything, with a message that names the setting and says
+what it must be, then `Nothing was started. Fix the settings above in ..., then choose again` (for a
+command, `then run the command again`, with exit code 1). A recording is never stopped by the file:
+menu choices 1, 2 and C, the report's C, and `record` and `record-only` run with every setting that
+passes, and leave out each one the check refuses, with a warning that names it and the value used in
+its place (`Recording:FlushSeconds is "abc" in ..., which the check refuses; this recording uses the default,
+"5", in its place.`). A file that is not valid JSON, or cannot be read, gives the settings ClassScribe read
+last, or the defaults, and what the command line says, with the line `Nothing of ... could be taken,
+so this recording uses the settings ClassScribe read last, or the defaults where it read none, and
+what the command line says.` The menu shows the problems at the top as well. Such a file does not
+keep ClassScribe from starting, and fixing the file is all it takes.
 
 An environment variable that sets a value ClassScribe cannot use, such as `Recording__FlushSeconds`
 set to `abc`, is different: it cannot be fixed while ClassScribe runs, so ClassScribe does not start,
 and says which variable it is (`An environment variable sets a value ClassScribe cannot use ...`).
+For a dry run that must not touch your settings, set `CLASSSCRIBE_SETTINGS_FOLDER` to another folder
+in that PowerShell window first: ClassScribe then reads and writes `appsettings.json` there instead,
+and the menu says so (`Settings folder: ..., from CLASSSCRIBE_SETTINGS_FOLDER, as in a dry run`).
 
-Three things only bring a warning, given once, at the first choice or command: an API key written into
-the settings (see below); a `Recording:OutputFolder` inside OneDrive, which uploads a recording
-again and again while it grows, and can hold files ClassScribe needs to delete; and a
-`YouTube:LongestVideoHours` above `Recording:StopAfterHours`, which the safety stop then cuts short.
-None of them holds up a class.
+Some things only bring a warning, given once, at the first choice or command, and none of them holds
+up a class: an API key written into the settings (see below); a `YouTube:LongestVideoHours` above
+`Recording:StopAfterHours`, which the safety stop then cuts short; and a recordings folder, in
+`Recording:OutputFolder` or a saved class's `OutputFolder`, that is:
+
+- inside OneDrive, Google Drive for desktop (a drive labelled `Google Drive`, or a path through
+  `My Drive`) or Dropbox (a folder that Dropbox's own `info.json` names, under `%APPDATA%\Dropbox`
+  or `%LOCALAPPDATA%\Dropbox`, as [Dropbox describes](https://help.dropbox.com/installs/locate-dropbox-folder)):
+  these upload a recording again and again while it grows, and with ClassScribe's own copy on Google
+  Drive each class would go up to the cloud twice;
+- a drive's root, such as `D:\`, your user folder itself, or a folder that holds `AppData` or
+  `Windows`: each course's folder would sit among folders that are not the classes'.
 
 The file is JSON, which has two traps:
 
@@ -2080,15 +2208,15 @@ The ones you are most likely to change:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where recordings and transcripts go: a folder per name, and in it a folder per class, named after the local date it started on (see [Where things go](#where-things-go)). Environment variables work, and quotes around the path are ignored. A relative path is taken from your user folder, so `Classes` means `%USERPROFILE%\Classes`. A folder inside OneDrive brings a warning. |
+| `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where recordings and transcripts go: a folder per name, and in it a folder per class, named after the local date it started on (see [Where things go](#where-things-go)). Environment variables work, and quotes around the path are ignored. A relative path is taken from your user folder, so `Classes` means `%USERPROFILE%\Classes`. Menu S changes it (choice 1). A folder inside OneDrive, Google Drive or Dropbox, a drive's root, your user folder itself or a folder holding `AppData` or `Windows` brings a warning. A saved class may name its own folder. |
 | `Recording:Device` | empty | Part of the name of the output device to record, such as `Pixel Buds`. Empty means the device the class plays on. |
 | `Recording:App` | empty | The app whose sound to record, by its process name, such as `chrome`. Overrides `Recording:Device`. |
 | `Recording:Mode` | `Class` | What a recording holds: `Class` (the sound the computer plays), `ClassAndMicrophone` (that and your microphone, mixed into one transcript) or `Microphone` (your microphone alone, in person). The names are taken in any letter case; a number is refused. Menu choice 7 overrides it until ClassScribe is closed. See [Your microphone](#your-microphone). |
 | `Recording:Microphone` | empty | Part of the name of the microphone to record, such as `OBSBOT`. Empty means Windows' default microphone, never a Bluetooth one or an input that records what the computer plays (Stereo Mix): then the laptop's own microphone array, then another microphone. A Bluetooth microphone is used only when named here. |
 | `Recording:MicrophoneProcessing` | `Raw` | `Raw` asks Windows for the microphone's audio without its sound processing, and takes `Default` when that is not available; `Default` takes the processed audio, as any app gets it. |
-| `Recording:MicrophoneFollows` | `chrome` | With the class and your microphone, when the class is recorded from a device: the app whose microphone use your microphone follows, by part of its process name. Your voice is recorded only while that app has the microphone open and taking sound. `auto` follows any app that holds the microphone; `none` records whenever V is on. In app mode the recorded app is followed and this is not read; `--mic-follows` and menu choice 7 can name another for a run. Empty, or naming ClassScribe itself, is refused. |
+| `Recording:MicrophoneFollows` | `auto` | With the class and your microphone, when the class is recorded from a device: the app whose microphone use your microphone follows, by part of its process name. Your voice is recorded only while that app has the microphone open and taking sound. `auto` follows any app that holds the microphone; `none` records whenever V is on. In app mode the recorded app is followed and this is not read; `--mic-follows` and menu choice 7 can name another for a run. Empty, or naming ClassScribe itself, is refused. |
 | `Recording:ClassAppMute` | `Unknown` | Whether the class app lets go of the microphone when you mute in it: `Visible` (it does; ClassScribe follows your mute by itself), `Invisible` (it keeps the microphone open; your voice is recorded only after you press V, and only while the app holds the microphone) or `Unknown` (as `Invisible`, and ClassScribe reports when it sees the app let go of the microphone). Measure your class page with the microphone check before setting `Visible`. |
-| `Recording:CameraResolution` | `720p` | The size of the camera's picture for a lesson recorded with the camera: `480p` (848x480, about 1.2 GB an hour with the sound), `720p` (1280x720, about 2.3 GB an hour) or `1080p` (1920x1080, about 3.7 GB an hour), in any letter case, or a width and a height such as `1024x576`: the width from 320 to 1920 and the height from 240 to 1080, both even, in a shape from 4:3 to 16:9 (a typed size was not measured; the camera records the closest it offers). `--resolution` and menu choice 7 choose another for a run. This file is replaced by the next build of the program folder, so to keep another size, use the menu or the command line. The camera's recording itself comes in a later build; `camera-check` shows the size in force. |
+| `Recording:CameraResolution` | `720p` | The size of the camera's picture for a lesson recorded with the camera: `480p` (848x480, about 1.2 GB an hour with the sound), `720p` (1280x720, about 2.3 GB an hour) or `1080p` (1920x1080, about 3.7 GB an hour), in any letter case, or a width and a height such as `1024x576`: the width from 320 to 1920 and the height from 240 to 1080, both even, in a shape from 4:3 to 16:9 (a typed size was not measured; the camera records the closest it offers). `--resolution` and menu choice 7 choose another for a run. Menu S (P) changes it, as does S after a pick in choice 7. The camera's recording itself comes in a later build; `camera-check` shows the size in force. |
 | `Recording:WakeCameraMicrophone` | false | When on, and the microphone being recorded belongs to a webcam (by the container it shares with its camera) and sends only exact zeros, ClassScribe opens that webcam's picture, shared and never exclusively, keeps none of it, and so wakes a webcam that sleeps by itself, such as the OBSBOT Meet Flip with Device Auto Sleep on; the camera's light then comes on. Run `camera-check` once before turning it on, so that a security program such as Bitdefender asks about ClassScribe while you watch. In this build the setting is checked and shown by `camera-check`; the wake itself comes once the camera probe has chosen how. |
 | `Recording:SilenceWarningSeconds` | 60 | Warn after this much silence. At least 1. |
 | `Recording:KeepUploadFile` | false | Keep the 16 kHz copy that was uploaded, after a failed or cancelled try as well. When off, the copy is removed after every try, whether it worked or not. |
@@ -2142,6 +2270,81 @@ The API key is deliberately not in this file. It is read from `ELEVENLABS_API_KE
 written into `appsettings.json` is ignored, and ClassScribe warns you to remove it, so that it
 cannot be shared by mistake.
 
+### Settings from PowerShell
+
+```powershell
+ClassScribe settings path                                           # the file read now, alone on the line
+ClassScribe settings list                                           # every setting: its value, its default when it differs, where it comes from
+ClassScribe settings list --json | ConvertFrom-Json                 # the same, for a script
+ClassScribe settings get Recording:OutputFolder                     # one value, alone; a list's items a line each
+ClassScribe settings set Recording:OutputFolder "D:\Classes"        # change one setting
+ClassScribe settings set YouTube:CourseChannels "@Channel1" "@Channel2"   # a list: all its items
+ClassScribe settings set Logging:LogLevel:ClassScribe.Drive Debug   # one entry of the log levels
+ClassScribe settings reset Recording:Device                         # back at its default, written into your file
+ClassScribe settings reset --all                                    # every setting; your saved classes are kept
+ClassScribe settings open                                           # your file in Notepad
+ClassScribe settings fill                                           # add the settings your file lacks, at their defaults
+```
+
+`settings set` checks the value as the menu does before anything is written, and says what changed
+(`Recording:OutputFolder is now "D:\Classes" (it was "%USERPROFILE%\ClassScribe") in ...`); a value it
+refuses changes nothing, and a name it does not know is answered with the nearest one
+(`Recording:OutputFolders is not a setting; did you mean Recording:OutputFolder?`). Setting a value
+it already has writes nothing. When an environment variable sets that setting, the change is made
+and ClassScribe says it has no effect while the variable is set. The ElevenLabs key is never a
+setting: `settings set ElevenLabs:ApiKey` is refused, with how to set `ELEVENLABS_API_KEY` instead.
+`settings list` marks a value that comes from an environment variable, and one that holds an older
+default (`newer default: auto`). `settings reset --all` keeps the file as it was in
+`appsettings.previous.json`. Two ClassScribe windows never write the file at once: a change waits up
+to 2 seconds for another to finish, and a file that another program saves while ClassScribe changes
+it is read again before the change is made.
+
+Names such as `Ṣughrā` come out right in the window. To read them through a pipe, such as
+`| ConvertFrom-Json` or `> list.txt`, first run, in that PowerShell window:
+
+```powershell
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new()
+```
+
+The commands' exit codes: 0 done; 1 a settings file that is not valid JSON, has comments of your
+own, is missing, cannot be written, or keeps changing while ClassScribe writes it; 2 an unknown
+setting, the key, a value the check refuses, or another mistake on the command line. They run
+whatever the file holds, so a file the check refuses can be fixed with them.
+
+### Saved classes
+
+A saved class keeps everything a class needs under a name: its course (the recording's name, which
+names its folder and files), what it records, your microphone and the app it follows, its own
+recordings folder, whether it is transcribed, and for a lesson in the room the camera and the
+picture's size. Start one from menu C, by typing its name or course in menu choices 1 and 2, or
+from PowerShell:
+
+```powershell
+ClassScribe class add "Mantiq" --app chrome --mic "Microphone Array" --mic-follows chrome
+ClassScribe class add "Kalam (in person)" --course "Kalam" --in-person "Microphone Array" --record-only
+ClassScribe class add "Lesson" --in-person --camera "OBSBOT" --resolution 720p
+ClassScribe class list                                     # each class, with what it records or why it cannot be used
+ClassScribe class show "Mantiq"                            # its fields, what it records and its command; --json too
+ClassScribe class set "Mantiq" --output "D:\Classes"       # change fields; --clear output empties one
+ClassScribe class rename "Mantiq" "Mantiq (Chrome)"        # its course, folders, files and Drive stay as they are
+ClassScribe class remove "Mantiq"                          # no recording is touched
+ClassScribe record --class "Mantiq"                        # record it as saved
+```
+
+Classes are saved in your settings file under `Classes`, by name, each with the fields `Course`,
+`Mode` (`Class`, `ClassAndMicrophone` or `Microphone`, in person), `App` or `Device` (neither: the
+device the class plays on), `Microphone`, `MicrophoneFollows`, `OutputFolder`, `Transcribe` (true
+unless `false`), `Camera` (part of a camera's name, or `auto` for a USB camera, else the built-in one)
+and `CameraResolution`; a field a later build adds is kept as it is. `class add` without `--course`
+takes the class's name as its course. Names are matched exactly, in any letter case, and must be
+usable as a folder's name, at most 80 characters. A class that cannot be used, such as one with both
+`App` and `Device`, is named in the menu's header with why, `class show` ends with exit code 2 for
+it, and starting it is refused with the same words; the others are not held up. `class add` and
+`class set` refuse a change that would leave a class unusable, and change nothing. In menu C, N
+offers the Lesson video preset (L): in person, with any camera (a USB camera, else the built-in
+one), your microphone, the settings' folder, transcribed. The camera's recording itself comes in a
+later build, so such a class cannot start yet; it is saved for then.
+
 ### How long an upload may take
 
 Each try of an upload has a time limit, for the upload, the transcription and the whole answer. It
@@ -2184,9 +2387,11 @@ and after any failure, such as settings ClassScribe cannot use. Press Enter, Esc
 it. Keys pressed before `Press Enter to close` appears are ignored, so an Enter pressed during the
 upload cannot close it over the result.
 
-The published app reads `appsettings.json` and `keyterms.txt` from its own folder, so change the
-copies there. Publishing again replaces them only when the copies in `src\ClassScribe` were changed
-more recently.
+The published app keeps your settings in `%APPDATA%\ClassScribe\appsettings.json`, made at your
+first change, and never in its own folder, so publishing again never changes them (see
+[Settings](#settings)). The `appsettings.json` and `keyterms.txt` beside `ClassScribe.exe` are the
+shipped defaults and glossary, which a publish replaces; a `keyterms.txt` of your own goes beside
+your settings file (see [The glossary](#the-glossary)).
 
 Do not publish as a single `.exe` (`-p:PublishSingleFile=true`): Bitdefender has quarantined
 single-file builds of ClassScribe as `Gen:Variant.Yogi.67941`, a false positive, while the folder
@@ -2289,9 +2494,9 @@ words you see.
 | What you see | What to do |
 | --- | --- |
 | `The mistake is on line ...` | `appsettings.json` is not valid JSON. Fix that line; most often a path needs each backslash twice (`"D:\\Classes"`) or forward slashes (`"D:/Classes"`). Then choose again, or run the command again: there is no need to restart. |
-| `Nothing was started. Fix the settings above in ..., then choose again` (or `then run the command again`) | The lines above name each setting with a value ClassScribe cannot use, and what it must be. Fix them, then choose again or run the command again. Until then the menu shows the same lines at the top, under `Settings:`. |
+| `Nothing was started. Fix the settings above in ..., then choose again` (or `then run the command again`) | The lines above name each setting with a value ClassScribe cannot use, and what it must be. Fix them (`ClassScribe settings set` works whatever the file holds), then choose again or run the command again. Until then the menu shows the same lines at the top, under `Settings:`, and only recordings run, without those settings. |
 | `appsettings.json is empty` | A save was most likely cut short. Write the settings back, or at least `{ }`; the settings it leaves out then keep their defaults. |
-| `... is no longer there, so the settings stay as they were when it was last read` | `appsettings.json` was deleted or renamed while ClassScribe ran. Put it back; under `dotnet run`, a build puts the copy back. To go back to the defaults instead, start ClassScribe again without the file. |
+| `... is no longer there, so the settings stay as they were when it was last read` | The settings file was deleted or renamed while ClassScribe ran. Put it back (`appsettings.previous.json` beside your own file is the version before your last change); under `dotnet run`, a build puts the copy beside the program back. To go back to the defaults instead: `ClassScribe settings reset --all` for your own file, or start ClassScribe again without the file beside the program. |
 | `... could not be read: ...` | Another program, such as OneDrive or an editor, held the settings file for longer than a moment, or Windows would not let ClassScribe read it. Close that program, then choose again, or run the command again. |
 | `appsettings.json cannot be read: ...` | The file is valid JSON, but not in the shape settings take: the same setting written twice in one section, say, or something other than `{ ... }` around them all. Fix what the message names, then choose again. |
 | `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0-windows10.0.19041.0`. Build again, or edit that copy, for the change to count. |
@@ -2309,7 +2514,7 @@ words you see.
 | `--seconds takes a whole number of seconds, such as 600`, `--seconds takes from 1 to 86400 seconds (a day)`, `--log-folder needs a folder after it, such as "D:\Classes"` | `mic-check`'s refusals; fix the value. |
 | `drive needs one of signin, signout, status, upload or free-space, such as ClassScribe drive status` | Give the word after `drive` (exit code 2). |
 | `drive free-space needs a path: a recording's file or a folder of recordings, ...`, `drive free-space deletes audio from this laptop once Google Drive has a checked copy of it; add --yes to go ahead, ...` | Give the recording's file or folder, and `--yes`, since the command asks nothing before it deletes. Nothing was deleted (exit code 2). |
-| `youtube needs --name "<course>", the course the videos belong to, such as --name "Risala"`, `youtube needs --output "<folder>", the folder the recordings go to`, `youtube needs at least one YouTube link, or --list "<file>" of links`, `youtube needs --yes to go ahead after the plan, or --plan to print the plan alone`, `--yes and --plan cannot go together` | Give what the line names. Nothing was started (exit code 2). |
+| `youtube needs --name "<course>", the course the videos belong to, such as --name "Risala"`, `youtube needs at least one YouTube link, or --list "<file>" of links`, `youtube needs --yes to go ahead after the plan, or --plan to print the plan alone`, `--yes and --plan cannot go together` | Give what the line names. Nothing was started (exit code 2). |
 | `--list needs a text file of links after it, such as --list "risala-links.txt"`, `Nothing found at ...`, `--list cannot be read: ...`, `risala-links.txt holds no link` | Give the list file's path; it must be there, readable, and hold at least one link. |
 | `Line 4 of risala-links.txt: "..." is not a YouTube link.`, `The command line: "..." is a YouTube link that names no video or playlist.`, `... is a channel's link; a channel's uploads can be hundreds of hours, so give a playlist's link, or the videos' own.`, `... This is the link of a player embedded in a web page, most likely your course page. Use the YouTube button on the player for the video's own link.` | Fix or remove that link (see [Links and a list file](#links-and-a-list-file)). In the menu such a line is left out (`Left out: ...`) and the rest go on. |
 | `... is a playlist's link, which only --download takes; give each video's own link to record it as it plays`, `The live link of ... is taken only with --download, whose read tells a live stream from a video; ...`, `youtube records at most 10 videos at a time as they play, each for as long as it plays; these links name 14. Give fewer, or add --download` | Recording as they play takes each video's own link, at most 10 at a time. Give the videos' own links, fewer at a time, or download them with `--download` if you may. In the menu, R leaves such links out (`Left out: ... which only D takes; ...`) and refuses more than 10 (`... these are 14. Paste fewer, or download them with D.`). |
@@ -2322,6 +2527,21 @@ words you see.
 | `YouTube:LongestVideoHours is 6, above Recording:StopAfterHours (5), so a YouTube video's recording stops at 5 hours, at the safety stop. Make YouTube:LongestVideoHours at most 5 if that is not what you want` | A warning, given once; nothing is refused. The plan counts the shorter of the two and names it. |
 | `ElevenLabs:ApiKey is set in the settings` | Remove the key from `appsettings.json` (or an `ElevenLabs__ApiKey` variable). It is not used: ClassScribe reads the key only from `ELEVENLABS_API_KEY`. This warning comes once, at the first choice or command. |
 | `Recording:OutputFolder is inside OneDrive` | OneDrive uploads a recording again and again while it grows, and can hold files ClassScribe needs to delete. Choose a folder outside OneDrive, such as `%USERPROFILE%\ClassScribe`. This warning, too, comes once, at the first choice or command, and refuses nothing. |
+| `Recording:OutputFolder is inside Google Drive (...)`, `... is inside Dropbox (...)` (or `Classes:<name>:OutputFolder ...` for a saved class's own folder) | Google Drive for desktop and Dropbox upload a recording again and again while it grows, and ClassScribe's own copy on Google Drive would put it there a second time. Choose a folder outside them, such as `%USERPROFILE%\ClassScribe` (menu S, then 1). A warning only, given once. |
+| `Recording:OutputFolder is the root of a drive (D:\)`, `... is your user folder itself (...)`, `... holds a folder named AppData, as a user folder does`, `... holds a folder named Windows, as Windows' own drive does` | Each course's folder would sit among folders that are not the classes'. Give the recordings a folder of their own, such as `D:\ClassScribe`. A warning only, given once. |
+| `Your settings file ... is missing. If it was moved or deleted by mistake, put it back ...` (an `ERROR` line in the menu's header, a warning at each command) | Your own settings file is gone, so ClassScribe uses the defaults and refuses every change. Put the file back (`appsettings.previous.json` beside it is the version before your last change), or start again from the defaults with `ClassScribe settings reset --all`. |
+| `... in ..., which the check refuses; this recording uses ... in its place.`, then `Fix the settings in ...; until then this recording goes on without them, and other choices and commands wait` | The recording runs without the settings named. Fix them after the class (`ClassScribe settings set`, or `settings open`); until then the other choices wait. |
+| `Nothing of ... could be taken, so this recording uses the settings ClassScribe read last, or the defaults where it read none, and what the command line says.` | The file is not valid JSON, or could not be read. The recording runs all the same; fix the file after the class. |
+| `Your settings are now kept in ...; an update of ClassScribe never changes that file.` | Your first change made your own settings file, a full copy of every setting. Nothing to do. |
+| `Your settings file has comments of your own, which a change from ClassScribe would lose. ...` | ClassScribe changes a file only when it can keep everything in it. Make the change in Notepad (`ClassScribe settings open`), or remove the comments. |
+| `Another ClassScribe is changing your settings just now; try again in a moment.`, `Your settings file ... keeps changing while ClassScribe changes it, as if another program saved it again and again. ...` | Try again in a moment; for the second, close the program that keeps saving the file (an editor, or a sync program). Nothing was changed. |
+| `... is not a setting; did you mean ...? ClassScribe settings list shows them all.` | Check the setting's name; `settings list` shows them all (exit code 2). |
+| `The environment variable ... sets ... for ClassScribe, so this change has no effect while it is set.` | The change was saved, but the variable wins. Remove the variable (in PowerShell, `[Environment]::SetEnvironmentVariable('<name>', $null, 'User')`), then open a new window. |
+| `1 setting holds an older default; settings list shows it` | A later ClassScribe changed that setting's default; your file keeps the value it holds. `settings list` marks it (`newer default: ...`); `ClassScribe settings reset <setting>` takes the new default. |
+| `Settings folder: ..., from CLASSSCRIBE_SETTINGS_FOLDER, as in a dry run; your own settings are not read in this window.` | That variable is set in this window, as for a dry run. Close the window, or run `Remove-Item Env:CLASSSCRIBE_SETTINGS_FOLDER`, to read your own settings again. |
+| `WARNING  The saved class "..." cannot be used: ...` | Fix what the line names with `ClassScribe class set` (`--clear` empties a field) or in menu C (E), or remove the class. The other classes and choices are not held up. |
+| `Mantiq is a saved class: ClassScribe record --class "Mantiq"` | A saved class's name was given without a source. Run the command the line gives, or give a source to record under that name with it (exit code 2). |
+| `There is no saved class "...". The saved classes are: ...` | Check the name (`ClassScribe class list`); names are matched exactly, in any letter case. |
 | A `WARNING` line under `Recordings and transcripts` in the menu | `The drive X:\ is not available`: plug the drive in, or change `Recording:OutputFolder`. `... is a file, so recordings cannot go there`: change `Recording:OutputFolder`. `Recording:OutputFolder uses %NAME%, which is not set`: set that variable, or write the folder out in full. |
 
 ### While recording
@@ -2637,8 +2857,10 @@ in its `.log` too.
 ```
 src/ClassScribe/
     Program.cs, AppHost.cs, App.cs    start-up: the settings read and checked, then a command or the menu
-    Settings/         the settings, the API key from the environment, and the file read again and
-                      checked before each choice and command
+    Settings/         the settings, where they live (your own folder, the defaults beside the program),
+                      the one writer of your file, the saved classes, the API key from the environment,
+                      the warnings about a recordings folder, and the file read again and checked
+                      before each choice and command
     Audio/            capture, the recording as one or two tracks on one clock, WAV writing, the
                       upload copy (the two tracks mixed)
     Audio/Microphone/ choosing the microphone, the advice about it, the watch on the class app's
@@ -2673,7 +2895,8 @@ src/ClassScribe/
                       Chrome, the titles from YouTube's oEmbed address, the video's window, how a
                       video's recording ends)
     Commands/         the menu, the microphone menu, Google Drive's menu, menu choice Y, the command
-                      line (record, transcribe, rebuild, list, devices, mic-check, drive, youtube), the
+                      line (record, transcribe, rebuild, list, devices, mic-check, drive, youtube,
+                      settings, class), the saved classes' and the settings' menus (C and S), the
                       report at the start, the view of a recording, the microphone check, and the
                       settings check before each
 tests/ClassScribe.Tests/    NUnit and Moq
@@ -2708,6 +2931,6 @@ refused, so a test that forgot its stand-in fails rather than reaching them; the
 the tool tests start is Windows' own hidden `cmd.exe`. No test ever starts ClassScribe itself,
 records, opens a device or a microphone, plays a sound, opens a browser, runs yt-dlp, or sends
 anything to ElevenLabs, Google or YouTube, and none reads or writes the real `%APPDATA%\ClassScribe`,
-`%LOCALAPPDATA%\ClassScribe` or `%USERPROFILE%\ClassScribe`. The suite holds 3,875 tests and takes
+`%LOCALAPPDATA%\ClassScribe` or `%USERPROFILE%\ClassScribe`. The suite holds 4,228 tests and takes
 about four minutes; a test run that hangs is stopped after 10 minutes and reported as failed
 (`ClassScribe.Tests.runsettings`).
