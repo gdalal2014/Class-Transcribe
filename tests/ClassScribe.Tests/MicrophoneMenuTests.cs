@@ -22,14 +22,14 @@ public class MicrophoneMenuTests
     private FakeMicrophoneProvider _microphones = null!;
     private SourceChoice _choice = null!;
     private FakeConsoleUi _ui = null!;
-
+    /// <summary>Connects this laptop's microphones, with Stereo Mix among them, over settings with their defaults but chrome as the app followed, and a console to type into.</summary>
     /// <summary>Connects this laptop's microphones, with Stereo Mix among them, over settings with their defaults, and a console to type into.</summary>
     [SetUp]
     public void SetUp()
     {
         _settingsFolder = new TempFolder();
         _settings = new TestSettings(_settingsFolder.Path);
-        _recording = TestOptions.Create(new RecordingOptions());
+        _recording = TestOptions.Create(new RecordingOptions { MicrophoneFollows = "chrome" });
         _microphones = new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array, LaptopMicrophones.PixelBuds, LaptopMicrophones.Soundcore, LaptopMicrophones.Obsbot, LaptopMicrophones.StereoMix);
         _choice = new SourceChoice(_recording);
         _ui = new FakeConsoleUi();
@@ -100,7 +100,7 @@ public class MicrophoneMenuTests
     [Test]
     public async Task W_with_Enter_keeps_the_microphone_the_settings_name()
     {
-        _recording.Set(new RecordingOptions { Microphone = "OBSBOT" });
+        _recording.Set(new RecordingOptions { MicrophoneFollows = "chrome", Microphone = "OBSBOT" });
         _ui.Type('w', '\r');
         _ui.TypeLine("");
 
@@ -132,7 +132,7 @@ public class MicrophoneMenuTests
     [Test]
     public async Task N_records_the_class_alone()
     {
-        _recording.Set(new RecordingOptions { Mode = RecordingMode.ClassAndMicrophone });
+        _recording.Set(new RecordingOptions { MicrophoneFollows = "chrome", Mode = RecordingMode.ClassAndMicrophone });
         _ui.Type('n');
 
         Assert.That(await RunAsync(), Is.EqualTo(0));
@@ -291,7 +291,7 @@ public class MicrophoneMenuTests
         _ui.Type('i', '4');
         await RunAsync();
 
-        _recording.Set(new RecordingOptions { Mode = RecordingMode.Class, Microphone = "Array" });
+        _recording.Set(new RecordingOptions { MicrophoneFollows = "chrome", Mode = RecordingMode.Class, Microphone = "Array" });
 
         Assert.That(_choice.Current, Is.EqualTo(InPerson(LaptopMicrophones.Obsbot.Name)));
     }
@@ -396,7 +396,7 @@ public class SourceChoiceMicrophoneTests
         var choice = new SourceChoice(settings);
 
         Assert.That(choice.Description, Is.EqualTo("the device the class plays on"));
-        settings.Set(new RecordingOptions { Mode = RecordingMode.ClassAndMicrophone });
+        settings.Set(new RecordingOptions { Mode = RecordingMode.ClassAndMicrophone, MicrophoneFollows = "chrome" });
         Assert.That(choice.Description, Is.EqualTo("the device the class plays on, and Windows' default microphone (following chrome)"));
         settings.Set(new RecordingOptions { Mode = RecordingMode.ClassAndMicrophone, Microphone = "OBSBOT", MicrophoneFollows = "none", App = "chrome" });
         Assert.That(choice.Description, Is.EqualTo("the app \"chrome\", and your microphone \"OBSBOT\" (following chrome)"), "in app mode the app recorded is followed");

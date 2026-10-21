@@ -96,7 +96,7 @@ public class AppHostTests
         var log = new RecordingLogger<RunGate>();
         var opened = new RunGate(host.Services.GetRequiredService<SettingsReloader>(), host.Services.GetRequiredService<SettingsFile>(), log).TryOpen(GateUse.Command);
 
-        Assert.That(host.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.OutputFolder, Is.Empty, "the defaults stand in");
+        Assert.That(host.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.OutputFolder, Is.EqualTo(RecordingOptions.DefaultOutputFolder), "the defaults stand in");
         Assert.That(opened, Is.False);
         Assert.That(log.Problems[0], Does.StartWith("The mistake is on line 3:"));
         Assert.That(log.Problems[1], Does.Contain(@"""D:\\Classes""").And.Contain(@"""D:/Classes"""), "says how to write a path in JSON");
@@ -128,15 +128,16 @@ public class AppHostTests
     /// The shipped appsettings.json is a template that an update replaces: every value in it is the code's own default, so
     /// a key missing from the user's copy keeps the shipped value, and its Logging keys, which only the file used to hold,
     /// are exactly the defaults AppHost adds (see <see cref="DefaultSettings"/>). The template can never document a default
-    /// the code does not have, and every key in it names a setting. Recording:OutputFolder is written out as
-    /// %USERPROFILE%\ClassScribe where the code's default is empty; both mean the same folder.
+    /// the code does not have, and every key in it names a setting. All six sections are compared by binding both to the
+    /// options' types, never as text (2.0 and 2 are one number, false and False one value), Recording:OutputFolder
+    /// included, whose default in code is %USERPROFILE%\ClassScribe as written, the same folder as an empty value.
     /// </summary>
     [Test]
     public void The_shipped_template_equals_the_code_defaults()
     {
         var template = new ConfigurationBuilder().AddJsonFile(Path.Combine(AppContext.BaseDirectory, SettingsFile.FileName)).Build();
 
-        AssertEqualsDefaults(template, RecordingOptions.SectionName, new RecordingOptions(), nameof(RecordingOptions.OutputFolder));
+        AssertEqualsDefaults(template, RecordingOptions.SectionName, new RecordingOptions());
         AssertEqualsDefaults(template, ElevenLabsOptions.SectionName, new ElevenLabsOptions());
         AssertEqualsDefaults(template, TranscriptOptions.SectionName, new TranscriptOptions());
         AssertEqualsDefaults(template, DriveOptions.SectionName, new DriveOptions());
@@ -334,7 +335,7 @@ public class AppHostTests
         var recording = host.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue;
         var elevenLabs = host.Services.GetRequiredService<IOptionsMonitor<ElevenLabsOptions>>().CurrentValue;
         Assert.That(recording.FlushSeconds, Is.EqualTo(8), "from the snapshot");
-        Assert.That(recording.OutputFolder, Is.Empty, "the file beside the exe is not read");
+        Assert.That(host.Services.GetRequiredService<IConfiguration>()["Recording:OutputFolder"], Is.Null, "the file beside the exe is not read");
         Assert.That(recording.SilenceWarningSeconds, Is.EqualTo(60), "the environment is not read");
         Assert.That(elevenLabs.BaseUrl, Is.EqualTo("http://127.0.0.1:9/"), "a stub the window was given reaches the recorder");
         Assert.That(elevenLabs.ApiKey, Is.EqualTo("key-from-variable"));

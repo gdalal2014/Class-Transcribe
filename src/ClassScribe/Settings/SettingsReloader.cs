@@ -13,6 +13,12 @@ public sealed record SettingsVerdict(bool Usable, IReadOnlyList<string> Problems
 {
     /// <summary>What is worth saying about the file without refusing it, such as an API key written into it.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// While the user's own file is missing (see <see cref="SettingsOrigin.Missing"/>), what is said about it: the defaults
+    /// beside the program were read for now, and no change is written. Null otherwise.
+    /// </summary>
+    public string? Missing { get; init; }
 }
 
 /// <summary>
@@ -54,6 +60,13 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
     public SettingsVerdict? Last => Volatile.Read(ref _last);
 
     /// <summary>
+    /// The settings the user's own file holds at a default a later build changed (see <see cref="DefaultChanges"/>), as its
+    /// values were last accepted; none while another file is read, whose values are the build's own.
+    /// </summary>
+    public IReadOnlyList<DefaultChange> OlderDefaultsHeld() =>
+        file.Places.Origin == SettingsOrigin.UserFolder ? DefaultChanges.HeldIn(accepted.Values) : [];
+
+    /// <summary>
     /// Reads the file, checks it as it would be used, and makes it the live settings when nothing is wrong with it. When
     /// something is, the verdict says what, and the live settings stay as they were: nothing of the file is taken. The
     /// verdict is kept as <see cref="Last"/>.
@@ -77,15 +90,17 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
     {
         IReadOnlyDictionary<string, string?> candidate;
         bool fromFile;
+        var source = file.Places.Current();
+        var path = source.ReadPath;
         try
         {
-            var text = file.Read(expectFile: _fileAccepted);
+            var text = file.Read(source, expectFile: _fileAccepted);
             if (text.Bytes is null && _fileAccepted)
-                return Refused([$"{file.Path} is no longer there, so the settings stay as they were when it was last read. Put the file back, or start ClassScribe again to go back to the defaults."]);
+                return Refused(path, [text.Origin == SettingsOrigin.UserFolder ? UserFileGone(path) : $"{path} is no longer there, so the settings stay as they were when it was last read. Put the file back, or start ClassScribe again to go back to the defaults."]);
 
             // An empty file is far more likely an accident, such as a save cut short, than a wish for the defaults.
             if (text.Bytes is { } bytes && string.IsNullOrWhiteSpace(Encoding.UTF8.GetString(bytes).TrimStart(ByteOrderMark)))
-                return Refused(["appsettings.json is empty. Write { } in it at least; the settings it leaves out then keep their defaults."]);
+                return Refused(path, ["appsettings.json is empty. Write { } in it at least; the settings it leaves out then keep their defaults."]);
 
             candidate = Parse(text);
             fromFile = text.Bytes is not null;
@@ -94,15 +109,15 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
         {
             // Deliberately not rethrown: a file that cannot be read now refuses this run, the verdict says why, and the
             // settings stay as they were. The next choice or command reads it again.
-            logger.LogDebug(ex, "Could not read {Path}", file.Path);
-            return Refused([$"{file.Path} could not be read: {ex.Message}"]);
+            logger.LogDebug(ex, "Could not read {Path}", path);
+            return Refused(path, [$"{path} could not be read: {ex.Message}"]);
         }
         catch (Exception ex) when (ex is JsonException or FormatException)
         {
             // Deliberately not rethrown: a file that is not valid JSON refuses this run, the verdict says where the
             // mistake is, and the settings stay as they were.
-            logger.LogDebug(ex, "{Path} is not valid JSON", file.Path);
-            return Refused(DescribeUnreadable(ex));
+            logger.LogDebug(ex, "{Path} is not valid JSON", path);
+            return Refused(path, DescribeUnreadable(ex));
         }
 
         IReadOnlyList<string> problems;
@@ -118,13 +133,20 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
             (staged as IDisposable)?.Dispose();
         }
 
-        if (problems.Count > 0) return Refused(problems) with { Warnings = warnings };
-        if (Accept(candidate) is { } failure) return Refused([failure]) with { Warnings = warnings };
+        if (problems.Count > 0) return Refused(path, problems) with { Warnings = warnings };
+        if (Accept(candidate, path) is { } failure) return Refused(path, [failure]) with { Warnings = warnings };
 
         _fileAccepted = fromFile;
-        logger.LogDebug("Read the settings in {Path}", file.Path);
-        return new SettingsVerdict(true, [], file.Path) { Warnings = warnings };
+        logger.LogDebug("Read the settings in {Path}", path);
+        return new SettingsVerdict(true, [], path) { Warnings = warnings, Missing = source.Origin == SettingsOrigin.Missing ? file.Places.DescribeMissing() : null };
     }
+
+    /// <summary>
+    /// What is said when the user's own file, read before, is gone while ClassScribe runs: the settings stay as they were,
+    /// and how to put the file back or start again from the defaults (layout-config 1.4).
+    /// </summary>
+    private string UserFileGone(string path) =>
+        $"{path} is no longer there, so the settings stay as they were when it was last read. Put it back ({SettingsPlaces.PreviousFileName} beside it is the version before your last change), or start again from the defaults with: ClassScribe settings reset --all.";
 
     /// <summary>
     /// The settings a separate recorder is given: the Recording, ElevenLabs, Transcript, Drive and Logging sections as they
@@ -161,8 +183,8 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
         return $"The mistake is on line {line + 1}: {(position >= 0 ? message[..position] : message)}";
     }
 
-    /// <summary>A verdict that refuses the file for <paramref name="problems"/>.</summary>
-    private SettingsVerdict Refused(IReadOnlyList<string> problems) => new(false, problems, file.Path);
+    /// <summary>A verdict that refuses the file at <paramref name="path"/> for <paramref name="problems"/>.</summary>
+    private static SettingsVerdict Refused(string path, IReadOnlyList<string> problems) => new(false, problems, path);
 
     /// <summary>What to say about a file that is not valid JSON: where the mistake is and how to write a path, or what else is wrong with its shape.</summary>
     private static IReadOnlyList<string> DescribeUnreadable(Exception failure) =>
@@ -191,9 +213,9 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
     /// Makes <paramref name="candidate"/> the file's values in the live settings and reloads them. The check has passed
     /// them, so this does not fail for any setting it knows. Should a part of the app that it does not know still be
     /// unable to read a value, the values accepted before are put back, so that every part can read the settings again,
-    /// and the reason is returned. Null once the candidate is live.
+    /// and the reason is returned, with the file at <paramref name="path"/> named in the log. Null once the candidate is live.
     /// </summary>
-    private string? Accept(IReadOnlyDictionary<string, string?> candidate)
+    private string? Accept(IReadOnlyDictionary<string, string?> candidate, string path)
     {
         var before = accepted.Values;
         accepted.Accept(candidate);
@@ -207,7 +229,7 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
             // Deliberately not rethrown: the reload already ran every part's update, so the failure is known in full here.
             // The settings that worked before are put back, which every part can read again, and the run is refused with
             // the reason, as for any other problem with the file.
-            logger.LogWarning(ex, "The settings in {Path} passed the check, but a part of ClassScribe could not read them, so the settings before them stay", file.Path);
+            logger.LogWarning(ex, "The settings in {Path} passed the check, but a part of ClassScribe could not read them, so the settings before them stay", path);
             accepted.Accept(before);
             ((IConfigurationRoot)configuration).Reload();
             return $"A part of ClassScribe could not use these settings: {Reasons(ex)}";

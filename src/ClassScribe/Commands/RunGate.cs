@@ -33,16 +33,27 @@ public sealed class RunGate(SettingsReloader reloader, SettingsFile file, ILogge
     public IReadOnlyList<string> Problems => reloader.Last is { Usable: false } last ? last.Problems : [];
 
     /// <summary>
+    /// While the user's own settings file is missing (layout-config 1.4), what is said about it; null otherwise. The menu
+    /// shows it in its header as an error.
+    /// </summary>
+    public string? Missing => reloader.Last?.Missing;
+
+    /// <summary>The settings the user's own file holds at a default a later build changed, which the menu's header counts (see <see cref="DefaultChanges"/>).</summary>
+    public IReadOnlyList<DefaultChange> OlderDefaults => reloader.OlderDefaultsHeld();
+
+    /// <summary>
     /// Reads the settings again and returns true when the choice or command may run with them. Otherwise it logs each
     /// problem as an error, then what to do, and returns false. A command run from the development layout also hears,
     /// once, that the copy of the settings it reads is older than the project's own. The menu says that itself, in its
     /// header and, when it comes about while the menu is shown, before the choice runs (see <see cref="MenuCommand"/>).
+    /// While the user's own file is missing, the defaults are used and that is said first, once.
     /// </summary>
     public bool TryOpen(GateUse use)
     {
         if (use == GateUse.Command && file.DescribeStaleCopy() is { } stale) WarnOnce(stale);
 
         var verdict = reloader.TryReload();
+        if (verdict.Missing is { } missing) WarnOnce(missing);
         foreach (var warning in verdict.Warnings) WarnOnce(warning);
         if (verdict.Usable) return true;
 

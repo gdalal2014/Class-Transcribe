@@ -3,8 +3,9 @@ using ClassScribe.Settings;
 namespace ClassScribe.Tests;
 
 /// <summary>
-/// Where the settings and the glossary are read from: the user's own folder when it holds a settings file when ClassScribe
-/// starts, else the program's folder, as before. Every folder here is a temporary one; the real %APPDATA% is never read.
+/// Where the settings and the glossary are read from, decided at each read: the user's own file when it is there, the
+/// missing-file state when ClassScribe made one that is gone, else the program's folder, as before. Every folder here is a
+/// temporary one; the real %APPDATA% and %LOCALAPPDATA% are never read.
 /// </summary>
 [TestFixture]
 public class SettingsPlacesTests
@@ -61,7 +62,7 @@ public class SettingsPlacesTests
         Assert.That(places.UserFolder, Is.EqualTo(userFolder ? _user.Path : null));
     }
 
-    /// <summary>A user folder that is not there yet counts as an empty one, and nothing is created: ClassScribe never writes a settings file.</summary>
+    /// <summary>A user folder that is not there yet counts as an empty one, and nothing is created by reading: the user's file is made only at the first change.</summary>
     [Test]
     public void A_user_folder_that_is_not_there_is_not_created()
     {
@@ -73,17 +74,111 @@ public class SettingsPlacesTests
         Assert.That(Directory.Exists(missing), Is.False);
     }
 
-    /// <summary>The choice is made once, when ClassScribe starts: a user file that appears later does not change it until the next start.</summary>
+    /// <summary>
+    /// The choice is made at every read of the settings: a user file that appears while ClassScribe runs, as one another
+    /// window made at its first change, is read from the next read on.
+    /// </summary>
     [Test]
-    public void The_choice_is_made_once_at_start()
+    public void The_choice_is_made_at_each_read()
     {
         var places = new SettingsPlaces(_program.Path, _user.Path);
+        Assert.That(places.Origin, Is.EqualTo(SettingsOrigin.BesideTheProgram));
 
         WriteUserSettings();
 
-        Assert.That(places.Origin, Is.EqualTo(SettingsOrigin.BesideTheProgram));
-        Assert.That(places.SettingsPath, Is.EqualTo(_program.File("appsettings.json")));
-        Assert.That(new SettingsPlaces(_program.Path, _user.Path).Origin, Is.EqualTo(SettingsOrigin.UserFolder), "the next start reads it");
+        Assert.That(places.Origin, Is.EqualTo(SettingsOrigin.UserFolder));
+        Assert.That(places.SettingsPath, Is.EqualTo(_user.File("appsettings.json")));
+    }
+
+    /// <summary>
+    /// A process that has read the user's file never goes back to the file beside the program: with the file gone, the
+    /// user's file is still the one named, and its read finds nothing, which the reloader refuses (the settings stay).
+    /// </summary>
+    [Test]
+    public void Once_the_users_file_is_read_the_file_beside_the_program_never_comes_back()
+    {
+        WriteUserSettings();
+        var places = new SettingsPlaces(_program.Path, _user.Path);
+        Assert.That(places.Origin, Is.EqualTo(SettingsOrigin.UserFolder));
+
+        File.Delete(_user.File("appsettings.json"));
+
+        Assert.That(places.Current(), Is.EqualTo(new SettingsSource(SettingsOrigin.UserFolder, _user.File("appsettings.json"), _user.File("appsettings.json"))));
+        Assert.That(new SettingsPlaces(_program.Path, _user.Path).Origin, Is.EqualTo(SettingsOrigin.BesideTheProgram), "a new process without the marker: the file beside the program");
+    }
+
+    /// <summary>
+    /// Once ClassScribe has made the user's file, its marker says so: a later start that finds the file gone is in the
+    /// missing state, which names the user's file and reads the defaults beside the program, and says what to do.
+    /// </summary>
+    [Test]
+    public void The_marker_without_the_users_file_is_the_missing_state()
+    {
+        using var state = new TempFolder();
+        var places = new SettingsPlaces(_program.Path, _user.Path, state.Path);
+        Assert.That(places.HasMarker, Is.False);
+
+        places.MarkUserFileMade();
+
+        Assert.That(File.ReadAllText(state.File(SettingsPlaces.MarkerFileName)).Trim(), Is.EqualTo(_user.File("appsettings.json")), "the marker holds the file's full path");
+        var fresh = new SettingsPlaces(_program.Path, _user.Path, state.Path);
+        Assert.That(fresh.Current(), Is.EqualTo(new SettingsSource(SettingsOrigin.Missing, _user.File("appsettings.json"), _program.File("appsettings.json"))));
+        Assert.That(fresh.Folder, Is.EqualTo(_program.Path), "the defaults beside the program are read for now");
+        Assert.That(fresh.DescribeMissing(), Is.EqualTo(
+            $"Your settings file {_user.File("appsettings.json")} is missing. If it was moved or deleted by mistake, put it back (appsettings.previous.json beside it is the version before your last change). To start again from the defaults: ClassScribe settings reset --all."));
+        Assert.That(fresh.DescribeTemplateInUse(), Is.Null, "the missing file has its own line");
+
+        WriteUserSettings();
+        Assert.That(fresh.Origin, Is.EqualTo(SettingsOrigin.UserFolder), "put back, it is read again");
+        Assert.That(fresh.DescribeMissing(), Is.Null);
+    }
+
+    /// <summary>
+    /// The marker and the writer's lock go into the state folder given, %LOCALAPPDATA%\ClassScribe for this user; without
+    /// one they are beside the user's file, as with CLASSSCRIBE_SETTINGS_FOLDER; and without a user folder there are none.
+    /// </summary>
+    [Test]
+    public void The_marker_and_the_lock_are_in_the_state_folder()
+    {
+        using var state = new TempFolder();
+
+        var places = new SettingsPlaces(_program.Path, _user.Path, state.Path);
+        Assert.That((places.MarkerFile, places.LockFile, places.PreviousFile),
+            Is.EqualTo((state.File("settings-home.txt"), state.File("settings.lock"), _user.File("appsettings.previous.json"))));
+
+        var beside = new SettingsPlaces(_program.Path, _user.Path);
+        Assert.That((beside.MarkerFile, beside.LockFile), Is.EqualTo((_user.File("settings-home.txt"), _user.File("settings.lock"))));
+
+        var none = new SettingsPlaces(_program.Path, null, state.Path);
+        Assert.That((none.UserFile, none.MarkerFile, none.LockFile, none.PreviousFile), Is.EqualTo(((string?)null, (string?)null, (string?)null, (string?)null)));
+        Assert.That(none.HasMarker, Is.False);
+    }
+
+    /// <summary>
+    /// CLASSSCRIBE_SETTINGS_FOLDER, which a dry run sets in its own process, moves the user's file, the marker, the lock and
+    /// the file before the last change into the folder it names, environment variables and quotes allowed, and nothing of
+    /// %APPDATA% or %LOCALAPPDATA% is asked for, which a test run refuses.
+    /// </summary>
+    [Test]
+    public void The_settings_folder_variable_moves_every_file_into_its_folder()
+    {
+        using var variable = new TemporaryVariable(SettingsPlaces.FolderVariable, $"\"{_user.Path}\"");
+
+        var places = SettingsPlaces.ForThisUser(_program.Path);
+
+        Assert.That(places.IsOverridden, Is.True);
+        Assert.That((places.UserFolder, places.StateFolder), Is.EqualTo((_user.Path, _user.Path)));
+        Assert.That(places.MarkerFile, Is.EqualTo(_user.File("settings-home.txt")));
+        Assert.That(new SettingsPlaces(_program.Path, _user.Path).IsOverridden, Is.False);
+    }
+
+    /// <summary>Without the variable, the places for this user ask for the real roaming and runtime folders, which a test run refuses.</summary>
+    [Test]
+    public void For_this_user_the_real_folders_are_refused_in_a_test_run()
+    {
+        using var variable = new TemporaryVariable(SettingsPlaces.FolderVariable, null);
+
+        Assert.That(() => SettingsPlaces.ForThisUser(_program.Path), Throws.InvalidOperationException.With.Message.Contains(@"%APPDATA%\ClassScribe"));
     }
 
     /// <summary>A trailing separator on either folder, as AppContext.BaseDirectory has one, changes nothing in the paths.</summary>
@@ -156,14 +251,15 @@ public class SettingsPlacesTests
     }
 
     /// <summary>
-    /// Installed without a user file, the file read is the shipped template, and the menu's note says so and where the
-    /// user's copy belongs. With the user's file read, or without a user folder, there is no note.
+    /// Installed without a user file of their own yet, the file read is the one beside the program, and the menu's note says
+    /// these are the defaults and where ClassScribe makes the user's own file at the first change; it names no script, since
+    /// none makes it. With the user's file read, or without a user folder, there is no note.
     /// </summary>
     [Test]
-    public void The_template_note_comes_only_when_the_shipped_file_stands_in_for_a_missing_user_file()
+    public void The_defaults_note_comes_only_while_the_user_has_no_file_of_their_own()
     {
         Assert.That(new SettingsPlaces(_program.Path, _user.Path).DescribeTemplateInUse(),
-            Is.EqualTo($"the shipped defaults; your own copy belongs in {_user.File("appsettings.json")}: run Update-ClassScribe.cmd, or copy the file there"));
+            Is.EqualTo($"the defaults; your own file, {_user.File("appsettings.json")}, is made at your first change in S or C, or with settings set"));
         Assert.That(new SettingsPlaces(_program.Path, null).DescribeTemplateInUse(), Is.Null, "no user folder: as before");
 
         WriteUserSettings();

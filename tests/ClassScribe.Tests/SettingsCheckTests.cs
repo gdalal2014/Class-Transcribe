@@ -197,7 +197,7 @@ public class SettingsCheckTests
             Assert.That(recording.Mode, Is.EqualTo(RecordingMode.Class));
             Assert.That(recording.Microphone, Is.Empty);
             Assert.That(recording.MicrophoneProcessing, Is.EqualTo(MicrophoneProcessing.Raw));
-            Assert.That(recording.MicrophoneFollows, Is.EqualTo("chrome"));
+            Assert.That(recording.MicrophoneFollows, Is.EqualTo("auto"), "N9: any app that holds the microphone, not one laptop's browser");
             Assert.That(recording.ClassAppMute, Is.EqualTo(ClassAppMute.Unknown));
             Assert.That(transcript.ShowGapsLongerThanSeconds, Is.EqualTo(60));
             Assert.That(Problems([]), Is.Empty);

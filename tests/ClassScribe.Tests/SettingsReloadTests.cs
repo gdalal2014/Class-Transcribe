@@ -923,8 +923,9 @@ public class SettingsReloadTests
 
     /// <summary>
     /// The user's file deleted while ClassScribe runs refuses the next choice, as the file beside the program always has,
-    /// and keeps the settings: nothing falls back to the template mid-session. The choice of file is made at start only,
-    /// so ClassScribe started again while the file is still missing reads the file beside the program.
+    /// and keeps the settings: nothing falls back to the defaults mid-session, and the refusal says how to put it back or
+    /// start again. A process that started without ClassScribe's marker reads the file beside the program, since nothing
+    /// says the user ever had a file of ClassScribe's making.
     /// </summary>
     [Test]
     public void The_users_file_gone_while_ClassScribe_runs_is_refused_and_the_next_start_reads_the_template()
@@ -941,7 +942,7 @@ public class SettingsReloadTests
         Assert.That(gate.TryOpen(GateUse.MenuChoice), Is.False);
 
         Assert.That(log.Problems[0], Is.EqualTo(
-            $"{userSettings} is no longer there, so the settings stay as they were when it was last read. Put the file back, or start ClassScribe again to go back to the defaults."));
+            $"{userSettings} is no longer there, so the settings stay as they were when it was last read. Put it back (appsettings.previous.json beside it is the version before your last change), or start again from the defaults with: ClassScribe settings reset --all."));
         Assert.That(app.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.FlushSeconds, Is.EqualTo(7));
 
         using var next = Build(new SettingsPlaces(_folder.Path, user.Path));
@@ -950,12 +951,44 @@ public class SettingsReloadTests
     }
 
     /// <summary>
-    /// Installed without the user's own copy (deleted, or the program folder copied to another laptop), the menu reads the
-    /// shipped template beside the program and says so in the settings line, with where the copy belongs and how to get
-    /// it back.
+    /// A user's file that ClassScribe made, missing when it starts (layout-config 1.4): the defaults beside the program are
+    /// used for what is done now, so a class still records; a command's first line is the warning, given once; the menu's
+    /// header shows it as an error under the file it names; and nothing quietly makes a new file.
     /// </summary>
     [Test]
-    public async Task The_menu_says_when_the_shipped_template_stands_in_for_a_missing_user_file()
+    public async Task A_missing_user_file_reads_the_defaults_with_a_warning_and_an_error_in_the_header()
+    {
+        using var user = new TempFolder();
+        using var state = new TempFolder();
+        WriteSettings(Json(new { Recording = new { FlushSeconds = 4 } }));
+        var places = new SettingsPlaces(_folder.Path, user.Path, state.Path);
+        places.MarkUserFileMade();
+        using var app = Build(new SettingsPlaces(_folder.Path, user.Path, state.Path));
+        var log = new RecordingLogger<RunGate>();
+        var gate = new RunGate(app.Services.GetRequiredService<SettingsReloader>(), app.Services.GetRequiredService<SettingsFile>(), log);
+        var missing = $"Your settings file {user.File("appsettings.json")} is missing. If it was moved or deleted by mistake, put it back (appsettings.previous.json beside it is the version before your last change). To start again from the defaults: ClassScribe settings reset --all.";
+
+        Assert.That(gate.TryOpen(GateUse.Command), Is.True, "a command still runs");
+        Assert.That(gate.TryOpen(GateUse.Command), Is.True);
+
+        Assert.That(log.Problems, Is.EqualTo(new[] { missing }), "said once");
+        Assert.That(app.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.FlushSeconds, Is.EqualTo(4), "the defaults beside the program");
+        var ui = new FakeConsoleUi();
+        ui.Type('q');
+        await Menu(app, ui, new Mock<ICommandRunner>(), new Mock<IDesktop>()).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
+        var lines = ui.Screen.Split(Environment.NewLine);
+        var settingsLine = Array.IndexOf(lines, $"Settings: {user.File("appsettings.json")}");
+        Assert.That(settingsLine, Is.GreaterThanOrEqualTo(0), "the header names the user's file");
+        Assert.That(lines[settingsLine + 1], Is.EqualTo($"ERROR  {missing}"));
+        Assert.That(File.Exists(user.File("appsettings.json")), Is.False, "no new file hides the loss");
+    }
+
+    /// <summary>
+    /// Before the user has a file of their own, the menu reads the defaults beside the program and says so in the settings
+    /// line, with where ClassScribe makes the user's file at the first change.
+    /// </summary>
+    [Test]
+    public async Task The_menu_says_when_the_defaults_stand_in_for_a_file_of_the_users_own()
     {
         using var user = new TempFolder();
         WriteSettings("{}");
@@ -966,7 +999,31 @@ public class SettingsReloadTests
         await Menu(app, ui, new Mock<ICommandRunner>(), new Mock<IDesktop>()).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
 
         Assert.That(ui.Screen.Split(Environment.NewLine), Has.Member(
-            $"Settings: {SettingsPath} (the shipped defaults; your own copy belongs in {user.File("appsettings.json")}: run Update-ClassScribe.cmd, or copy the file there)"));
+            $"Settings: {SettingsPath} (the defaults; your own file, {user.File("appsettings.json")}, is made at your first change in S or C, or with settings set)"));
+    }
+
+    /// <summary>
+    /// A settings folder from CLASSSCRIBE_SETTINGS_FOLDER, as a dry run sets in its own process, is named in the menu's
+    /// header, so that a stray one is seen; and a user's file that holds a default a later build changed is counted there,
+    /// pointing at settings list. The file beside the program holds the build's own defaults, so it is never counted.
+    /// </summary>
+    [Test]
+    public async Task The_header_names_a_settings_folder_override_and_counts_older_defaults()
+    {
+        using var user = new TempFolder();
+        File.WriteAllText(user.File("appsettings.json"), Json(new { Recording = new { MicrophoneFollows = "chrome" } }));
+        using var app = Build(new SettingsPlaces(_folder.Path, user.Path, stateFolder: null, overridden: true));
+        var ui = new FakeConsoleUi();
+        ui.Type('q');
+
+        await Menu(app, ui, new Mock<ICommandRunner>(), new Mock<IDesktop>()).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+        var lines = ui.Screen.Split(Environment.NewLine);
+        Assert.That(lines, Has.Member($"Settings folder: {user.Path}, from CLASSSCRIBE_SETTINGS_FOLDER, as in a dry run; your own settings are not read in this window."));
+        Assert.That(lines, Has.Member("1 setting holds an older default; settings list shows it"));
+        WriteSettings(Json(new { Recording = new { MicrophoneFollows = "chrome" } }));
+        using var beside = Build(new SettingsPlaces(_folder.Path, userFolder: null));
+        Assert.That(beside.Services.GetRequiredService<RunGate>().OlderDefaults, Is.Empty);
     }
 
     /// <summary>Under dotnet run, where the file read is the build's copy, the header is as before, user folder or not: the stale-copy warning covers that layout.</summary>
