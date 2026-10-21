@@ -128,6 +128,23 @@ public class MenuSettingsTests
         Assert.That(_recorded[1].Request.Source, Is.EqualTo(_choice.Current));
     }
 
+    /// <summary>
+    /// Esc at the saved-class question of choices 1 and 2 goes back to the menu and records nothing, neither the class as
+    /// saved nor the typed name with choice 6's source.
+    /// </summary>
+    [Test]
+    public async Task Esc_at_the_saved_class_question_records_nothing()
+    {
+        _ui.Type('1');
+        _ui.TypeLine("Mantiq");
+        _ui.Type('\u001b', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(_ui.Screen, Does.Contain("Mantiq is a saved class (chrome). Enter records it as saved; O records with choice 6's source instead."));
+        Assert.That(_recorded, Is.Empty);
+    }
+
     /// <summary>A course shared by two saved classes lists both, and a number picks one.</summary>
     [Test]
     public async Task A_course_of_two_classes_lists_both()
@@ -231,6 +248,25 @@ public class MenuSettingsTests
         await menu.RunAsync();
         Assert.That(_choice.Mode, Is.EqualTo(RecordingMode.Class), "the pick holds until ClassScribe is closed");
         Assert.That(_files.UserText, Is.EqualTo(saved), "any key but S writes nothing");
+    }
+
+    /// <summary>
+    /// In person with a camera and its size picked in choice 7, S keeps the size as Recording:CameraResolution (amendment 11),
+    /// with the mode and the microphone; the camera itself is no setting, so nothing names it.
+    /// </summary>
+    [Test]
+    public async Task S_after_choice_7_in_person_keeps_the_picture_size()
+    {
+        var microphones = new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array, LaptopMicrophones.Obsbot);
+        var menu = new MicrophoneMenu(microphones, _choice, _files.SettingsFile, TestOptions.Create(new RecordingOptions()), _ui, new FakeCameraProvider(), _files.Writer);
+        _ui.Type('i', '2', '2', '3', 's');
+
+        await menu.RunAsync();
+
+        Assert.That(_files.UserValue("Recording:Mode")!.GetValue<string>(), Is.EqualTo("Microphone"));
+        Assert.That(_files.UserValue("Recording:Microphone")!.GetValue<string>(), Is.EqualTo(LaptopMicrophones.Obsbot.Name));
+        Assert.That(_files.UserValue("Recording:CameraResolution")!.GetValue<string>(), Is.EqualTo("1080p"));
+        Assert.That(_files.UserText, Does.Not.Contain(LaptopCameras.Obsbot.Name), "the camera is no setting");
     }
 
     /// <summary>

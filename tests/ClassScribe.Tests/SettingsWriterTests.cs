@@ -362,6 +362,28 @@ public class SettingsWriterTests
     }
 
     /// <summary>
+    /// The first change that finds the user's file made meanwhile, as another window's first change makes it, starts again
+    /// from that file rather than replacing it: its values are kept, and the change is made over them.
+    /// </summary>
+    [Test]
+    public void A_first_change_that_finds_a_file_made_meanwhile_starts_again_from_it()
+    {
+        var made = false;
+        _files.Writer.BeforeSecondRead = () =>
+        {
+            if (made) return;
+            made = true;
+            _files.WriteUser("""{ "Recording": { "Device": "Made meanwhile" } }""");
+        };
+
+        var change = _files.Writer.Set("Recording:FlushSeconds", "7");
+
+        Assert.That(change.ExitCode, Is.EqualTo(0));
+        Assert.That(_files.UserValue("Recording:Device")!.GetValue<string>(), Is.EqualTo("Made meanwhile"), "the file made meanwhile is changed, never replaced");
+        Assert.That(_files.UserValue("Recording:FlushSeconds")!.GetValue<int>(), Is.EqualTo(7));
+    }
+
+    /// <summary>
     /// The file saved by another program between the check and the write makes the change start again from the new file,
     /// so the other program's edit is kept; a file that keeps changing is given up after three tries, exit 1.
     /// </summary>

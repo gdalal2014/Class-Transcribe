@@ -106,11 +106,14 @@ public class AppTests
         Assert.That(_gateLog.Problems[0], Is.EqualTo($"Recording:FlushSeconds is \"five\" in {_settings.File.Path}, which the check refuses; this recording uses the default, \"5\", in its place."));
         Assert.That(_settings.Configuration["Recording:SilenceWarningSeconds"], Is.EqualTo("30"), "what passes is kept");
         Assert.That(_settings.Configuration["Recording:FlushSeconds"], Is.Null, "what fails is left out");
+        var fix = $"Fix the settings in {_settings.File.Path}; until then this recording goes on without them, and other choices and commands wait";
+        Assert.That(_gateLog.Problems[^1], Is.EqualTo(fix), "the last line says what to do");
 
         _settings.Write("{ not json");
         _gateLog = new RecordingLogger<RunGate>();
         Assert.That(await RunAsync(args), Is.EqualTo(0));
         Assert.That(_gateLog.Problems, Has.Some.StartsWith($"Nothing of {_settings.File.Path} could be taken, so this recording uses the settings ClassScribe read last"));
+        Assert.That(_gateLog.Problems[^1], Is.EqualTo(fix));
     }
 
     /// <summary>

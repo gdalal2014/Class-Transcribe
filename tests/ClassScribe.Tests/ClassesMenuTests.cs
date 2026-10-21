@@ -54,13 +54,17 @@ public class ClassesMenuTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Runs menu C over <paramref name="classes"/>, or the two above, failing the test rather than hanging.</summary>
-    private Task<int> RunAsync(Dictionary<string, string?>? classes = null)
+    /// <summary>
+    /// Runs menu C over <paramref name="classes"/>, or the two above, with <paramref name="cameras"/> for the camera question
+    /// in person (none asked without), failing the test rather than hanging.
+    /// </summary>
+    private Task<int> RunAsync(Dictionary<string, string?>? classes = null, FakeCameraProvider? cameras = null)
     {
         var saved = new SavedClasses(new ConfigurationBuilder().AddInMemoryCollection(classes ?? Saved).Build());
         var folders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path }), TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<ClassFolders>.Instance);
         var microphones = new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array, LaptopMicrophones.Obsbot);
-        var menu = new ClassesMenu(saved, new SettingsPlaces(_folder.Path, userFolder: null), _commands.Object, folders, new FakeCaptureProvider(), microphones, _ui, TimeProvider.System);
+        var menu = new ClassesMenu(saved, new SettingsPlaces(_folder.Path, userFolder: null), _commands.Object, folders, new FakeCaptureProvider(), microphones, _ui, TimeProvider.System,
+            cameras);
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
 
@@ -199,6 +203,39 @@ public class ClassesMenuTests
 
         var set = (ClassRequest.Set)_changed.Single();
         Assert.That(set.Choices.Output, Is.EqualTo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Classes", "Mantiq")));
+    }
+
+    /// <summary>
+    /// E on a class in person with a camera: Enter keeps it in person with its microphone, and N at the camera question
+    /// takes the camera and its size away, so the class records your microphone alone; the rest by Enter is kept.
+    /// </summary>
+    [Test]
+    public async Task E_with_N_at_the_camera_takes_the_camera_away()
+    {
+        var fields = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ClassFields.Course] = "Kalam",
+            [ClassFields.Mode] = "Microphone",
+            [ClassFields.Microphone] = "OBSBOT",
+            [ClassFields.Camera] = "OBSBOT",
+            [ClassFields.CameraResolution] = "1080p"
+        };
+        _ui.Type('e', '1');
+        _ui.TypeLine("");
+        _ui.Type('\r', '\r', 'n');
+        _ui.TypeLine("");
+        _ui.Type('\r');
+
+        await RunAsync(fields.ToDictionary(field => $"Classes:Kalam (in person):{field.Key}", field => field.Value), new FakeCameraProvider());
+
+        Assert.That(_ui.Screen, Does.Contain("Press a camera's number, Enter keeps \"OBSBOT\", N for none, or Esc to go back."));
+        var set = (ClassRequest.Set)_changed.Single();
+        var after = new Dictionary<string, string?>(fields, StringComparer.OrdinalIgnoreCase);
+        Assert.That(set.Choices.ApplyTo(after), Is.Null);
+        Assert.That(after, Is.EquivalentTo(new Dictionary<string, string?>
+        {
+            [ClassFields.Course] = "Kalam", [ClassFields.Mode] = "Microphone", [ClassFields.Microphone] = "OBSBOT", [ClassFields.Transcribe] = "true"
+        }));
     }
 
     /// <summary>

@@ -81,6 +81,21 @@ public class ClassCommandTests
     }
 
     /// <summary>
+    /// class set --clear camera on a class in person with a camera and its size empties the size too, since a size without
+    /// a camera would make the class unusable; the class goes on recording your microphone alone.
+    /// </summary>
+    [Test]
+    public void Clear_camera_empties_its_size_too()
+    {
+        Run(new ClassRequest.Add("Kalam (in person)", new ClassChoices { Source = new SourceGiven(SourceOption.InPerson, "OBSBOT"), Camera = true, Resolution = "1080p" }));
+
+        Assert.That(Run(new ClassRequest.Set("Kalam (in person)", new ClassChoices { Clear = ["camera"] })), Is.EqualTo(0));
+
+        Assert.That(_files.UserValue("Classes:Kalam (in person)")!.ToJsonString(), Is.EqualTo("""{"Course":"Kalam (in person)","Mode":"Microphone","Microphone":"OBSBOT"}"""));
+        Assert.That(_files.Log.Problems, Is.Empty);
+    }
+
+    /// <summary>
     /// A class that exists already, in any letter case, is refused with exit 2, since names that differ only in case are one
     /// name to the settings; so is a name that cannot be a folder's, and a mix the class cannot take.
     /// </summary>

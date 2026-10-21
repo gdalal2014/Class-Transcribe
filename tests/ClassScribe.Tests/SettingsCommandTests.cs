@@ -114,6 +114,8 @@ public class SettingsCommandTests
         Assert.That(flush.ToJsonString(), Is.EqualTo("""{"key":"Recording:FlushSeconds","value":7,"default":5,"source":"file","newerDefault":null}"""));
         Assert.That(rows.Single(row => row["key"]!.GetValue<string>() == "Recording:SilenceWarningSeconds")["source"]!.GetValue<string>(), Is.EqualTo("environment"));
         Assert.That(rows.Single(row => row["key"]!.GetValue<string>() == "YouTube:MayDownloadChannels")["value"]![0]!.GetValue<string>(), Is.EqualTo("@Ṣughrā"));
+        Assert.That(rows.Single(row => row["key"]!.GetValue<string>() == "YouTube:MayDownloadChannels")["source"]!.GetValue<string>(), Is.EqualTo("file"),
+            "a list the file holds comes from the file, though the settings hold only its items, by number");
         Assert.That(_error.ToString(), Is.Empty);
     }
 

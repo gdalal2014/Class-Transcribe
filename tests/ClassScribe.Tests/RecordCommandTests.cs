@@ -543,6 +543,23 @@ public partial class RecordCommandTests
         }));
     }
 
+    /// <summary>
+    /// A saved class's run says so in its first line (layout-config 4.1): "(saved class)" after a course that is the class's
+    /// own name, in any case, and the class's name when it differs from the course.
+    /// </summary>
+    [TestCase("Kalam", " (saved class)")]
+    [TestCase("kalam", " (saved class)")]
+    [TestCase("Kalam (Zoom app)", " (the saved class \"Kalam (Zoom app)\")")]
+    public async Task A_saved_classs_run_says_so_in_its_first_line(string className, string saved)
+    {
+        var run = CreateCommand().RunAsync(Request(transcribe: false) with { ClassName = className });
+        await Wait.UntilAsync(() => _capture.Started);
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(_log.Messages[0], Is.EqualTo($"Recording \"Kalam\"{saved} to {KalamFolder()}"));
+    }
+
     /// <summary>The sources a run can be asked to record from the command line, each with the start line that names it.</summary>
     private static IEnumerable<TestCaseData> SourcesNamedAtTheStart()
     {
