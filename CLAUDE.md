@@ -192,8 +192,8 @@ advice after a format error (10 A).
   `CommandServices` the settings and class commands, `CommandOutput`, and menus C and S
   (`ClassesMenu`, `SettingsMenu`, per run). `AppHost.Build` validates scopes and every registration
   (`ValidateScopes`, `ValidateOnBuild`), so a per-run service taken outside a run's scope, or one
-  that cannot be made, fails at once. `AppHost.BuildRecorder(start, apiKey, log, folder, time,
-  configureServices)` builds the recorder's host from the same registrations plus `AddRecorder`
+  that cannot be made, fails at once. `AppHost.BuildRecorder(start, apiKey, log, folder, places,
+  time, configureServices)` builds the recorder's host from the same registrations plus `AddRecorder`
   (the link's console, no window signals, `LinkStatusSink`, `RecorderResultShower`, the server, the
   alerts and the process starter in place of the window's), from the request's settings snapshot and
   the key alone: no appsettings.json, no environment source, no console logger, scopes validated but
@@ -338,8 +338,10 @@ advice after a format error (10 A).
   class app's microphone; the gate is armed at the start only for `ClassAppMute.Visible` or
   `FollowRule.None`.
 - TDD with NUnit and Moq: write the failing test first. Run `dotnet test` before handing code over.
-  For the real host with stand-ins, use `AppHost.Build(contentRoot, apiKey, configureServices)`;
-  `configureServices` runs last. `TestDoubles.cs` has `TestOptions<T>` (one object for `IOptions`,
+  For the real host with stand-ins, use `AppHost.Build(places, apiKey, configureServices)`, with
+  `new SettingsPlaces(<temporary folder>, userFolder: null)` or a `SettingsFileFixtures`' places as
+  `places`, never `SettingsPlaces.ForThisUser`; `configureServices` runs last. `TestDoubles.cs` has
+  `TestOptions<T>` (one object for `IOptions`,
   `IOptionsSnapshot` and `IOptionsMonitor`; `Set` fires `OnChange`) and `TestSettings` (a real gate
   over a temporary `appsettings.json`). Write hours of audio with `WavSegmentWriter` at 10 Hz, so
   the files stay under a megabyte. Every test that builds the app with `AppHost.Build` and runs a
@@ -376,8 +378,10 @@ advice after a format error (10 A).
   the commands built by hand, and `GoogleOrElse` routes an app's every HTTP client to `FakeGoogle` for
   googleapis.com and to another handler, such as the ElevenLabs stub, for the rest (`EndToEndTests`).
   `RecorderHostDriveTests.cs` is a part of `RecorderHostTests` (partial) that signs the real recorder
-  host in to `FakeGoogle` through `SignedInToDrive`. The recorder's seams for tests are `RecorderHost { Folder, Time, ConfigureServices }` and
-  `AppHost.BuildRecorder(..., configureServices)`. Never set the real console title, write a
+  host in to `FakeGoogle` through `SignedInToDrive`. The recorder's seams for tests are
+  `RecorderHost { Folder, Places, Time, ConfigureServices }` (`Places` is required: a test gives its
+  own temporary places) and `AppHost.BuildRecorder(start, apiKey, log, folder, places, time,
+  configureServices)`. Never set the real console title, write a
   sequence to the real console, flash a visible window, or read the console in a recorder. Two
   NUnit pitfalls: `Does.Contain`, `Does.StartWith` and `Does.EndWith` compare with the current
   culture, where ICU ignores control characters, so check those ordinally
@@ -515,7 +519,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 - `record` and `record-only` need the name and a source (`--device "<part>"`, `--device auto`,
   `--app <process>` or `--in-person ["<microphone>"]`), or `--class "<saved class>"` with options over
   the class's own in groups (`RecordClassAsync`, `ClassChoices`); a saved class's name without a
-  source is pointed at `--class` (N5). `--output` is optional for them and for `youtube` (N6:
+  source is pointed at `--class` (N5; the validator runs before the gate's read for a recording, so
+  `SavedClasses.FindInFile` looks in the file as it is now when the settings in force hold no such
+  class). `--output` is optional for them and for `youtube` (N6:
   `OutputRoot`, the class's own folder, else `Recording:OutputFolder` as the settings in force say
   it). `--mic ["<microphone>"]`
   adds the microphone beside `--device` or `--app`, and `--mic-follows <app>|auto|none` names the
@@ -781,7 +787,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   recording kept its audio or Drive could not be asked; 2 a mistake on the command line, named with that
   command's help (a missing name or source, a saved class's name without `--class`, an unknown or unusable saved class, two sources, `--mic` with `--in-person`,
   `--mic-follows` without `--mic`, a bad value, an unknown word, a path that is not there, `drive`
-  alone, `--client` without a file, `drive free-space` without `--yes` or a path; for `settings` and `class`, an unknown setting or class, the key, a value the check refuses, and `class show` of an unusable class, while 1 is a file that is not JSON, has comments of its own, is missing, cannot be written or keeps changing); 130 cancelled (Esc
+  alone, `--client` without a file, `drive free-space` without `--yes` or a path; for `settings` and `class`, an unknown setting or class, the key, a value the check refuses, and `class show` of an unusable class or while the file is missing, while 1 is a file that is not JSON, has comments of its own, is missing (but for `class show`), cannot be written or keeps changing); 130 cancelled (Esc
   during the sign-in's wait included, and Ctrl+C during `drive upload`, which leaves it to go on
   where it stopped, or `drive free-space`; nothing reads Esc during those two, although
   `CommandLineTree`'s help for `drive upload` says "Esc or Ctrl+C stops it"). An upload after a run
@@ -921,14 +927,23 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `appsettings.previous.json`), then reloaded. The first change writes a full copy of every setting
   (`SettingsCatalog`, by reflection over the options classes in declaration order, plus
   `Logging:LogLevel` as a map), under a three-line `//` header, and the marker; it never writes the
-  key (`ApiKeyRefused`) and refuses a file with comments of its own (`CommentsOfItsOwn`). Keys a newer
-  build wrote are kept; `settings fill` adds the missing ones at their defaults. A changed default
+  key (`ApiKeyRefused`; one a hand edit put in the file is taken out of it and of the copy before,
+  `ApiKeyTakenOut`, and reset --all keeps no copy of a file that is not JSON and mentions one,
+  `ApiKeyNotKept`) and refuses a file with comments of its own (`CommentsOfItsOwn`: any comment after
+  the opening brace, and before it any that is not a line of a header in `KnownHeaders`, in order,
+  written as a line comment; a later build that rewords the header adds the old one there). Keys a
+  newer build wrote are kept; every later change adds the settings the file lacks at their defaults
+  and says so with the build's version (`AddedLines`), and `settings fill` does that alone (refused
+  with exit 1 while the user's file is missing). A changed default
   needs a row in `DefaultChanges.Rows` (old, new, version), which `settings list` and the menu's header
   show for a file holding the old one (`Recording:MicrophoneFollows`, `chrome` to `auto`, is the
   first). Saved classes are `Classes:<name>:<field>` in the same file (`SavedClasses`, a singleton
   reading `IConfiguration` at each use; `ClassFields.All` in order; unknown fields kept; each class
   checked on its own, so an unusable one never holds up the rest or the file); `ClassChoices` applies
-  the command line's or the menu's answers in groups. `settings` and `class` run without the gate
+  the command line's or the menu's answers in groups. Menu C's E takes its Enter answers from the
+  class, or for an unusable one from its raw fields (`ClassesMenu.Kept.FromFields`), so Enter through
+  every question keeps them; a folder typed in menus S and C is resolved by `ClassFolders.RootFor`,
+  a relative one from the user profile, as `Recording:OutputFolder` is. `settings` and `class` run without the gate
   (`CommandKind.Settings`), so a refused file can be fixed with them.
   `RunGate` reads the file again before each menu choice and each command (`SettingsReloader`): a
   staged copy is checked by `SettingsCheck`, and only values that pass reach the live settings,

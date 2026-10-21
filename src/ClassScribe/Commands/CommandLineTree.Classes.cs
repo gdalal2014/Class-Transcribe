@@ -205,6 +205,6 @@ public sealed partial class CommandLineTree
 
         A class is saved in your settings file under Classes, by its name, which is what it is started by; its course names the recording's folder and files.
         Names are matched exactly, in any case. class rename changes only the name; class set --course starts the next class in a new folder.
-        Exit codes: 0 done (class show: the class can be used); 1 a settings file that is not valid JSON, has comments of your own, cannot be written, keeps changing or is missing; 2 an unknown or unusable class, a value the check refuses, or another mistake.
+        Exit codes: 0 done (class show: the class can be used); 1 a settings file that is not valid JSON, has comments of your own, cannot be written, keeps changing or is missing (class show: only one that is not valid JSON or cannot be read); 2 an unknown or unusable class, a value the check refuses, or another mistake (class show: also while the settings file is missing, so that a launcher records with its own values).
         """;
 }
