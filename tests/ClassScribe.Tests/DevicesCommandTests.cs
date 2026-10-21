@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 
 namespace ClassScribe.Tests;
@@ -31,6 +32,7 @@ public class DevicesCommandTests
     private FakeCaptureProvider _devices = null!;
     private FakeMicrophoneProvider _microphones = null!;
     private FakeMicrophoneSessions _sessions = null!;
+    private FakeCameraProvider _cameras = null!;
 
     /// <summary>Creates the console the list is written to, the simulated devices and microphones, and the simulated microphone sessions.</summary>
     [SetUp]
@@ -40,11 +42,13 @@ public class DevicesCommandTests
         _devices = new FakeCaptureProvider();
         _microphones = new FakeMicrophoneProvider();
         _sessions = new FakeMicrophoneSessions();
+        _cameras = new FakeCameraProvider { Connected = [] };
     }
 
     /// <summary>The command over the simulated devices, microphones and sessions, which it asks for only when it runs.</summary>
     private DevicesCommand CreateCommand() =>
-        new(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => _microphones), new Lazy<IMicrophoneSessions>(() => _sessions), _ui);
+        new(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => _microphones), new Lazy<IMicrophoneSessions>(() => _sessions),
+            new Lazy<ICameraProvider>(() => _cameras), _ui);
 
     /// <summary>What the command wrote, line by line, with each run of spaces that lines up a column made two spaces.</summary>
     private string[] Lines => [.. _ui.Screen.Split(Environment.NewLine).Select(line => Regex.Replace(line, " {3,}", "  "))];
@@ -57,10 +61,12 @@ public class DevicesCommandTests
     /// --device auto for the device the class plays on; then the apps with sound, one line per app at its loudest, each
     /// with its --app option. ClassScribe's own processes are left out: a recording's own capture shows up as an app with
     /// sound. Then the microphones, each with the --mic option that picks it, and the rule that picks one when none is
-    /// named. The list says that nothing was opened, and ends with the examples. Nothing is opened, and the exit code is 0.
+    /// named; then the cameras, each with where it is, a webcam's microphone named by their shared container, its --camera
+    /// option, and the rule that picks one when none is named. The list says that nothing was opened, and ends with the
+    /// examples. Nothing is opened, and the exit code is 0.
     /// </summary>
     [Test]
-    public void The_devices_the_apps_with_sound_and_the_microphones_are_listed_with_the_option_that_records_each()
+    public async Task The_devices_the_apps_with_sound_the_microphones_and_the_cameras_are_listed_with_the_option_that_records_each()
     {
         _devices.ConnectDevice(Speakers);
         _devices.ConnectDevice("Headphones (Pixel Buds Pro 2)", level: 0.3f);
@@ -69,9 +75,11 @@ public class DevicesCommandTests
         _devices.AddApp(5151, "msedge", Speakers);
         _devices.AddApp(6161, "ClassScribe", Speakers, level: 0.2f);
         _devices.AddApp(Environment.ProcessId, "testhost", Speakers);
-        _microphones.Connect(LaptopMicrophones.Array, LaptopMicrophones.Obsbot);
+        var obsbot = LaptopMicrophones.Obsbot with { ContainerId = LaptopCameras.ObsbotContainer };
+        _microphones.Connect(LaptopMicrophones.Array, obsbot);
+        _cameras.Connected = [LaptopCameras.Integrated, LaptopCameras.Obsbot];
 
-        var exitCode = CreateCommand().Run();
+        var exitCode = await CreateCommand().RunAsync();
 
         string[] expected =
         [
@@ -84,8 +92,12 @@ public class DevicesCommandTests
             $"  msedge  (app on {Speakers})  --app msedge",
             "Microphones:",
             $"  {LaptopMicrophones.Array.Name}  (built in, default, raw)  {MicOption(LaptopMicrophones.Array)}",
-            $"  {LaptopMicrophones.Obsbot.Name}  (USB, raw)  {MicOption(LaptopMicrophones.Obsbot)}",
+            $"  {obsbot.Name}  (USB, raw)  {MicOption(obsbot)}",
             "  Windows' default microphone, never a Bluetooth one  --mic",
+            "Cameras:",
+            "  Integrated Camera  (built in, front)  --camera \"Integrated Camera\"",
+            $"  OBSBOT Meet Flip StreamCamera  (USB; its microphone: {obsbot.Name})  --camera \"OBSBOT Meet Flip StreamCamera\"",
+            "  A USB camera, else the built-in front camera  --camera",
             NothingOpened,
             .. Examples
         ];
@@ -101,7 +113,7 @@ public class DevicesCommandTests
     /// own sounds and ClassScribe's own processes, whose capture holds a microphone during a recording, are left out.
     /// </summary>
     [Test]
-    public void Each_microphone_says_which_apps_hold_it_now_and_whether_Windows_mutes_it()
+    public async Task Each_microphone_says_which_apps_hold_it_now_and_whether_Windows_mutes_it()
     {
         var array = LaptopMicrophones.Array;
         var obsbot = LaptopMicrophones.Obsbot;
@@ -110,7 +122,7 @@ public class DevicesCommandTests
             Laptop.Session(array.Id, Laptop.OwnProcess), Laptop.SystemSounds(array.Id)));
         _sessions.Set(Laptop.Listing(obsbot.Id) with { MutedInWindows = true });
 
-        CreateCommand().Run();
+        await CreateCommand().RunAsync();
 
         Assert.That(Lines, Contains.Item($"  {array.Name}  (built in, default, raw; chrome is listening; vibe holds it without listening)  {MicOption(array)}"));
         Assert.That(Lines, Contains.Item($"  {obsbot.Name}  (USB, raw; muted in Windows)  {MicOption(obsbot)}"));
@@ -121,14 +133,14 @@ public class DevicesCommandTests
     /// so it is not listed as holding it; a process that Windows could not name is named by its number.
     /// </summary>
     [Test]
-    public void An_expired_session_is_left_out_and_a_process_without_a_name_is_named_by_its_number()
+    public async Task An_expired_session_is_left_out_and_a_process_without_a_name_is_named_by_its_number()
     {
         var array = LaptopMicrophones.Array;
         _microphones.Connect(array);
         _sessions.Set(Laptop.Listing(array.Id, Laptop.Session(array.Id, Laptop.ChromeUtility), Laptop.Session(array.Id, Laptop.Vibe, CaptureSessionState.Expired),
             new CaptureSession("unnamed", array.Id, 9999, ImageName: null, SystemSounds: false, CaptureSessionState.Active, SessionMuted: null)));
 
-        CreateCommand().Run();
+        await CreateCommand().RunAsync();
 
         Assert.That(Lines, Contains.Item($"  {array.Name}  (built in, default, raw; chrome is listening; process 9999 is listening)  {MicOption(array)}"));
         Assert.That(_ui.Screen, Does.Not.Contain("vibe"), "an app whose session has expired no longer holds the microphone");
@@ -140,30 +152,31 @@ public class DevicesCommandTests
     /// no option, since no name picks it.
     /// </summary>
     [Test]
-    public void A_Bluetooth_microphone_and_a_loopback_input_say_why_they_are_not_chosen()
+    public async Task A_Bluetooth_microphone_and_a_loopback_input_say_why_they_are_not_chosen()
     {
         _microphones.Connect(LaptopMicrophones.PixelBuds, LaptopMicrophones.Soundcore, LaptopMicrophones.StereoMix);
 
-        CreateCommand().Run();
+        await CreateCommand().RunAsync();
 
         Assert.That(Lines, Contains.Item($"  {LaptopMicrophones.PixelBuds.Name}  (Bluetooth: never chosen unless named; call-quality sound)  {MicOption(LaptopMicrophones.PixelBuds)}"));
         Assert.That(Lines, Contains.Item($"  {LaptopMicrophones.Soundcore.Name}  (Bluetooth: never chosen unless named; call-quality sound)  {MicOption(LaptopMicrophones.Soundcore)}"));
         Assert.That(Lines, Contains.Item($"  {LaptopMicrophones.StereoMix.Name}  (records what the computer plays; never recorded)"));
     }
 
-    /// <summary>The options of the devices, the apps and the microphones line up in one column, so that the one wanted is easy to find.</summary>
+    /// <summary>The options of the devices, the apps, the microphones and the cameras line up in one column, so that the one wanted is easy to find.</summary>
     [Test]
-    public void The_options_line_up_in_one_column()
+    public async Task The_options_line_up_in_one_column()
     {
         _devices.ConnectDevice(Speakers);
         _devices.AddApp(4242, "chrome", Speakers);
         _microphones.Connect(LaptopMicrophones.Array, LaptopMicrophones.Obsbot);
+        _cameras.Connected = LaptopCameras.All;
 
-        CreateCommand().Run();
+        await CreateCommand().RunAsync();
 
         var columns = _ui.Screen.Split(Environment.NewLine)
             .Where(line => line.StartsWith("  ", StringComparison.Ordinal) && !line.Contains("ClassScribe record", StringComparison.Ordinal))
-            .Select(line => Regex.Match(line, " --(?:device|app|mic)(?: |$)").Index)
+            .Select(line => Regex.Match(line, " --(?:device|app|mic|camera)(?: |$)").Index)
             .Where(column => column > 0)
             .Distinct();
         Assert.That(columns.Count(), Is.EqualTo(1));
@@ -174,9 +187,9 @@ public class DevicesCommandTests
     /// device to play the class, and --mic, which waits for a microphone.
     /// </summary>
     [Test]
-    public void Without_devices_apps_or_microphones_the_lists_say_so()
+    public async Task Without_devices_apps_or_microphones_the_lists_say_so()
     {
-        var exitCode = CreateCommand().Run();
+        var exitCode = await CreateCommand().RunAsync();
 
         string[] expected =
         [
@@ -188,6 +201,9 @@ public class DevicesCommandTests
             "Microphones:",
             "  None is connected now.",
             "  Windows' default microphone, never a Bluetooth one  --mic",
+            "Cameras:",
+            "  None is connected now.",
+            "  A USB camera, else the built-in front camera  --camera",
             NothingOpened,
             .. Examples
         ];
@@ -200,18 +216,33 @@ public class DevicesCommandTests
     /// is listed with its own notes and says nothing about apps.
     /// </summary>
     [Test]
-    public void A_microphone_missing_from_the_sessions_list_says_nothing_about_apps()
+    public async Task A_microphone_missing_from_the_sessions_list_says_nothing_about_apps()
     {
         _microphones.Connect(LaptopMicrophones.Array);
 
-        var exitCode = CreateCommand().Run();
+        var exitCode = await CreateCommand().RunAsync();
 
         Assert.That(exitCode, Is.EqualTo(0));
         Assert.That(Lines, Contains.Item($"  {LaptopMicrophones.Array.Name}  (built in, default, raw)  {MicOption(LaptopMicrophones.Array)}"));
         Assert.That(_sessions.ReadAlls, Is.EqualTo(1), "every microphone's sessions are read in one look");
     }
 
-    /// <summary>The devices, the microphones and the sessions are asked for only when the command runs, so making the command touches no audio device.</summary>
+    /// <summary>A camera list Windows does not give says why, and the other lists, and the rule for --camera, are still there.</summary>
+    [Test]
+    public async Task A_camera_list_that_cannot_be_read_says_why()
+    {
+        _microphones.Connect(LaptopMicrophones.Array);
+        _cameras.Problem = "Windows did not list the cameras: The device is not ready (0x80070015)";
+
+        var exitCode = await CreateCommand().RunAsync();
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(Lines, Contains.Item("  The cameras could not be listed: Windows did not list the cameras: The device is not ready (0x80070015)."));
+        Assert.That(Lines, Contains.Item("  A USB camera, else the built-in front camera  --camera"));
+        Assert.That(Lines, Contains.Item($"  {LaptopMicrophones.Array.Name}  (built in, default, raw)  {MicOption(LaptopMicrophones.Array)}"));
+    }
+
+    /// <summary>The devices, the microphones, the sessions and the cameras are asked for only when the command runs, so making the command touches no device.</summary>
     [Test]
     public void The_devices_and_the_microphones_are_asked_for_only_when_the_command_runs()
     {
@@ -232,6 +263,11 @@ public class DevicesCommandTests
             {
                 asked = true;
                 return _sessions;
+            }),
+            new Lazy<ICameraProvider>(() =>
+            {
+                asked = true;
+                return _cameras;
             }),
             _ui);
 

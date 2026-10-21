@@ -41,15 +41,20 @@ internal sealed class EndpointFacts
     /// The facts as read: the name and the bus (null when the store lacks them), the jack subtype, whether unprocessed
     /// audio is supported (null when the store does not say), and every string property, for the Bluetooth check.
     /// </summary>
-    public EndpointFacts(string? name, string? enumerator, Guid? jackSubType, bool? rawProcessingSupported, IReadOnlyList<(PropertyKeyRaw Key, string Value)> stringProperties)
+    public EndpointFacts(string? name, string? enumerator, Guid? jackSubType, bool? rawProcessingSupported, IReadOnlyList<(PropertyKeyRaw Key, string Value)> stringProperties,
+        Guid? containerId = null)
     {
         Name = name;
         Enumerator = enumerator ?? "";
         JackSubType = jackSubType;
         RawProcessingSupported = rawProcessingSupported ?? false;
         StringProperties = stringProperties;
+        ContainerId = containerId;
         BluetoothEvidence = FindBluetoothEvidence();
     }
+
+    /// <summary>The physical device the endpoint belongs to, which a webcam's camera shares with its microphone; null when the store does not say.</summary>
+    public Guid? ContainerId { get; }
 
     /// <summary>The name Windows shows for the microphone, or null when the store has none.</summary>
     public string? Name { get; }
@@ -82,19 +87,20 @@ internal sealed class EndpointFacts
 
     /// <summary>
     /// Reads the facts from <paramref name="store"/>: the name, the bus, the jack subtype, whether unprocessed audio is
-    /// supported, and every string property. A store that fails to answer, as the store of an endpoint that has just
-    /// gone does, makes this fail with its result, for the caller to leave the endpoint out.
+    /// supported, every string property, and the container. A store that fails to answer, as the store of an endpoint that
+    /// has just gone does, makes this fail with its result, for the caller to leave the endpoint out.
     /// </summary>
     public static EndpointFacts Read(IPropertyStoreRaw store) => new(
         CoreAudio.ReadString(store, PropertyKeys.FriendlyName),
         CoreAudio.ReadString(store, PropertyKeys.EnumeratorName),
         CoreAudio.ReadGuid(store, PropertyKeys.JackSubType),
         CoreAudio.ReadBool(store, PropertyKeys.RawProcessingSupported),
-        CoreAudio.ReadStringProperties(store));
+        CoreAudio.ReadStringProperties(store),
+        CoreAudio.ReadGuid(store, PropertyKeys.ContainerId));
 
     /// <summary>The microphone these facts describe, with the identifier Windows gave the endpoint and whether it is Windows' default microphone. An endpoint without a name is named by its identifier.</summary>
     public Microphone ToMicrophone(string id, bool isDefault) =>
-        new(id, Name ?? id, isDefault, IsBuiltInArray, IsBluetooth, IsLoopbackInput, RawProcessingSupported, Enumerator, BluetoothEvidence);
+        new(id, Name ?? id, isDefault, IsBuiltInArray, IsBluetooth, IsLoopbackInput, RawProcessingSupported, Enumerator, BluetoothEvidence, ContainerId);
 
     /// <summary>The bus when it is a Bluetooth one, else the first string property naming Bluetooth with its key, else null.</summary>
     private string? FindBluetoothEvidence()

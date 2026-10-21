@@ -33,7 +33,7 @@ public interface ICommandRunner
     /// </summary>
     Task<int> ListAsync(string? outputRoot);
 
-    /// <summary>Lists the output devices and the apps with sound, each with the option that records it. Returns the exit code.</summary>
+    /// <summary>Lists the output devices, the apps with sound, the microphones and the cameras, each with the option that records it; opens nothing. Returns the exit code.</summary>
     Task<int> DevicesAsync();
 
     /// <summary>
@@ -173,7 +173,7 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     {
         Require<DevicesCommand>("The devices command is not part of this build yet; menu choice 6 lists the output devices and the apps with sound.");
         await using var scope = scopes.CreateAsyncScope();
-        return scope.ServiceProvider.GetRequiredService<DevicesCommand>().Run();
+        return await scope.ServiceProvider.GetRequiredService<DevicesCommand>().RunAsync();
     }
 
     /// <summary>

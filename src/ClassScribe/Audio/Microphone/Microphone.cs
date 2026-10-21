@@ -28,8 +28,12 @@ public enum MicrophoneProcessing
 /// <param name="RawSupported">True when the endpoint reports that unprocessed audio (RAW) can be asked for.</param>
 /// <param name="Enumerator">The bus the device is on, as Windows names it: INTELAUDIO, USB, BTHENUM, BTHLE and so on.</param>
 /// <param name="BluetoothEvidence">What showed the microphone to be Bluetooth: its enumerator, or the string property that mentions BTHENUM, BTHLE or Bluetooth; null when nothing did.</param>
+/// <param name="ContainerId">
+/// The physical device the microphone belongs to (PKEY_Device_ContainerId), which a webcam's camera shares, so that a
+/// webcam's microphone is known as its own (see <see cref="Camera.Cameras.CameraOf"/>); null when the store does not say.
+/// </param>
 public sealed record Microphone(string Id, string Name, bool IsDefault, bool IsBuiltInArray, bool IsBluetooth, bool IsLoopbackInput,
-    bool RawSupported, string Enumerator, string? BluetoothEvidence);
+    bool RawSupported, string Enumerator, string? BluetoothEvidence, Guid? ContainerId = null);
 
 /// <summary>
 /// Lists the microphones Windows can record from, tells when they change, and opens a capture of one. Listing reads

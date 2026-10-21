@@ -190,6 +190,12 @@ internal static class PropertyKeys
 
     /// <summary>System.Devices.AudioDevice.RawProcessingSupported, a yes or no: whether unprocessed audio (RAW) can be asked for.</summary>
     public static readonly PropertyKeyRaw RawProcessingSupported = new(new Guid("8943B373-388C-4395-B557-BC6DBAFFAFDB"), 2);
+
+    /// <summary>
+    /// PKEY_Device_ContainerId, a class id: the physical device the endpoint belongs to, which a webcam's camera shares with
+    /// its microphone (teach-video 6.4).
+    /// </summary>
+    public static readonly PropertyKeyRaw ContainerId = new(new Guid("8C7ED206-3F8A-4827-B3AB-AE9E1FAEFC6C"), 2);
 }
 
 /// <summary>What an audio endpoint is, as PKEY_AudioEndpoint_FormFactor says it (Windows' EndpointFormFactor).</summary>

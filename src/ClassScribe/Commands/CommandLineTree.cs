@@ -758,10 +758,10 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         return command;
     }
 
-    /// <summary>devices: the output devices and the apps with sound.</summary>
+    /// <summary>devices: the output devices, the apps with sound, the microphones and the cameras.</summary>
     private Command DevicesCommand(Dictionary<Command, string> examples)
     {
-        var command = new Command("devices", "List the output devices and the apps with sound, each with the option that records it.");
+        var command = new Command("devices", "List the output devices, the apps with sound, the microphones and the cameras, each with the option that records it. Opens nothing.");
         command.SetAction(_ => commands.DevicesAsync());
         examples[command] = DevicesExamples;
         return command;

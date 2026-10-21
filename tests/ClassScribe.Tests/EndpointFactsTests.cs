@@ -174,7 +174,24 @@ public sealed class EndpointFactsTests
             Assert.That(facts.IsBuiltInArray, Is.False);
             Assert.That(facts.IsBluetooth, Is.False);
             Assert.That(facts.IsLoopbackInput, Is.False);
+            Assert.That(facts.ContainerId, Is.Null);
         }
+    }
+
+    /// <summary>
+    /// The endpoint's container, the physical device it belongs to, is read from the store and carried by the microphone,
+    /// so that a webcam's microphone is known as its camera's (teach-video 6.4); reading it opens nothing.
+    /// </summary>
+    [Test]
+    public void The_container_is_read_from_the_store_and_carried_by_the_microphone()
+    {
+        var store = LaptopEndpoints.Obsbot().With(PropertyKeys.ContainerId, LaptopCameras.ObsbotContainer.ToString("B")).Store;
+
+        var facts = EndpointFacts.Read(store);
+
+        Assert.That(facts.ContainerId, Is.EqualTo(LaptopCameras.ObsbotContainer));
+        Assert.That(facts.ToMicrophone(LaptopEndpoints.ObsbotId, isDefault: false).ContainerId, Is.EqualTo(LaptopCameras.ObsbotContainer));
+        Assert.That(PropertyKeys.ContainerId, Is.EqualTo(new PropertyKeyRaw(new Guid("8C7ED206-3F8A-4827-B3AB-AE9E1FAEFC6C"), 2)), "PKEY_Device_ContainerId");
     }
 
     /// <summary>A store that fails, as the store of an endpoint that has just gone does, makes the read fail with Windows' result, for the listing to leave the endpoint out.</summary>

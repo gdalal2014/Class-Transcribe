@@ -449,6 +449,7 @@ dotnet test --filter TestCategory=WindowsPower                         # a real 
 dotnet test --filter TestCategory=AudioDevice                          # Explicit tests on real devices
 dotnet test --filter TestCategory=WindowsProcess                       # real processes, pipes, windows, all of the test's own
 dotnet test --filter TestCategory=WindowsRegistry                      # reads two HKCU values every profile has; creates nothing
+dotnet test --filter TestCategory=WindowsCamera                        # the real camera list through WinRT; opens no camera, no light
 dotnet test --filter "FullyQualifiedName~Four_simulated_hours"         # the Explicit four-hour soak; run it before any path moves onto the clock
 dotnet build --no-incremental --disable-build-servers                  # when other builds run at the same time; must report 0 warnings
 dotnet run --project src/ClassScribe                                   # the menu (a recording then runs in the window)
@@ -1322,6 +1323,20 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `AudioServices` beside the advice) and `MicrophoneServices.cs` (`AddMicrophone`, called from
   `AddClassScribe`: the capture factory `MicrophoneActivation`, the provider behind
   `LazyMicrophoneProvider`, the sessions reader, and the `Lazy<>`s for `devices`).
+- `src/ClassScribe/Camera` (namespace `ClassScribe.Camera`; teach-video section 6 and camera-first step 11, built to the
+  part that needs no probe): `CameraDevice.cs` (`CameraDevice`, `CameraPlace`, `CameraPanel`, `VideoDeviceFacts`,
+  `CameraList`, `ICameraProvider`, and `Cameras`: the list's rules, colour cameras only, so Windows Hello's infrared camera
+  never shows, built in by the enclosure panel first since a laptop's own camera sits on an internal USB bus too, then USB
+  or virtual by the id; `Choose`, a name part first, virtual ones included, else USB, else the built-in front camera,
+  never a virtual one unnamed; `CameraOf` and `MicrophoneOf`, a webcam's microphone by the container it shares with its
+  camera, never a built-in camera and never by the computer's own container `Cameras.ThisComputer`),
+  `Windows/WindowsCameraProvider.cs` (WinRT's `DeviceInformation.FindAllAsync` with `System.Devices.ContainerId` and
+  `MediaFrameSourceGroup.FindAllAsync`, which open nothing; Windows older than 10.0.19041 and a list Windows will not give
+  answer with a `CameraList` that says why) and `CameraServices` (`AddCamera`, after `AddMicrophone`). The microphone's
+  container is read by `EndpointFacts` (`PropertyKeys.ContainerId`, PKEY_Device_ContainerId) and carried as
+  `Microphone.ContainerId`, a last field with a default. `devices` lists the cameras after the microphones. The fakes are
+  `LaptopCameras` and `FakeCameraProvider` (`TestDoubles.Camera.cs`); the real list is the category `WindowsCamera`
+  (`WindowsCameraProviderTests`, run with the suite, listing only, no light).
 - `src/ClassScribe/Audio/Windows`: `CoreAudioInterop.cs` holds ClassScribe's own Core Audio
   declarations (the property store and its readers, `PropertyKeys`, `EndpointFormFactor`, the
   endpoint volume and session interfaces) and `CoreAudio` (`CreateEnumerator`, `OpenPropertyStore`,

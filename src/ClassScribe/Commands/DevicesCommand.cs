@@ -1,5 +1,6 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Desktop;
 
 namespace ClassScribe.Commands;
@@ -7,16 +8,20 @@ namespace ClassScribe.Commands;
 /// <summary>
 /// The devices command: the output devices Windows can play through, marked default or playing, and the apps with sound
 /// open, each with the option of record and record-only that records it; then the microphones, each with what it is
-/// (built in, default, USB, raw), which apps hold it now from Windows' own lists, and the option that picks it; then
-/// examples. It only asks Windows what there is: no device or microphone is opened and nothing is recorded. ClassScribe's
-/// own processes are left out of the apps, since a recording's own capture shows up as an app with sound and holds the
-/// microphone. The devices, the microphones and the sessions are asked for only when the command runs.
+/// (built in, default, USB, raw), which apps hold it now from Windows' own lists, and the option that picks it; then the
+/// colour cameras, each with where it is, its microphone when it is a webcam's (by their shared container), and the option
+/// that picks it; then examples. It only asks Windows what there is: no device, microphone or camera is opened and nothing
+/// is recorded. ClassScribe's own processes are left out of the apps, since a recording's own capture shows up as an app
+/// with sound and holds the microphone. The devices, the microphones, the sessions and the cameras are asked for only when
+/// the command runs.
 /// </summary>
 /// <param name="outputs">Lists the output devices and the apps with sound, made when the command runs.</param>
 /// <param name="microphones">Lists the microphones, made when the command runs.</param>
 /// <param name="sessions">Reads which apps have each microphone open, made when the command runs.</param>
+/// <param name="cameras">Lists the cameras, made when the command runs.</param>
 /// <param name="ui">The window the lists are written to.</param>
-public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<IMicrophoneProvider> microphones, Lazy<IMicrophoneSessions> sessions, IConsoleUi ui)
+public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<IMicrophoneProvider> microphones, Lazy<IMicrophoneSessions> sessions,
+    Lazy<ICameraProvider> cameras, IConsoleUi ui)
 {
     /// <summary>What the line for --device auto says it records.</summary>
     private const string Automatic = "The device the class plays on";
@@ -24,21 +29,27 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     /// <summary>What the line for --mic without a name says it records.</summary>
     private const string DefaultMicrophone = "Windows' default microphone, never a Bluetooth one";
 
+    /// <summary>What the line for --camera without a name says it records.</summary>
+    private const string DefaultCamera = "A USB camera, else the built-in front camera";
+
     /// <summary>
-    /// Lists the output devices, then the apps with sound, then the microphones, each with its option, lined up in one
-    /// column, then says that nothing was opened, and gives examples. Returns the exit code, 0.
+    /// Lists the output devices, then the apps with sound, then the microphones, then the cameras, each with its option,
+    /// lined up in one column, then says that nothing was opened, and gives examples. Returns the exit code, 0.
     /// </summary>
-    public int Run()
+    public async Task<int> RunAsync()
     {
         var provider = outputs.Value;
         var devices = provider.GetOutputDevices().Select(device => (What: Describe(device), Option: $"--device \"{device.Name}\"")).ToList();
         var apps = AppsByName(provider.GetPlayingApps()).Select(app => (What: Describe(app), Option: $"--app {Quoted(app.Name)}")).ToList();
         var listings = sessions.Value.ReadAll().Listings;
-        var mics = microphones.Value.GetMicrophones()
+        var connected = microphones.Value.GetMicrophones();
+        var mics = connected
             .Select(microphone => (What: Describe(microphone, listings.FirstOrDefault(listing => listing.EndpointId == microphone.Id)), Option: MicOption(microphone)))
             .ToList();
-        var width = devices.Select(row => row.What).Concat(apps.Select(row => row.What)).Concat(mics.Select(row => row.What))
-            .Append(Automatic).Append(DefaultMicrophone).Max(what => what.Length);
+        var cameraList = await cameras.Value.GetCamerasAsync(CancellationToken.None);
+        var cams = cameraList.Cameras.Select(camera => (What: Describe(camera, Cameras.MicrophoneOf(camera, connected)), Option: (string?)$"--camera \"{camera.Name}\"")).ToList();
+        var width = devices.Select(row => row.What).Concat(apps.Select(row => row.What)).Concat(mics.Select(row => row.What)).Concat(cams.Select(row => row.What))
+            .Append(Automatic).Append(DefaultMicrophone).Append(DefaultCamera).Max(what => what.Length);
 
         ui.WriteLine("Output devices:");
         if (devices.Count == 0) ui.WriteLine("  None is connected now.");
@@ -53,6 +64,12 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
         if (mics.Count == 0) ui.WriteLine("  None is connected now.");
         foreach (var (what, option) in mics) ui.WriteLine(Row(what, option, width));
         ui.WriteLine(Row(DefaultMicrophone, "--mic", width));
+
+        ui.WriteLine("Cameras:");
+        if (cameraList.Problem is { } problem) ui.WriteLine($"  The cameras could not be listed: {problem}.");
+        else if (cams.Count == 0) ui.WriteLine("  None is connected now.");
+        foreach (var (what, option) in cams) ui.WriteLine(Row(what, option, width));
+        ui.WriteLine(Row(DefaultCamera, "--camera", width));
 
         ui.WriteLine("Nothing was opened or recorded to list these.");
         ui.WriteLine("For example: ClassScribe record \"Kalam\" --device auto --output \"D:\\Classes\"");
@@ -97,6 +114,18 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
         if (listing is { MutedInWindows: true }) clauses.Add("muted in Windows");
         if (listing is not null) clauses.AddRange(HeldBy(listing));
         return clauses.Count > 0 ? $"{microphone.Name}  ({string.Join("; ", clauses)})" : microphone.Name;
+    }
+
+    /// <summary>
+    /// A camera as the list shows it: its name, then where it is (built in at the front or the back, USB, virtual), and the
+    /// microphone that belongs to it, <paramref name="microphone"/>, when it is a webcam's.
+    /// </summary>
+    internal static string Describe(CameraDevice camera, Microphone? microphone)
+    {
+        var clauses = new List<string>();
+        if (camera.Note.Length > 0) clauses.Add(camera.Note);
+        if (microphone is not null) clauses.Add($"its microphone: {microphone.Name}");
+        return clauses.Count > 0 ? $"{camera.Name}  ({string.Join("; ", clauses)})" : camera.Name;
     }
 
     /// <summary>

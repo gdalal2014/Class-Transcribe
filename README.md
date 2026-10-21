@@ -866,7 +866,7 @@ ClassScribe record "Kalam" --in-person --output "D:\Classes"            # your m
 ClassScribe transcribe "C:\path\to\recording folder or file"
 ClassScribe rebuild "C:\path\to\recording folder or file"
 ClassScribe list                                                        # the recordings, newest first
-ClassScribe devices                                                     # the devices, apps with sound and microphones
+ClassScribe devices                                                     # the devices, apps with sound, microphones and cameras
 ClassScribe mic-check                                                   # watch what apps do with the microphone
 ClassScribe drive signin --client "$env:USERPROFILE\Downloads\client_secret_....json"   # the first Google sign-in
 ClassScribe drive signin                                                # sign in again, with the client kept
@@ -1017,9 +1017,14 @@ option that records it, leaving out ClassScribe itself; then `Microphones:`, eac
 `records what the computer plays; never recorded`), `muted in Windows` when it is, and which apps hold
 it now (`chrome is listening`, `vibe holds it without listening`), with the `--mic "<its name>"` option
 that picks it (`--in-person` takes the same name), then the row `Windows' default microphone, never a
-Bluetooth one  --mic`, or `None is connected now.` when there is none. It opens nothing
-(`Nothing was opened or recorded to list these.`), and ends with example lines for `--device auto`,
-`--app chrome --mic` and `--in-person`.
+Bluetooth one  --mic`, or `None is connected now.` when there is none; then `Cameras:`, the colour
+cameras Windows lists (never the infrared one Windows Hello uses), each with where it is (`built in,
+front`, `USB`, or `virtual, such as a phone's camera through Phone Link: recorded only when named`)
+and, for a webcam, its own microphone, which shares the camera's container in Windows
+(`OBSBOT Meet Flip StreamCamera  (USB; its microphone: OBSBOT Meet Flip Microphone (OBSBOT Meet Flip
+Audio))`), with the `--camera "<its name>"` option, then the row `A USB camera, else the built-in front
+camera  --camera`. It opens nothing (`Nothing was opened or recorded to list these.`): no camera's
+light comes on. It ends with example lines for `--device auto`, `--app chrome --mic` and `--in-person`.
 
 At the end, ClassScribe hands Windows an exit code, which a script can check (in PowerShell,
 `$LASTEXITCODE` holds it):
