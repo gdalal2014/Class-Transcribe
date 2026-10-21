@@ -88,3 +88,28 @@ public sealed class SettingsFileFixtures : IDisposable
         Program.Dispose();
     }
 }
+
+/// <summary>
+/// What the check is told about folders on the computer, set by the test: the folders that exist, the drives' labels and
+/// the folders Dropbox keeps in sync. Nothing on this computer is looked at.
+/// </summary>
+public sealed class FakeOutputFolderFacts : IOutputFolderFacts
+{
+    /// <summary>The full paths of the folders that exist.</summary>
+    public HashSet<string> Folders { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Each drive's label by its root, such as G:\.</summary>
+    public Dictionary<string, string> Labels { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The folders Dropbox's info.json names.</summary>
+    public List<string> Dropbox { get; } = [];
+
+    /// <inheritdoc />
+    public bool HasFolder(string folder, string name) => Folders.Contains(Path.Combine(folder, name));
+
+    /// <inheritdoc />
+    public string? VolumeLabel(string root) => Labels.GetValueOrDefault(root);
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> DropboxFolders() => Dropbox;
+}

@@ -26,9 +26,14 @@ public sealed record SettingsProblem(string Text, IReadOnlyList<string> Keys);
 /// a message that names the setting. The settings to check are an argument, so that a staged copy of them is checked
 /// before any of it reaches the app (see <see cref="SettingsReloader"/>). The log's own settings are checked too, since
 /// they are read again with the others. Each problem names its settings (see <see cref="FindProblemsByKey"/>).
+/// <paramref name="folders"/> tells the warnings about where the recordings go what is on this computer (see
+/// <see cref="FindWarnings"/>); without it, as in tests that do not need it, only a folder's path is looked at.
 /// </summary>
-public sealed class SettingsCheck
+public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
 {
+    /// <summary>The folders' facts the warnings use: those given, or none, which looks at nothing on the computer.</summary>
+    private readonly IOutputFolderFacts _folders = folders ?? new NoFolderFacts();
+
     /// <summary>How to write a path in appsettings.json. A single backslash there escapes the next letter: \t becomes a tab, \n a line break.</summary>
     private const string PathAdvice = "In appsettings.json, write each backslash twice, as in \"D:\\\\Classes\", or use forward slashes, as in \"D:/Classes\".";
 
@@ -258,8 +263,9 @@ public sealed class SettingsCheck
 
     /// <summary>
     /// Lists what is worth saying about <paramref name="configuration"/> without refusing it: an API key written into the
-    /// settings, which is never used; a recordings folder inside OneDrive; and a YouTube video's longest recording above the
-    /// safety stop, which then ends it first.
+    /// settings, which is never used; where the recordings go, for Recording:OutputFolder and each saved class's own
+    /// folder (see <see cref="FolderWarnings"/>); and a YouTube video's longest recording above the safety stop, which then
+    /// ends it first.
     /// </summary>
     public IReadOnlyList<string> FindWarnings(IConfiguration configuration)
     {
@@ -267,13 +273,12 @@ public sealed class SettingsCheck
         if (ApiKeyFromEnvironment.IsSetElsewhere(configuration))
             warnings.Add($"{ElevenLabsOptions.ApiKeySetting} is set in the settings, in appsettings.json or as an environment variable. It is not used: the key is read only from {ElevenLabsOptions.ApiKeyVariable}. Remove it from the file, so it cannot end up in git or be shared by mistake");
 
-        // A path that cannot be a path is a problem of its own (see FindProblems), not a place to look up.
-        var outputFolder = configuration[Name(RecordingOptions.SectionName, nameof(RecordingOptions.OutputFolder))];
-        if (outputFolder is null || outputFolder.IndexOfAny(Path.GetInvalidPathChars()) < 0)
+        var outputFolderName = Name(RecordingOptions.SectionName, nameof(RecordingOptions.OutputFolder));
+        warnings.AddRange(FolderWarnings(outputFolderName, configuration[outputFolderName]));
+        foreach (var saved in configuration.GetSection(SettingsCatalog.ClassesSection).GetChildren())
         {
-            var root = ClassFolders.RootFor(outputFolder);
-            if (IsInsideOneDrive(root))
-                warnings.Add($"{Name(RecordingOptions.SectionName, nameof(RecordingOptions.OutputFolder))} is inside OneDrive ({root}). OneDrive uploads a recording again and again while it grows, and can hold files that ClassScribe needs to delete; a folder outside OneDrive, such as %USERPROFILE%\\ClassScribe, is safer");
+            if (saved[ClassFields.OutputFolder] is { Length: > 0 } own)
+                warnings.AddRange(FolderWarnings($"{SettingsCatalog.ClassesSection}:{saved.Key}:{ClassFields.OutputFolder}", own));
         }
 
         // A video's longest recording above the safety stop is not refused, since a refusal would hold up every class over a
@@ -292,6 +297,89 @@ public sealed class SettingsCheck
     /// <summary>A number of hours as a setting's text gives it; null when it is not given, or is not a finite number.</summary>
     private static double? Hours(string? text) =>
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) && double.IsFinite(hours) ? hours : null;
+
+    /// <summary>
+    /// What is worth saying about the recordings folder <paramref name="value"/>, which the setting <paramref name="name"/>
+    /// gives (layout-config 2): at most one warning about where it is, the first that holds of a drive's root, the user
+    /// folder itself, or a folder holding AppData or Windows, where each course's folder would sit among folders that are
+    /// not the classes'; and at most one about another program's sync folder, the first that holds of OneDrive, Google
+    /// Drive for desktop (a drive labelled Google Drive, or a path through My Drive) and Dropbox (a folder its info.json
+    /// names), which upload a recording again and again while it grows. A path that cannot be a path is a problem of its
+    /// own (see <see cref="FindProblems"/>), not a place to look up.
+    /// </summary>
+    private IEnumerable<string> FolderWarnings(string name, string? value)
+    {
+        if (value is not null && value.IndexOfAny(Path.GetInvalidPathChars()) >= 0) yield break;
+
+        var root = Path.TrimEndingDirectorySeparator(ClassFolders.RootFor(value));
+        if (Placement(root) is { } placement) yield return $"{name} {placement}";
+
+        if (IsInsideOneDrive(root))
+            yield return $"{name} is inside OneDrive ({root}). OneDrive uploads a recording again and again while it grows, and can hold files that ClassScribe needs to delete; a folder outside OneDrive, such as %USERPROFILE%\\ClassScribe, is safer";
+        else if (IsInsideGoogleDrive(root))
+            yield return $"{name} is inside Google Drive ({root}). Google Drive for desktop uploads a recording again and again while it grows, and ClassScribe's own copy on Google Drive would put each class there a second time; a folder outside Google Drive, such as %USERPROFILE%\\ClassScribe, is safer";
+        else if (_folders.DropboxFolders().Any(dropbox => IsInside(root, dropbox)))
+            yield return $"{name} is inside Dropbox ({root}). Dropbox uploads a recording again and again while it grows, and can hold files that ClassScribe needs to delete, and with ClassScribe's own copy on Google Drive each class would go up to the cloud twice; a folder outside Dropbox, such as %USERPROFILE%\\ClassScribe, is safer";
+    }
+
+    /// <summary>
+    /// The rest of the sentence when <paramref name="root"/> is a drive's root, the user folder itself, or a folder that
+    /// holds AppData or Windows; null when it is none of these.
+    /// </summary>
+    private string? Placement(string root)
+    {
+        if (Path.GetPathRoot(root) is { Length: > 0 } driveRoot && string.Equals(Path.TrimEndingDirectorySeparator(driveRoot), root, StringComparison.OrdinalIgnoreCase))
+            return $"is the root of a drive ({driveRoot}). Each course's folder would sit among the drive's own folders; a folder of its own, such as {Path.Combine(driveRoot, "ClassScribe")}, keeps the classes together";
+
+        var profile = Path.TrimEndingDirectorySeparator(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        if (profile.Length > 0 && string.Equals(profile, root, StringComparison.OrdinalIgnoreCase))
+            return $"is your user folder itself ({root}). Each course's folder would sit beside Documents, Desktop and AppData; a folder of its own, such as %USERPROFILE%\\ClassScribe, keeps the classes together";
+
+        foreach (var (held, why) in new[] { ("AppData", "as a user folder does"), ("Windows", "as Windows' own drive does") })
+        {
+            if (_folders.HasFolder(root, held))
+                return $"({root}) holds a folder named {held}, {why}. Each course's folder would sit beside it; a folder of its own, such as {Path.Combine(root, "ClassScribe")}, keeps the classes together";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// True when <paramref name="root"/> is on a drive that Google Drive for desktop added, whose label is Google Drive, or
+    /// lies in a folder named My Drive, as when Google Drive for desktop mirrors My Drive into a folder.
+    /// </summary>
+    private bool IsInsideGoogleDrive(string root)
+    {
+        if (Path.GetPathRoot(root) is { Length: > 0 } driveRoot && !driveRoot.StartsWith(@"\\", StringComparison.Ordinal)
+            && string.Equals(_folders.VolumeLabel(driveRoot), OutputFolderFacts.GoogleDriveLabel, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return root.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
+            .Any(part => part.Equals("My Drive", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>True when <paramref name="folder"/> is <paramref name="outer"/>, a full path, or lies inside it; false for a path that is not one.</summary>
+    private static bool IsInside(string folder, string outer)
+    {
+        var trimmed = outer.Trim();
+        if (trimmed.Length == 0 || trimmed.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || !Path.IsPathFullyQualified(trimmed)) return false;
+
+        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(trimmed));
+        return folder.Equals(full, StringComparison.OrdinalIgnoreCase) || folder.StartsWith(full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The folders' facts when none are given: nothing on the computer is looked at, so only a path's own words count.</summary>
+    private sealed class NoFolderFacts : IOutputFolderFacts
+    {
+        /// <inheritdoc />
+        public bool HasFolder(string folder, string name) => false;
+
+        /// <inheritdoc />
+        public string? VolumeLabel(string root) => null;
+
+        /// <inheritdoc />
+        public IReadOnlyList<string> DropboxFolders() => [];
+    }
 
     /// <summary>True when <paramref name="folder"/> is a OneDrive folder that Windows names, or lies inside one.</summary>
     private static bool IsInsideOneDrive(string folder) =>

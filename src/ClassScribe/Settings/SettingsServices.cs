@@ -20,6 +20,7 @@ public static class SettingsServices
         services.Configure<TranscriptOptions>(configuration.GetSection(TranscriptOptions.SectionName));
         services.Configure<DriveOptions>(configuration.GetSection(DriveOptions.SectionName));
         services.Configure<YouTubeOptions>(configuration.GetSection(YouTubeOptions.SectionName));
+        services.AddSingleton<IOutputFolderFacts>(_ => new OutputFolderFacts());
         services.AddSingleton<SettingsCheck>();
 
         // The saved classes, read from the settings in force at each use, as the gate last accepted them.
