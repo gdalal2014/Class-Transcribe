@@ -85,6 +85,30 @@ public class UploadManifestTests
         Assert.That(File.ReadAllText(_manifests.PathOf(Mantiq)), Does.Contain("\"state\": \"Waiting\""));
     }
 
+    /// <summary>
+    /// Fields a later build adds, to the manifest or to one of its files, are kept when this build reads the manifest and
+    /// writes it back, as an upload does at each step (layout-config 6.3): an older build no longer drops them. A manifest
+    /// without them reads with none, so that manifests still compare equal.
+    /// </summary>
+    [Test]
+    public void Fields_a_later_build_adds_are_kept_when_a_manifest_is_written_back()
+    {
+        _manifests.Write(new UploadManifest(Mantiq.Folder, Mantiq.BaseName) { QueuedUtc = TestRuns.Start, Files = [new ManifestFile("Mantiq_2026-10-17_14-04-42Z.md") { Size = 3 }] });
+        Assert.That(_manifests.Read(Mantiq)!.Extra, Is.Null);
+        var later = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_manifests.PathOf(Mantiq)))!.AsObject();
+        later["laterField"] = "kept";
+        later["files"]![0]!.AsObject()["laterFileField"] = 7;
+        File.WriteAllText(_manifests.PathOf(Mantiq), later.ToJsonString());
+
+        var read = _manifests.Read(Mantiq)!;
+        _manifests.Write(read with { Attempts = 1, Files = [read.Files[0] with { Md5 = "0123456789abcdef0123456789abcdef" }] });
+
+        var written = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_manifests.PathOf(Mantiq)))!.AsObject();
+        Assert.That(written["laterField"]!.GetValue<string>(), Is.EqualTo("kept"));
+        Assert.That(written["files"]![0]!["laterFileField"]!.GetValue<int>(), Is.EqualTo(7));
+        Assert.That(written["attempts"]!.GetValue<int>(), Is.EqualTo(1));
+    }
+
     /// <summary>The queue is the manifests that wait, the one queued first first; one that is done is not in it.</summary>
     [Test]
     public void The_queue_is_the_manifests_that_wait_oldest_first()

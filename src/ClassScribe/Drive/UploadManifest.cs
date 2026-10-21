@@ -87,6 +87,15 @@ public sealed record ManifestFile(string Name)
     /// <summary>An upload of it that has begun and not ended; null when there is none.</summary>
     public UploadSession? Session { get; init; }
 
+    /// <summary>
+    /// Fields of the file this build does not know, as a later build wrote them, kept so that writing the manifest back loses
+    /// none of them (layout-config 6.3); null when there were none, so that files still compare equal.
+    /// </summary>
+    [JsonExtensionData]
+    // A setter, not init: the generated reader fills an init-only property through the constructor, where extension data
+    // cannot go.
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+
     /// <summary>True once a copy on Drive has been checked against Drive's size and MD5.</summary>
     [JsonIgnore]
     public bool IsVerified => DriveId is not null && VerifiedUtc is not null && DriveMd5 is not null && DriveSize is not null;
@@ -156,6 +165,16 @@ public sealed record UploadManifest(string Folder, string BaseName)
 
     /// <summary>Its files, in the order they go up.</summary>
     public IReadOnlyList<ManifestFile> Files { get; init; } = [];
+
+    /// <summary>
+    /// Fields of the manifest this build does not know, as a later build wrote them, kept so that an upload writing it back
+    /// loses none of them (layout-config 6.3): an older build sharing the queue no longer drops what a newer one keeps here.
+    /// Null when there were none, so that manifests still compare equal.
+    /// </summary>
+    [JsonExtensionData]
+    // A setter, not init: the generated reader fills an init-only property through the constructor, where extension data
+    // cannot go.
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 
     /// <summary>The recording the manifest is of.</summary>
     [JsonIgnore]
