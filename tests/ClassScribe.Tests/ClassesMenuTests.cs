@@ -182,6 +182,26 @@ public class ClassesMenuTests
     }
 
     /// <summary>
+    /// A relative recordings folder typed for a class is taken from the user's folder, as Recording:OutputFolder takes one,
+    /// not from the window's current folder.
+    /// </summary>
+    [Test]
+    public async Task A_relative_folder_typed_for_a_class_is_taken_from_the_user_folder()
+    {
+        _ui.Type('e', '2');
+        _ui.TypeLine("");
+        _ui.Type('\r', '\r', '\r');
+        _ui.TypeLine("");
+        _ui.TypeLine("Classes\\Mantiq");
+        _ui.Type('\r');
+
+        await RunAsync();
+
+        var set = (ClassRequest.Set)_changed.Single();
+        Assert.That(set.Choices.Output, Is.EqualTo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Classes", "Mantiq")));
+    }
+
+    /// <summary>
     /// E on a class that cannot be used names its problem, then asks the same questions with the class's own fields, as the
     /// file holds them, for Enter: pressed through, every field is kept, its course, its microphone, the app it follows and
     /// record only among them, and the stray field that makes it unusable is left for class set --clear or the file.

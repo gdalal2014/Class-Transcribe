@@ -299,8 +299,9 @@ never counted as waiting; it goes up once it has stopped.
   class set "<name>" --clear <field>` or changed in the file (S, then O). D and a number removes it
   after Y (no recording is touched). Esc goes back.
 - **S Settings** shows the settings file and offers 1, the recordings folder (drag a folder onto the
-  window or type it, then Enter): it says where the next class would go (`The next class of Mantiq
-  would go to D:\Classes\Mantiq\2026-10-21.`), saves it, gives the warnings about that folder (see
+  window or type it, then Enter; a relative path is taken from your user folder, as in the setting):
+  it says where the next class would go (`The next class of Mantiq would go to
+  D:\Classes\Mantiq\2026-10-21.`), saves it, gives the warnings about that folder (see
   [Settings](#settings)), and says that nothing moved (`Recordings made before stay in
   C:\Users\you\ClassScribe; nothing was moved. ClassScribe list --output "C:\Users\you\ClassScribe"
   lists them.`); P, the camera's picture size (1 480p, 2 720p, 3 1080p, T to type a size); and O,

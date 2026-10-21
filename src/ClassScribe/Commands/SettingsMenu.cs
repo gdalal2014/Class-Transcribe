@@ -55,14 +55,15 @@ public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, C
     }
 
     /// <summary>
-    /// 1: asks for the recordings folder, dragged into the window or typed, shows where the next class would go, saves it,
+    /// 1: asks for the recordings folder, dragged into the window or typed (a relative path taken from the user's folder, as
+    /// Recording:OutputFolder takes one), shows where the next class would go, saves it,
     /// gives the check's warnings about it (inside OneDrive, a drive's root, another program's sync folder), and says where
     /// the recordings made before stay, since nothing moves. Enter alone or Esc goes back.
     /// </summary>
     private async Task ChangeFolderAsync()
     {
         var before = folders.Root;
-        ui.WriteLine("Drag a folder into this window, or type its path, then press Enter. Esc, or Enter alone, goes back.");
+        ui.WriteLine("Drag a folder into this window, or type its path (a relative one is taken from your user folder), then press Enter. Esc, or Enter alone, goes back.");
         ui.Write("> ");
 
         // Windows puts quotes around a dragged path that contains spaces.
@@ -75,7 +76,8 @@ public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, C
             return;
         }
 
-        var folder = Path.GetFullPath(Environment.ExpandEnvironmentVariables(typed));
+        // Taken as Recording:OutputFolder takes a path: a relative one from the user's folder, not the window's current one.
+        var folder = ClassFolders.RootFor(typed);
         var course = folders.ListRecent(1).FirstOrDefault()?.Files.Name ?? "Mantiq";
         ui.WriteLine($"The next class of {course} would go to {Path.Combine(folder, course, ClassFolders.DateFolderName(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(time.GetUtcNow(), time.LocalTimeZone).DateTime)))}.");
 

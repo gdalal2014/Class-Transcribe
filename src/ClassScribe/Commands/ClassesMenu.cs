@@ -217,7 +217,8 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
             }
             else
             {
-                folder = Path.GetFullPath(Environment.ExpandEnvironmentVariables(answeredFolder.Trim('"')));
+                // Taken as Recording:OutputFolder takes a path: a relative one from the user's folder, not the window's current one.
+                folder = ClassFolders.RootFor(answeredFolder);
             }
         }
 

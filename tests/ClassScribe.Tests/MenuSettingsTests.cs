@@ -188,6 +188,26 @@ public class MenuSettingsTests
     }
 
     /// <summary>
+    /// A relative folder typed at the S screen is taken from the user's folder, as Recording:OutputFolder itself takes one,
+    /// not from the window's current folder, and saved as that full path. Nothing is made there.
+    /// </summary>
+    [Test]
+    public async Task A_relative_folder_typed_in_S_is_taken_from_the_user_folder()
+    {
+        var relative = $"ClassScribe test {Guid.NewGuid():N}";
+        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), relative);
+        _files.Writer.Set("Recording:OutputFolder", _recordings.Path);
+        _ui.Type('1');
+        _ui.TypeLine(relative);
+
+        await SettingsMenu().RunAsync();
+
+        Assert.That(_files.UserValue("Recording:OutputFolder")!.GetValue<string>(), Is.EqualTo(expected));
+        Assert.That(_ui.Screen, Does.Contain($"would go to {Path.Combine(expected, "Mantiq")}"));
+        Assert.That(Directory.Exists(expected), Is.False, "nothing is made");
+    }
+
+    /// <summary>
     /// After a pick in choice 7, S keeps it as the default: the mode, the microphone picked and the app it follows, through
     /// the writer; any other key keeps it until ClassScribe is closed and writes nothing.
     /// </summary>
