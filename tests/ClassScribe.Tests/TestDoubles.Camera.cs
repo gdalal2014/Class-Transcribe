@@ -52,6 +52,35 @@ public static class LaptopCameras
     public static IReadOnlyList<CameraDevice> All { get; } = [Integrated, Obsbot, Pixel];
 }
 
+/// <summary>What Windows says the camera needs, as a test sets it: this laptop's Windows 11, an H.264 encoder, and Bitdefender.</summary>
+public sealed class FakeCameraSystem : ICameraSystem
+{
+    /// <inheritdoc />
+    public Version WindowsVersion { get; set; } = new(10, 0, 26300);
+
+    /// <summary>Whether an H.264 encoder is installed; null for "Windows did not say".</summary>
+    public bool? HasH264Encoder { get; set; } = true;
+
+    /// <summary>The security programs; null for "Security Center did not say".</summary>
+    public IReadOnlyList<string>? Programs { get; set; } = ["Bitdefender Antivirus"];
+
+    /// <inheritdoc />
+    public Task<bool?> HasH264EncoderAsync(CancellationToken cancellationToken) => Task.FromResult(HasH264Encoder);
+
+    /// <inheritdoc />
+    public IReadOnlyList<string>? SecurityPrograms() => Programs;
+}
+
+/// <summary>Windows' camera record as a test sets it: the privacy switches and the apps in it; both switches unset, and no app, unless a test says otherwise.</summary>
+public sealed class FakeCameraUsageRecord : ICameraUsageRecord
+{
+    /// <summary>The record a read gives.</summary>
+    public Audio.Microphones.UsageRecordListing Listing { get; set; } = new(null, null, [], null);
+
+    /// <inheritdoc />
+    public Audio.Microphones.UsageRecordListing Read() => Listing;
+}
+
 /// <summary>The cameras a test connects, listed as a provider lists them; listing never opens anything, here as in the real provider.</summary>
 public sealed class FakeCameraProvider : ICameraProvider
 {

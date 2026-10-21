@@ -155,7 +155,7 @@ ClassScribe starts with a menu. Press the number of what you want:
   5  Open the recordings folder
   6  Choose what to record: a device or an app
   7  Microphone: none, with the class, or in person
-  8  Check the microphone: watch what apps do with it (opens nothing)
+  8  Check the microphone or a camera (opens nothing)
   9  Google Drive: upload, free room on this laptop, sign in
   Y  YouTube: record videos as they play, or download them, then transcribe
   A  Show the recording in progress        (only while one records)
@@ -234,9 +234,11 @@ never counted as waiting; it goes up once it has stopped.
 - **7 Microphone** asks whether to record your microphone with the class (W), alone for a class in the
   room (I) or not at all (N), then which microphone, and with the class which app it follows; see
   [Your microphone](#your-microphone). The pick holds until ClassScribe is closed.
-- **8 Check the microphone** watches what the programs on your computer do with the microphone and
-  writes a line for each change, without opening it; see
+- **8 Check the microphone or a camera** asks W or C. **W** watches what the programs on your computer
+  do with the microphone and writes a line for each change, without opening it; see
   [Checking what your class page does with your microphone](#checking-what-your-class-page-does-with-your-microphone).
+  **C** is the camera check (`ClassScribe camera-check`): see [Checking the cameras](#checking-the-cameras).
+  Esc goes back.
 - **9 Google Drive** says whether ClassScribe is signed in to Google Drive, and as whom
   (`Google Drive: signed in as you@gmail.com since 17 Oct 2026.`), without asking Google. While
   signed in: U uploads what waits to go up (its line says how many and how much, such as
@@ -409,7 +411,7 @@ kind your class app is:
   of the microphone when you mute (most class apps and pages keep it open), so it cannot follow your
   mute yet: your voice is recorded only after you press V, and only while chrome holds the microphone.
   Muting the microphone in Windows (the microphone key) stops it too. Run the microphone check (menu
-  choice 8) during a class, or set Recording:ClassAppMute.` When ClassScribe sees the app let go of
+  choice 8, then W) during a class, or set Recording:ClassAppMute.` When ClassScribe sees the app let go of
   the microphone and take it again, it tells you once: `chrome let go of the microphone at 19:12:03
   and took it again at 19:12:40. If that was you muting and unmuting in the class page, your mute is
   visible to Windows: set Recording:ClassAppMute to Visible and ClassScribe will follow it by itself.`
@@ -868,6 +870,7 @@ ClassScribe rebuild "C:\path\to\recording folder or file"
 ClassScribe list                                                        # the recordings, newest first
 ClassScribe devices                                                     # the devices, apps with sound, microphones and cameras
 ClassScribe mic-check                                                   # watch what apps do with the microphone
+ClassScribe camera-check                                                # the cameras and what the camera needs here; opens none
 ClassScribe drive signin --client "$env:USERPROFILE\Downloads\client_secret_....json"   # the first Google sign-in
 ClassScribe drive signin                                                # sign in again, with the client kept
 ClassScribe drive status                                                # the account, storage, folder on Drive and what waits
@@ -891,7 +894,7 @@ In short: `record "<name>" SOURCE --output "<folder>" [--mic ["<microphone>"] [-
 [--minutes <n>] [--no-open] [--continue | --new]`, `record-only` with the same options,
 `transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
 `list [--output "<folder>"]`, `devices`, `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
-`drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]`,
+`camera-check ["<camera>"] [--resolution <size>]`, `drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]`,
 `drive free-space "<path>" --yes`,
 `youtube <link>... [--list "<file>"] --name "<course>" --output "<folder>" [--download] (--yes | --plan)
 [--no-transcribe] [--no-open] [--again] [--allow-unlisted]` and `youtube check`,
@@ -1256,9 +1259,34 @@ refused with where the audio is: `The audio of ... is on Google Drive, not on th
 ... (https://...). To transcribe it again, download its .wav files from there into ... first`, followed
 by the free `rebuild` command.
 
+### Checking the cameras
+
+Menu choice 8 then C, or `ClassScribe camera-check`, shows what ClassScribe knows of the cameras,
+opening none, so no camera's light comes on:
+
+- `Cameras (from Windows' own lists; none was opened):`, numbered, each with where it is and, for a
+  webcam, its own microphone (the one that shares its container in Windows), as `devices` lists them;
+- which apps use a camera now, from Windows' camera record (`Using a camera now, as Windows' camera
+  record shows: Zoom.`, or `No app is using a camera now, ...`);
+- the camera and the picture size a lesson recorded with `--camera` would take: `A lesson recorded
+  with --camera would take the camera "OBSBOT Meet Flip StreamCamera", at 720p (1280x720;
+  Recording:CameraResolution).` `camera-check "Integrated" --resolution 1080p` shows another camera
+  and size; a name that fits no camera says the lesson would wait for it;
+- `Set-up:`, a line each, `OK`, `PROBLEM`, `NOTE` or `OFF`: Windows' version (10.0.19041, version
+  2004, or later), Windows' camera privacy switches (Settings > Privacy & security > Camera, Let
+  desktop apps access your camera), an H.264 video encoder (a Windows N edition needs the Media
+  Feature Pack), the antivirus that is on, with Bitdefender's Webcam Protection step (`Bitdefender:
+  Privacy > Video & Audio Protection > Webcam Protection`: allow ClassScribe when it asks), each
+  webcam's own microphone, and whether `Recording:WakeCameraMicrophone` is on.
+
+It ends with `This build lists and checks the cameras and opens none; recording a camera's picture
+comes in a later build.` The exit code is 0, or 1 when a `PROBLEM` line keeps the camera from being
+used. In this build a recording with the camera is refused before anything records (see
+[Recording with the camera](#recording-with-the-camera)).
+
 ### Checking what your class page does with your microphone
 
-Menu choice 8, or `ClassScribe mic-check`, watches what the programs on your computer do with the
+Menu choice 8 then W, or `ClassScribe mic-check`, watches what the programs on your computer do with the
 microphone and writes a line for each change, until you press Q (or Ctrl+C once), or until
 `--seconds` runs out. It only reads Windows' own lists: which microphones there are, which programs
 have a session on them, and Windows' record of which program used the microphone and when (the same
@@ -1276,7 +1304,7 @@ file is complete even if the window is closed, and the window's title shows
 
 The steps, before or during a class:
 
-1. Start the check: choice 8, or `ClassScribe mic-check` in a terminal. It prints a few lines about
+1. Start the check: choice 8 then W, or `ClassScribe mic-check` in a terminal. It prints a few lines about
    how things are right now, then waits. Leave it open; it is fine behind Chrome, for the whole class.
 2. Join the class as usual, with headphones, and start muted. If the page asks for microphone
    permission, answer as you normally do. Note which microphone you expect to be used; the first `MIC`

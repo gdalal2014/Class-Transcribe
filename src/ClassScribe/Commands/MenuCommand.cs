@@ -171,7 +171,7 @@ public sealed class MenuCommand(
                     await commands.ChooseMicrophoneAsync();
                     break;
                 case '8':
-                    await commands.MicCheckAsync(new MicCheckRequest(StopAfter: null, LogFolder: null));
+                    await CheckAsync();
                     break;
                 case '9':
                     await commands.DriveMenuAsync();
@@ -230,7 +230,7 @@ public sealed class MenuCommand(
         ui.WriteLine("  5  Open the recordings folder");
         ui.WriteLine("  6  Choose what to record: a device or an app");
         ui.WriteLine("  7  Microphone: none, with the class, or in person");
-        ui.WriteLine("  8  Check the microphone: watch what apps do with it (opens nothing)");
+        ui.WriteLine("  8  Check the microphone or a camera (opens nothing)");
         ui.WriteLine("  9  Google Drive: upload, free room on this laptop, sign in");
         ui.WriteLine($"  {YouTubeKey}  YouTube: record videos as they play, or download them, then transcribe");
         if (report.RecordingNow() is { Home: RunHome.Separate }) ui.WriteLine($"  {ShowKey}  Show the recording in progress");
@@ -316,6 +316,35 @@ public sealed class MenuCommand(
                 entry.Pick();
                 ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed, whatever the settings say. To keep that, set {entry.Setting} to \"{entry.Name}\" in {settings.Path}.");
                 return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Choice 8: W watches what apps do with the microphone (the microphone check, until it is stopped in this window); C
+    /// checks the cameras (the camera check, which opens no camera in this build). Esc, Q or Ctrl+C go back; other keys are
+    /// ignored. Neither opens a device.
+    /// </summary>
+    private async Task CheckAsync()
+    {
+        ui.WriteLine("Check:");
+        ui.WriteLine("  W  Watch what apps do with the microphone (opens nothing)");
+        ui.WriteLine("  C  The cameras: list them and what the camera needs on this computer (opens nothing)");
+        ui.WriteLine("Press W or C, or Esc to go back.");
+
+        while (true)
+        {
+            var key = await ui.ReadKeyAsync(CancellationToken.None);
+            if (key is not { } pressed || pressed.Key == ConsoleKey.Escape || IsQuit(pressed)) return;
+
+            switch (pressed.Key)
+            {
+                case ConsoleKey.W:
+                    await commands.MicCheckAsync(new MicCheckRequest(StopAfter: null, LogFolder: null));
+                    return;
+                case ConsoleKey.C when !pressed.Modifiers.HasFlag(ConsoleModifiers.Control):
+                    await commands.CameraCheckAsync(new CameraCheckRequest());
+                    return;
             }
         }
     }

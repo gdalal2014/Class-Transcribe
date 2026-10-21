@@ -463,6 +463,42 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--log-folder names a file, not a folder: {file}" }));
     }
 
+    /// <summary>
+    /// camera-check runs the camera check, with part of a camera's name when given (trimmed) and --resolution as the size
+    /// is written, whatever its case; nothing is opened.
+    /// </summary>
+    [Test]
+    public async Task Camera_check_takes_a_camera_and_a_size()
+    {
+        List<CameraCheckRequest> checks = [];
+        _commands.Setup(c => c.CameraCheckAsync(It.IsAny<CameraCheckRequest>())).Callback((CameraCheckRequest request) => checks.Add(request)).ReturnsAsync(0);
+
+        Assert.That(await RunAsync("camera-check"), Is.EqualTo(0));
+        Assert.That(await RunAsync("camera-check", " OBSBOT ", "--resolution", "1080P"), Is.EqualTo(0));
+        Assert.That(await RunAsync("Camera-Check", "--resolution", "1024X576"), Is.EqualTo(0));
+
+        Assert.That(checks, Is.EqualTo(new[] { new CameraCheckRequest(), new CameraCheckRequest("OBSBOT", "1080p"), new CameraCheckRequest(null, "1024x576") }));
+    }
+
+    /// <summary>A size camera-check cannot take, or --resolution without one, is a mistake that gives the rule, exit 2.</summary>
+    [TestCase("4k")]
+    [TestCase("1025x576")]
+    public async Task Camera_check_refuses_a_size_it_cannot_take(string given)
+    {
+        AssertRefused(await RunAsync("camera-check", "--resolution", given));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {Camera.CameraSize.Rule}; \"{given}\" is not one" }));
+    }
+
+    /// <summary>--resolution with nothing after it is refused, as any option that needs a value.</summary>
+    [Test]
+    public async Task Camera_check_refuses_resolution_without_a_size()
+    {
+        AssertRefused(await RunAsync("camera-check", "--resolution"));
+
+        Assert.That(_line.Mistakes, Has.Some.StartWith("--resolution needs a size after it, such as 720p").Or.Some.Contain("--resolution"));
+    }
+
     /// <summary>drive signin takes the client file as a full path; without --client it signs in with the client kept.</summary>
     [Test]
     public async Task Drive_signin_takes_the_client_file_as_a_full_path()

@@ -187,7 +187,7 @@ public class MenuCommandTests
             .And.Contain("5  Open the recordings folder")
             .And.Contain("6  Choose what to record: a device or an app")
             .And.Contain("7  Microphone: none, with the class, or in person")
-            .And.Contain("8  Check the microphone: watch what apps do with it (opens nothing)")
+            .And.Contain("8  Check the microphone or a camera (opens nothing)")
             .And.Contain("9  Google Drive: upload, free room on this laptop, sign in")
             .And.Contain("Recording from: the device the class plays on")
             .And.Contain(_folder.Path));
@@ -1081,19 +1081,46 @@ public class MenuCommandTests
     }
 
     /// <summary>
-    /// 8 runs the microphone check through the runner, in this window, until it is stopped there: no seconds and no folder
-    /// of its own, so the log goes under the recordings folder.
+    /// 8 then W runs the microphone check through the runner, in this window, until it is stopped there: no seconds and no
+    /// folder of its own, so the log goes under the recordings folder.
     /// </summary>
     [Test]
-    public async Task Eight_runs_the_microphone_check_in_this_window()
+    public async Task Eight_then_W_runs_the_microphone_check_in_this_window()
     {
-        _ui.Type('8', 'q');
+        _ui.Type('8', 'w', 'q');
 
         Assert.That(await RunMenuAsync(), Is.EqualTo(0));
 
+        Assert.That(_ui.Screen, Does.Contain("W  Watch what apps do with the microphone (opens nothing)"));
         _commands.Verify(c => c.MicCheckAsync(new MicCheckRequest(StopAfter: null, LogFolder: null)), Times.Once);
         _commands.VerifyNoOtherCalls();
         Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back afterwards");
+    }
+
+    /// <summary>8 then C runs the camera check through the runner, with no camera named and no size of its own; it opens nothing in this build.</summary>
+    [Test]
+    public async Task Eight_then_C_runs_the_camera_check()
+    {
+        _commands.Setup(c => c.CameraCheckAsync(It.IsAny<CameraCheckRequest>())).ReturnsAsync(0);
+        _ui.Type('8', 'c', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        Assert.That(_ui.Screen, Does.Contain("C  The cameras: list them and what the camera needs on this computer (opens nothing)"));
+        _commands.Verify(c => c.CameraCheckAsync(new CameraCheckRequest(null, null)), Times.Once);
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>8 then Esc goes back to the menu without a check.</summary>
+    [Test]
+    public async Task Eight_then_Esc_goes_back_without_a_check()
+    {
+        _ui.Type('8', '\u001b', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.VerifyNoOtherCalls();
+        Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back");
     }
 
     /// <summary>9 hands Google Drive to the runner, which shows its menu in a scope of its own; the menu comes back afterwards.</summary>

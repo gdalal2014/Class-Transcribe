@@ -185,7 +185,7 @@ public sealed class MicrophoneAdvice(IRegistryValues registry, ILogger<Microphon
                 $"Your voice is recorded only after you press V, and only while {app} holds the microphone. {windowsMute}",
             _ => $"ClassScribe has not been told whether {app} lets go of the microphone when you mute (most class apps and pages keep it open), so it cannot follow your mute yet: " +
                 $"your voice is recorded only after you press V, and only while {app} holds the microphone. {windowsMute} " +
-                "Run the microphone check (menu choice 8) during a class, or set Recording:ClassAppMute."
+                "Run the microphone check (menu choice 8, then W) during a class, or set Recording:ClassAppMute."
         };
     }
 

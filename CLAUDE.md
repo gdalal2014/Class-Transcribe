@@ -1240,7 +1240,20 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with a renewed Bitdefender exception (Bitdefender may notice ClassScribe starting Chrome). Left for
   later, only if use calls for it: the media-controls probe for paused against ended, titled date
   folders, and automated playback (Gulzar chose attended).
-- The microphone check (`MicCheckCommand`, menu choice 8 and `mic-check`, resolved through
+- The camera check (`CameraCheckCommand`, menu choice 8 then C and `camera-check ["<camera>"] [--resolution <size>]`,
+  through `ICommandRunner.CameraCheckAsync` in a scope of its own; teach-video 6.16, camera-first step 11 point 3): the
+  colour cameras numbered, with each webcam's own microphone; which apps use a camera now, from Windows' camera record
+  (`CameraUsageRecord`, ConsentStore\webcam, read by `ConsentStoreRecord` as the microphone's record is); the camera
+  and size a lesson with `--camera` would take; and the set-up lines of `CameraSetupFacts` (`Camera/CameraSetup.cs`, which
+  setup-check will reuse): Windows against 10.0.19041, the three privacy switches (the device's under HKEY_LOCAL_MACHINE,
+  the user's and the desktop apps'), an H.264 encoder (WinRT's `CodecQuery`), the antivirus programs that are on
+  (Security Center's `WSCProductList` through `IWscProductListRaw` and `IWscProductRaw` in
+  `Camera/Windows/SecurityCenterInterop.cs`: IDispatch's four slots first, since Windows registers no type library for
+  late binding; Bitdefender gets its Webcam Protection step), each webcam's microphone, and the wake. It opens no camera in
+  this build and so runs during a recording too; exit 0, or 1 when a `PROBLEM` line keeps the camera from being used.
+  Menu choice 8 asks W (the microphone check) or C. Fakes: `FakeCameraSystem`, `FakeCameraUsageRecord`; tests
+  `CameraCheckTests`, and the real reads in `WindowsCameraProviderTests` (WindowsCamera).
+- The microphone check (`MicCheckCommand`, menu choice 8 then W and `mic-check`, resolved through
   `IMicCheckRun` in a scope of its own): MicWatch inside ClassScribe. Every 250 ms it reads
   `IMicrophoneSessions.ReadAll()` and `IMicrophoneUsageRecord.Read()`, hands them to the pure
   `MicrophoneChangeTracker` (MIC, SESSION, PRIVACY, MARK, NOTE, ERROR and SELF lines, MicWatch's

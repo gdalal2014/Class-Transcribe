@@ -37,6 +37,12 @@ public interface ICommandRunner
     Task<int> DevicesAsync();
 
     /// <summary>
+    /// The camera check (see <see cref="CameraCheckCommand"/>): the cameras, which apps use one, the camera and size a lesson
+    /// would take, and the camera's set-up lines; opens no camera in this build. Returns the exit code.
+    /// </summary>
+    Task<int> CameraCheckAsync(CameraCheckRequest request);
+
+    /// <summary>
     /// Shows the recording in progress, or the run <paramref name="runId"/> names. With <paramref name="alert"/>, the window
     /// is one the recorder opened by itself, which ignores every key until Enter. Returns the exit code.
     /// </summary>
@@ -174,6 +180,14 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         Require<DevicesCommand>("The devices command is not part of this build yet; menu choice 6 lists the output devices and the apps with sound.");
         await using var scope = scopes.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<DevicesCommand>().RunAsync();
+    }
+
+    /// <summary>Runs the camera check with <paramref name="request"/>, in a scope of its own. Returns the exit code.</summary>
+    public async Task<int> CameraCheckAsync(CameraCheckRequest request)
+    {
+        Require<CameraCheckCommand>("The camera check is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<CameraCheckCommand>().RunAsync(request);
     }
 
     /// <summary>

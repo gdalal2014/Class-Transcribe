@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Desktop;
 using ClassScribe.Storage;
 
@@ -47,6 +48,7 @@ public enum CommandKind
 /// ClassScribe list [--output "&lt;folder&gt;"]
 /// ClassScribe devices
 /// ClassScribe mic-check [--seconds &lt;n&gt;] [--log-folder "&lt;folder&gt;"]
+/// ClassScribe camera-check ["&lt;camera&gt;"] [--resolution &lt;size&gt;]    opens no camera in this build
 /// ClassScribe drive signin [--client "&lt;downloaded client file&gt;"]    the first time needs --client
 /// ClassScribe drive signout
 /// ClassScribe drive status
@@ -241,6 +243,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(ListCommand(optionNames, examples));
         root.Add(DevicesCommand(examples));
         root.Add(MicCheckCommand(optionNames, examples));
+        root.Add(CameraCheckCommand(optionNames, examples));
         root.Add(DriveCommand(optionNames, examples));
         root.Add(YouTubeCommand(optionNames, examples));
         root.Add(AttachCommand(examples));
@@ -804,6 +807,52 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     }
 
     /// <summary>
+    /// camera-check: the cameras from Windows' own lists, which apps use one, the camera and the picture's size a lesson
+    /// recorded with --camera would take, and the camera's set-up lines; it opens no camera in this build. Part of a camera's
+    /// name and --resolution, checked as record's are, show what a lesson with them would take.
+    /// </summary>
+    private Command CameraCheckCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
+    {
+        var camera = new Argument<string?>("camera")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "Part of a camera's name, such as OBSBOT: the camera a lesson recorded with --camera \"OBSBOT\" would take."
+        };
+        var resolution = new Option<string>("--resolution")
+        {
+            HelpName = "size",
+            Description = $"The picture's size to show: {CameraSize.Rule}. Without it, Recording:CameraResolution."
+        };
+
+        var command = new Command("camera-check",
+            "List the cameras, which apps use one now, the camera and the size a lesson would take, and what the camera needs on this computer. Opens no camera in this build.")
+        {
+            camera, resolution
+        };
+        command.Validators.Add(result =>
+        {
+            if (result.GetResult(resolution) is { } given && ResolutionProblem(TokenOf(given), optionNames) is { } problem) result.AddError(problem);
+        });
+        command.SetAction(parsed => commands.CameraCheckAsync(new CameraCheckRequest(NamePart(parsed.GetValue(camera)), ResolutionOf(parsed.GetValue(resolution)))));
+        examples[command] = CameraCheckExamples;
+        return command;
+    }
+
+    /// <summary>
+    /// What is wrong with <paramref name="value"/> as the size --resolution names: no value, an option taken as the value, or
+    /// a size <see cref="CameraSize.TryParse"/> does not take, with its rule. Null for a size.
+    /// </summary>
+    private static string? ResolutionProblem(string? value, HashSet<string> optionNames)
+    {
+        if (ValueProblem(value, "--resolution needs a size after it, such as 720p", optionNames) is { } missing) return missing;
+
+        return CameraSize.TryParse(value, out _) ? null : $"--resolution takes {CameraSize.Rule}; \"{value}\" is not one";
+    }
+
+    /// <summary>The size --resolution names, already checked, as it is written (720p, 1024x576); null when it was not given.</summary>
+    private static string? ResolutionOf(string? value) => CameraSize.TryParse(value, out var size) ? size.Text : null;
+
+    /// <summary>
     /// The hidden attach: shows the recording in progress, or, with --alert, the run named, in a window the recorder opened
     /// by itself. A run id names a file, a pipe and an event, so one that is not well formed is refused.
     /// </summary>
@@ -1009,6 +1058,16 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
         Nothing is recorded and no microphone is opened: it only reads which programs hold the microphone, and whether it is muted in Windows, and writes a line for each change.
         The log's path is printed at the start and at the end. Q stops the check; M writes a numbered mark.
+        """;
+
+    /// <summary>The examples and notes under the help of camera-check.</summary>
+    private const string CameraCheckExamples = """
+        Examples:
+          ClassScribe camera-check
+          ClassScribe camera-check "OBSBOT" --resolution 1080p
+
+        No camera is opened, so no light comes on: the cameras come from Windows' own lists, and the set-up lines from Windows' settings and its Security Center.
+        Exit code 0 when the camera can be used on this computer; 1 when a set-up line says what keeps it from being used.
         """;
 
     /// <summary>The examples and notes under the help of drive.</summary>

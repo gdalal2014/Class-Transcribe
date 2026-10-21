@@ -33,6 +33,35 @@ public class WindowsCameraProviderTests
         }
     }
 
+    /// <summary>
+    /// What Windows says the camera needs is read without opening anything: this Windows is new enough, the encoders are
+    /// listed (an answer or none, never a failure), and Security Center's list of security programs is read or said not to
+    /// be. What it found is written to the test's output, for the record of this laptop.
+    /// </summary>
+    [Test]
+    public async Task What_Windows_says_the_camera_needs_is_read_without_opening_anything()
+    {
+        var system = new WindowsCameraSystem(NullLogger<WindowsCameraSystem>.Instance);
+
+        var encoder = await system.HasH264EncoderAsync(CancellationToken.None);
+        var programs = system.SecurityPrograms();
+
+        TestContext.Out.WriteLine($"Windows {system.WindowsVersion}; H.264 encoder: {encoder?.ToString() ?? "not said"}; security programs: {(programs is null ? "not said" : string.Join(", ", programs))}");
+        Assert.That(system.WindowsVersion, Is.GreaterThanOrEqualTo(CameraSetupFacts.OldestWindows));
+        Assert.That(programs, Is.Null.Or.All.Not.Empty);
+    }
+
+    /// <summary>Windows' camera record is read, and has no entry for the test's own program, which never opens a camera.</summary>
+    [Test]
+    public void The_camera_record_is_read_and_names_no_entry_of_the_tests()
+    {
+        var record = new CameraUsageRecord(NullLogger<CameraUsageRecord>.Instance).Read();
+
+        Assume.That(record.Problem, Is.Null, "this profile has no camera record");
+        var own = Path.GetFileName(Environment.ProcessPath) ?? "testhost.exe";
+        Assert.That(record.Apps.Where(app => app.InUse).Select(app => app.App), Has.None.EqualTo(own).IgnoreCase);
+    }
+
     /// <summary>A list asked for with a cancel already made is cancelled rather than read.</summary>
     [Test]
     public void A_cancelled_listing_is_cancelled()
