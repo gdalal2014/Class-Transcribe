@@ -308,18 +308,45 @@ public class RequestsTests
     }
 
     /// <summary>
-    /// A field the reader does not know, such as one a later build adds, is passed over, in the run file and in the request
-    /// inside it, so that an older build still reads a newer build's run files.
+    /// A field the reader does not know, such as one a later build adds, is passed over, in the run file, in the request
+    /// inside it and in the request's plan, so that an older build still reads a newer build's run files; and it is kept
+    /// (amendment 2), so that this build writing the file back, as marking a run seen does, loses none of them.
     /// </summary>
     [Test]
-    public void A_field_the_reader_does_not_know_is_passed_over()
+    public void A_field_the_reader_does_not_know_is_passed_over_and_kept_when_written_back()
     {
         var run = Run(RunState.Recording, outcome: null);
         var written = JsonNode.Parse(JsonSerializer.Serialize(run, RecorderJson.Default.RunRecord))!.AsObject();
         written["addedLater"] = 7;
         written["request"]!.AsObject()["alsoAddedLater"] = "something";
+        written["request"]!["source"]!.AsObject()["planAddedLater"] = new JsonObject { ["namePart"] = "OBSBOT" };
 
-        Assert.That(JsonSerializer.Deserialize(written.ToJsonString(), RecorderJson.Default.RunRecord), Is.EqualTo(run));
+        var read = JsonSerializer.Deserialize(written.ToJsonString(), RecorderJson.Default.RunRecord)!;
+        var seen = JsonNode.Parse(JsonSerializer.Serialize(read with { Seen = true }, RecorderJson.Default.RunRecord))!.AsObject();
+
+        Assert.That(read with { Extra = null, Request = read.Request with { Extra = null, Source = read.Request.Source with { Extra = null } } }, Is.EqualTo(run));
+        Assert.That(seen["addedLater"]!.GetValue<int>(), Is.EqualTo(7));
+        Assert.That(seen["request"]!["alsoAddedLater"]!.GetValue<string>(), Is.EqualTo("something"));
+        Assert.That(seen["request"]!["source"]!["planAddedLater"]!["namePart"]!.GetValue<string>(), Is.EqualTo("OBSBOT"));
+        Assert.That(seen["seen"]!.GetValue<bool>(), Is.True);
+    }
+
+    /// <summary>
+    /// A run with a camera writes its plan's camera and the size the window resolved, which an older build passes over; a
+    /// run without one writes no camera at all, so that its files are as before; and nothing unknown writes no extension data.
+    /// </summary>
+    [Test]
+    public void A_camera_and_its_size_are_written_only_for_a_run_with_one()
+    {
+        var run = Run(RunState.Recording, outcome: null);
+        var withCamera = run with { Request = run.Request with { Source = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT", "720p")) } };
+
+        var plain = JsonSerializer.Serialize(run, RecorderJson.Default.RunRecord);
+        var camera = JsonSerializer.Serialize(withCamera, RecorderJson.Default.RunRecord);
+
+        Assert.That(plain, Does.Not.Contain("camera").And.Not.Contain("extra"));
+        Assert.That(JsonNode.Parse(camera)!["request"]!["source"]!["camera"]!.ToJsonString(), Is.EqualTo("""{"namePart":"OBSBOT","resolution":"720p"}"""));
+        Assert.That(JsonSerializer.Deserialize(camera, RecorderJson.Default.RunRecord), Is.EqualTo(withCamera));
     }
 
     /// <summary>Class sources without their kind: a device's name alone, nothing at all, and Kind in capitals, which is not its name.</summary>

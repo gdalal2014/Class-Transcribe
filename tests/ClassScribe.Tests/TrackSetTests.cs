@@ -96,6 +96,21 @@ public sealed class TrackSetTests
     /// <summary>A recording of your microphone alone, in person.</summary>
     private TrackSet InPerson(string? microphone = null) => (TrackSet)Factory().Create(InPersonPlan(microphone), _clock);
 
+    /// <summary>
+    /// A plan with a camera is refused by the factory in this build, before any capture is made: the window refuses one
+    /// before anything records, and nothing can put a camera's picture beside the sound yet.
+    /// </summary>
+    [Test]
+    public void A_plan_with_a_camera_is_refused_before_any_capture_is_made()
+    {
+        var lesson = InPersonPlan(null) with { Camera = new CameraChoice("OBSBOT", "720p") };
+
+        var refused = Assert.Throws<Camera.CameraNotBuiltException>(() => Factory().Create(lesson, _clock));
+
+        Assert.That(refused!.Message, Is.EqualTo(Camera.CameraRecorderNotBuilt.Words));
+        Assert.That(_microphones.Opened, Is.Empty);
+    }
+
     /// <summary>Connects the speakers and queues a capture of them, in <paramref name="format"/> or 48 kHz mono.</summary>
     private FakeAudioCapture ClassCapture(AudioFormat? format = null) => _class.Enqueue(new FakeAudioCapture(format ?? Pcm48KMono, "Speakers"));
 

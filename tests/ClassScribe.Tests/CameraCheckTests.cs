@@ -40,7 +40,10 @@ public class CameraCheckTests
 
     /// <summary>The check over the fakes.</summary>
     private CameraCheckCommand Command() =>
-        new(_cameras, _microphones, _usage, new CameraSetupFacts(_system, _usage, _registry), _recording, _ui);
+        new(_cameras, _microphones, _usage, new CameraSetupFacts(_system, _usage, _registry), _choice ??= new Audio.SourceChoice(_recording), _recording, _ui);
+
+    /// <summary>What is chosen for the session, made with the settings on first use.</summary>
+    private Audio.SourceChoice? _choice;
 
     /// <summary>The set-up lines over the fakes, with the wake as <paramref name="wakeOn"/> says.</summary>
     private Task<IReadOnlyList<CameraSetupLine>> SetupAsync(bool wakeOn = false) =>

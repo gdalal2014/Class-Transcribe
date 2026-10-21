@@ -26,6 +26,7 @@ public static class WindowServices
         services.AddScoped<IRecordStarter, RecordStarter>();
         services.AddScoped<IRunViewer, RecorderView>();
         services.AddScoped<ContinueQuestion>();
+        services.AddScoped<CameraStart>();
         services.AddTransient<AttachCommand>();
         services.AddTransient<ListCommand>();
         services.AddTransient<DevicesCommand>();

@@ -70,7 +70,8 @@ public static class CommandLine
     /// <summary>
     /// The PowerShell command that continues, as its next part, the recording <paramref name="request"/>'s run made, with
     /// this very program: record, or record-only for a run that was not to be transcribed, with the run's name, its source
-    /// (and, from phase 3, its microphone, with the app it was chosen to follow for the run), its recordings folder,
+    /// (and, from phase 3, its microphone, with the app it was chosen to follow for the run; in person, its camera and the
+    /// picture's size), its recordings folder,
     /// --no-open when the run was to open nothing, and --continue. Nothing else: --minutes counted from the run's own
     /// start, so the continued part records until stopped.
     /// </summary>
@@ -83,6 +84,14 @@ public static class CommandLine
         if (request.Source.Mode == RecordingMode.Microphone)
         {
             arguments.Append(" --in-person").Append(Named(request.Source.Microphone));
+
+            // The camera and the size the run resolved are kept, so that the continued part takes the same picture.
+            if (request.Source.Camera is { } camera)
+            {
+                arguments.Append(" --camera");
+                if (camera.NamePart is { Length: > 0 } cameraName) arguments.Append(' ').Append(Quote(cameraName));
+                if (camera.Resolution is { Length: > 0 } size) arguments.Append(" --resolution ").Append(Quote(size));
+            }
         }
         else
         {

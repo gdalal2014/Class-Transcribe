@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
@@ -47,11 +48,41 @@ public abstract record ClassSource
 /// </param>
 public sealed record MicrophoneChoice(string? NamePart, FollowRule? Follows = null);
 
+/// <summary>Which camera records a lesson's picture, in person (teach-video 6.4), and at which size (amendment 39).</summary>
+/// <param name="NamePart">
+/// Part of the camera's name, in any case, virtual cameras included; null for a USB camera when one is plugged in, else the
+/// built-in front camera (see <see cref="Camera.Cameras.Choose"/>).
+/// </param>
+/// <param name="Resolution">
+/// The picture's size as <see cref="Camera.CameraSize.Text"/> writes it, such as 720p or 1024x576: --resolution, else menu
+/// choice 7's pick, else Recording:CameraResolution, else 720p, resolved by the window before the run starts, so that the
+/// recorder and the camera process never read the settings and the run file keeps the size the run used; null until then.
+/// </param>
+public sealed record CameraChoice(string? NamePart, string? Resolution = null);
+
 /// <summary>Everything a run records.</summary>
 /// <param name="Mode">The class alone, the class and your microphone, or your microphone alone in person.</param>
 /// <param name="Class">Where the class's sound comes from; null only in person (<see cref="RecordingMode.Microphone"/>).</param>
 /// <param name="Microphone">Which microphone to record; null when the class is recorded alone (<see cref="RecordingMode.Class"/>).</param>
-public sealed record SourcePlan(RecordingMode Mode, ClassSource? Class, MicrophoneChoice? Microphone);
+/// <param name="Camera">
+/// The camera that records the lesson's picture too, only in person; null for none. It is last, has a default and is written
+/// only when set, so that a run without a camera writes its run and request files as before, and a window of an older build
+/// passes it over. It is not a fourth <see cref="RecordingMode"/>: a value an older build does not know would make the whole
+/// run file unreadable to it.
+/// </param>
+public sealed record SourcePlan(RecordingMode Mode, ClassSource? Class, MicrophoneChoice? Microphone,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CameraChoice? Camera = null)
+{
+    /// <summary>
+    /// Fields of the plan this build does not know, as a later build wrote them, kept so that a run file this build writes
+    /// back (as marking a run seen does) loses none of them (amendment 2); null when there were none, so that plans still
+    /// compare equal.
+    /// </summary>
+    [JsonExtensionData]
+    // A setter, not init: the generated reader fills an init-only property through the constructor, where extension data
+    // cannot go.
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
 
 /// <summary>What to do when a recording of the same name stopped recently without a transcript.</summary>
 public enum ContinueChoice
@@ -121,7 +152,17 @@ public enum StartOrigin
 /// </param>
 public sealed record RecordRequest(string RunId, string Name, bool Transcribe, SourcePlan Source, string OutputRoot,
     ContinueChoice Continue, string? ContinueBaseName, double? Minutes, bool Open,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VideoRequest? Video = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VideoRequest? Video = null)
+{
+    /// <summary>
+    /// Fields of the request this build does not know, as a later build wrote them, kept so that a run file this build writes
+    /// back loses none of them (amendment 2); null when there were none, so that requests still compare equal.
+    /// </summary>
+    [JsonExtensionData]
+    // A setter, not init: the generated reader fills an init-only property through the constructor, where extension data
+    // cannot go.
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
 
 /// <summary>
 /// The YouTube video a run is for, one of a batch's (design 4.5): the video's own facts, how its audio is obtained, and where

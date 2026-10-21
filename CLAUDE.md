@@ -671,6 +671,31 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   processes, this one and any other ClassScribe, are left out of the apps with sound and never count
   as an app listening on a microphone (`IOwnProcesses`), so neither `Recording:App` nor
   `Recording:MicrophoneFollows` can pick ClassScribe.
+- The camera in a run (camera-first step 11, the part that needs no probe): `SourcePlan.Camera` (`CameraChoice(NamePart,
+  Resolution)`, a last field with a default, written only when set, so a run without a camera writes its files byte for
+  byte as before; never a fourth `RecordingMode`), only in person. `record`/`record-only --camera ["<camera>"]
+  [--resolution <size>]`: `--camera` only with `--in-person` (`--camera records only in person in this build: give it with
+  --in-person`), `--resolution` only with `--camera` (`--resolution needs --camera`) and checked by `CameraSize.TryParse`,
+  each exit 2; a name right after `--camera` is pointed out as the camera's. Menu choice 7 (now "Microphone and camera"),
+  in person, lists the cameras (`MicrophoneMenu`'s optional `ICameraProvider`) and asks the size (`Picture size: Enter for
+  720p (your setting), 1 480p, 2 720p, 3 1080p, T to type a size`), held by `SourceChoice` (`PickMicrophone(..., camera,
+  size)`, `PickedCameraResolution`, `CameraResolution`; W and N drop the camera; the header adds `with the camera "..."
+  (720p)`). `RecordStarter` hands a plan with a camera to `CameraStart` (scoped; before the continue question, amendment
+  17), which resolves the size into the request (`--resolution`, else menu 7's pick, else `Recording:CameraResolution`,
+  else 720p, so the recorder never reads it and the run file keeps it), then refuses with the set-up's first problem or
+  `ICameraRecorder.NotReady`: in the menu `Camera "...": <why>. Enter records the sound only; Esc goes back.`, elsewhere
+  `<why>. Nothing was recorded; leave out --camera to record the sound alone.` with exit 1; a ready build would ask
+  `Enter records with the camera; S records the sound only.` in the menu. `ICameraRecorder` (`Camera/CameraRecorder.cs`,
+  with `ICameraTrack` and `CameraTrackStart`) is the seam the camera process fills in slice 7; this build registers
+  `CameraRecorderNotBuilt` (`Words`: "The camera's recording is not built yet in this build of ClassScribe, so this
+  recording cannot take the camera"), a `RecordStarter` without a `CameraStart` refuses the same way, and
+  `TrackSetFactory.Create` throws `CameraNotBuiltException` for a plan with a camera, so no class starts with a half-built
+  camera. `CommandLine.Record` keeps `--camera` and `--resolution`. Amendment 2's extension data: `RunRecord`,
+  `RecordRequest` and `SourcePlan` carry `[JsonExtensionData] Dictionary<string, JsonElement>? Extra` (null when nothing
+  unknown was read, so records still compare equal), with a setter, not `init`: the generated reader fills init-only
+  properties through the constructor, where extension data cannot go. A build older than this one still drops what it
+  does not know when it writes a run file back. Tests: `CameraMenuTests`, `CameraStartTests`, and additions to
+  `CommandLineTreeTests`, `CommandLineTests`, `RecordStarterTests`, `RequestsTests` and `TrackSetTests`.
 - The run with the microphone (`RecordingMonitor`, `MicrophoneChecks`): the advice lines at the
   checks' first look (`MicrophoneAdvice.AtStart`: privacy, the `ClassAppMute` case line, the
   following line, the microphone line, then the warnings about Vantage, ducking, Bluetooth and the

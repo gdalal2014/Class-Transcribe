@@ -229,7 +229,7 @@ public sealed class MenuCommand(
         ui.WriteLine("  4  Transcribe a file");
         ui.WriteLine("  5  Open the recordings folder");
         ui.WriteLine("  6  Choose what to record: a device or an app");
-        ui.WriteLine("  7  Microphone: none, with the class, or in person");
+        ui.WriteLine("  7  Microphone and camera: none, with the class, or in person");
         ui.WriteLine("  8  Check the microphone or a camera (opens nothing)");
         ui.WriteLine("  9  Google Drive: upload, free room on this laptop, sign in");
         ui.WriteLine($"  {YouTubeKey}  YouTube: record videos as they play, or download them, then transcribe");

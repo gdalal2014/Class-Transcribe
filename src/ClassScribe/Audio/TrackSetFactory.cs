@@ -50,9 +50,16 @@ public sealed class TrackSetFactory(
     /// <summary>A recording, not started yet, of what <paramref name="source"/> names, on a recording clock of its own.</summary>
     public IRecording Create(SourcePlan source) => Create(source, new RecordingClock(time));
 
-    /// <summary>A recording, not started yet, of what <paramref name="source"/> names, placed on <paramref name="clock"/>, which belongs to it alone; the class alone needs no clock and ignores it.</summary>
+    /// <summary>
+    /// A recording, not started yet, of what <paramref name="source"/> names, placed on <paramref name="clock"/>, which belongs
+    /// to it alone; the class alone needs no clock and ignores it. A plan with a camera is refused with a
+    /// <see cref="Camera.CameraNotBuiltException"/>: the window refuses one before anything records, and this build has no
+    /// camera track to put beside the sound (slice 7 adds it, through <see cref="Camera.ICameraRecorder"/>).
+    /// </summary>
     public IRecording Create(SourcePlan source, RecordingClock clock)
     {
+        if (source.Camera is not null) throw new Camera.CameraNotBuiltException(Camera.CameraRecorderNotBuilt.Words);
+
         var settings = options.Value;
         switch (source.Mode)
         {

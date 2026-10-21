@@ -34,8 +34,23 @@ namespace ClassScribe.Commands;
 /// <para>A YouTube batch's start of one of its videos (<see cref="StartOrigin.VideoBatch"/>) asks nothing: it is a new
 /// recording, shown here as its owner; a recording running already is explained, never shown, and the batch waits.</para>
 /// </remarks>
+/// <param name="journal">The run files.</param>
+/// <param name="launcher">Starts the recorder, or says why the run records in this window.</param>
+/// <param name="viewer">Shows a run in the background.</param>
+/// <param name="question">Whether to continue a recent recording of the same name.</param>
+/// <param name="settings">The settings, handed to the recorder.</param>
+/// <param name="scopes">Makes a scope for a run in this window.</param>
+/// <param name="ui">The window.</param>
+/// <param name="time">The clock.</param>
+/// <param name="logger">Where the starts are noted.</param>
+/// <param name="yield">Asks a YouTube video's run to give way to a class; null where none is known of.</param>
+/// <param name="camera">
+/// The start of a run with a camera (see <see cref="CameraStart"/>), before the continue question: its size resolved, its
+/// refusals, and the menu's Enter or S; null where none is registered, and a run with a camera is then refused as this build
+/// refuses it, so that no class starts with a half-built camera.
+/// </param>
 public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher, IRunViewer viewer, ContinueQuestion question, SettingsReloader settings,
-    IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null) : IRecordStarter
+    IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null, CameraStart? camera = null) : IRecordStarter
 {
     /// <summary>How long a class waits for a YouTube video's run it asked to give way.</summary>
     public static readonly TimeSpan YieldPatience = TimeSpan.FromSeconds(30);
@@ -84,6 +99,22 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
             if (journal.List().FirstOrDefault(run => run.IsRecordingNow) is { } another) return await DriveAsync(OneAtATime(another.Record, request, origin), origin);
         }
 
+        // The camera's question comes before the continue question (amendment 17): saved class, camera, continue.
+        if (request.Source.Camera is not null)
+        {
+            switch (camera is not null ? await camera.DecideAsync(request, origin) : NoCamera())
+            {
+                case CameraDecision.Back:
+                    logger.LogDebug("Went back at the camera's question for \"{Name}\"; nothing was started", request.Name);
+                    return 0;
+                case CameraDecision.Refused refused:
+                    return refused.ExitCode;
+                case CameraDecision.Go go:
+                    request = go.Request;
+                    break;
+            }
+        }
+
         if (await DecideAsync(request, origin) is not { } decided)
         {
             logger.LogDebug("Went back at the question whether to continue \"{Name}\"; nothing was started", request.Name);
@@ -91,6 +122,13 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
         }
 
         return await DriveAsync(new Step.Launch(decided), origin);
+    }
+
+    /// <summary>A run with a camera where no camera start is registered: refused as this build refuses it, before anything records.</summary>
+    private CameraDecision NoCamera()
+    {
+        ui.WriteLine($"{Camera.CameraRecorderNotBuilt.Words}. {CameraStart.NothingStarted}");
+        return new CameraDecision.Refused(NotDone);
     }
 
     /// <summary>

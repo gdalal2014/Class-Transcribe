@@ -92,6 +92,23 @@ public partial class RecordStarterTests
             _videoYield);
     }
 
+    /// <summary>
+    /// A run with a camera is refused before anything records in this build: the starter without a camera start says why,
+    /// starts no recorder and records nothing in this window, exit 1 (camera-first step 11: no class starts with a
+    /// half-built camera).
+    /// </summary>
+    [Test]
+    public async Task A_run_with_a_camera_is_refused_before_anything_records()
+    {
+        var lesson = Request() with { Source = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT")) };
+
+        Assert.That(await RunAsync(lesson), Is.EqualTo(1));
+
+        Assert.That(_ui.Screen, Does.Contain(Camera.CameraRecorderNotBuilt.Words));
+        Assert.That(_starter.Recorders, Is.Empty, "no recorder was started");
+        Assert.That(_inWindow.Runs, Is.Empty, "nothing recorded in this window");
+    }
+
     /// <summary>A request to record "Kalam" into the recordings folder and transcribe it, with neither --continue nor --new.</summary>
     private RecordRequest Request(string name = "Kalam") =>
         TestRuns.Request(RunId, name) with { OutputRoot = _recordings.Path, Continue = ContinueChoice.Ask };

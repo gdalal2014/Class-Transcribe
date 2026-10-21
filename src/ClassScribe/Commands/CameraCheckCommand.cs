@@ -22,10 +22,11 @@ public sealed record CameraCheckRequest(string? NamePart = null, string? Resolut
 /// <param name="microphones">Lists the microphones, for each webcam's own.</param>
 /// <param name="usage">Windows' camera record: which apps use a camera now.</param>
 /// <param name="setup">The camera's set-up lines.</param>
+/// <param name="choice">What is chosen for the session: the picture's size menu choice 7 picked.</param>
 /// <param name="recording">The run's recording settings, for the picture's size and the wake.</param>
 /// <param name="ui">The window the check is written to.</param>
 public sealed class CameraCheckCommand(ICameraProvider cameras, IMicrophoneProvider microphones, ICameraUsageRecord usage, CameraSetupFacts setup,
-    IOptionsSnapshot<RecordingOptions> recording, IConsoleUi ui)
+    Audio.SourceChoice choice, IOptionsSnapshot<RecordingOptions> recording, IConsoleUi ui)
 {
     /// <summary>The last line, which says what this build does and does not do.</summary>
     public const string OpensNothing = "This build lists and checks the cameras and opens none; recording a camera's picture comes in a later build.";
@@ -64,11 +65,12 @@ public sealed class CameraCheckCommand(ICameraProvider cameras, IMicrophoneProvi
 
     /// <summary>
     /// The camera a lesson recorded with --camera would take now, with the part of its name <paramref name="request"/> gives,
-    /// and its picture's size: --resolution, else Recording:CameraResolution, else 720p.
+    /// and its picture's size: --resolution, else menu choice 7's pick, else Recording:CameraResolution, else 720p.
     /// </summary>
     private string Chosen(IReadOnlyList<CameraDevice> listed, CameraCheckRequest request)
     {
         var (size, from) = request.Resolution is { } given && CameraSize.TryParse(given, out var asked) ? (asked, "--resolution")
+            : choice.PickedCameraResolution is { } picked ? (picked, "menu choice 7")
             : CameraSize.TryParse(recording.Value.CameraResolution, out var set) ? (set, "Recording:CameraResolution")
             : (CameraSize.Default, "the default");
         var sized = $"{size.Text} ({size.Width}x{size.Height}; {from})";

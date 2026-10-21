@@ -154,7 +154,7 @@ ClassScribe starts with a menu. Press the number of what you want:
   4  Transcribe a file
   5  Open the recordings folder
   6  Choose what to record: a device or an app
-  7  Microphone: none, with the class, or in person
+  7  Microphone and camera: none, with the class, or in person
   8  Check the microphone or a camera (opens nothing)
   9  Google Drive: upload, free room on this laptop, sign in
   Y  YouTube: record videos as they play, or download them, then transcribe
@@ -231,9 +231,11 @@ never counted as waiting; it goes up once it has stopped.
   a class whose audio is on Google Drive alone, and nothing sent while it is being recorded.
 - **5 Open the recordings folder** shows it in Explorer.
 - **6 Choose what to record** lists the output devices and the apps with sound; see below.
-- **7 Microphone** asks whether to record your microphone with the class (W), alone for a class in the
-  room (I) or not at all (N), then which microphone, and with the class which app it follows; see
-  [Your microphone](#your-microphone). The pick holds until ClassScribe is closed.
+- **7 Microphone and camera** asks whether to record your microphone with the class (W), alone for a
+  class in the room (I) or not at all (N), then which microphone, and with the class which app it
+  follows; see [Your microphone](#your-microphone). In person it then lists the cameras for a lesson
+  video (a number, or Enter for none) and, for a camera, the picture's size; see
+  [Recording with the camera](#recording-with-the-camera). The pick holds until ClassScribe is closed.
 - **8 Check the microphone or a camera** asks W or C. **W** watches what the programs on your computer
   do with the microphone and writes a line for each change, without opening it; see
   [Checking what your class page does with your microphone](#checking-what-your-class-page-does-with-your-microphone).
@@ -891,7 +893,8 @@ ClassScribe --help                                                      # the co
 runs in the window, and closing the window ends it.
 
 In short: `record "<name>" SOURCE --output "<folder>" [--mic ["<microphone>"] [--mic-follows <app>|auto|none]]
-[--minutes <n>] [--no-open] [--continue | --new]`, `record-only` with the same options,
+[--camera ["<camera>"] [--resolution <size>]] [--minutes <n>] [--no-open] [--continue | --new]` (`--camera` only
+with `--in-person`, and refused before anything records in this build), `record-only` with the same options,
 `transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
 `list [--output "<folder>"]`, `devices`, `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
 `camera-check ["<camera>"] [--resolution <size>]`, `drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]`,
@@ -1035,8 +1038,8 @@ At the end, ClassScribe hands Windows an exit code, which a script can check (in
 | Exit code | Meaning |
 | --- | --- |
 | 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, when `mic-check` stopped normally, when `drive upload` found everything it took on Drive, and when `drive free-space` freed the audio of every recording it took (or found none left). For `youtube`: every video ended as asked (recorded with a confirmed end, or downloaded, and transcribed when asked) or was done before; `--plan` printed its plan; `youtube check` found all four tools, and yt-dlp at most 90 days old. An upload to Google Drive after a class or a transcript never changes the exit code. |
-| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked. For `youtube`: any video refused, left out, waiting for your word, not fetched, recorded but possibly cut short, not transcribed, or left recording in the background; another YouTube batch running; Chrome, yt-dlp or a helper not found; no API key while transcripts are asked; too little room for a download; `youtube check` finding a tool missing, or yt-dlp more than 90 days old. |
-| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. For `youtube`: no `--name`, `--output` or link, a word that is no link it takes, neither or both of `--yes` and `--plan`, a playlist's or `/live/` link or more than 10 videos without `--download`, more than 500 videos with it, and `--allow-unlisted` without `--download` or while `YouTube:CourseChannels` is empty. Nothing was started. (A batch whose playlists turn out to hold more than 500 videos once they are read ends with 2 as well, before anything is downloaded.) |
+| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recording with `--camera`, which this build refuses before anything records (as it does a camera that Windows keeps from desktop apps), `camera-check` when a set-up line is a problem, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked. For `youtube`: any video refused, left out, waiting for your word, not fetched, recorded but possibly cut short, not transcribed, or left recording in the background; another YouTube batch running; Chrome, yt-dlp or a helper not found; no API key while transcripts are asked; too little room for a download; `youtube check` finding a tool missing, or yt-dlp more than 90 days old. |
+| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, `--camera` without `--in-person`, `--resolution` without `--camera` or with a size it cannot take, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. For `youtube`: no `--name`, `--output` or link, a word that is no link it takes, neither or both of `--yes` and `--plan`, a playlist's or `/live/` link or more than 10 videos without `--download`, more than 500 videos with it, and `--allow-unlisted` without `--download` or while `YouTube:CourseChannels` is empty. Nothing was started. (A batch whose playlists turn out to hold more than 500 videos once they are read ends with 2 as well, before anything is downloaded.) |
 | 130 | Cancelled with Ctrl+C, or with Esc while `drive signin` waits for Google; Ctrl+C during `drive upload` too, which goes on from where it stopped the next time, and during `drive free-space`. For `youtube`: Ctrl+C twice while videos are recorded as they play (no transcripts follow), Ctrl+C or Q twice during a download, and Ctrl+C during a transcript. |
 | none | The window was closed while the recording ran in the background; the next start reports how it ended. Likewise for a `youtube` batch whose window was closed: a video being recorded carries on in its recorder to its end, nothing else goes on, and the same command later picks up where it stopped. |
 
@@ -1258,6 +1261,35 @@ or `rebuild` make its transcript again for free from the saved `.json`; transcri
 refused with where the audio is: `The audio of ... is on Google Drive, not on this laptop: My Drive >
 ... (https://...). To transcribe it again, download its .wav files from there into ... first`, followed
 by the free `rebuild` command.
+
+### Recording with the camera
+
+For a lesson video, ClassScribe is to record your camera's picture beside your microphone, in person:
+the laptop's own camera or a USB webcam such as the OBSBOT Meet Flip. **This build does not record the
+picture yet**: it lists and checks the cameras, lets you choose one and its size, and refuses a
+recording with the camera before anything records, so that no class starts with a half-built camera.
+
+- In the menu: choice 7, I, your microphone, then the camera's number and the picture's size
+  (`Picture size: Enter for 720p (your setting), 1 480p, 2 720p, 3 1080p, T to type a size`). The
+  header then reads `Recording from: your microphone "OBSBOT", in person, with the camera "OBSBOT Meet
+  Flip StreamCamera" (720p)`. The camera is no setting: it holds until ClassScribe is closed, and
+  every start from the menu asks first. In this build that start says `Camera "OBSBOT Meet Flip
+  StreamCamera" (720p): The camera's recording is not built yet in this build of ClassScribe, so this
+  recording cannot take the camera. Enter records the sound only; Esc goes back.` Once a build records
+  the picture, it asks `Enter records with the camera; S records the sound only.`
+- On the command line: `record "Tajwid 4" --in-person "OBSBOT" --camera "OBSBOT" --resolution 720p
+  --output "<folder>"`. `--camera` takes part of a camera's name, or nothing for a USB camera when one
+  is plugged in, else the built-in front camera (a phone's virtual camera only when named), and only
+  with `--in-person` (`--camera records only in person in this build: give it with --in-person`, exit
+  2). `--resolution` takes `480p`, `720p`, `1080p` or a size such as `1024x576`, only with `--camera`
+  (`--resolution needs --camera`, exit 2). In this build the command says `The camera's recording is not
+  built yet in this build of ClassScribe, so this recording cannot take the camera. Nothing was
+  recorded; leave out --camera to record the sound alone.` and ends with exit 1.
+- The picture's size: `--resolution`, else the menu's pick, else `Recording:CameraResolution`, else
+  720p, decided by the window before the recording starts and kept in its run file.
+- Before the size counts, the start also refuses the camera when Windows is older than 10 version 2004,
+  when Windows' privacy switches keep desktop apps from the camera, or when no H.264 encoder is
+  installed, with the same words as the camera check.
 
 ### Checking the cameras
 
@@ -2370,6 +2402,18 @@ words you see.
 | `ERROR    Windows' list of microphones could not be read: ...`, `ERROR    Windows' microphone usage record could not be read: ...` | Windows' audio service is restarting, or the registry refused. The check keeps trying, and a `NOTE` says when it reads again. |
 | `NOTE     no check for ... s: the laptop slept or the check was held up` | A change that came and went in that time is not in the log. |
 | `SELF     ClassScribe's own process has a session on this microphone.` | Should never appear; it would mean ClassScribe itself opened the microphone during the check. |
+
+### The camera
+
+| What you see | What to do |
+| --- | --- |
+| `The camera's recording is not built yet in this build of ClassScribe, so this recording cannot take the camera` | This build lists, checks and chooses cameras but does not record their picture. In the menu press Enter to record the sound only; on the command line leave out `--camera`. |
+| `--camera records only in person in this build: give it with --in-person` (exit code 2) | The camera goes with your microphone alone, in person: use `--in-person` as the source. |
+| `--resolution needs --camera` or `--resolution takes 480p, 720p or 1080p, ...` (exit code 2) | Give `--resolution` only with `--camera`, and one of the three sizes or a width and a height such as `1024x576` within the limits the message gives. |
+| `PROBLEM  Windows does not let desktop apps use the camera: ...` (camera check, exit code 1) | Turn on Let desktop apps access your camera in Settings > Privacy & security > Camera (the line names the page), then run the camera check again. |
+| `PROBLEM  No H.264 video encoder is installed, ...` | A Windows N edition lacks it: add the Media Feature Pack in Settings > System > Optional features. |
+| `NOTE     Bitdefender Antivirus watches the camera: ...` | When Bitdefender asks about ClassScribe and the camera, allow it (Bitdefender: Privacy > Video & Audio Protection > Webcam Protection). |
+| `The cameras could not be listed: The camera needs Windows 10 version 2004 (build 19041) or later; ...` | The camera needs a newer Windows; everything else in ClassScribe works as before. |
 
 ### The background recorder and its windows
 

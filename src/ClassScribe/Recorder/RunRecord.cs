@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using ClassScribe.Commands;
 
 namespace ClassScribe.Recorder;
@@ -105,6 +107,15 @@ public sealed record RunRecord(int Version, string RunId, int ProcessId, DateTim
 {
     /// <summary>The version of the run file's layout this build writes.</summary>
     public const int CurrentVersion = 1;
+
+    /// <summary>
+    /// Fields of the run file this build does not know, as a later build wrote them, kept so that marking a run seen, which
+    /// writes the file back, loses none of them (amendment 2); null when there were none, so that records still compare equal.
+    /// </summary>
+    [JsonExtensionData]
+    // A setter, not init: the generated reader fills an init-only property through the constructor, where extension data
+    // cannot go.
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 /// <summary>

@@ -464,6 +464,52 @@ public class CommandLineTreeTests
     }
 
     /// <summary>
+    /// --camera, in person, asks for the lesson's picture too: without a value for the camera the starter picks, with one for
+    /// the camera whose name holds it; --resolution gives its size as it is written, else the starter resolves it.
+    /// </summary>
+    [Test]
+    public async Task Camera_in_person_asks_for_the_picture_too_with_its_size()
+    {
+        Assert.That(await RunAsync("record", "Tajwid 4", "--in-person", "--camera", "--output", Classes), Is.EqualTo(0));
+        Assert.That(OnlySource(), Is.EqualTo(InPerson() with { Camera = new CameraChoice(null) }));
+
+        _recorded.Clear();
+        Assert.That(await RunAsync("record-only", "Tajwid 4", "--in-person", "OBSBOT", "--camera", " OBSBOT ", "--resolution", "1080P", "--output", Classes), Is.EqualTo(0));
+        Assert.That(OnlySource(), Is.EqualTo(InPerson("OBSBOT") with { Camera = new CameraChoice("OBSBOT", "1080p") }));
+    }
+
+    /// <summary>--camera records only in person in this build: with --device or --app it is a mistake, exit 2.</summary>
+    [TestCase("--device", "auto")]
+    [TestCase("--app", "chrome")]
+    public async Task Camera_without_in_person_is_refused(string source, string value)
+    {
+        AssertRefused(await RunAsync("record", "Kalam", source, value, "--camera", "--output", Classes));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--camera records only in person in this build: give it with --in-person" }));
+    }
+
+    /// <summary>--resolution needs --camera, and a size it takes: each mistake is named, exit 2.</summary>
+    [Test]
+    public async Task Resolution_needs_the_camera_and_a_size_it_takes()
+    {
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--resolution", "720p", "--output", Classes));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--resolution needs --camera" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--camera", "--resolution", "4k", "--output", Classes));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {Camera.CameraSize.Rule}; \"4k\" is not one" }));
+    }
+
+    /// <summary>A recording's name right after --camera is taken as the camera's, which the message about the missing name points out.</summary>
+    [Test]
+    public async Task A_name_taken_by_camera_is_pointed_out()
+    {
+        AssertRefused(await RunAsync("record", "--in-person", "--camera", "Kalam", "--output", Classes));
+
+        Assert.That(_line.Mistakes.Single(), Does.EndWith("(--camera took \"Kalam\" as the camera's name)"));
+    }
+
+    /// <summary>
     /// camera-check runs the camera check, with part of a camera's name when given (trimmed) and --resolution as the size
     /// is written, whatever its case; nothing is opened.
     /// </summary>

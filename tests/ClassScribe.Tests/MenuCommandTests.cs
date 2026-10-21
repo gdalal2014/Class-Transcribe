@@ -186,7 +186,7 @@ public class MenuCommandTests
             .And.Contain("4  Transcribe a file")
             .And.Contain("5  Open the recordings folder")
             .And.Contain("6  Choose what to record: a device or an app")
-            .And.Contain("7  Microphone: none, with the class, or in person")
+            .And.Contain("7  Microphone and camera: none, with the class, or in person")
             .And.Contain("8  Check the microphone or a camera (opens nothing)")
             .And.Contain("9  Google Drive: upload, free room on this laptop, sign in")
             .And.Contain("Recording from: the device the class plays on")

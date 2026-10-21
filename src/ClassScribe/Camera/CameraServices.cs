@@ -18,6 +18,9 @@ public static class CameraServices
         services.AddSingleton<ICameraUsageRecord, CameraUsageRecord>();
         services.AddSingleton<ICameraSystem, WindowsCameraSystem>();
         services.AddSingleton<CameraSetupFacts>();
+
+        // The seam the camera process fills in slice 7; until then no run records a camera's picture.
+        services.AddSingleton<ICameraRecorder, CameraRecorderNotBuilt>();
         return services;
     }
 }
