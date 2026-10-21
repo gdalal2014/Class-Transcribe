@@ -43,6 +43,9 @@ internal static class Laptop
     /// <summary>Another process of ClassScribe's program, such as a window beside the recorder.</summary>
     public const int OtherClassScribe = 778;
 
+    /// <summary>The Zoom desktop app in a meeting, as on 18 October, when one of Windows' audio calls answered E_INVALIDARG.</summary>
+    public const int Zoom = 9090;
+
     /// <summary>The names of the processes above, as <see cref="IProcessNames"/> gives them.</summary>
     public static Dictionary<int, ProcessImage> Names => new()
     {
@@ -51,7 +54,8 @@ internal static class Laptop
         [ChromeDriver] = new("chromedriver", @"C:\Tools\chromedriver.exe"),
         [Vibe] = new("vibe", @"C:\Users\gdala\AppData\Local\Programs\vibe\vibe.exe"),
         [OwnProcess] = new("ClassScribe", @"C:\Users\gdala\AppData\Local\Programs\ClassScribe\ClassScribe.exe"),
-        [OtherClassScribe] = new("ClassScribe", @"C:\Users\gdala\AppData\Local\Programs\ClassScribe\ClassScribe.exe")
+        [OtherClassScribe] = new("ClassScribe", @"C:\Users\gdala\AppData\Local\Programs\ClassScribe\ClassScribe.exe"),
+        [Zoom] = new("Zoom", @"C:\Users\gdala\AppData\Roaming\Zoom\bin\Zoom.exe")
     };
 
     /// <summary>A session of <paramref name="processId"/> on the microphone <paramref name="endpointId"/>, named as <see cref="Names"/> names the process.</summary>
@@ -500,8 +504,12 @@ internal sealed class FakeCaptureSessionList(IReadOnlyList<FakeCaptureSessionCon
     }
 
     /// <inheritdoc />
+    /// <remarks>A session with a <see cref="FakeCaptureSessionControl.HandOutFailure"/> is not handed out: the listing answers with that failure for it.</remarks>
     public int GetSession(int index, out object session)
     {
+        session = null!;
+        if (sessions[index].HandOutFailure is not 0 and var failure) return failure;
+
         session = FakeComLedger.Track(ledger, sessions[index]);
         return FakeResults.Ok;
     }
@@ -516,6 +524,15 @@ internal sealed class FakeCaptureSessionControl(string key, int processId, int s
 {
     /// <summary>When not 0, the HRESULT asking for its state answers with, as a session being torn down during the look may.</summary>
     public int StateFailure { get; init; }
+
+    /// <summary>When not 0, the HRESULT asking for its instance identifier answers with.</summary>
+    public int InstanceIdFailure { get; init; }
+
+    /// <summary>When not 0, the HRESULT asking for its process answers with.</summary>
+    public int ProcessIdFailure { get; init; }
+
+    /// <summary>When not 0, the HRESULT the session listing answers with when asked for this session, which is then not handed out.</summary>
+    public int HandOutFailure { get; init; }
 
     /// <inheritdoc />
     public int GetState(out int value)
@@ -570,14 +587,15 @@ internal sealed class FakeCaptureSessionControl(string key, int processId, int s
     /// <inheritdoc />
     public int GetSessionInstanceIdentifier(out string id)
     {
-        id = key;
-        return FakeResults.Ok;
+        id = InstanceIdFailure == 0 ? key : null!;
+        return InstanceIdFailure == 0 ? FakeResults.Ok : InstanceIdFailure;
     }
 
     /// <inheritdoc />
     public int GetProcessId(out uint value)
     {
         value = (uint)processId;
+        if (ProcessIdFailure != 0) return ProcessIdFailure;
 
         // AUDCLNT_S_NO_SINGLE_PROCESS, a success above zero, for a session that spans processes, as Windows' sounds do.
         return processId == 0 ? 0x0889000D : FakeResults.Ok;

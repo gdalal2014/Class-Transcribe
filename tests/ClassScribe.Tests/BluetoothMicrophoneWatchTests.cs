@@ -168,6 +168,27 @@ public class BluetoothMicrophoneWatchTests
         Assert.That(look.Current, Is.Empty);
     }
 
+    /// <summary>
+    /// A listing that fails with any exception a failed result can reach the watch as is a problem of the same kind, never
+    /// thrown: here E_INVALIDARG as .NET's own mapping gives it, an ArgumentException, which on 18 October would have ended
+    /// the second's checks before the heartbeat and the state reached the window. The next look reads again.
+    /// </summary>
+    [Test]
+    public void A_listing_that_fails_with_an_ArgumentException_is_a_problem_too()
+    {
+        _sessions.SetSessions(Buds.Id, ChromeOn(Buds));
+        _microphones.ListingFailure = new ArgumentException("Value does not fall within the expected range.");
+
+        var failed = _watch.LookNow(AnyApp);
+        _microphones.ListingFailure = null;
+        var read = _watch.LookNow(AnyApp);
+
+        Assert.That(failed.Problem, Is.EqualTo("Value does not fall within the expected range."));
+        Assert.That(failed.Current, Is.Empty);
+        Assert.That((read.Problem, read.Began), Is.EqualTo(((string?)null, new[] { ChromeOnBuds })));
+        Assert.That(_log.Problems, Is.Empty);
+    }
+
     /// <summary>A microphone that is Bluetooth by a property alone, as the soundcore headset is on the INTELAUDIO bus, counts the same.</summary>
     [Test]
     public void A_Bluetooth_microphone_known_by_a_property_counts()

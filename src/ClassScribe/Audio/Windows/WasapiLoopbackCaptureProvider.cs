@@ -232,10 +232,10 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
 
     /// <summary>
     /// Runs one listing on the listings' enumerator, made first when there is none, and returns what it found;
-    /// nothing once the provider is disposed. A listing that fails with a <see cref="COMException"/> is noted at
-    /// Debug and rethrown, and the enumerator is kept for the next one. While Windows' audio service is down every
-    /// look fails, once a second, and the recording warns about that itself. <paramref name="what"/> names the
-    /// listing in the log.
+    /// nothing once the provider is disposed. A listing that fails with a failed result (see
+    /// <see cref="AudioFailures.IsFailedResult"/>) is noted at Debug and rethrown, and the enumerator is kept for the
+    /// next one. While Windows' audio service is down every look fails, once a second, and the recording warns about
+    /// that itself. <paramref name="what"/> names the listing in the log.
     /// </summary>
     private IReadOnlyList<T> RunListing<T>(Func<IMMDeviceEnumeratorRaw, IReadOnlyList<T>> listing, string what)
     {
@@ -249,7 +249,7 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
                 {
                     return listing(_listingEnumerator ??= _createListingEnumerator());
                 }
-                catch (COMException ex)
+                catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
                 {
                     _logger.LogDebug(ex, "Could not look at the {What} (0x{Code:X8})", what, ex.HResult);
                     throw;
@@ -319,6 +319,8 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     /// <summary>
     /// The apps with sound open on an active output device, each with the device it plays through. An app with sound
     /// open on several devices, or several times on one, is listed once, at its loudest, with the device it is loudest on.
+    /// A device whose sessions Windows will not list costs only its own apps, and a session that cannot be read only
+    /// itself (see <see cref="ForEachSession"/>): each is left out with a Debug line, and the rest are listed.
     /// </summary>
     private List<PlayingApp> ListPlayingApps(IMMDeviceEnumeratorRaw enumerator)
     {
@@ -330,7 +332,18 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
         ForEachActiveDevice(enumerator, (id, device) =>
         {
             var deviceName = NameOf(id);
-            ForEachSession(device, session => AddApp(session, id, deviceName, apps, processNames));
+            try
+            {
+                ForEachSession(device, session => AddApp(session, id, deviceName, apps, processNames));
+            }
+            catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
+            {
+                // Deliberately not rethrown: the apps on the other devices are still worth listing, and a recording of
+                // one of them must not stop for this device's sake; a failed result failed the whole look with the Zoom
+                // app in a meeting on 18 October. The next look, a second later, asks again. Noted at Debug, since it
+                // may come at every look.
+                _logger.LogDebug(ex, "Left out the apps on the output device \"{Device}\", whose sessions Windows did not list (0x{Code:X8})", deviceName, ex.HResult);
+            }
         });
 
         return [.. apps.Values];
@@ -425,8 +438,9 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     }
 
     /// <summary>
-    /// Calls <paramref name="visit"/> with each audio session open on the device. Each session is released after its
-    /// visit, and the session listing and the session manager at the end.
+    /// Calls <paramref name="visit"/> with each audio session open on the device. A session that Windows will not hand
+    /// out, or whose visit fails with a failed result, is left out with a Debug line, and the others are visited. Each
+    /// session is released after its visit, and the session listing and the session manager at the end.
     /// </summary>
     private void ForEachSession(IMMDeviceRaw device, Action<object> visit)
     {
@@ -440,10 +454,19 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
                 CoreAudio.Check(sessions.GetCount(out var count));
                 for (var i = 0; i < count; i++)
                 {
-                    CoreAudio.Check(sessions.GetSession(i, out var session));
+                    object? session = null;
                     try
                     {
+                        CoreAudio.Check(sessions.GetSession(i, out session));
                         visit(session);
+                    }
+                    catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
+                    {
+                        // Deliberately not rethrown: one session that cannot be read, as may be one of an app's in a call,
+                        // must not cost the other apps, nor a recording of one of them; it is left out, as AddApp leaves out
+                        // a session whose state or process Windows does not give. Noted at Debug, since it may come at
+                        // every look.
+                        _logger.LogDebug(ex, "Left out an audio session that could not be read (0x{Code:X8})", ex.HResult);
                     }
                     finally
                     {

@@ -169,6 +169,85 @@ public class MicrophoneSessionsTests
         });
     }
 
+    /// <summary>
+    /// As with the Zoom app in a meeting on 18 October, a session that answers E_INVALIDARG to any call the reader makes
+    /// of it, or to the listing's own call that hands it out, leaves the listing incomplete, with the result in its
+    /// reason, and the other sessions are read, by the read of one microphone and by the read of all. It used to reach the
+    /// microphone watch as an ArgumentException, which no catch here expected, and stopped the watch for the rest of the
+    /// run. Every object handed out is released, and the enumerator is kept, since the reader itself did not fail.
+    /// </summary>
+    [TestCase("GetSessionInstanceIdentifier")]
+    [TestCase("GetState")]
+    [TestCase("GetProcessId")]
+    [TestCase("GetSession")]
+    public void A_session_that_answers_E_INVALIDARG_leaves_the_listing_incomplete_and_the_others_are_read(string call)
+    {
+        var zoom = call switch
+        {
+            "GetSessionInstanceIdentifier" => new FakeCaptureSessionControl("array|zoom", Laptop.Zoom) { InstanceIdFailure = FakeResults.InvalidArgument },
+            "GetState" => new FakeCaptureSessionControl("array|zoom", Laptop.Zoom) { StateFailure = FakeResults.InvalidArgument },
+            "GetProcessId" => new FakeCaptureSessionControl("array|zoom", Laptop.Zoom) { ProcessIdFailure = FakeResults.InvalidArgument },
+            _ => new FakeCaptureSessionControl("array|zoom", Laptop.Zoom) { HandOutFailure = FakeResults.InvalidArgument }
+        };
+        var array = new FakeMicrophoneEndpoint(Laptop.ArrayId, Laptop.ArrayName,
+            new FakeCaptureSessionControl("array|chrome", Laptop.ChromeUtility), zoom, new FakeCaptureSessionControl("array|system", 0, systemSounds: true))
+        { Ledger = _ledger };
+        _enumerator = new FakeCaptureEnumerator(array, _obsbot) { Ledger = _ledger };
+
+        var one = _reader.Read(Laptop.ArrayId);
+        var all = _reader.ReadAll();
+        var heldBetweenReads = _ledger.Unreleased;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(one.Complete, Is.False);
+            Assert.That(one.Problem, Does.Contain("session 2 of 3 not readable").And.Contain("0x80070057"));
+            Assert.That(one.Sessions.Select(session => session.Key), Is.EqualTo(new[] { "array|chrome", "array|system" }));
+            Assert.That(all.Problem, Is.Null, "the other microphone was read too");
+            Assert.That(all.Listings.Select(listing => (listing.EndpointId, listing.Complete)), Is.EqualTo(new[] { (Laptop.ArrayId, false), (Laptop.ObsbotId, true) }));
+            Assert.That(all.Listings[0].Sessions.Select(session => session.Key), Is.EqualTo(new[] { "array|chrome", "array|system" }));
+            Assert.That(heldBetweenReads, Is.EqualTo(new[] { "FakeCaptureEnumerator x1" }), "only the enumerator is kept between reads");
+            Assert.That(_ledger.OverReleased, Is.Empty);
+            Assert.That(_enumeratorsMade, Is.EqualTo(1), "the reader did not fail, so its enumerator was not made again");
+            Assert.That(_log.Problems, Is.Empty);
+        });
+    }
+
+    /// <summary>
+    /// A microphone that answers E_INVALIDARG when asked for its endpoint volume reads with its mute unknown and its sessions
+    /// read; one that answers it when asked for its sessions reads incomplete with its mute read. Either way the read of every
+    /// microphone lists it beside the others.
+    /// </summary>
+    [TestCase("endpoint volume")]
+    [TestCase("session manager")]
+    public void A_microphone_that_answers_E_INVALIDARG_when_activated_is_still_listed(string what)
+    {
+        var array = what == "endpoint volume"
+            ? new FakeMicrophoneEndpoint(Laptop.ArrayId, Laptop.ArrayName, new FakeCaptureSessionControl("array|chrome", Laptop.ChromeUtility)) { VolumeFailure = FakeResults.InvalidArgument }
+            : new FakeMicrophoneEndpoint(Laptop.ArrayId, Laptop.ArrayName, new FakeCaptureSessionControl("array|chrome", Laptop.ChromeUtility)) { SessionManagerFailure = FakeResults.InvalidArgument, Muted = true };
+        _enumerator = new FakeCaptureEnumerator(array, _obsbot);
+
+        var all = _reader.ReadAll();
+
+        Assert.That(all.Problem, Is.Null);
+        Assert.That(all.Listings.Select(listing => listing.EndpointId), Is.EqualTo(new[] { Laptop.ArrayId, Laptop.ObsbotId }));
+        var listing = all.Listings[0];
+        Assert.Multiple(() =>
+        {
+            Assert.That(listing.Problem, Does.Contain("0x80070057"));
+            if (what == "endpoint volume")
+            {
+                Assert.That(listing.MutedInWindows, Is.Null);
+                Assert.That((listing.Complete, listing.Sessions.Count), Is.EqualTo((true, 1)), "the sessions were read");
+            }
+            else
+            {
+                Assert.That(listing.MutedInWindows, Is.True, "the mute was read");
+                Assert.That(listing.Complete, Is.False);
+            }
+        });
+    }
+
     /// <summary>When the sessions cannot be listed at all, the listing is incomplete with the reason, and the microphone's mute is still read.</summary>
     [Test]
     public void The_session_manager_failing_leaves_the_listing_incomplete()

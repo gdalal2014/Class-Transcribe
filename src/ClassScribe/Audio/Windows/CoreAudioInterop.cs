@@ -123,11 +123,26 @@ internal static class CoreAudio
         return strings;
     }
 
-    /// <summary>Throws the exception that matches a failed result, such as a <see cref="COMException"/>; does nothing for a success.</summary>
+    /// <summary>
+    /// Throws a <see cref="COMException"/> that carries a failed result, whatever the result; does nothing for a success,
+    /// S_FALSE and the other results above zero included. .NET's own mapping (<see cref="Marshal.ThrowExceptionForHR(int)"/>)
+    /// is not used, because it makes exceptions of other types of some results, ArgumentException of E_INVALIDARG,
+    /// InvalidCastException of E_NOINTERFACE, OutOfMemoryException of E_OUTOFMEMORY and so on, which the readers' catches
+    /// did not expect: with the Zoom app in a meeting on 18 October, an E_INVALIDARG stopped the devices command, and
+    /// would have stopped the watch on the class app's microphone for the rest of a run.
+    /// </summary>
     public static void Check(int result)
     {
-        if (result < 0) Marshal.ThrowExceptionForHR(result);
+        if (result < 0) throw Failure(result);
     }
+
+    /// <summary>
+    /// The <see cref="COMException"/> for a failed <paramref name="result"/>: the one .NET makes when it makes a
+    /// COMException of the result, so that the messages of the results it knows stay as they were, and otherwise one with
+    /// Windows' own words for the result, such as "The parameter is incorrect." for E_INVALIDARG.
+    /// </summary>
+    internal static COMException Failure(int result) =>
+        Marshal.GetExceptionForHR(result) as COMException ?? new COMException(Marshal.GetPInvokeErrorMessage(result), result);
 
     /// <summary>
     /// Releases a COM object now rather than when the garbage collector gets to it. Anything else, such as a

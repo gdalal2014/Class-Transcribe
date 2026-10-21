@@ -91,7 +91,7 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
                     _release(device);
                 }
             }
-            catch (Exception ex) when (ex is COMException or InvalidCastException)
+            catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
             {
                 // Deliberately not rethrown: the watch looks four times a second and must keep looking. A look that fails is a
                 // listing that says why, which the gate reads as nothing known, and the next look tries again with a new
@@ -136,7 +136,7 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
 
                 return new MicrophoneListings(listings, null);
             }
-            catch (Exception ex) when (ex is COMException or InvalidCastException)
+            catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
             {
                 // Deliberately not rethrown: as in Read, the look must go on; no listings, with the reason, say that nothing
                 // could be read, which the microphone check reports as one ERROR line rather than as every microphone gone.
@@ -215,7 +215,7 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
         {
             return _readName(device);
         }
-        catch (Exception ex) when (ex is COMException or InvalidCastException)
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
         {
             // Deliberately not rethrown: the identifier stands in for the name, and the reason is in the listing.
             problems.Add("name not readable: " + Describe(ex));
@@ -259,7 +259,7 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
 
             return (muted, percent);
         }
-        catch (Exception ex) when (ex is COMException or InvalidCastException)
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
         {
             // Deliberately not rethrown: the mute reads as unknown, which the gate takes as not muted, and the sessions,
             // which are the safety, are still read; the reason is in the listing.
@@ -295,7 +295,7 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
                     CoreAudio.Check(list.GetSession(index, out session));
                     sessions.Add(ReadSession(session, endpointId, processNames));
                 }
-                catch (Exception ex) when (ex is COMException or InvalidCastException)
+                catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
                 {
                     // Deliberately not rethrown: a session being torn down during the look must not cost the others; the
                     // listing says it is incomplete, so the gate takes nothing for granted from it.
@@ -310,7 +310,7 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
 
             return complete;
         }
-        catch (Exception ex) when (ex is COMException or InvalidCastException)
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
         {
             // Deliberately not rethrown: the microphone's mute is still worth having; the listing says the sessions could not be read.
             problems.Add("sessions not readable: " + Describe(ex));

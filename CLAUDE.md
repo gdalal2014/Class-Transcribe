@@ -187,7 +187,15 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   before `Initialize` (never NAudio's `IAudioClient2`), falling back to Default when the endpoint
   does not offer it, Windows refuses it, or a stream failed to open with it before (remembered per
   endpoint for the process). Method order in these declarations is checked against the IDLs, and
-  setters are declared only to keep that order.
+  setters are declared only to keep that order. `CoreAudio.Check` throws a `COMException` carrying
+  the result for every failed result, never .NET's mapped types (E_INVALIDARG became an
+  ArgumentException that stopped `devices` with the Zoom app in a meeting on 18 October); NAudio's
+  calls still map, so the places that turn a failed look into a listing that says so
+  (`RecordingMonitor.ClassDevice`, `BluetoothMicrophoneWatch.LookNow`, `WasapiMicrophoneSessions`,
+  `DevicesCommand.Read`) catch `AudioFailures.IsFailedResult`. In the apps with sound a session that
+  cannot be read, or a device whose sessions cannot be listed, is left out with a Debug line
+  (`WasapiLoopbackCaptureProvider.ForEachSession`, `ListPlayingApps`); `FailedAudioCallTests` plays
+  E_INVALIDARG through the real readers.
 - Time every interval on the steady clock (`TimeProvider.GetTimestamp` and `GetElapsedTime`), never
   the time of day, so a change of the Windows clock neither stretches nor shortens it. In tests,
   `ManualTimeProvider.Advance` moves both clocks and `StepWallClock` only the time of day; a test that

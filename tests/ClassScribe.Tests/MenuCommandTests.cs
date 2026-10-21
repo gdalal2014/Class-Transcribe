@@ -1411,7 +1411,8 @@ public class CommandRunnerTests
             services.AddScoped(provider => new AttachCommand(_runtime.Journal, provider.GetRequiredService<IRunViewer>(), _runner!, _ui, new FakeWindowSignals(), _runtime.Time,
                 NullLogger<AttachCommand>.Instance) { TurnOnCtrlC = () => 0 });
             services.AddScoped(provider => Noted(provider, new ListCommand(Folders(), _runtime.Journal, _ui, ZonedTimeProvider.EasternSummer)));
-            services.AddScoped(provider => Noted(provider, new DevicesCommand(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => new FakeMicrophoneProvider()), new Lazy<IMicrophoneSessions>(() => new FakeMicrophoneSessions()), _ui)));
+            services.AddScoped(provider => Noted(provider, new DevicesCommand(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => new FakeMicrophoneProvider()), new Lazy<IMicrophoneSessions>(() => new FakeMicrophoneSessions()), _ui,
+                NullLogger<DevicesCommand>.Instance)));
             services.AddScoped(provider => Noted(provider, CreateTranscribeCommand()));
             services.AddScoped(provider => Noted(provider, CreateMicrophoneMenu()));
             services.AddScoped<IMicCheckRun>(provider => Noted(provider, new FakeMicCheckRun(_checked) { ExitCode = micCheckExitCode }));

@@ -1,6 +1,7 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Desktop;
+using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Commands;
 
@@ -10,13 +11,16 @@ namespace ClassScribe.Commands;
 /// (built in, default, USB, raw), which apps hold it now from Windows' own lists, and the option that picks it; then
 /// examples. It only asks Windows what there is: no device or microphone is opened and nothing is recorded. ClassScribe's
 /// own processes are left out of the apps, since a recording's own capture shows up as an app with sound and holds the
-/// microphone. The devices, the microphones and the sessions are asked for only when the command runs.
+/// microphone. The devices, the microphones and the sessions are asked for only when the command runs. A list Windows
+/// will not give says so in its place, with the reason, and the other lists are given in full.
 /// </summary>
 /// <param name="outputs">Lists the output devices and the apps with sound, made when the command runs.</param>
 /// <param name="microphones">Lists the microphones, made when the command runs.</param>
 /// <param name="sessions">Reads which apps have each microphone open, made when the command runs.</param>
 /// <param name="ui">The window the lists are written to.</param>
-public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<IMicrophoneProvider> microphones, Lazy<IMicrophoneSessions> sessions, IConsoleUi ui)
+/// <param name="logger">The log, which has a list that could not be read at Debug, with where the failure came from.</param>
+public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<IMicrophoneProvider> microphones, Lazy<IMicrophoneSessions> sessions, IConsoleUi ui,
+    ILogger<DevicesCommand> logger)
 {
     /// <summary>What the line for --device auto says it records.</summary>
     private const string Automatic = "The device the class plays on";
@@ -26,32 +30,43 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
 
     /// <summary>
     /// Lists the output devices, then the apps with sound, then the microphones, each with its option, lined up in one
-    /// column, then says that nothing was opened, and gives examples. Returns the exit code, 0.
+    /// column, then says that nothing was opened, and gives examples. A list Windows will not give says so, with the
+    /// reason, in its place; when only the apps that hold each microphone cannot be read, the microphones are listed with
+    /// their own notes and a line says what is missing. Returns the exit code, 0: the command has listed what it could.
     /// </summary>
     public int Run()
     {
-        var provider = outputs.Value;
-        var devices = provider.GetOutputDevices().Select(device => (What: Describe(device), Option: $"--device \"{device.Name}\"")).ToList();
-        var apps = AppsByName(provider.GetPlayingApps()).Select(app => (What: Describe(app), Option: $"--app {Quoted(app.Name)}")).ToList();
-        var listings = sessions.Value.ReadAll().Listings;
-        var mics = microphones.Value.GetMicrophones()
+        var (deviceList, devicesFailed) = Read("the output devices", () => outputs.Value.GetOutputDevices());
+        var (appList, appsFailed) = Read("the apps with sound", () => outputs.Value.GetPlayingApps());
+        var (sessionList, sessionsFailed) = Read("which apps hold each microphone", () => sessions.Value.ReadAll());
+        var (microphoneList, microphonesFailed) = Read("the microphones", () => microphones.Value.GetMicrophones());
+        var listings = sessionList?.Listings ?? [];
+        var holdersMissing = sessionsFailed ?? sessionList?.Problem;
+
+        var devices = (deviceList ?? []).Select(device => (What: Describe(device), Option: $"--device \"{device.Name}\"")).ToList();
+        var apps = AppsByName(appList ?? []).Select(app => (What: Describe(app), Option: $"--app {Quoted(app.Name)}")).ToList();
+        var mics = (microphoneList ?? [])
             .Select(microphone => (What: Describe(microphone, listings.FirstOrDefault(listing => listing.EndpointId == microphone.Id)), Option: MicOption(microphone)))
             .ToList();
         var width = devices.Select(row => row.What).Concat(apps.Select(row => row.What)).Concat(mics.Select(row => row.What))
             .Append(Automatic).Append(DefaultMicrophone).Max(what => what.Length);
 
         ui.WriteLine("Output devices:");
-        if (devices.Count == 0) ui.WriteLine("  None is connected now.");
+        if (devicesFailed is not null) ui.WriteLine(Unread(devicesFailed));
+        else if (devices.Count == 0) ui.WriteLine("  None is connected now.");
         foreach (var (what, option) in devices) ui.WriteLine(Row(what, option, width));
         ui.WriteLine(Row(Automatic, "--device auto", width));
 
         ui.WriteLine("Apps with sound:");
-        if (apps.Count == 0) ui.WriteLine("  None has sound open now.");
+        if (appsFailed is not null) ui.WriteLine(Unread(appsFailed));
+        else if (apps.Count == 0) ui.WriteLine("  None has sound open now.");
         foreach (var (what, option) in apps) ui.WriteLine(Row(what, option, width));
 
         ui.WriteLine("Microphones:");
-        if (mics.Count == 0) ui.WriteLine("  None is connected now.");
+        if (microphonesFailed is not null) ui.WriteLine(Unread(microphonesFailed));
+        else if (mics.Count == 0) ui.WriteLine("  None is connected now.");
         foreach (var (what, option) in mics) ui.WriteLine(Row(what, option, width));
+        if (mics.Count > 0 && holdersMissing is not null) ui.WriteLine($"  Which apps hold each microphone could not be read now: {holdersMissing}");
         ui.WriteLine(Row(DefaultMicrophone, "--mic", width));
 
         ui.WriteLine("Nothing was opened or recorded to list these.");
@@ -60,6 +75,30 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
         ui.WriteLine("             ClassScribe record \"Kalam\" --in-person --output \"D:\\Classes\"");
         return 0;
     }
+
+    /// <summary>
+    /// One of Windows' lists, read by <paramref name="read"/>: what it gave and no failure, or, when Windows would not give
+    /// it, nothing and the failure in words, which is noted at Debug with where it came from. <paramref name="what"/> names
+    /// the list in the log.
+    /// </summary>
+    private (T? List, string? Failure) Read<T>(string what, Func<T> read) where T : class
+    {
+        try
+        {
+            return (read(), null);
+        }
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex) || ex is InvalidOperationException)
+        {
+            // Deliberately not rethrown: the command only lists what there is, and one list Windows will not give, as with
+            // the Zoom app in a meeting on 18 October, must not keep the others from being listed. The list says that it
+            // could not be read, and why; the failure, with where it came from, is in the log at Debug.
+            logger.LogDebug(ex, "Could not read {What} for the list (0x{Code:X8})", what, ex.HResult);
+            return (null, AudioFailures.Describe(ex));
+        }
+    }
+
+    /// <summary>The line that takes the place of a list Windows would not give, with <paramref name="failure"/>, the reason in words.</summary>
+    private static string Unread(string failure) => $"  Could not be read now: {failure}";
 
     /// <summary>A device as the lists show it: its name, and whether it is the default one or playing now.</summary>
     internal static string Describe(OutputDevice device)

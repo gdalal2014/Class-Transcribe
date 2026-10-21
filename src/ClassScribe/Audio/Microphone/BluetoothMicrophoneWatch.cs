@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using ClassScribe.Desktop;
 using Microsoft.Extensions.Logging;
 
@@ -77,10 +76,11 @@ public sealed class BluetoothMicrophoneWatch(IMicrophoneSessions sessions, IMicr
             list = microphones.GetMicrophones();
             listings = sessions.ReadAll();
         }
-        catch (Exception ex) when (ex is COMException or InvalidCastException or InvalidOperationException)
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex) || ex is InvalidOperationException)
         {
             // Deliberately not rethrown: this watch only words a warning, and a look at Windows' lists that fails, as while
-            // its audio service restarts, must not keep the run's other checks from running; the next look reads again.
+            // its audio service restarts, or with any failed result, as with the Zoom app in a meeting on 18 October, must
+            // not keep the run's other checks, the heartbeat and the state from the window; the next look reads again.
             return Unread(ex.Message);
         }
 

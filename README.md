@@ -959,7 +959,11 @@ it now (`chrome is listening`, `vibe holds it without listening`), with the `--m
 that picks it (`--in-person` takes the same name), then the row `Windows' default microphone, never a
 Bluetooth one  --mic`, or `None is connected now.` when there is none. It opens nothing
 (`Nothing was opened or recorded to list these.`), and ends with example lines for `--device auto`,
-`--app chrome --mic` and `--in-person`.
+`--app chrome --mic` and `--in-person`. A list Windows does not give at that moment says so in its
+place (`Could not be read now: The parameter is incorrect. (0x80070057)`) and the others are listed in
+full, with exit code 0; when only the apps that hold each microphone cannot be read, the microphones
+are listed with `Which apps hold each microphone could not be read now: ...` below them. One app's
+sound that Windows cannot describe is left out of the apps by itself.
 
 At the end, ClassScribe hands Windows an exit code, which a script can check (in PowerShell,
 `$LASTEXITCODE` holds it):
@@ -1574,6 +1578,7 @@ words you see.
 | `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0`. Build again, or edit that copy, for the change to count. |
 | `ClassScribe could not start.` and `An environment variable sets a value ClassScribe cannot use` | Change or remove the variable the message names (the setting's name, with `__` for each colon), then start ClassScribe again. |
 | `ClassScribe shows its menu only when someone can type into its window` | ClassScribe was started without a command from a script, or with its input redirected. Give it a command, such as `record` or `list`; the help follows the message. |
+| `Could not be read now: ...` under a list of `devices`, or `Which apps hold each microphone could not be read now: ...` | Windows did not give that list at that moment; the other lists are complete. Run `devices` again. If it keeps saying so, quit the other apps that use sound (Zoom, Teams, Discord, WhatsApp, tray icons included) and run it again; if it still does, restart Windows. One app's sound that Windows cannot describe is left out of the lists by itself, and a recording goes on beside it. |
 | `Recording:StopAfterHours is 10; it must be from 0 to 9.5 (hours)`, `Recording:ContinueWithinMinutes is -5; it must be from 0 to 1440 (a day)` | The new settings are checked like the others: the message gives the range and an example. Fix the value, then choose again. |
 | `Recording:MicrophoneFollows is ""; it must be part of the class app's name, such as chrome, or auto (any app that holds the microphone) or none (V alone).`, `Recording:MicrophoneFollows is "scribe", which names ClassScribe itself; ...` | Name the class app (`chrome`), or write `auto` or `none`. ClassScribe's own recording holds the microphone for the whole class, so following it would record everything. |
 | `Recording:Mode is "Klass", which is not Class, ClassAndMicrophone or Microphone.` (likewise `Recording:MicrophoneProcessing`, `Raw` or `Default`, and `Recording:ClassAppMute`, `Visible`, `Invisible` or `Unknown`) | Write one of the names, in any letter case; a number is refused. |

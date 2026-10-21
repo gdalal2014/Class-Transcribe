@@ -1264,6 +1264,27 @@ public class RecordingMonitorTests
     }
 
     /// <summary>
+    /// A look at the devices that fails with any exception a failed result can reach the check as, here E_INVALIDARG as
+    /// .NET's own mapping gives it, an ArgumentException, costs the echo check alone in the same way: on 18 October it would
+    /// have ended the second's checks before the heartbeat and the state reached the window.
+    /// </summary>
+    [Test]
+    public void A_listing_that_fails_with_an_ArgumentException_does_not_stop_the_checks()
+    {
+        BeginWithMicrophone(ClassAppMute.Visible, options: new RecordingOptions { StatusIntervalSeconds = 1 });
+        Look(WithTracks());
+        _outputs.FailListings(new ArgumentException("Value does not fall within the expected range."));
+        var moved = Tick(WithTracks(main: FakeRecording.Track(Speakers)));
+        _outputs.FailListings(null);
+        var read = Tick(WithTracks(main: FakeRecording.Track(Speakers)));
+
+        const string onSpeakers = "Recording: 00:00:42 captured from \"Fake Speakers\"; microphone: following chrome, waiting for chrome to open the microphone";
+        const string failed = "The echo check could not read Windows' device list, so it looks again at the next second: Value does not fall within the expected range.";
+        Assert.That(moved.Lines, Is.EqualTo(new[] { (LogLevel.Debug, failed), (LogLevel.Information, onSpeakers) }));
+        Assert.That(read.Lines, Is.EqualTo(new[] { (LogLevel.Warning, EchoOnSpeakers), (LogLevel.Information, onSpeakers) }));
+    }
+
+    /// <summary>
     /// A move to another microphone is advised about as the start was: a Bluetooth one is warned about, with a Notice
     /// that says how many warnings; a move to one that needs no warning clears it; a move back to the array reads Vantage again.
     /// </summary>
