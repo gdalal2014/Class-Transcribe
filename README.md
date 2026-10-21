@@ -1976,7 +1976,7 @@ That is billed as a new transcription.
 
 `appsettings.json` holds the settings. ClassScribe reads the copy next to the app, and the menu
 names it at the top (`Settings: ...`). A published app reads the copy beside `ClassScribe.exe`. With
-`dotnet run` it is the copy in `src\ClassScribe\bin\Debug\net10.0`, which a build makes from
+`dotnet run` it is the copy in `src\ClassScribe\bin\Debug\net10.0-windows10.0.19041.0`, which a build makes from
 `src\ClassScribe\appsettings.json` and replaces only when that file is the newer of the two. So edit
 `src\ClassScribe\appsettings.json` and build again (`dotnet run` builds each time it starts), or edit
 the copy itself, which a build then leaves alone until the project's file changes again. While the
@@ -2103,7 +2103,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 
 Keep `ClassScribe.exe` together with the files beside it, and make a shortcut to it: right-click
 `ClassScribe.exe`, then Show more options, Send to, Desktop (create shortcut). It needs .NET 10,
-which the SDK from [Set up once](#set-up-once) includes. Start classes from this copy: its
+which the SDK from [Set up once](#set-up-once) includes, and Windows 10 version 2004 or later. The
+folder is about 33 MB, 25 MB of it Windows' own camera API (`Microsoft.Windows.SDK.NET.dll`), which
+ClassScribe uses to list the cameras. Start classes from this copy: its
 recordings run in the background, and a rebuild of the repo during a class never touches it.
 
 Double-click the shortcut for the menu. Dropping an audio or video file on the shortcut, or on
@@ -2225,7 +2227,7 @@ words you see.
 | `... is no longer there, so the settings stay as they were when it was last read` | `appsettings.json` was deleted or renamed while ClassScribe ran. Put it back; under `dotnet run`, a build puts the copy back. To go back to the defaults instead, start ClassScribe again without the file. |
 | `... could not be read: ...` | Another program, such as OneDrive or an editor, held the settings file for longer than a moment, or Windows would not let ClassScribe read it. Close that program, then choose again, or run the command again. |
 | `appsettings.json cannot be read: ...` | The file is valid JSON, but not in the shape settings take: the same setting written twice in one section, say, or something other than `{ ... }` around them all. Fix what the message names, then choose again. |
-| `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0`. Build again, or edit that copy, for the change to count. |
+| `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0-windows10.0.19041.0`. Build again, or edit that copy, for the change to count. |
 | `ClassScribe could not start.` and `An environment variable sets a value ClassScribe cannot use` | Change or remove the variable the message names (the setting's name, with `__` for each colon), then start ClassScribe again. |
 | `ClassScribe shows its menu only when someone can type into its window` | ClassScribe was started without a command from a script, or with its input redirected. Give it a command, such as `record` or `list`; the help follows the message. |
 | `Recording:StopAfterHours is 10; it must be from 0 to 9.5 (hours)`, `Recording:ContinueWithinMinutes is -5; it must be from 0 to 1440 (a day)` | The new settings are checked like the others: the message gives the range and an example. Fix the value, then choose again. |

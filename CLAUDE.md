@@ -144,7 +144,13 @@ advice after a format error (10 A).
 
 - .NET 10 and C# 14, nullable on, file-scoped namespaces, primary constructors, records and
   `init` for immutable data, target-typed `new`, collection expressions, LINQ where it reads
-  well, async/await, the built-in DI container.
+  well, async/await, the built-in DI container. Both projects target `net10.0-windows10.0.19041.0`
+  (teach-video 6.3; Windows 10 version 2004 or later), for Windows' camera API (WinRT: the device lists and, from
+  0.6.0, `MediaCapture`); the test project must follow or NuGet refuses the reference (NU1201). NAudio still takes its
+  `netstandard2.0` library, and CsWinRT's `ComWrappers` sits beside NAudio's and ClassScribe's built-in COM. The
+  published folder grew from about 7 to 33 MB (`Microsoft.Windows.SDK.NET.dll` is 25 MB); trimming and Native AOT stay off.
+  In a namespace that ends in `Windows` (`ClassScribe.Audio.Windows`, `ClassScribe.Desktop.Windows`), WinRT's own namespaces
+  need `global::Windows`.
 - HTTP APIs are called through Refit interfaces registered with `AddRefitGeneratedClient` (Refit's
   source-generated client, given the `ElevenLabsJson` System.Text.Json context), not requests built
   by hand with `HttpClient`. Google's are `IGoogleOAuthApi` (`GoogleOAuthJson`, snake_case: token and
@@ -846,7 +852,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   upload's answer, so the read beside an upload cannot steal it), and `FakeElevenLabsAccount` stands in
   for the reader where the client is mocked.
 - Settings are in `src/ClassScribe/appsettings.json`, read from the exe's folder (under `dotnet run`,
-  the copy in `bin\Debug\net10.0`; the menu names it and warns when the project's file is newer).
+  the copy in `bin\Debug\net10.0-windows10.0.19041.0`; the menu names it and warns when the project's file is newer).
   `RunGate` reads the file again before each menu choice and each command (`SettingsReloader`): a
   staged copy is checked by `SettingsCheck`, and only values that pass reach the live settings,
   through `CheckedSettingsSource` and a reload; nothing watches the file. A refused file keeps the

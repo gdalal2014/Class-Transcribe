@@ -2,7 +2,10 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Windows' own target, for the camera's WinRT API (MediaCapture and the device lists): Windows 10 version 2004 or later.
+         NAudio still takes its netstandard2.0 library; trimming and Native AOT stay off, since NAudio and the WinRT projection
+         reach Windows through COM. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ClassScribe</RootNamespace>
