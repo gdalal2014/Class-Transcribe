@@ -33,6 +33,7 @@ public class CameraCheckTests
         _system = new FakeCameraSystem();
         _registry = new FakeRegistryValues();
         _recording = new TestOptions<RecordingOptions>(new RecordingOptions());
+        _choice = null;
     }
 
     /// <summary>The OBSBOT's microphone, in its camera's container.</summary>
@@ -90,6 +91,22 @@ public class CameraCheckTests
         await Command().RunAsync(new CameraCheckRequest());
 
         Assert.That(_ui.Screen, Does.Contain("at 1024x576 (1024x576; Recording:CameraResolution)."));
+    }
+
+    /// <summary>A size picked in menu choice 7 comes ahead of Recording:CameraResolution, and --resolution ahead of both.</summary>
+    [Test]
+    public async Task Menu_choice_7s_size_comes_before_the_setting_and_after_resolution()
+    {
+        _recording.Set(new RecordingOptions { CameraResolution = "480p" });
+        _choice = new Audio.SourceChoice(_recording);
+        _choice.PickMicrophone(Audio.RecordingMode.Microphone, null, null, "OBSBOT", CameraSize.P1080);
+
+        await Command().RunAsync(new CameraCheckRequest());
+        await Command().RunAsync(new CameraCheckRequest(null, "720p"));
+
+        Assert.That(_ui.Screen, Does.Contain("would take the camera \"OBSBOT Meet Flip StreamCamera\", at 1080p (1920x1080; menu choice 7)."));
+        Assert.That(_ui.Screen, Does.Contain("would take the camera \"OBSBOT Meet Flip StreamCamera\", at 720p (1280x720; --resolution)."));
+        Assert.That(_ui.Screen, Does.Not.Contain("Recording:CameraResolution)."));
     }
 
     /// <summary>The apps Windows' record shows using a camera now are named once each; a record that cannot be read says so.</summary>

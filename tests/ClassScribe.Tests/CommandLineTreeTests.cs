@@ -536,13 +536,25 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {Camera.CameraSize.Rule}; \"{given}\" is not one" }));
     }
 
-    /// <summary>--resolution with nothing after it is refused, as any option that needs a value.</summary>
+    /// <summary>
+    /// --resolution with nothing after it is refused in ClassScribe's own words, the only mistake named; on record, where it
+    /// took the next option for its size, it says which, as --app and --mic-follows do, and never in System.CommandLine's
+    /// words for a missing value.
+    /// </summary>
     [Test]
-    public async Task Camera_check_refuses_resolution_without_a_size()
+    public async Task Resolution_without_a_size_is_refused_in_ClassScribes_words()
     {
         AssertRefused(await RunAsync("camera-check", "--resolution"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--resolution needs a size after it, such as 720p" }));
 
-        Assert.That(_line.Mistakes, Has.Some.StartWith("--resolution needs a size after it, such as 720p").Or.Some.Contain("--resolution"));
+        CreateLine();
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--camera", "--resolution", "--output", Classes));
+        Assert.That(_line.Mistakes, Does.Contain("--resolution needs a size after it, such as 720p; it took the option --output instead"));
+        Assert.That(_line.Mistakes, Has.None.Contains("Required argument missing"));
+
+        CreateLine();
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--output", Classes, "--camera", "--resolution"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--resolution needs a size after it, such as 720p" }));
     }
 
     /// <summary>drive signin takes the client file as a full path; without --client it signs in with the client kept.</summary>

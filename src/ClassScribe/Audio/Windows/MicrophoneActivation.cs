@@ -202,13 +202,23 @@ internal interface IAudioClientActivator
 /// endpoint, a microphone, is refused before anything is activated (see <see cref="DeviceGuards"/>); an output device, which
 /// the tests of this activator stand in for a microphone, is not.
 /// </summary>
+/// <param name="createEnumerator">
+/// Makes the device enumerator each activation goes through: Windows' own (<see cref="CoreAudio.CreateEnumerator"/>), or a
+/// test's fake, which pins that the guard runs before anything is asked of the endpoint.
+/// </param>
 [SupportedOSPlatform("windows")]
-internal sealed class WindowsAudioClientActivator : IAudioClientActivator
+internal sealed class WindowsAudioClientActivator(Func<IMMDeviceEnumeratorRaw> createEnumerator) : IAudioClientActivator
 {
+    /// <summary>Windows' activation, through Windows' own device enumerator.</summary>
+    public WindowsAudioClientActivator()
+        : this(CoreAudio.CreateEnumerator)
+    {
+    }
+
     /// <inheritdoc />
     public ActivatedClient Activate(string endpointId)
     {
-        var enumerator = CoreAudio.CreateEnumerator();
+        var enumerator = createEnumerator();
         try
         {
             CoreAudio.Check(enumerator.GetDevice(endpointId, out var device));

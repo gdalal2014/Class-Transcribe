@@ -52,9 +52,10 @@ public class ServiceRegistrationTests
     /// <summary>
     /// Writes the settings, given as setting names and values such as Recording:FlushSeconds, into an appsettings.json
     /// and builds the app over it, the way Program builds it, with ClassScribe's own folder and its roaming folder in the
-    /// test's temporary folders. The host validates scopes, so a per-run service taken from the root fails here.
+    /// test's temporary folders, and then whatever <paramref name="replace"/> puts in place. The host validates scopes, so a
+    /// per-run service taken from the root fails here.
     /// </summary>
-    private IHost BuildApp(Dictionary<string, string?> settings, string? apiKey = "test-key")
+    private IHost BuildApp(Dictionary<string, string?> settings, string? apiKey = "test-key", Action<IServiceCollection>? replace = null)
     {
         var json = new JsonObject();
         foreach (var (name, value) in settings)
@@ -67,7 +68,11 @@ public class ServiceRegistrationTests
         }
 
         File.WriteAllText(_folder.File("appsettings.json"), json.ToJsonString());
-        return AppHost.Build(_folder.Path, apiKey, services => services.AddSingleton(_runtime.Folder).AddSingleton(new RoamingFolder(_folder.File("Roaming"))));
+        return AppHost.Build(_folder.Path, apiKey, services =>
+        {
+            services.AddSingleton(_runtime.Folder).AddSingleton(new RoamingFolder(_folder.File("Roaming")));
+            replace?.Invoke(services);
+        });
     }
 
     /// <summary>The app's capture provider, as registered: the one made only when it is first used.</summary>
@@ -333,6 +338,38 @@ public class ServiceRegistrationTests
 
         Assert.That(() => provider.GetRequiredService<IRecordStarter>(), Throws.InvalidOperationException, "a starter belongs to a run");
         Assert.That(() => provider.GetRequiredService<IRunViewer>(), Throws.InvalidOperationException, "a view belongs to a run");
+    }
+
+    /// <summary>
+    /// The window's starter is given the camera's start: from the menu, a lesson with a camera picked hears why the camera
+    /// cannot record in this build and is offered the sound only, rather than being refused with exit 1 as a starter without
+    /// one refuses it. The cameras, Windows' camera facts, its record and the registry are stand-ins, and nobody types, so
+    /// the offer goes back and nothing starts.
+    /// </summary>
+    [Test]
+    public async Task The_windows_starter_has_the_cameras_start()
+    {
+        var ui = new FakeConsoleUi { KeysClosed = true };
+        using var app = BuildApp([], replace: services =>
+        {
+            services.Replace(ServiceDescriptor.Singleton<IConsoleUi>(ui));
+            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraProvider>(new FakeCameraProvider()));
+            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraSystem>(new FakeCameraSystem()));
+            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraUsageRecord>(new FakeCameraUsageRecord()));
+            services.Replace(ServiceDescriptor.Singleton<IRegistryValues>(new FakeRegistryValues()));
+        });
+        using var scope = app.Services.CreateScope();
+        var lesson = TestRuns.Request(TestRuns.Id(1), "Tajwid 4") with
+        {
+            OutputRoot = _folder.File("Classes"),
+            Source = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT"))
+        };
+
+        var exitCode = await scope.ServiceProvider.GetRequiredService<IRecordStarter>().RunAsync(lesson, StartOrigin.Menu);
+
+        Assert.That(exitCode, Is.Zero, "nobody typed, so the offer went back");
+        Assert.That(ui.Screen, Does.Contain(CameraStart.SoundOnlyOffer));
+        Assert.That(ui.Screen, Does.Not.Contain(CameraStart.NothingStarted));
     }
 
     /// <summary>

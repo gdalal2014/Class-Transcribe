@@ -130,6 +130,22 @@ public class CameraStartTests
         Assert.That(_ui.Screen, Does.StartWith("Windows does not let desktop apps use the camera"));
     }
 
+    /// <summary>
+    /// In this build too, a set-up problem is said ahead of the build's own reason, so that what the user can fix (a privacy
+    /// switch, a missing encoder) is never hidden behind "not built yet".
+    /// </summary>
+    [Test]
+    public async Task In_this_build_a_set_up_problem_is_said_before_not_built_yet()
+    {
+        _usage.Listing = new Audio.Microphones.UsageRecordListing("Allow", "Deny", [], null);
+
+        var decided = await Start(new CameraRecorderNotBuilt()).DecideAsync(Lesson(new CameraChoice("OBSBOT")), StartOrigin.CommandLine);
+
+        Assert.That(decided, Is.EqualTo(new CameraDecision.Refused(1)));
+        Assert.That(_ui.Screen, Does.StartWith("Windows does not let desktop apps use the camera"));
+        Assert.That(_ui.Screen, Does.Not.Contain(CameraRecorderNotBuilt.Words));
+    }
+
     /// <summary>A camera that is not connected is named by what was asked, and that it is not connected; none at all says what would be taken.</summary>
     [Test]
     public async Task A_camera_not_connected_is_named_as_asked()

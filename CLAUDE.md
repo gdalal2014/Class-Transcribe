@@ -135,7 +135,9 @@ advice after a format error (10 A).
   turned on by `TestGuards` beside the others) makes the real start of a camera process and Windows' activation of a
   capture endpoint (`WindowsAudioClientActivator`, which reads the endpoint's direction through `IMMEndpointRaw` only
   while the switch is on) refuse in a test, naming the fake (`FakeCameraProcess`, `FakeAudioClientActivator`); an output
-  device, which `AudioClient2SlotTests` stands in for a microphone, passes. An `[Explicit]` test that must open a real
+  device, which `AudioClient2SlotTests` stands in for a microphone, passes. `DeviceGuardsTests` pins the activator's
+  guard over a fake enumerator (its internal constructor takes the enumerator's maker; `FakeCaptureEndpoint` answers
+  `IMMEndpointRaw` with its `DataFlow`): a capture endpoint is refused before anything is asked of it. An `[Explicit]` test that must open a real
   device turns the switch off for itself and on again in a `finally`. Listing cameras (WinRT's device lists) opens
   nothing, so no light comes on.
 - Tests never read or write the real `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` or
@@ -601,7 +603,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   after slice 2 (recording as it plays), 3,875 after the review's repairs to them, and 4,001 after the
   camera's basics on `feature/camera-basics` (camera-first step 11 without the probe's parts: the target framework, the
   device guard, the camera list, its settings, the camera check, the camera's choice and refusal, and the camera
-  process's role); 4,001 is the count now, all passing, in about three minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
+  process's role), and 4,012 after the review's fixes to them (a camera job or line without a body, a tool start that
+  throws, and the tests that pin the microphone guard's wiring and the camera start's order and registration); 4,012 is
+  the count now, all passing, in about three minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
   `DriveQueueReportTests`,
@@ -1277,14 +1281,17 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `problem`, `piece`, `progress`, `made`, `failed`, `log`; `CameraJson`, strict as the link's) on its standard output, as
   lines of UTF-8 JSON through `LineChannel` over a `JoinedStream` of the two pipes. In this build it answers every job with
   a log line and `failed` (`CameraRecorderNotBuilt.Words`), opens nothing, and exits 4; no job within `JobPatience` (30 s),
-  a first line that is no job, or a job of another `CameraProtocol.Version`, is not taken either. Its exit codes are
+  a first line that is no job, a job without a body or with one that is not an object, or a job of another
+  `CameraProtocol.Version`, is not taken either, with why in `failed`; it never throws. Its exit codes are
   internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. `ICameraProcessStarter` (`CameraProcessStarter`,
   registered in `CameraServices`, used by nothing yet) starts it through `PipedProcess` (`Desktop/Windows/PipedProcess.cs`,
   factored out of `ProcessToolRunner`, which now starts its tools through it): CreateProcessW, no window, three pipes and no
   other handle, `ChildEnvironment.WithoutTheKey`, the working folder `%LOCALAPPDATA%\ClassScribe`, and a kill-on-close
-  `ToolJob` made before it runs; its standard error goes to the log at Debug under the category `Camera`; `ThisProgram.CommandFor`
+  `ToolJob` made before it runs, the job and the pipes let go again when Windows refuses or the start throws
+  (`PipedProcessTests`); its standard error goes to the log at Debug under the category `Camera`; `ThisProgram.CommandFor`
   gives this program's command line to it and to `ProcessStarter`. `ICameraProcess` gives the channel, the process id, the
-  exit code and `Kill`; `CameraLines` sends the job and the stop and reads each line as its type. The real start refuses in
+  exit code and `Kill`; `CameraLines` sends the job and the stop and reads each line as its type (a known type whose body
+  is not an object is a `JsonException`, never another exception). The real start refuses in
   a test (`DeviceGuards`, naming `FakeCameraProcess`), and Windows' tool start refuses any program but cmd.exe there too.
   Fakes: `FakeCameraProcess` (the lines over a `DuplexStreamPair`; `ProcessStream` lets the real `CameraHost` run over it)
   and `FakeCameraProcessStarter`; tests `CameraHostTests` and `CameraProcessStarterTests`.

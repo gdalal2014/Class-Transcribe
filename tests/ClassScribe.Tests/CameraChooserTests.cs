@@ -95,6 +95,21 @@ public class CameraChooserTests
         Assert.That(Cameras.MicrophoneOf(LaptopCameras.Integrated, [array]), Is.Null);
     }
 
+    /// <summary>
+    /// The computer's own container never ties a microphone to a camera, even one placed as USB: an internal camera whose
+    /// panel Windows does not report is placed by its \\?\USB# id, as this laptop's Integrated Camera would be, and the array,
+    /// in the same container, is still not its microphone.
+    /// </summary>
+    [Test]
+    public void The_computers_own_container_ties_no_microphone_to_a_camera_placed_as_USB()
+    {
+        var array = LaptopMicrophones.Array with { ContainerId = Cameras.ThisComputer };
+        var integratedWithoutPanel = LaptopCameras.Integrated with { Place = CameraPlace.Usb };
+
+        Assert.That(Cameras.CameraOf(array, [integratedWithoutPanel]), Is.Null);
+        Assert.That(Cameras.MicrophoneOf(integratedWithoutPanel, [array]), Is.Null);
+    }
+
     /// <summary>A microphone of no camera, or whose container Windows does not say, belongs to none.</summary>
     [Test]
     public void A_microphone_without_a_camera_belongs_to_none()

@@ -6,6 +6,7 @@ using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;
 
@@ -46,6 +47,9 @@ public partial class RecordStarterTests
     private RecordingLogger<RecordStarter> _log = null!;
     private FakeVideoYield _videoYield = null!;
 
+    /// <summary>The camera's start the starter is given; null, as most tests have it, for none.</summary>
+    private CameraStart? _camera;
+
     /// <summary>Makes the folders, the settings, the pretend processes and views, and a run in this window in a scope of its own, with the clock at <see cref="Now"/>.</summary>
     [SetUp]
     public void SetUp()
@@ -69,6 +73,7 @@ public partial class RecordStarterTests
             .BuildServiceProvider(validateScopes: true);
         _log = new RecordingLogger<RecordStarter>();
         _videoYield = new FakeVideoYield();
+        _camera = null;
     }
 
     /// <summary>Deletes the temporary folders.</summary>
@@ -81,7 +86,7 @@ public partial class RecordStarterTests
         _runtime.Dispose();
     }
 
-    /// <summary>The starter under test, with ClassScribe's own folder in the temporary folder, or <paramref name="folder"/>.</summary>
+    /// <summary>The starter under test, with ClassScribe's own folder in the temporary folder, or <paramref name="folder"/>, and <see cref="_camera"/>.</summary>
     private RecordStarter Starter(RuntimeFolder? folder = null)
     {
         var clock = ZonedClock.Eastern(_runtime.Time);
@@ -89,7 +94,36 @@ public partial class RecordStarterTests
         var question = new ContinueQuestion(new ClassFolders(_options, clock, new RecordingLogger<ClassFolders>()), _runtime.Journal, _ui, _options, clock,
             new RecordingLogger<ContinueQuestion>());
         return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Reloader, _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log,
-            _videoYield);
+            _videoYield, _camera);
+    }
+
+    /// <summary>This build's camera start over the fakes: this laptop's cameras, set up as the camera needs, and a camera's recording not built yet.</summary>
+    private CameraStart NotBuiltCamera() =>
+        new(new FakeCameraProvider(), new Camera.CameraRecorderNotBuilt(), new Camera.CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
+            new SourceChoice(_options), _ui, NullLogger<CameraStart>.Instance);
+
+    /// <summary>
+    /// The camera's line comes before the continue question (amendment 17): from the menu, with a recent recording of the
+    /// same name, this build's refusal of the camera is said first, and Enter there takes the sound only; then C, N or Esc is
+    /// asked, and N starts the sound alone as a new recording.
+    /// </summary>
+    [Test]
+    public async Task In_the_menu_the_cameras_line_comes_before_the_continue_question()
+    {
+        WriteStopped();
+        _camera = NotBuiltCamera();
+        _ui.Type('\r', 'n', '\u001b');
+        _viewer.Then(Ends(_recorder, Transcribed));
+
+        await RunAsync(Request() with { Source = Request().Source with { Camera = new CameraChoice("OBSBOT") } }, StartOrigin.Menu);
+
+        var cameraLine = _ui.Screen.IndexOf(CameraStart.SoundOnlyOffer, StringComparison.Ordinal);
+        var continueQuestion = _ui.Screen.IndexOf("C continues it as its next part", StringComparison.Ordinal);
+        Assert.That(cameraLine, Is.GreaterThanOrEqualTo(0), "the camera's line was shown");
+        Assert.That(continueQuestion, Is.GreaterThan(cameraLine), "the camera's line comes first");
+        var request = _recorder.Runs.Single().Request!;
+        Assert.That(request.Source.Camera, Is.Null, "Enter at the camera's line records the sound only");
+        Assert.That(request.ContinueBaseName, Is.Null, "N at the continue question starts a new recording");
     }
 
     /// <summary>
