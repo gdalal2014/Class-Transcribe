@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Text;
 using ClassScribe.Audio;
@@ -201,6 +203,107 @@ public class DryRunStandInTests
         await using var first = StandInServer.Start(0, _folder.File("first.log"), echo: false);
 
         Assert.That(() => StandInServer.Start(first.Address.Port, _folder.File("second.log"), echo: false), Throws.InstanceOf<HttpListenerException>());
+    }
+
+    /// <summary>
+    /// Started with --parent, as the dry run starts it, the stand-in serves while that process runs and ends by itself once
+    /// it ends, as when the dry run's window is closed with its X: here a hidden cmd.exe of the test's own plays the dry
+    /// run, and ends when told to. Its log says why the stand-in stopped.
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_stand_in_ends_with_the_process_that_started_it()
+    {
+        using var parent = StartWaitingCmd();
+        using var stop = new CancellationTokenSource();
+        var log = _folder.File("stand-in.log");
+        var ready = _folder.File("stand-in.ready");
+        try
+        {
+            var run = StandInProgram.RunAsync(["0", log, "--ready", ready, "--delay", "0", "--parent", parent.Id.ToString(CultureInfo.InvariantCulture)], stop.Token);
+            var port = await ReadyPortAsync(ready, run);
+            using (var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(30) })
+            using (var account = await http.GetAsync("v1/user/subscription"))
+            {
+                Assert.That(account.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            }
+
+            Assert.That(run.IsCompleted, Is.False, "the stand-in serves while the process that started it runs");
+
+            await parent.StandardInput.WriteLineAsync("exit");
+            var code = await run.WaitAsync(TimeSpan.FromSeconds(20));
+
+            Assert.That(code, Is.EqualTo(0));
+            Assert.That(File.ReadAllText(log), Does.Contain($"The process that started the stand-in ({parent.Id}) ended, so the stand-in stops").And.Contain("The stand-in stopped"));
+        }
+        finally
+        {
+            // Whatever happened above, nothing of the test's is left running: the stand-in is stopped, and so is the cmd.exe.
+            await stop.CancelAsync();
+            if (!parent.HasExited) parent.Kill();
+        }
+    }
+
+    /// <summary>
+    /// A --parent that has ended already starts no stand-in (exit code 4, no ready file), since nothing would stop it; a
+    /// --parent that is not a process id is a mistake in the arguments (exit code 2).
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task A_parent_that_has_ended_starts_no_stand_in()
+    {
+        int ended;
+        using (var gone = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"), "/d /c exit 0") { UseShellExecute = false, CreateNoWindow = true })!)
+        {
+            await gone.WaitForExitAsync();
+            ended = gone.Id;
+        }
+
+        var ready = _folder.File("stand-in.ready");
+        using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
+        Assert.That(await StandInProgram.RunAsync(["0", _folder.File("a.log"), "--ready", ready, "--parent", ended.ToString(CultureInfo.InvariantCulture)], limit.Token), Is.EqualTo(4));
+        Assert.That(await StandInProgram.RunAsync(["0", _folder.File("b.log"), "--parent", "me"], limit.Token), Is.EqualTo(2));
+        Assert.That(File.Exists(ready), Is.False);
+    }
+
+    /// <summary>A hidden cmd.exe of the test's own, which waits for commands on its input and ends on "exit".</summary>
+    private static Process StartWaitingCmd() =>
+        Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"), "/d /q")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true
+        })!;
+
+    /// <summary>
+    /// Waits for the stand-in's ready file ("&lt;process id&gt; &lt;port&gt;") and returns the port; fails when the stand-in
+    /// ends first or the file has not come after 30 seconds. A file another program holds for a moment just after it
+    /// appears, as a virus scanner does, is read again, as the script reads it.
+    /// </summary>
+    private static async Task<int> ReadyPortAsync(string ready, Task<int> run)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!File.Exists(ready))
+        {
+            Assert.That(run.IsCompleted, Is.False, "the stand-in ended before it was ready");
+            Assert.That(DateTime.UtcNow, Is.LessThan(deadline), "the stand-in was ready within 30 seconds");
+            await Task.Delay(50);
+        }
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return int.Parse((await File.ReadAllTextAsync(ready)).Trim().Split(' ')[1], CultureInfo.InvariantCulture);
+            }
+            catch (IOException) when (attempt < 20)
+            {
+                // Deliberately not rethrown: another program holds the new file for a moment; it is read again shortly.
+                await Task.Delay(100);
+            }
+        }
     }
 
     /// <summary>A handler that keeps the request's body and content type, and answers it with an empty transcript.</summary>

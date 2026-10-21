@@ -1,7 +1,7 @@
 // ElevenLabsStub.cs: the dry-run kit's stand-in for ElevenLabs, on this computer only (see README.md beside it).
 // A .NET 10 file-based app, started by Start-DryRun.ps1:
 //
-//   dotnet run tools\dry-run\ElevenLabsStub.cs -- <port> <log file> [--ready <file>] [--delay <seconds>]
+//   dotnet run tools\dry-run\ElevenLabsStub.cs -- <port> <log file> [--ready <file>] [--delay <seconds>] [--parent <pid>]
 //
 // It listens on http://127.0.0.1:<port>/ alone (port 0 takes a free one, which --ready reports) and answers:
 //   POST /v1/speech-to-text      reads the upload, finds the stretches of the WAV with sound (a simple energy gate),
@@ -10,10 +10,11 @@
 //   GET  /v1/user/subscription   answers a plausible account, whose credits grow by each transcript's seconds;
 //   anything else                404, logged as UNEXPECTED.
 // It logs sizes, times and the number of keyterms sent; never a header (the key travels in one), never the terms.
-// Ctrl+C, or ending the process, stops it. The test project compiles this file with DRY_RUN_KIT_TESTS defined, which
-// leaves out the one line of program below, so that its tests reach the parts (DryRunStandInTests). ASCII only, as
-// everything in tools\ is (DryRunScriptTests checks it). The types sit in a block namespace, since a file-scoped one
-// cannot follow top-level statements.
+// Ctrl+C, or ending the process, stops it; with --parent it also ends by itself once that process ends (the script passes
+// its own, so the stand-in never outlives a dry run whose window was closed with its X). The test project compiles this
+// file with DRY_RUN_KIT_TESTS defined, which leaves out the one line of program below, so that its tests reach the parts
+// (DryRunStandInTests). ASCII only, as everything in tools\ is (DryRunScriptTests checks it). The types sit in a block
+// namespace, since a file-scoped one cannot follow top-level statements.
 
 #if !DRY_RUN_KIT_TESTS
 return await ClassScribe.DryRun.StandInProgram.MainAsync(args);
@@ -420,6 +421,9 @@ namespace ClassScribe.DryRun
         /// <summary>Where the stand-in answers: http://127.0.0.1:&lt;port&gt;/.</summary>
         public Uri Address { get; }
 
+        /// <summary>Writes <paramref name="line"/> to the stand-in's log, as the program does to say why the stand-in stops.</summary>
+        public void Note(string line) => _log.Write(line);
+
         /// <summary>
         /// Starts the stand-in on <paramref name="port"/>, or on a free port when it is 0, logging to <paramref name="logPath"/>
         /// (and to the console when <paramref name="echo"/>), and answering a transcript after <paramref name="delay"/>.
@@ -606,19 +610,39 @@ namespace ClassScribe.DryRun
         private static string Megabytes(long bytes) => (bytes / 1_000_000.0).ToString("0.0", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>The stand-in as a program: its arguments, its ready file, and Ctrl+C.</summary>
+    /// <summary>The stand-in as a program: its arguments, its ready file, Ctrl+C, and the process it ends with.</summary>
     public static class StandInProgram
     {
         /// <summary>How to start the stand-in.</summary>
-        public const string Usage = "Usage: dotnet run tools\\dry-run\\ElevenLabsStub.cs -- <port, or 0 for a free one> <log file> [--ready <file>] [--delay <seconds>]";
+        public const string Usage = "Usage: dotnet run tools\\dry-run\\ElevenLabsStub.cs -- <port, or 0 for a free one> <log file> [--ready <file>] [--delay <seconds>] [--parent <process id>]";
 
         /// <summary>
-        /// Starts the stand-in as <paramref name="args"/> say, writes the ready file ("&lt;process id&gt; &lt;port&gt;") once it
-        /// listens, and runs until Ctrl+C. Exit codes: 0 stopped, 2 a mistake in the arguments, 3 the port could not be taken.
+        /// Runs the stand-in as <paramref name="args"/> say (see <see cref="RunAsync"/>) until Ctrl+C, or until the --parent
+        /// process ends.
         /// </summary>
         public static async Task<int> MainAsync(string[] args)
         {
+            using var stop = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                stop.Cancel();
+            };
+
+            return await RunAsync(args, stop.Token);
+        }
+
+        /// <summary>
+        /// Starts the stand-in as <paramref name="args"/> say, writes the ready file ("&lt;process id&gt; &lt;port&gt;") once it
+        /// listens, and runs until <paramref name="stop"/> is cancelled or, given --parent, until that process ends: the dry
+        /// run passes its own, so that the stand-in never outlives it, even when its window is closed with its X and its own
+        /// end never comes. Exit codes: 0 stopped, 2 a mistake in the arguments, 3 the port could not be taken, 4 the --parent
+        /// process had ended already, so nothing would have stopped the stand-in.
+        /// </summary>
+        public static async Task<int> RunAsync(string[] args, CancellationToken stop)
+        {
             string? ready = null;
+            int? parentId = null;
             var delay = TimeSpan.FromSeconds(2);
             var positional = new List<string>();
             var mistake = false;
@@ -633,6 +657,12 @@ namespace ClassScribe.DryRun
                     mistake |= !double.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) || seconds is < 0 or > 600;
                     if (!mistake) delay = TimeSpan.FromSeconds(seconds);
                 }
+                else if (args[i] == "--parent" && i + 1 < args.Length)
+                {
+                    var read = int.TryParse(args[++i], NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0;
+                    mistake |= !read;
+                    if (read) parentId = id;
+                }
                 else
                 {
                     positional.Add(args[i]);
@@ -645,41 +675,64 @@ namespace ClassScribe.DryRun
                 return 2;
             }
 
-            using var stop = new CancellationTokenSource();
-            Console.CancelKeyPress += (_, e) =>
+            Process? parent = null;
+            if (parentId is { } parentProcess)
             {
-                e.Cancel = true;
-                stop.Cancel();
-            };
-
-            StandInServer server;
-            try
-            {
-                server = StandInServer.Start(port, Path.GetFullPath(positional[1]), echo: true, delay);
-            }
-            catch (HttpListenerException ex)
-            {
-                // Deliberately not rethrown: the reason is logged and told, and the exit code tells the script.
-                Console.Error.WriteLine($"The stand-in could not listen on port {port}: {ex.Message}");
-                return 3;
-            }
-
-            await using (server)
-            {
-                if (ready is not null)
-                {
-                    var staged = ready + ".new";
-                    await File.WriteAllTextAsync(staged, FormattableString.Invariant($"{Environment.ProcessId} {server.Address.Port}"));
-                    File.Move(staged, ready, overwrite: true);
-                }
-
                 try
                 {
-                    await Task.Delay(Timeout.Infinite, stop.Token);
+                    parent = Process.GetProcessById(parentProcess);
+                    // Holds the process now, so that its end is seen even if its id is given to another process later.
+                    _ = parent.SafeHandle;
                 }
-                catch (OperationCanceledException)
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
                 {
-                    // Deliberately not rethrown: Ctrl+C is how the stand-in is asked to stop.
+                    // Deliberately not rethrown: the process the stand-in was to end with has ended already, so nothing would
+                    // ever stop the stand-in; it does not start, says why, and the exit code tells the script.
+                    parent?.Dispose();
+                    Console.Error.WriteLine($"The process {parentProcess} that started the stand-in has ended already, so the stand-in does not start.");
+                    return 4;
+                }
+            }
+
+            using (parent)
+            {
+                StandInServer server;
+                try
+                {
+                    server = StandInServer.Start(port, Path.GetFullPath(positional[1]), echo: true, delay);
+                }
+                catch (HttpListenerException ex)
+                {
+                    // Deliberately not rethrown: the reason is logged and told, and the exit code tells the script.
+                    Console.Error.WriteLine($"The stand-in could not listen on port {port}: {ex.Message}");
+                    return 3;
+                }
+
+                await using (server)
+                {
+                    if (ready is not null)
+                    {
+                        var staged = ready + ".new";
+                        await File.WriteAllTextAsync(staged, FormattableString.Invariant($"{Environment.ProcessId} {server.Address.Port}"), CancellationToken.None);
+                        File.Move(staged, ready, overwrite: true);
+                    }
+
+                    try
+                    {
+                        if (parent is null)
+                        {
+                            await Task.Delay(Timeout.Infinite, stop);
+                        }
+                        else
+                        {
+                            await parent.WaitForExitAsync(stop);
+                            server.Note(FormattableString.Invariant($"The process that started the stand-in ({parentId}) ended, so the stand-in stops"));
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Deliberately not rethrown: Ctrl+C, or the caller's own stop, is how the stand-in is asked to stop.
+                    }
                 }
             }
 

@@ -38,6 +38,7 @@ public class DryRunWholeTests
         var baseName = name + "_2026-10-21_00-00-00Z";
         using var self = Process.GetCurrentProcess();
 
+        // Writes the run file as the run stands: in state, and with outcome once it is over (then seen, as a window marks it).
         void Run(string state, string? outcome) => File.WriteAllText(Path.Combine(runs, runId + ".json"), JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["version"] = 1, ["runId"] = runId, ["processId"] = Environment.ProcessId,

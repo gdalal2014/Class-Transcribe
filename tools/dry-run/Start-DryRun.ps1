@@ -6,11 +6,15 @@ local stand-in for ElevenLabs, and checked. See README.md beside this script.
 .DESCRIPTION
 Double-click Start-DryRun.cmd beside this script, so that the window and its recorder start outside any agent's or
 editor's job. The script:
-  1. refuses while a class records (the run files; recording.lock is never opened) or while the side copy runs;
-  2. lists %LOCALAPPDATA%\ClassScribe, %APPDATA%\ClassScribe and %USERPROFILE%\ClassScribe (names, sizes, times);
+  1. refuses while a class records (the run files; recording.lock is never opened), while a run waits for the report a
+     start of ClassScribe makes (an outcome never shown, a recording or a transcription whose process ended), which the
+     side copy's own report would otherwise act on, or while the side copy runs;
+  2. lists %LOCALAPPDATA%\ClassScribe, %APPDATA%\ClassScribe and %USERPROFILE%\ClassScribe (names, sizes, times), and
+     reads each run file's last update, by which ClassScribe prunes it;
   3. publishes the worktree it lives in (or -Source) to %LOCALAPPDATA%\Programs\ClassScribe-Dry, never single-file and
      never through an installer; with -Exe it uses that exe instead;
-  4. unless -Real, starts the stand-in for ElevenLabs (ElevenLabsStub.cs) on a free port of 127.0.0.1;
+  4. unless -Real, starts the stand-in for ElevenLabs (ElevenLabsStub.cs) on a free port of 127.0.0.1, tied to this
+     script's process, so that it ends with the dry run even when this window is closed with its X;
   5. sets, in its own process only (never at user scope): a dummy ELEVENLABS_API_KEY (with -Real, the user-scope key,
      after a typed YES), ElevenLabs__BaseUrl at the stand-in, Drive__Enabled=false, and CLASSSCRIBE_SETTINGS_FOLDER at a
      folder of the dry run's own, seeded with a copy of %APPDATA%\ClassScribe\appsettings.json when there is one;
@@ -124,7 +128,8 @@ function ConvertTo-UtcTime {
     return [DateTimeOffset]::Parse([string]$Value, $script:Invariant).UtcDateTime
 }
 
-# The run files in RunsFolder, read; a file that cannot be read is passed over, and request files are not run files.
+# The run files in RunsFolder, read, each with its file's name as KitFileName; a file that cannot be read is passed over,
+# and request files are not run files.
 function Get-RunFiles {
     param([Parameter(Mandatory = $true)][string]$RunsFolder)
 
@@ -132,10 +137,16 @@ function Get-RunFiles {
     Get-ChildItem -LiteralPath $RunsFolder -Filter '*.json' -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -notlike '*.request.json' } |
         ForEach-Object {
-            try { Get-Content -LiteralPath $_.FullName -Raw -ErrorAction Stop | ConvertFrom-Json }
-            catch { Write-Verbose "Passed over $($_.Exception.Message)" }
-        } |
-        Where-Object { $_ -and $_.runId }
+            $file = $_
+            $run = $null
+            try { $run = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop | ConvertFrom-Json }
+            catch {
+                # Deliberately not rethrown: a file being written, or not JSON, is passed over, as ClassScribe passes over
+                # a run file it cannot read.
+                Write-Verbose "Passed over $($file.Name): $($_.Exception.Message)"
+            }
+            if ($run -and $run.runId) { $run | Add-Member -NotePropertyName KitFileName -NotePropertyValue $file.Name -Force -PassThru }
+        }
 }
 
 # True when the run's process is alive and is the one that wrote the run file: the same id, started within 2 seconds of
@@ -152,6 +163,8 @@ function Test-RunProcess {
         return [Math]::Abs(($process.StartTime.ToUniversalTime() - $recorded).TotalSeconds) -le 2
     }
     catch {
+        # Deliberately not rethrown: a start time that cannot be read, or a process whose start cannot be, means the
+        # process cannot be shown to be the run's, so it is not taken for it.
         return $false
     }
 }
@@ -164,12 +177,70 @@ function Get-LiveRuns {
     Get-RunFiles -RunsFolder $RunsFolder | Where-Object { $script:ActiveStates -contains $_.state -and (Test-RunProcess -Run $_) }
 }
 
+# True when the run's recording is on a drive that is not there now, such as a USB drive unplugged: every start of
+# ClassScribe leaves such a run alone until a start finds the drive. A run without a recording is not.
+function Test-RecordingAway {
+    param([Parameter(Mandatory = $true)]$Run)
+
+    if (-not $Run.folder -or -not $Run.baseName) { return $false }
+    if (Test-Path -LiteralPath ([string]$Run.folder) -PathType Container) { return $false }
+    try { $root = [IO.Path]::GetPathRoot([string]$Run.folder) }
+    catch {
+        # Deliberately not rethrown: a folder this PowerShell cannot take apart is taken to be on a drive that is there,
+        # so the run counts as waiting for its report and the dry run is refused rather than let it be reported.
+        return $false
+    }
+    return [bool]$root -and -not (Test-Path -LiteralPath $root -PathType Container)
+}
+
+# The runs a start of ClassScribe reports, as its RunView.NeedsReport finds them, each with why (Reason): an outcome
+# nobody has seen (finished, or a recorder that failed), a recording whose process ended while it recorded or stopped,
+# and a transcription whose process ended. The report before any command, the side copy's record command included, would
+# mark the first kind seen, rewriting the run's file, and offer to continue or transcribe the others with the dry run's
+# stand-in, so the dry run leaves them to the installed ClassScribe. A recording on a drive that is not there now is left
+# alone by every start (Test-RecordingAway), so it is not counted.
+function Get-UnreportedRuns {
+    param([Parameter(Mandatory = $true)][string]$RunsFolder)
+
+    foreach ($run in @(Get-RunFiles -RunsFolder $RunsFolder | Sort-Object { [string]$_.runId })) {
+        if ($run.seen -eq $true) { continue }
+        $reason = $null
+        if (@('Finished', 'Failed') -contains $run.state) {
+            if ($run.outcome) { $reason = 'its outcome was never shown' }
+        }
+        elseif (@('Recording', 'Stopping', 'Transcribing') -contains $run.state -and -not (Test-RunProcess -Run $run) -and -not (Test-RecordingAway -Run $run)) {
+            $reason = if ($run.state -eq 'Transcribing') { 'its transcription was interrupted' } else { 'its recorder ended while it recorded' }
+        }
+        if ($reason) { [pscustomobject]@{ Run = $run; Reason = $reason } }
+    }
+}
+
+# The last update of each run file in RunsFolder that can be read (its heartbeat), as UTC, by the file's path in the
+# listings (runs\<file>): ClassScribe prunes a run by it, and marking a run seen rewrites the file without changing it.
+# A file that cannot be read, or whose heartbeat cannot, is not named: it is judged by its file's time, as ClassScribe
+# judges it.
+function Get-RunHeartbeats {
+    param([Parameter(Mandatory = $true)][string]$RunsFolder)
+
+    $heartbeats = @{}
+    foreach ($run in @(Get-RunFiles -RunsFolder $RunsFolder)) {
+        if (-not $run.heartbeatUtc) { continue }
+        try { $heartbeats["runs\$($run.KitFileName)"] = ConvertTo-UtcTime $run.heartbeatUtc }
+        catch {
+            # Deliberately not rethrown: a heartbeat that cannot be read leaves the file to be judged by its file's time.
+            Write-Verbose "No heartbeat read from $($run.KitFileName)"
+        }
+    }
+    $heartbeats
+}
+
 # The changes a dry run does not expect. In %LOCALAPPDATA%\ClassScribe (Area LocalAppData) it expects its own run file,
-# the recorder's log and the lock file to be added or changed, and files of the runs folder last written more than 30
-# days before to go, since any start of ClassScribe prunes the run files of runs that old; anything else there, and any
-# change to the other two folders, is unexpected.
+# the recorder's log and the lock file to be added or changed, and the files of the runs folder that the side copy's
+# recorder prunes as it starts to go: a run file whose last update, from Heartbeats (Get-RunHeartbeats, read before the
+# dry run), is more than 30 days old, and any other file there (a request file, a file that cannot be read) last written
+# more than 30 days before. Anything else there, and any change to the other two folders, is unexpected.
 function Get-UnexpectedChanges {
-    param($Changes, [Parameter(Mandatory = $true)][string]$Area, [string]$RunId)
+    param($Changes, [Parameter(Mandatory = $true)][string]$Area, [string]$RunId, [hashtable]$Heartbeats = @{})
 
     $expected = @("runs\$RunId.json", 'recorder.log', 'recorder.old.log', 'recording.lock')
     $pruneBefore = (Get-Date).ToUniversalTime().AddDays(-30)
@@ -178,8 +249,9 @@ function Get-UnexpectedChanges {
         $isExpected = $false
         if ($Area -eq 'LocalAppData') {
             if ($change.Change -ne 'Removed') { $isExpected = $expected -contains $change.Path }
-            elseif ($change.Path -like 'runs\*' -and $change.Before) {
-                $isExpected = (ConvertTo-UtcTime $change.Before) -lt $pruneBefore
+            elseif ($change.Path -like 'runs\*') {
+                $last = if ($Heartbeats -and $Heartbeats.ContainsKey($change.Path)) { $Heartbeats[$change.Path] } elseif ($change.Before) { ConvertTo-UtcTime $change.Before } else { $null }
+                $isExpected = $null -ne $last -and $last -lt $pruneBefore
             }
         }
         if (-not $isExpected) { $change }
@@ -215,6 +287,22 @@ function Get-LogWarnings {
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
     Get-Content -LiteralPath $Path -Encoding UTF8 | Where-Object { $_ -match '^\d\d:\d\d:\d\d\s+(WARNING|ERROR)\s' }
+}
+
+# The error lines among Lines, a log's warning and error lines (Get-LogWarnings): an error fails the dry run.
+function Select-LogErrors {
+    param([string[]]$Lines)
+
+    @($Lines) | Where-Object { $_ -match '^\S+\s+ERROR\s' }
+}
+
+# Where the run's recording is, as its run file says: its folder and its base name joined, to which each file's ending
+# (.wav, .md, .log, .srt) is added; null before its files were made.
+function Get-RecordingBase {
+    param([Parameter(Mandatory = $true)]$Run)
+
+    if (-not $Run.folder -or -not $Run.baseName) { return $null }
+    Join-Path ([string]$Run.folder) ([string]$Run.baseName)
 }
 
 # What the stand-in's log says: the transcripts it answered with the number of keyterms each carried, the reads of the
@@ -270,7 +358,12 @@ function Get-CopyProcesses {
     param([Parameter(Mandatory = $true)][string]$ExePath)
 
     Get-Process -Name ClassScribe -ErrorAction SilentlyContinue | Where-Object {
-        try { $_.Path -and ($_.Path -ieq $ExePath) } catch { $false }
+        try { $_.Path -and ($_.Path -ieq $ExePath) }
+        catch {
+            # Deliberately not rethrown: a process whose path cannot be read (another user's, or one that has just ended)
+            # is not one of the copy's.
+            $false
+        }
     }
 }
 
@@ -312,8 +405,18 @@ function Write-Line {
     Write-Host $Text -ForegroundColor $Color
 }
 
-# Starts the stand-in: builds ElevenLabsStub.cs (no build servers left behind), then runs it on a free port of 127.0.0.1
-# and waits for its ready file. Returns what it needs to be stopped and read, or null when it did not start.
+# The stand-in's command line for dotnet: the stub, built already, run on a free port with its log and its ready file,
+# and tied to the process Parent (the dry run's own), so that it ends with the dry run even when the dry run's window is
+# closed with its X, which ends the script before it can stop the stand-in itself.
+function Get-StandInArguments {
+    param([string]$StubFile, [string]$Log, [string]$Ready, [int]$Parent)
+
+    "run --no-build $(ConvertTo-Argument $StubFile) -- 0 $(ConvertTo-Argument $Log) --ready $(ConvertTo-Argument $Ready) --parent $Parent"
+}
+
+# Starts the stand-in: builds ElevenLabsStub.cs (no build servers left behind), then runs it on a free port of 127.0.0.1,
+# tied to this script's process, and waits for its ready file. Returns what it needs to be stopped and read, or null when
+# it did not start.
 function Start-StandIn {
     param([Parameter(Mandatory = $true)][string]$StubFile, [Parameter(Mandatory = $true)][string]$Folder)
 
@@ -325,7 +428,7 @@ function Start-StandIn {
         Write-Line "The stand-in did not build (exit code $($build.ExitCode)); see $(Join-Path $Folder 'stand-in.build.log')." Red
         return $null
     }
-    $arguments = "run --no-build $(ConvertTo-Argument $StubFile) -- 0 $(ConvertTo-Argument $log) --ready $(ConvertTo-Argument $ready)"
+    $arguments = Get-StandInArguments -StubFile $StubFile -Log $log -Ready $ready -Parent $PID
     $process = Start-Process -FilePath 'dotnet' -ArgumentList $arguments -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput (Join-Path $Folder 'stand-in.console.txt') -RedirectStandardError (Join-Path $Folder 'stand-in.errors.txt')
     $deadline = (Get-Date).AddSeconds(60)
@@ -335,7 +438,17 @@ function Start-StandIn {
         if (-not $process.HasExited) { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
         return $null
     }
-    $fields = (Get-Content -LiteralPath $ready -Raw).Trim() -split ' '
+    # A virus scanner may hold the new file for a moment just after it appears: it is read again, up to 20 times.
+    $fields = $null
+    for ($attempt = 1; $null -eq $fields; $attempt++) {
+        try { $fields = @((Get-Content -LiteralPath $ready -Raw -ErrorAction Stop).Trim() -split ' ') }
+        catch {
+            # Deliberately not rethrown: the file is held for a moment, so it is read again; the last try's failure is
+            # rethrown, and fails the dry run with its message.
+            if ($attempt -ge 20) { throw }
+            Start-Sleep -Milliseconds 100
+        }
+    }
     [pscustomobject]@{ Launcher = $process; ProcessId = [int]$fields[0]; Port = [int]$fields[1]; Url = "http://127.0.0.1:$($fields[1])/"; Log = $log }
 }
 
@@ -358,24 +471,44 @@ function Find-DryRun {
         Select-Object -Last 1
 }
 
-# Waits until the dry run's run is over and no ClassScribe of the copy is left, while O opens the window again (then A
-# in its menu shows the run) and X gives up. Returns the run file, or null when none was written.
+# The line the dry run shows while it waits: the run's state and the ClassScribe processes of the copy (ProcessIds).
+# Once the run is over, the processes left are windows of the dry run, the minimized one the recorder brought back by
+# itself after the window was closed among them: they are named, with how to close them.
+function Get-WaitStatus {
+    param($Run, [int[]]$ProcessIds = @())
+
+    $ids = @($ProcessIds | Where-Object { $_ })
+    $state = if ($Run) { [string]$Run.state } else { 'not started' }
+    if (-not $Run -or $script:ActiveStates -contains $state -or $ids.Count -eq 0) { return "Run: $state; ClassScribe processes of this copy: $($ids.Count)" }
+    $which = if ($ids.Count -eq 1) { "process $($ids[0]), a window" } else { "processes $($ids -join ', '), windows" }
+    $each = if ($ids.Count -eq 1) { 'it' } else { 'each' }
+    "Run: $state; still open: ClassScribe $which of the dry run (the minimized one that came back by itself on the taskbar, perhaps): press Enter in $each, or Q in its menu, or close it with its X"
+}
+
+# Waits until the dry run's run is over and no ClassScribe of the copy is left, while O opens the window again (it shows
+# the run, or A in its menu does) and X gives up. Returns the run file, or null when none was written.
 function Wait-DryRun {
     param([string]$RunsFolder, [string]$ExePath, [string[]]$Known, [string]$WorkingFolder)
 
     $shown = ''
     while ($true) {
         $run = Find-DryRun -RunsFolder $RunsFolder -ExePath $ExePath -Known $Known
-        $left = @(Get-CopyProcesses -ExePath $ExePath).Count
+        $processes = @(Get-CopyProcesses -ExePath $ExePath)
+        $left = $processes.Count
         $state = if ($run) { [string]$run.state } else { 'not started' }
         if ($run -and $script:ActiveStates -notcontains $state -and $left -eq 0) { return $run }
-        $now = "Run: $state; ClassScribe processes of this copy: $left"
+        $now = Get-WaitStatus -Run $run -ProcessIds @($processes | ForEach-Object { $_.Id })
         if ($now -ne $shown) { Write-Line "  $now   (O opens the window again, X gives up)" DarkGray; $shown = $now }
         $key = $null
-        try { if ([Console]::KeyAvailable) { $key = [Console]::ReadKey($true).Key } } catch { $key = $null }
+        try { if ([Console]::KeyAvailable) { $key = [Console]::ReadKey($true).Key } }
+        catch {
+            # Deliberately not rethrown: there is no console to read keys from (its input is redirected, as in the
+            # tests); the wait goes on without O and X.
+            $key = $null
+        }
         if ($key -eq [ConsoleKey]::O) {
             Start-Process -FilePath $ExePath -WorkingDirectory $WorkingFolder | Out-Null
-            Write-Line '  The side copy opens in a window of its own: press A in its menu to see the recording.'
+            Write-Line '  The side copy opens in a window of its own and shows the recording (if its menu shows instead, press A).'
         }
         elseif ($key -eq [ConsoleKey]::X) {
             if ($left -eq 0) { return $run }
@@ -429,6 +562,7 @@ function Invoke-DryRun {
     $run = $null
     $areas = $null
     $before = $null
+    $heartbeats = @{}
     $exePath = ''
     $side = ''
     $branch = ''
@@ -437,9 +571,18 @@ function Invoke-DryRun {
     $uncommitted = 0
     $problems = New-Object System.Collections.Generic.List[string]
     $notes = New-Object System.Collections.Generic.List[string]
-    try { Start-Transcript -LiteralPath (Join-Path $folder 'console.txt') | Out-Null } catch { Write-Verbose 'No record of the console.' }
+    try { Start-Transcript -LiteralPath (Join-Path $folder 'console.txt') | Out-Null }
+    catch {
+        # Deliberately not rethrown: the dry run goes on without a record of its console (a host that cannot keep one, or
+        # one that keeps one already); its checks do not need it.
+        Write-Verbose 'No record of the console.'
+    }
     try {
-        try { $Host.UI.RawUI.WindowTitle = 'ClassScribe dry run' } catch { Write-Verbose 'No window title.' }
+        try { $Host.UI.RawUI.WindowTitle = 'ClassScribe dry run' }
+        catch {
+            # Deliberately not rethrown: a host without a window of its own (hidden, as in the tests) keeps its title.
+            Write-Verbose 'No window title.'
+        }
         Write-Line 'ClassScribe dry run' Cyan
         Write-Line "Its own files: $folder"
         Write-Line ''
@@ -468,12 +611,23 @@ function Invoke-DryRun {
             if ((Read-Host 'Type PLAY to let it play') -cne 'PLAY') { Write-Line 'Not started.'; return 2 }
         }
 
-        # 1. No dry run while a class records (the run files; recording.lock is never opened), or while the copy runs.
+        # 1. No dry run while a class records (the run files; recording.lock is never opened), while a run waits for the
+        # report a start of ClassScribe makes (the side copy's own report would act on it), or while the copy runs.
         $runsFolder = Join-Path $Roots.LocalAppData 'runs'
         $live = @(Get-LiveRuns -RunsFolder $runsFolder)
         if ($live.Count -gt 0) {
             foreach ($liveRun in $live) { Write-Line "A run is under way: $($liveRun.runId), $($liveRun.state), from $($liveRun.exePath)." Yellow }
             Write-Line 'No dry run while a class records or is transcribed. Start it again afterwards.' Yellow
+            return 2
+        }
+        $unreported = @(Get-UnreportedRuns -RunsFolder $runsFolder)
+        if ($unreported.Count -gt 0) {
+            foreach ($item in $unreported) {
+                $named = if ($item.Run.request -and $item.Run.request.name) { "`"$($item.Run.request.name)`", " } else { '' }
+                Write-Line "A run waits for its report: $($item.Run.runId) ($named$($item.Run.state), from $($item.Run.exePath)): $($item.Reason)." Yellow
+            }
+            Write-Line 'The side copy would make that report itself before it records: it would mark an outcome seen, or offer to continue or transcribe a recording with the stand-in.' Yellow
+            Write-Line 'First open your installed ClassScribe by itself, without a command (%LOCALAPPDATA%\Programs\ClassScribe\ClassScribe.exe), and answer its report at the start: an outcome is shown once; for a recording or a transcription, press C, T or F (Enter leaves it waiting). Then quit its menu with Q, and start the dry run again.' Yellow
             return 2
         }
         $side = $Roots.Side
@@ -505,6 +659,7 @@ function Invoke-DryRun {
             Save-Listing -Listing $listed[$area] -Path (Join-Path $folder "before-$area.txt")
         }
         $before = $listed
+        $heartbeats = Get-RunHeartbeats -RunsFolder $runsFolder
         Write-Line 'Listed the data folders:'
         foreach ($area in $areas.Keys) { Write-Line "  $($areas[$area]): $($before[$area].Count) file(s)" }
 
@@ -571,15 +726,15 @@ function Invoke-DryRun {
             Write-Line "Settings: this build reads them from $settingsFolder ($what)."
         }
         else {
-            Write-Line "Settings: this build reads only its own $ownSettings; it does not read CLASSSCRIBE_SETTINGS_FOLDER, which came with 0.5.0."
+            Write-Line "Settings: this build reads only its own $ownSettings; it does not read CLASSSCRIBE_SETTINGS_FOLDER, which comes with saved classes and the settings folder (build plan, step 1)."
         }
         foreach ($item in $settings) { Write-Line "  For this dry run only: $item" }
 
         # The options this build has.
         if ($Class -or $Camera) {
             $help = (Invoke-Native { & $exePath record --help }) -join "`n"
-            if ($Class -and $help -notmatch '--class') { $problems.Add('This build has no saved classes (record --class came with 0.5.0), so -Class cannot be used.'); return 2 }
-            if ($Camera -and $help -notmatch '--camera') { $problems.Add('This build cannot record a camera (record --camera came with 0.11.0), so -Camera cannot be used.'); return 2 }
+            if ($Class -and $help -notmatch '--class') { $problems.Add('This build has no saved classes (record --class comes with build plan step 1), so -Class cannot be used.'); return 2 }
+            if ($Camera -and $help -notmatch '--camera') { $problems.Add('This build cannot record a camera (record --camera comes with build plan step 11), so -Camera cannot be used.'); return 2 }
         }
 
         # The test player, at Gulzar's word given above: it plays sound aloud.
@@ -612,9 +767,12 @@ function Invoke-DryRun {
             Write-Line 'In the window:'
             Write-Line "  1. $play, and speak for part of it."
             Write-Line '  2. Press M once (a mark), then P twice (a pause, then recording again).'
-            Write-Line '  3. Close the window once with its X: the recorder goes on recording.'
-            Write-Line '  4. Here, press O: the side copy opens; press A in its menu to see the recording again.'
-            Write-Line '  5. Stop with Q twice, wait for the transcript, then press Enter in the window to close it.'
+            Write-Line '  3. Close the window once with its X: the recorder goes on recording. About 3 seconds later a minimized'
+            Write-Line '     ClassScribe window comes back on the taskbar by itself (its keys do nothing until Enter); leave it for step 6.'
+            Write-Line '  4. Here, press O: the side copy opens and shows the recording again (if its menu shows instead, press A).'
+            Write-Line '  5. Stop with Q twice in that window, wait for the transcript, then quit its menu with Q.'
+            Write-Line '  6. Close the window that came back by itself: click it on the taskbar, then press Enter in it (twice if it asks'
+            Write-Line '     again), or close it with its X.'
         }
         if (-not $NoMic -and -not $Camera -and -not $Class -and $followed -ne 'none') {
             Write-Line "Your microphone is written only while $followed listens on it: to be heard, have $followed listen (a call, or a microphone test page), or start the dry run with -Follows none." DarkYellow
@@ -631,9 +789,10 @@ function Invoke-DryRun {
         else {
             Write-Line "Run $($run.runId): $($run.state), home $($run.home), $(if ($run.outcome) { $run.outcome.kind } else { 'no outcome' })"
             foreach ($problem in @(Get-RunProblems -Run $run -Transcribe $true)) { $problems.Add($problem) }
-            if ($run.folder -and $run.baseName) {
-                $recordingFolder = [string]$run.folder
-                $baseName = [string]$run.baseName
+            $recordingBase = Get-RecordingBase -Run $run
+            if ($recordingBase) {
+                $recordingFolder = Split-Path -Parent $recordingBase
+                $baseName = Split-Path -Leaf $recordingBase
                 Write-Line "The recording's files in $($recordingFolder):"
                 Get-ChildItem -LiteralPath $recordingFolder -File -ErrorAction SilentlyContinue |
                     Where-Object { $_.Name.StartsWith($baseName) } |
@@ -647,7 +806,7 @@ function Invoke-DryRun {
                     foreach ($warning in $warnings) { Write-Line "  $warning" Yellow }
                     $notes.Add("$($warnings.Count) warning or error line(s) in the recording's log")
                 }
-                foreach ($errorLine in @($warnings | Where-Object { $_ -match '^\S+\s+ERROR\s' })) { $problems.Add("The recording's log has an error: $errorLine") }
+                foreach ($errorLine in @(Select-LogErrors -Lines $warnings)) { $problems.Add("The recording's log has an error: $errorLine") }
             }
         }
         if ($standIn) {
@@ -664,8 +823,8 @@ function Invoke-DryRun {
         return 1
     }
     catch {
-        # Not rethrown: an error the dry run did not foresee fails it, with its message, and the finish below still stops
-        # the stand-in, waits for the copy, removes it and compares the folders.
+        # Deliberately not rethrown: an error the dry run did not foresee fails it, with its message, and the finish below
+        # still stops the stand-in, waits for the copy, removes it and compares the folders.
         $problems.Add("The dry run stopped on an error: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))")
         $refused = $false
         return 1
@@ -680,8 +839,9 @@ function Invoke-DryRun {
             Write-Line 'Nothing was done.'
         }
         else {
-            if ($exePath -and @(Get-CopyProcesses -ExePath $exePath).Count -gt 0) {
-                Write-Line "ClassScribe from $exePath is still running: close its windows (Q twice, then Enter). Waiting..." Yellow
+            $remaining = if ($exePath) { @(Get-CopyProcesses -ExePath $exePath) } else { @() }
+            if ($remaining.Count -gt 0) {
+                Write-Line "ClassScribe from $exePath is still running (process $(($remaining | ForEach-Object { $_.Id }) -join ', ')): close its windows (Q twice, then Enter), the minimized one that came back by itself on the taskbar too. Waiting..." Yellow
                 while (@(Get-CopyProcesses -ExePath $exePath).Count -gt 0) { Start-Sleep -Seconds 2 }
             }
             if (-not $Exe -and -not $Keep -and $side -and (Test-Path -LiteralPath $side)) {
@@ -696,7 +856,7 @@ function Invoke-DryRun {
                     $after = @(Get-FolderListing -Root $areas[$area])
                     Save-Listing -Listing $after -Path (Join-Path $folder "after-$area.txt")
                     $changes = @(Compare-FolderListing -Before $before[$area] -After $after)
-                    $unexpected = @(Get-UnexpectedChanges -Changes $changes -Area $area -RunId $runId)
+                    $unexpected = @(Get-UnexpectedChanges -Changes $changes -Area $area -RunId $runId -Heartbeats $heartbeats)
                     Write-Line "  $($areas[$area]): $(if ($changes.Count) { "$($changes.Count) change(s)" } else { 'nothing' })"
                     foreach ($change in $changes) {
                         $odd = $unexpected -contains $change
@@ -727,7 +887,12 @@ function Invoke-DryRun {
             @($problems) + @($notes | ForEach-Object { "Note: $_" }) | Set-Content -LiteralPath (Join-Path $folder 'result.txt') -Encoding UTF8
             Write-Line "Recorded in $(Join-Path $dryRuns 'runs.log')."
         }
-        try { Stop-Transcript | Out-Null } catch { Write-Verbose 'No record of the console to stop.' }
+        try { Stop-Transcript | Out-Null }
+        catch {
+            # Deliberately not rethrown: no record of the console was started (Start-Transcript failed above), so there is
+            # none to stop.
+            Write-Verbose 'No record of the console to stop.'
+        }
         # A refused dry run leaves nothing behind, not even its own folder.
         if ($refused) { Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue }
     }

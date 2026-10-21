@@ -342,17 +342,23 @@ plan wins.
   publishes the worktree to `%LOCALAPPDATA%\Programs\ClassScribe-Dry` (never through an installer, never single-file),
   starts the stand-in for ElevenLabs (`ElevenLabsStub.cs`, a .NET 10 file-based app on 127.0.0.1), sets a dummy key,
   `ElevenLabs__BaseUrl`, `Drive__Enabled=false` and `CLASSSCRIBE_SETTINGS_FOLDER` in its own process only (never at
-  user scope; builds before 0.5.0 read only the `appsettings.json` beside their exe and pass over the variable, and the
-  kit says which the build reads), runs `record ... --new --output "%USERPROFILE%\ClassScribe dry runs"`, checks the run
+  user scope; builds before saved classes and the settings folder (build plan step 1) read only the `appsettings.json`
+  beside their exe and pass over the variable, and the kit says which the build reads), runs `record ... --new --output
+  "%USERPROFILE%\ClassScribe dry runs"`, checks the run
   file (`home` `Separate`), the transcript, the recording's log and the stand-in's log, compares the listings of
   `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` and `%USERPROFILE%\ClassScribe` before and after, and adds the
   result to `%LOCALAPPDATA%\ClassScribe-DryRuns\runs.log`, which a release's finish reads. It refuses while a class
-  records, by the run files, never by opening `recording.lock`. `-Real` (billed) and `-Player` (plays a clip aloud
+  records, by the run files, never by opening `recording.lock`, and while any run waits for the report at the start
+  (`RunView.NeedsReport`, mirrored by the script's `Get-UnreportedRuns`), which the side copy's own report would act on.
+  The stand-in is started with `--parent <the script's pid>` and ends with it. The kit's tests write their run files and
+  log lines with the app's own writers (`RecorderJson`, `RecorderLogProvider.Text`), so a change to either that the
+  script does not follow fails them. `-Real` (billed) and `-Player` (plays a clip aloud
   through the test player) are only at Gulzar's word, which the script asks him to type. Agents stop every ClassScribe
   process they started before a session ends, and leave none running over a class time.
 - Everything in `tools\` (and in `installer\` once it exists) is ASCII only, with no byte-order mark: Windows PowerShell
   5.1 reads a script without one in the ANSI code page. Scripts there run under Windows PowerShell 5.1 (no `&&`, `??`
-  or ternaries). `DryRunScriptTests` fails on any byte above 127 and parses every `.ps1` with 5.1's own parser.
+  or ternaries). `DryRunScriptTests` fails on any byte above 127, parses every `.ps1` with 5.1's own parser, and fails
+  on a catch there that neither throws nor gives its reason after `# Deliberately not rethrown:`.
 
 ## Commands (PowerShell, from the repo root)
 
@@ -501,9 +507,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   again, a grown log whose copy is gone or trashed, a manifest that cannot be written, the recordings
   folder with a kept answer at its top, choice 4 on a freed class, the queue counted without a class
   being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests), 3,370 after a false
-  start stopped taking its date folder, and 3,387 after the dry-run kit (step 0a; its 17 tests take
-  about 5 seconds, and its 3 Explicit `DryRunKit` tests about half a minute); 3,387 is the count now,
-  all passing, in about two minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
+  start stopped taking its date folder, 3,387 after the dry-run kit (step 0a), and 3,395 after the
+  review's fixes to the kit (the refusal while a run waits for its report, the prune by heartbeat, the
+  run files and log lines made by the app's own writers, the windows left open named, the stand-in
+  tied to the script; its 25 tests take about 10 seconds, and its 3 Explicit `DryRunKit` tests about
+  half a minute); 3,395 is the count now, all passing, in about two minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
   `DriveQueueReportTests`,
@@ -538,8 +546,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about two
-  minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October, plus
-  the build). `[CancelAfter]` cannot
+  minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October, 2 min
+  17 s for 3,395 later that day, plus the build). `[CancelAfter]` cannot
   interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
