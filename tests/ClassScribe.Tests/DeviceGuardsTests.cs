@@ -7,7 +7,7 @@ namespace ClassScribe.Tests;
 /// <summary>
 /// The guard that keeps every test from a real camera or microphone (teach-video section 11): the test run turns it on,
 /// a refusal names the fake to use, and Windows' activation of a microphone's audio client refuses a capture endpoint while
-/// it is on.
+/// it is on. The camera process's start is pinned in <see cref="CameraProcessStarterTests.The_real_start_is_refused_in_a_test"/>.
 /// </summary>
 [TestFixture]
 public class DeviceGuardsTests

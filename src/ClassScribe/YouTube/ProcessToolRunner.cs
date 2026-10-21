@@ -1,6 +1,5 @@
 using System.Collections;
 using System.ComponentModel;
-using System.IO.Pipes;
 using System.Runtime.Versioning;
 using System.Text;
 using ClassScribe.Desktop;
@@ -10,7 +9,8 @@ using Microsoft.Extensions.Logging;
 namespace ClassScribe.YouTube;
 
 /// <summary>
-/// Runs a tool, such as yt-dlp, through Windows' own CreateProcessW (design 3.2), never through
+/// Runs a tool, such as yt-dlp, through Windows' own CreateProcessW (design 3.2; <see cref="PipedProcess"/>, which the camera
+/// process is started through too), never through
 /// <see cref="System.Diagnostics.Process"/>, which would start it running before it could be put in its job and would hand
 /// it every inheritable handle of this process. The tool gets: an environment block of this process's environment without
 /// ELEVENLABS_API_KEY or any ElevenLabs__ setting, and with PYTHONIOENCODING=utf-8, so that it writes UTF-8; three pipes for
@@ -55,50 +55,27 @@ public sealed class ProcessToolRunner : IToolRunner
         if (_guarded) YouTubeGuards.RefuseInTests($"the real {name}", "FakeToolRunner");
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var job = ToolJob.Create();
-        using var input = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
-        using var output = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-        using var errors = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-        var launch = new ProcessLaunch(call.Program, WindowsCommandLine.Of(call.Program, call.Arguments), InheritHandles: true,
-            ProcessCreationFlags.NoWindow | ProcessCreationFlags.UnicodeEnvironment, call.WorkingFolder, Show: null)
+        var commandLine = WindowsCommandLine.Of(call.Program, call.Arguments);
+        using var piped = PipedProcess.Start(_api, call.Program, commandLine, call.WorkingFolder, ToolEnvironment(Environment.GetEnvironmentVariables()), out var error);
+        if (piped is null)
         {
-            Environment = ToolEnvironment(Environment.GetEnvironmentVariables()),
-            Handles = new StandardHandles(input.ClientSafePipeHandle, output.ClientSafePipeHandle, errors.ClientSafePipeHandle),
-            Job = job.Handle
-        };
-
-        StartedProcess? started;
-        int error;
-        try
-        {
-            started = _api.Start(launch, out error);
-        }
-        finally
-        {
-            // The tool holds its own ends now; this process keeps only the ends it reads, so the pipes end with the tool.
-            input.DisposeLocalCopyOfClientHandle();
-            output.DisposeLocalCopyOfClientHandle();
-            errors.DisposeLocalCopyOfClientHandle();
-        }
-
-        if (started is null)
-        {
-            _logger.LogDebug("Windows did not start {Program} (error {Error}): {CommandLine}", call.Program, error, launch.CommandLine);
+            _logger.LogDebug("Windows did not start {Program} (error {Error}): {CommandLine}", call.Program, error, commandLine);
             throw new Win32Exception(error, $"Windows did not start {name}: {new Win32Exception(error).Message.TrimEnd('.')} (error {error})");
         }
 
-        _logger.LogDebug("Started {Program} as process {ProcessId} in {Folder}: {CommandLine}", name, started.ProcessId, call.WorkingFolder, launch.CommandLine);
+        var started = piped.Started;
+        _logger.LogDebug("Started {Program} as process {ProcessId} in {Folder}: {CommandLine}", name, started.ProcessId, call.WorkingFolder, commandLine);
 
         // Nothing is ever typed into a tool: its input ends at once.
-        input.Dispose();
+        piped.Input.Dispose();
 
         List<string> outputLines = [];
         List<string> errorLines = [];
-        using (cancellationToken.Register(job.Terminate))
+        using (cancellationToken.Register(piped.Terminate))
         {
             await Task.WhenAll(
-                ReadLinesAsync(output, line => Keep(outputLines, line, isError: false, onLine)),
-                ReadLinesAsync(errors, line => Keep(errorLines, line, isError: true, onLine)));
+                ReadLinesAsync(piped.Output, line => Keep(outputLines, line, isError: false, onLine)),
+                ReadLinesAsync(piped.Errors, line => Keep(errorLines, line, isError: true, onLine)));
 
             var exitCode = await ExitOfAsync(started);
             cancellationToken.ThrowIfCancellationRequested();

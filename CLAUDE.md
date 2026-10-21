@@ -598,8 +598,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   folder with a kept answer at its top, choice 4 on a freed class, the queue counted without a class
   being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests), 3,370 after a false
   start stopped taking its date folder, 3,670 after YouTube's slice 1 (the download path), 3,819
-  after slice 2 (recording as it plays), and 3,875 after the review's repairs to them; 3,875 is the
-  count now, all passing, in about four minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
+  after slice 2 (recording as it plays), 3,875 after the review's repairs to them, and 4,001 after the
+  camera's basics on `feature/camera-basics` (camera-first step 11 without the probe's parts: the target framework, the
+  device guard, the camera list, its settings, the camera check, the camera's choice and refusal, and the camera
+  process's role); 4,001 is the count now, all passing, in about three minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
   `DriveQueueReportTests`,
@@ -1265,6 +1267,27 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with a renewed Bitdefender exception (Bitdefender may notice ClassScribe starting Chrome). Left for
   later, only if use calls for it: the media-controls probe for paused against ended, titled date
   folders, and automated playback (Gulzar chose attended).
+- The camera process (teach-video 6.2, amendment 24; built to its role and lines, it opens no device in this build):
+  `ClassScribe.exe --camera-process <job id>` (under dotnet, `dotnet ClassScribe.dll --camera-process <job id>`), taken
+  by `Program` before anything touches the console, as `--recorder` is, and only for exactly the switch and an id
+  `RunIds.IsWellFormed` takes (`CameraProtocol.IsCameraProcessStart`; `RecorderHost.IsRecorderStart` now checks its id the
+  same way), so anything else is the command line's mistake. `CameraHost` reads its job, the first line on its standard
+  input, and speaks the lines of `CameraProtocol` (`Camera/CameraProtocol.cs`: the job, `CameraJob` with `CameraJobKind`
+  Record, Finish, Check or Wake; to it `clock`, `off`, `on`, `stop` (`CameraStop`), `cancel`; from it `opened`, `status`,
+  `problem`, `piece`, `progress`, `made`, `failed`, `log`; `CameraJson`, strict as the link's) on its standard output, as
+  lines of UTF-8 JSON through `LineChannel` over a `JoinedStream` of the two pipes. In this build it answers every job with
+  a log line and `failed` (`CameraRecorderNotBuilt.Words`), opens nothing, and exits 4; no job within `JobPatience` (30 s),
+  a first line that is no job, or a job of another `CameraProtocol.Version`, is not taken either. Its exit codes are
+  internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. `ICameraProcessStarter` (`CameraProcessStarter`,
+  registered in `CameraServices`, used by nothing yet) starts it through `PipedProcess` (`Desktop/Windows/PipedProcess.cs`,
+  factored out of `ProcessToolRunner`, which now starts its tools through it): CreateProcessW, no window, three pipes and no
+  other handle, `ChildEnvironment.WithoutTheKey`, the working folder `%LOCALAPPDATA%\ClassScribe`, and a kill-on-close
+  `ToolJob` made before it runs; its standard error goes to the log at Debug under the category `Camera`; `ThisProgram.CommandFor`
+  gives this program's command line to it and to `ProcessStarter`. `ICameraProcess` gives the channel, the process id, the
+  exit code and `Kill`; `CameraLines` sends the job and the stop and reads each line as its type. The real start refuses in
+  a test (`DeviceGuards`, naming `FakeCameraProcess`), and Windows' tool start refuses any program but cmd.exe there too.
+  Fakes: `FakeCameraProcess` (the lines over a `DuplexStreamPair`; `ProcessStream` lets the real `CameraHost` run over it)
+  and `FakeCameraProcessStarter`; tests `CameraHostTests` and `CameraProcessStarterTests`.
 - The camera check (`CameraCheckCommand`, menu choice 8 then C and `camera-check ["<camera>"] [--resolution <size>]`,
   through `ICommandRunner.CameraCheckAsync` in a scope of its own; teach-video 6.16, camera-first step 11 point 3): the
   colour cameras numbered, with each webcam's own microphone; which apps use a camera now, from Windows' camera record

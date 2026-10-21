@@ -100,3 +100,89 @@ public sealed class FakeCameraProvider : ICameraProvider
         return Task.FromResult(Problem is null ? new CameraList(Connected) : new CameraList([], Problem));
     }
 }
+
+/// <summary>
+/// A camera process as a test plays it (teach-video 11): its lines go over an in-memory pipe (<see cref="DuplexStreamPair"/>),
+/// the starter's end as <see cref="Channel"/> and the process's end read and written by the test, as the process would: its
+/// job, then whatever lines the test scripts. Its exit and a kill are the test's to say. Nothing is started and no camera
+/// is opened.
+/// </summary>
+public sealed class FakeCameraProcess : ICameraProcess
+{
+    /// <summary>The in-memory pipe between the starter and the process.</summary>
+    private readonly DuplexStreamPair _pipe = new();
+
+    /// <summary>The process's end of the lines, made when the test first speaks as the process.</summary>
+    private Link.LineChannel? _processEnd;
+
+    /// <summary>A process with the id <paramref name="processId"/>.</summary>
+    public FakeCameraProcess(int processId = 7001)
+    {
+        ProcessId = processId;
+        Channel = new Link.LineChannel(_pipe.WindowEnd);
+    }
+
+    /// <inheritdoc />
+    public int ProcessId { get; }
+
+    /// <inheritdoc />
+    public Link.LineChannel Channel { get; }
+
+    /// <summary>The process's own end of the lines, which the test reads the job from and writes the process's lines to.</summary>
+    public Link.LineChannel ProcessEnd => _processEnd ??= new Link.LineChannel(_pipe.RecorderEnd);
+
+    /// <summary>The process's own end of the pipe, as a stream, for the real <see cref="CameraHost"/> to run over in place of the test.</summary>
+    public Stream ProcessStream => _pipe.RecorderEnd;
+
+    /// <inheritdoc />
+    public int? ExitCode { get; private set; }
+
+    /// <summary>True once the starter killed it.</summary>
+    public bool Killed { get; private set; }
+
+    /// <summary>Reads the job, the first line, as the camera process would; null when the starter closed its end first.</summary>
+    public async Task<CameraJob?> ReadJobAsync()
+    {
+        var first = await ProcessEnd.ReceiveAsync(CancellationToken.None);
+        return first is { Type: CameraProtocol.Job } ? System.Text.Json.JsonSerializer.Deserialize(first.Body, CameraJson.Default.CameraJob) : null;
+    }
+
+    /// <summary>Ends the process with <paramref name="exitCode"/>: its end of the lines closes, as a process's pipes do.</summary>
+    public void Exit(int exitCode)
+    {
+        ExitCode = exitCode;
+        _pipe.Break();
+    }
+
+    /// <inheritdoc />
+    public void Kill()
+    {
+        Killed = true;
+        Exit(ExitCode ?? 1);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
+    {
+        await Channel.DisposeAsync();
+        if (_processEnd is not null) await _processEnd.DisposeAsync();
+        _pipe.Dispose();
+    }
+}
+
+/// <summary>Starts <see cref="FakeCameraProcess"/>es in place of real camera processes, and keeps each with its job id.</summary>
+public sealed class FakeCameraProcessStarter : ICameraProcessStarter
+{
+    /// <summary>The processes started, with their job ids, in order.</summary>
+    public List<(string JobId, FakeCameraProcess Process)> Started { get; } = [];
+
+    /// <inheritdoc />
+    public ICameraProcess Start(string jobId)
+    {
+        if (!Commands.RunIds.IsWellFormed(jobId)) throw new ArgumentException($"\"{jobId}\" is not a job id.", nameof(jobId));
+
+        var process = new FakeCameraProcess(7001 + Started.Count);
+        Started.Add((jobId, process));
+        return process;
+    }
+}

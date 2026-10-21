@@ -21,6 +21,12 @@ public static class CameraServices
 
         // The seam the camera process fills in slice 7; until then no run records a camera's picture.
         services.AddSingleton<ICameraRecorder, CameraRecorderNotBuilt>();
+
+        // The start of a camera process (--camera-process <job id>), in a kill-on-close job, from ClassScribe's own folder;
+        // nothing starts one in this build, and a test run refuses the real start (DeviceGuards).
+        services.AddSingleton<ICameraProcessStarter>(provider => OperatingSystem.IsWindows()
+            ? new CameraProcessStarter(provider.GetRequiredService<Recorder.RuntimeFolder>(), provider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>())
+            : throw new PlatformNotSupportedException("Starting a camera process needs Windows."));
         return services;
     }
 }
