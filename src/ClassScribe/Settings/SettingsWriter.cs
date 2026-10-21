@@ -41,7 +41,8 @@ public sealed record SettingsChange(int ExitCode, IReadOnlyList<string> Lines);
 /// written, a change that adds a problem refused in the check's words while problems already there do not block it; the
 /// file read again and compared, starting again up to three times when another program saved it meanwhile; then written
 /// whole (ClassScribe's header, the values indented, UTF-8 without a byte-order mark, letters such as ṣ kept readable) to a
-/// temporary file moved into its place, the bytes before kept as appsettings.previous.json, one undo; the settings reloaded,
+/// temporary file moved into its place, the bytes before kept as appsettings.previous.json, one undo (without an ElevenLabs
+/// key a hand edit put there, which is never written to any file); the settings reloaded,
 /// and the change logged. The file is a full copy of every setting (amendment 38): made at the first change from the file
 /// read until then, with every setting this build knows; and at every later change any setting the file lacks is added at
 /// its default, which is said with the running build's version. ElevenLabs:ApiKey is never written.
@@ -66,8 +67,24 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
     public const string ApiKeyRefused =
         "The ElevenLabs key is never kept in the settings: ClassScribe reads it from the ELEVENLABS_API_KEY environment variable alone. Set it there, for your Windows user, in PowerShell: [Environment]::SetEnvironmentVariable('ELEVENLABS_API_KEY', '<your key>', 'User'), then open a new window.";
 
-    /// <summary>The first words of ClassScribe's header, by which its comments are told from the person's own.</summary>
-    private const string HeaderStart = " ClassScribe's settings for this Windows user";
+    /// <summary>What a change says when it took out an ElevenLabs key a hand edit put in the user's file: from the file and from the copy before.</summary>
+    public const string ApiKeyTakenOut =
+        $"Your settings file held an ElevenLabs key, which ClassScribe took out of it and out of {SettingsPlaces.PreviousFileName}: it reads the key from the {ElevenLabsOptions.ApiKeyVariable} environment variable alone.";
+
+    /// <summary>What settings reset --all says when the file it replaces is not valid JSON and holds an ElevenLabs key: no copy of it is kept.</summary>
+    public const string ApiKeyNotKept =
+        $"The file as it was is not kept in {SettingsPlaces.PreviousFileName}, since it holds an ElevenLabs key, which ClassScribe never writes to a file: it reads the key from the {ElevenLabsOptions.ApiKeyVariable} environment variable alone.";
+
+    /// <summary>What settings fill says when there is no user file yet: nothing is made, since a file is made only at the first change.</summary>
+    public const string NothingToFill = "No settings file yet; nothing to fill.";
+
+    /// <summary>
+    /// The headers ClassScribe has written, the one it writes now first. The comments before the opening brace are
+    /// ClassScribe's own only when they are the lines of one of these, in order, each a line comment as written (a line may
+    /// be taken out). A later build that rewords the header adds the old wording here, so that the files earlier builds
+    /// wrote are still told from the person's own comments.
+    /// </summary>
+    private static readonly IReadOnlyList<IReadOnlyList<string>> KnownHeaders = [Header];
 
     /// <summary>How many times a change starts again when another program saved the file meanwhile.</summary>
     private const int Tries = 3;
@@ -143,7 +160,8 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
             if (!firstChange && before.Bytes is { } current && current.AsSpan().SequenceEqual(after)) return Done(outcome.Lines);
 
             var lines = new List<string>();
-            Write(target, firstChange ? null : before.Bytes, after, firstChange);
+            var kept = firstChange ? null : KeptBefore(before.Bytes);
+            Write(target, kept?.Bytes, after, firstChange);
             if (firstChange)
             {
                 places.MarkUserFileMade();
@@ -155,6 +173,8 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
             }
 
             lines.AddRange(outcome.Lines);
+            if (kept is { KeyTakenOut: true }) lines.Add(ApiKeyTakenOut);
+            if (freshCopy && kept is not null) lines.Add(kept.Bytes is null ? ApiKeyNotKept : $"The file as it was is in {SettingsPlaces.PreviousFileName} beside it.");
             lines.AddRange(Overridden(outcome));
             var reloaded = reloader.TryReload();
             if (!reloaded.Usable)
@@ -267,19 +287,18 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
     /// before kept as appsettings.previous.json. It alone may replace a file that is missing or not valid JSON.
     /// </summary>
     public SettingsChange ResetAll() =>
-        Change("reset --all", _ => SettingsEdit.Changed(
-            $"Every setting is back at its default in {places.UserFile}; your saved classes are kept. The file as it was is in {SettingsPlaces.PreviousFileName} beside it."),
-            freshCopy: true);
+        Change("reset --all", _ => SettingsEdit.Changed($"Every setting is back at its default in {places.UserFile}; your saved classes are kept."), freshCopy: true);
 
     /// <summary>
     /// Adds to the user's file every setting this build knows and the file lacks, at its default, saying so a line each,
-    /// and nothing more (settings fill, build-plan amendments 38 and 51). With no user file it writes nothing: a file is made
-    /// only at the first change.
+    /// and nothing more (settings fill, build-plan amendments 38 and 51). With no user file yet it writes nothing, exit 0: a
+    /// file is made only at the first change. While the user's file is missing it is refused with exit 1, as every change is
+    /// (layout-config 1.4), so that the installer's run does not hide the loss.
     /// </summary>
     public SettingsChange Fill()
     {
-        if (places.Origin != SettingsOrigin.UserFolder || places.UserFile is not { } target || !File.Exists(target))
-            return new SettingsChange(0, ["No settings file yet; nothing to fill."]);
+        if (places.DescribeMissing() is { } missing) return Refuse(1, missing);
+        if (places.Origin != SettingsOrigin.UserFolder || places.UserFile is null) return new SettingsChange(0, [NothingToFill]);
 
         return Change("fill", _ => SettingsEdit.Changed());
     }
@@ -340,28 +359,32 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
     }
 
     /// <summary>
-    /// True when <paramref name="bytes"/> hold a comment other than ClassScribe's header before the opening brace: such a
-    /// comment would be lost by a change from ClassScribe, so the change is refused. Bytes that are not JSON hold none here.
+    /// True when <paramref name="bytes"/> hold a comment of the person's own: any comment after the opening brace, and before
+    /// it any comment that is not a line of ClassScribe's header (see <see cref="KnownHeaders"/>), such as a note of one's
+    /// own, a block comment, or a header line reworded or written twice. Such a comment would be lost by a change from
+    /// ClassScribe, so the change is refused. Bytes that are not JSON hold none here.
     /// </summary>
     public static bool HasCommentsOfItsOwn(byte[] bytes)
     {
-        var reader = new Utf8JsonReader(WithoutByteOrderMark(bytes), new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
-        var started = false;
-        var headerSeen = false;
+        var json = WithoutByteOrderMark(bytes);
+        var reader = new Utf8JsonReader(json, new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
+        List<string>? beforeTheBrace = [];
         try
         {
             while (reader.Read())
             {
                 if (reader.TokenType != JsonTokenType.Comment)
                 {
-                    started = true;
+                    if (!IsHeader(beforeTheBrace)) return true;
+                    beforeTheBrace = null;
                     continue;
                 }
 
-                var comment = reader.GetComment();
-                if (started) return true;
-                if (!headerSeen && !comment.StartsWith(HeaderStart, StringComparison.Ordinal)) return true;
-                headerSeen = true;
+                // A comment inside or after the braces is always the person's own; before them, a line comment is kept as
+                // written, "//" and all, to be compared with the header's lines, and a block comment never is one.
+                if (beforeTheBrace is null) return true;
+                var lineComment = json[(int)reader.TokenStartIndex + 1] == (byte)'/';
+                beforeTheBrace.Add(lineComment ? $"//{reader.GetComment()}" : $"/*{reader.GetComment()}*/");
             }
         }
         catch (JsonException)
@@ -371,8 +394,26 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
             return false;
         }
 
-        return false;
+        return beforeTheBrace is not null && !IsHeader(beforeTheBrace);
     }
+
+    /// <summary>
+    /// True when <paramref name="comments"/>, the comments before the opening brace as written, are lines of one of
+    /// ClassScribe's headers, in its order, none twice; a line taken out still counts. True for none at all.
+    /// </summary>
+    private static bool IsHeader(IReadOnlyList<string>? comments) =>
+        comments is null || KnownHeaders.Any(header =>
+        {
+            var next = 0;
+            foreach (var comment in comments)
+            {
+                while (next < header.Count && !header[next].Trim().Equals(comment.Trim(), StringComparison.Ordinal)) next++;
+                if (next == header.Count) return false;
+                next++;
+            }
+
+            return true;
+        });
 
     /// <summary>The settings environment variable that overrides <paramref name="name"/>, such as Recording__OutputFolder, when one is set; null otherwise.</summary>
     public static string? EnvironmentOverride(string name)
@@ -623,6 +664,40 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
             return false;
         }
     }
+
+    /// <summary>
+    /// What is kept as appsettings.previous.json of the file before a change, <paramref name="bytes"/>: the bytes as they
+    /// were; or, when they hold an ElevenLabs key, which ClassScribe never writes to a file, the file without it, written as
+    /// ClassScribe writes it (<see cref="BeforeTheChange.KeyTakenOut"/>); or nothing at all when the bytes are not valid JSON
+    /// and mention a key, since it cannot be taken out of them (<see cref="BeforeTheChange.Bytes"/> null). Null for no file.
+    /// </summary>
+    private static BeforeTheChange? KeptBefore(byte[]? bytes)
+    {
+        if (bytes is null) return null;
+
+        JsonObject tree;
+        try
+        {
+            tree = Parse(bytes);
+        }
+        catch (JsonException)
+        {
+            // Deliberately not rethrown: a file that is not valid JSON, which only reset --all replaces, is kept as it was,
+            // unless it may hold the key, which cannot be taken out of it; then no copy is kept, and the change says so.
+            return Encoding.UTF8.GetString(bytes).Contains("ApiKey", StringComparison.OrdinalIgnoreCase) ? new BeforeTheChange(null, false) : new BeforeTheChange(bytes, false);
+        }
+
+        var document = new SettingsDocument(tree);
+        if (!document.Has(ElevenLabsOptions.ApiKeySetting)) return new BeforeTheChange(bytes, false);
+
+        RemoveTheKey(tree);
+        return new BeforeTheChange(Serialize(tree), true);
+    }
+
+    /// <summary>What is kept of the file before a change (see <see cref="KeptBefore"/>).</summary>
+    /// <param name="Bytes">The bytes written as appsettings.previous.json; null to keep none.</param>
+    /// <param name="KeyTakenOut">True when an ElevenLabs key was taken out of them.</param>
+    private sealed record BeforeTheChange(byte[]? Bytes, bool KeyTakenOut);
 
     /// <summary>
     /// Writes <paramref name="after"/> to <paramref name="target"/> whole: to a temporary file in the same folder, flushed to

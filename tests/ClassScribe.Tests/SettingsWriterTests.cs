@@ -250,6 +250,97 @@ public class SettingsWriterTests
     }
 
     /// <summary>
+    /// A comment of the person's own between ClassScribe's header and the opening brace is refused as one inside the braces
+    /// is, exit 1, and the file is left as it was: a line comment, a block comment, a header line reworded, a header line
+    /// written as a block comment, and a header line written twice. ClassScribe's header with a line taken out holds nothing
+    /// of the person's, so a change goes ahead.
+    /// </summary>
+    [Test]
+    public void Comments_of_ones_own_before_the_brace_are_refused_too()
+    {
+        _files.Writer.Set("Recording:FlushSeconds", "7");
+        var written = _files.UserText;
+        var brace = written.IndexOf('{', StringComparison.Ordinal);
+        var header = written[..brace];
+        var body = written[brace..];
+        string[] edited =
+        [
+            header + "// my own note: Mantiq starts at 10" + Environment.NewLine + body,
+            header + "/* keep: zoom for Sughra */" + Environment.NewLine + body,
+            header.Replace("A later ClassScribe", "A later ClassScribe (and I, for Kalam)", StringComparison.Ordinal) + body,
+            header.Replace(SettingsWriter.Header[0], "/*" + SettingsWriter.Header[0][2..] + " */", StringComparison.Ordinal) + body,
+            header + SettingsWriter.Header[2] + Environment.NewLine + body
+        ];
+
+        foreach (var text in edited)
+        {
+            _files.WriteUser(text);
+
+            var refused = _files.Writer.Set("Recording:FlushSeconds", "8");
+
+            Assert.That((refused.ExitCode, refused.Lines.Single()), Is.EqualTo((1, SettingsWriter.CommentsOfItsOwn)), text);
+            Assert.That(_files.UserText, Is.EqualTo(text), "nothing is lost");
+        }
+
+        _files.WriteUser(header.Replace(SettingsWriter.Header[1] + Environment.NewLine, "", StringComparison.Ordinal) + body);
+        Assert.That(_files.Writer.Set("Recording:FlushSeconds", "8").ExitCode, Is.EqualTo(0), "a header line taken out is no comment of one's own");
+    }
+
+    /// <summary>
+    /// An ElevenLabs key a hand edit put in the user's file is never written by ClassScribe: a change takes it out of the
+    /// file and keeps the file before without it too, and says so, naming where the key is read from; the key is never
+    /// logged. reset --all over a file that is not valid JSON and holds a key keeps no copy of it at all, and says so.
+    /// </summary>
+    [Test]
+    public void A_key_written_in_the_file_is_kept_out_of_the_file_before_too()
+    {
+        _files.Writer.Set("Recording:FlushSeconds", "7");
+        var tree = _files.UserTree;
+        tree["ElevenLabs"]!["ApiKey"] = "sk-hand-written";
+        _files.WriteUser(tree.ToJsonString());
+
+        var change = _files.Writer.Set("Recording:FlushSeconds", "8");
+
+        Assert.That(change.ExitCode, Is.EqualTo(0));
+        Assert.That(change.Lines, Has.Member(SettingsWriter.ApiKeyTakenOut));
+        Assert.That(_files.UserText, Does.Not.Contain("sk-hand-written"));
+        var before = File.ReadAllText(_files.PreviousFile);
+        Assert.That(before, Does.Not.Contain("sk-hand-written"));
+        Assert.That(new SettingsDocument(JsonNode.Parse(before, documentOptions: new System.Text.Json.JsonDocumentOptions { CommentHandling = System.Text.Json.JsonCommentHandling.Skip })!.AsObject())
+            .Get("Recording:FlushSeconds")!.GetValue<int>(), Is.EqualTo(7), "the file before, but for the key");
+        Assert.That(_files.Writer.Set("Recording:FlushSeconds", "9").Lines, Has.No.Member(SettingsWriter.ApiKeyTakenOut), "said only when there was one");
+
+        _files.WriteUser("{ \"ElevenLabs\": { \"ApiKey\": \"sk-hand-written\" ");
+        var all = _files.Writer.ResetAll();
+
+        Assert.That(all.ExitCode, Is.EqualTo(0));
+        Assert.That(all.Lines, Has.Member(SettingsWriter.ApiKeyNotKept));
+        Assert.That(all.Lines, Has.None.Contains($"The file as it was is in {SettingsPlaces.PreviousFileName}"));
+        Assert.That(File.ReadAllText(_files.PreviousFile), Does.Not.Contain("sk-hand-written"));
+        Assert.That(_files.UserText, Does.Not.Contain("sk-hand-written"));
+        Assert.That(_files.Log.Messages, Has.None.Contains("sk-hand-written"));
+    }
+
+    /// <summary>
+    /// settings fill while the user's file is missing (the marker there, the file not) is refused with exit 1 and the
+    /// missing-file words, as every change is (layout-config 1.4), so that the installer's run does not hide the loss; it
+    /// writes nothing.
+    /// </summary>
+    [Test]
+    public void Fill_while_the_file_is_missing_is_refused()
+    {
+        _files.Writer.Set("Recording:FlushSeconds", "7");
+        File.Delete(_files.UserFile);
+        var places = new SettingsPlaces(_files.Program.Path, _files.User.Path, _files.State.Path);
+        var writer = new SettingsWriter(places, new SettingsFile(places, Microsoft.Extensions.Logging.Abstractions.NullLogger<SettingsFile>.Instance), _files.Reloader, _files.Log);
+
+        var refused = writer.Fill();
+
+        Assert.That((refused.ExitCode, refused.Lines.Single()), Is.EqualTo((1, places.DescribeMissing())));
+        Assert.That(File.Exists(_files.UserFile), Is.False);
+    }
+
+    /// <summary>
     /// A file that is not valid JSON is refused with exit 1 in the reloader's own words and how to go on; reset --all makes
     /// a fresh file over it, its bytes kept as appsettings.previous.json.
     /// </summary>
@@ -263,7 +354,9 @@ public class SettingsWriterTests
         Assert.That(refused.ExitCode, Is.EqualTo(1));
         Assert.That(refused.Lines[0], Does.StartWith("The mistake is on line 1:"));
         Assert.That(refused.Lines[^1], Is.EqualTo($"Nothing was changed. Fix {_files.UserFile} first, or start again from the defaults with: ClassScribe settings reset --all."));
-        Assert.That(_files.Writer.ResetAll().ExitCode, Is.EqualTo(0));
+        var all = _files.Writer.ResetAll();
+        Assert.That(all.ExitCode, Is.EqualTo(0));
+        Assert.That(all.Lines, Has.Member($"The file as it was is in {SettingsPlaces.PreviousFileName} beside it."));
         Assert.That(File.ReadAllText(_files.PreviousFile), Does.Contain("D:\\Classes"));
         Assert.That(_files.UserValue("Recording:FlushSeconds")!.GetValue<int>(), Is.EqualTo(5));
     }
