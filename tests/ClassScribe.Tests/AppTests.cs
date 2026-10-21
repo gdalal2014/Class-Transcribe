@@ -102,7 +102,7 @@ public class AppTests
         Assert.That(await RunAsync(args), Is.EqualTo(0));
 
         Assert.That(_order, Is.EqualTo(new[] { "report", "record" }));
-        Assert.That(_gateLog.Problems[0], Is.EqualTo($"Recording:FlushSeconds is \"five\" in {_settings.File.Path}, which the check refuses; this recording uses the default, \"5\" in its place."));
+        Assert.That(_gateLog.Problems[0], Is.EqualTo($"Recording:FlushSeconds is \"five\" in {_settings.File.Path}, which the check refuses; this recording uses the default, \"5\", in its place."));
         Assert.That(_settings.Configuration["Recording:SilenceWarningSeconds"], Is.EqualTo("30"), "what passes is kept");
         Assert.That(_settings.Configuration["Recording:FlushSeconds"], Is.Null, "what fails is left out");
 

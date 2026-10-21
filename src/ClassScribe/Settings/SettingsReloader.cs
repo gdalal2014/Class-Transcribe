@@ -227,7 +227,7 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
     private static string InPlace(IConfiguration staged, string key)
     {
         if (staged[key] is { } held) return $"\"{held}\"";
-        if (SettingsCatalog.Find(key) is { Default: { } defaultValue }) return $"the default, \"{SettingsCatalog.Show(defaultValue)}\"";
+        if (SettingsCatalog.Find(key) is { Default: { } defaultValue }) return $"the default, \"{SettingsCatalog.Show(defaultValue)}\",";
         return "nothing (the default)";
     }
 

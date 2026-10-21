@@ -134,7 +134,7 @@ public class SettingsReloadTests
         Assert.That(verdict.Problems, Has.Count.EqualTo(2), "the file's problems stay for the header");
         Assert.That(verdict.Dropped.Select(dropped => dropped.Key), Is.EquivalentTo(new[] { "Recording:FlushSeconds", "YouTube:MayDownloadChannels:0", "YouTube:CourseChannels:0" }));
         Assert.That(verdict.Dropped.Single(dropped => dropped.Key == "Recording:FlushSeconds").Describe("the file"),
-            Is.EqualTo("Recording:FlushSeconds is \"five\" in the file, which the check refuses; this recording uses the default, \"5\" in its place."));
+            Is.EqualTo("Recording:FlushSeconds is \"five\" in the file, which the check refuses; this recording uses the default, \"5\", in its place."));
         Assert.That(settings.Configuration["Recording:SilenceWarningSeconds"], Is.EqualTo("30"));
         Assert.That(settings.Configuration["Transcript:MaxParagraphCharacters"], Is.EqualTo("500"));
         Assert.That(settings.Configuration["Recording:FlushSeconds"], Is.Null);
