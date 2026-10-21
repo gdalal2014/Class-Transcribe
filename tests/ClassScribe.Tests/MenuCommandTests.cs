@@ -401,25 +401,41 @@ public class MenuCommandTests
     }
 
     /// <summary>
-    /// Every choice reads the settings first. While they cannot be used, the choice does not run, whichever it is: the
-    /// log says what is wrong and to choose again, and the menu comes back.
+    /// Every choice reads the settings first. While they cannot be used, a choice that does not record does not run,
+    /// whichever it is: the log says what is wrong and to choose again, and the menu comes back.
     /// </summary>
     [Test]
-    public async Task No_choice_runs_while_the_settings_cannot_be_used()
+    public async Task No_choice_but_a_recording_runs_while_the_settings_cannot_be_used()
     {
         WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
         BreakTheSettings();
-        _ui.TypeLine("Kalam");
-        _ui.TypeLine("Kalam");
-        _ui.Type('1', '2', '3', '4', '5', '6', '7', '8', 'q');
+        _ui.Type('3', '4', '5', '6', '7', '8', 'q');
 
         Assert.That(await RunMenuAsync(), Is.EqualTo(0));
 
         _commands.VerifyNoOtherCalls();
         _desktop.VerifyNoOtherCalls();
-        Assert.That(_ui.Screen, Does.Not.Contain("Name for this recording").And.Not.Contain("Recent recordings"));
-        Assert.That(_gateLog.Problems.Count(problem => problem.EndsWith("then choose again", StringComparison.Ordinal)), Is.EqualTo(8));
-        Assert.That(MenusShown(), Is.EqualTo(9), "the menu came back after each refused choice");
+        Assert.That(_ui.Screen, Does.Not.Contain("Recent recordings"));
+        Assert.That(_gateLog.Problems.Count(problem => problem.EndsWith("then choose again", StringComparison.Ordinal)), Is.EqualTo(6));
+        Assert.That(MenusShown(), Is.EqualTo(7), "the menu came back after each refused choice");
+    }
+
+    /// <summary>
+    /// Choices 1 and 2 record whatever the file says (build-plan amendment 4): without the setting the check refuses, which
+    /// the log names with the value used in its place, and with every other value of the file.
+    /// </summary>
+    [Test]
+    public async Task Choices_1_and_2_record_without_the_settings_the_check_refuses()
+    {
+        BreakTheSettings();
+        _ui.Type('1');
+        _ui.TypeLine("Kalam");
+        _ui.Type('q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        _commands.Verify(commands => commands.RecordAsync(It.Is<RecordRequest>(request => request.Name == "Kalam" && !request.Transcribe), StartOrigin.Menu), Times.Once);
+        Assert.That(_gateLog.Problems, Has.Some.Contains("which the check refuses; this recording uses"));
     }
 
     /// <summary>
@@ -444,7 +460,7 @@ public class MenuCommandTests
         Assert.That(atStart[(settingsLine + 1)..(settingsLine + 4)], Is.EqualTo(new[]
         {
             "ERROR  Recording:FlushSeconds is \"five\", which is not a whole number, such as 60.",
-            "ERROR  No choice runs until the file is fixed. Until then ClassScribe keeps its last usable settings, or the defaults.",
+            "ERROR  Until the file is fixed, only recordings run (1, 2 and C), without the settings above; the other choices wait. ClassScribe keeps its last usable settings, or the defaults.",
             $"Recordings and transcripts: {_folder.Path}"
         }));
         _desktop.Verify(d => d.OpenFolder(_folder.Path), Times.Once, "the fixed file let the choice run");

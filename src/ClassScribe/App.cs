@@ -30,9 +30,11 @@ public sealed class App(CommandLineTree commandLine, RunGate gate, IStartupRepor
             var outcome = commandLine.Parse(commandLine.Tidy(args));
             if (outcome is not { Parsed: { } parsed, ExitCode: null }) return outcome.ExitCode ?? CommandLineTree.Mistake;
 
-            if (commandLine.KindOf(parsed) == CommandKind.Command)
+            var kind = commandLine.KindOf(parsed);
+            if (kind is CommandKind.Command or CommandKind.Recording)
             {
-                if (!gate.TryOpen(GateUse.Command)) return RefusedBySettings;
+                // A recording runs whatever the file says, without the settings the check refuses (amendment 4).
+                if (!gate.TryOpen(kind == CommandKind.Recording ? GateUse.Recording : GateUse.Command)) return RefusedBySettings;
 
                 await report.ShowAsync(interactive: false);
             }

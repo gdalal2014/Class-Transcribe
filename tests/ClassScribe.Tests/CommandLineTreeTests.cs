@@ -1212,14 +1212,14 @@ public class CommandLineTreeTests
         Assert.That(_line.KindOf(), Is.EqualTo(CommandKind.Menu));
         Assert.That(_line.KindOf("attach"), Is.EqualTo(CommandKind.Attach));
         Assert.That(_line.KindOf("attach", "--alert", "20261015-230002Z-1f3a9c07"), Is.EqualTo(CommandKind.Attach));
-        Assert.That(_line.KindOf("record", "Kalam", "--device", "auto", "--output", Classes), Is.EqualTo(CommandKind.Command));
-        Assert.That(_line.KindOf("record-only", "Kalam", "--app", "chrome", "--output", Classes), Is.EqualTo(CommandKind.Command));
+        Assert.That(_line.KindOf("record", "Kalam", "--device", "auto", "--output", Classes), Is.EqualTo(CommandKind.Recording), "a refused file never stops a recording");
+        Assert.That(_line.KindOf("record-only", "Kalam", "--app", "chrome", "--output", Classes), Is.EqualTo(CommandKind.Recording));
         Assert.That(_line.KindOf("transcribe", @"C:\Classes\Kalam"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("rebuild", @"C:\Classes\Kalam"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("list"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("devices"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("mic-check", "--seconds", "5"), Is.EqualTo(CommandKind.Command), "the log goes under Recording:OutputFolder, so the settings are read first");
-        Assert.That(_line.KindOf("record", "Kalam", "--in-person", "--output", Classes), Is.EqualTo(CommandKind.Command));
+        Assert.That(_line.KindOf("record", "Kalam", "--in-person", "--output", Classes), Is.EqualTo(CommandKind.Recording));
         Assert.That(_line.KindOf("drive", "status"), Is.EqualTo(CommandKind.Command), "the Drive settings are read first");
         Assert.That(_line.KindOf("drive", "signin"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("drive", "signin", "--help"), Is.EqualTo(CommandKind.Help));

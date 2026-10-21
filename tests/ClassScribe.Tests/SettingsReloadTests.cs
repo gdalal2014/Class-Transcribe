@@ -113,6 +113,52 @@ public class SettingsReloadTests
     /// <summary>How many times the menu has been shown.</summary>
     private static int MenusShown(FakeConsoleUi ui) => ui.Screen.Split(Environment.NewLine).Count(line => line == "  Q  Quit");
 
+    /// <summary>
+    /// For a recording (build-plan amendment 4), a file that fails the check keeps every value that passes and drops only the
+    /// settings the check refuses: a value of the wrong kind, a list's entry, and both lists for a channel in both; each is
+    /// named with the value it gave and the one used in its place, and the file's problems stay for the menu's header.
+    /// </summary>
+    [Test]
+    public void A_recording_keeps_what_passes_and_drops_what_the_check_refuses()
+    {
+        var settings = new TestSettings(_data.Path, Json(new
+        {
+            Recording = new { FlushSeconds = "five", SilenceWarningSeconds = 30 },
+            YouTube = new { MayDownloadChannels = new[] { "@shared" }, CourseChannels = new[] { "@shared" } },
+            Transcript = new { MaxParagraphCharacters = 500 }
+        }));
+
+        var verdict = settings.Reloader.TryReload(forRecording: true);
+
+        Assert.That(verdict.Usable, Is.True);
+        Assert.That(verdict.Problems, Has.Count.EqualTo(2), "the file's problems stay for the header");
+        Assert.That(verdict.Dropped.Select(dropped => dropped.Key), Is.EquivalentTo(new[] { "Recording:FlushSeconds", "YouTube:MayDownloadChannels:0", "YouTube:CourseChannels:0" }));
+        Assert.That(verdict.Dropped.Single(dropped => dropped.Key == "Recording:FlushSeconds").Describe("the file"),
+            Is.EqualTo("Recording:FlushSeconds is \"five\" in the file, which the check refuses; this recording uses the default, \"5\" in its place."));
+        Assert.That(settings.Configuration["Recording:SilenceWarningSeconds"], Is.EqualTo("30"));
+        Assert.That(settings.Configuration["Transcript:MaxParagraphCharacters"], Is.EqualTo("500"));
+        Assert.That(settings.Configuration["Recording:FlushSeconds"], Is.Null);
+        Assert.That(settings.Reloader.TryReload().Usable, Is.False, "anything else is still refused");
+    }
+
+    /// <summary>
+    /// For a recording, a file that is not valid JSON keeps the settings read last, never the defaults over them, and says
+    /// so; for anything else it is refused as before.
+    /// </summary>
+    [Test]
+    public void A_recording_over_a_file_that_is_not_JSON_keeps_the_settings_read_last()
+    {
+        var settings = new TestSettings(_data.Path, Json(new { Recording = new { FlushSeconds = 7 } }));
+        settings.Write("{ not json");
+
+        var verdict = settings.Reloader.TryReload(forRecording: true);
+
+        Assert.That(verdict.Usable, Is.True);
+        Assert.That(verdict.Kept[^1], Does.StartWith("Nothing of ").And.Contain("could be taken, so this recording uses the settings ClassScribe read last"));
+        Assert.That(settings.Configuration["Recording:FlushSeconds"], Is.EqualTo("7"));
+        Assert.That(settings.Reloader.TryReload().Usable, Is.False);
+    }
+
     /// <summary>An edit made between two menu choices is used by the second: here the recordings folder that choice 5 opens.</summary>
     [Test]
     public async Task An_edit_between_two_menu_choices_is_used_by_the_second()

@@ -89,11 +89,33 @@ public class AppTests
     }
 
     /// <summary>
+    /// A refused settings file never stops a recording (build-plan amendment 4): record and record-only run, with the report
+    /// first, keeping every value that passes and leaving out the one the check refuses, which the first lines name with the
+    /// value used in its place; a file that is not valid JSON gives the defaults and the command line, and says so.
+    /// </summary>
+    [TestCase("record", "Kalam", "--device", "auto", "--output", @"D:\Classes")]
+    [TestCase("record-only", "Kalam", "--app", "chrome")]
+    public async Task A_recording_runs_without_the_settings_the_check_refuses(params string[] args)
+    {
+        _settings.Write("""{ "Recording": { "FlushSeconds": "five", "SilenceWarningSeconds": 30 } }""");
+
+        Assert.That(await RunAsync(args), Is.EqualTo(0));
+
+        Assert.That(_order, Is.EqualTo(new[] { "report", "record" }));
+        Assert.That(_gateLog.Problems[0], Is.EqualTo($"Recording:FlushSeconds is \"five\" in {_settings.File.Path}, which the check refuses; this recording uses the default, \"5\" in its place."));
+        Assert.That(_settings.Configuration["Recording:SilenceWarningSeconds"], Is.EqualTo("30"), "what passes is kept");
+        Assert.That(_settings.Configuration["Recording:FlushSeconds"], Is.Null, "what fails is left out");
+
+        _settings.Write("{ not json");
+        _gateLog = new RecordingLogger<RunGate>();
+        Assert.That(await RunAsync(args), Is.EqualTo(0));
+        Assert.That(_gateLog.Problems, Has.Some.StartsWith($"Nothing of {_settings.File.Path} could be taken, so this recording uses the settings ClassScribe read last"));
+    }
+
+    /// <summary>
     /// The settings are read and checked before each command. While they cannot be used, the command does not run, nor
     /// does the report at the start, and the exit code is 1; the log says what is wrong and that nothing was started.
     /// </summary>
-    [TestCase("record", "Kalam", "--device", "auto", "--output", @"D:\Classes")]
-    [TestCase("record-only", "Kalam", "--app", "chrome", "--output", @"D:\Classes")]
     [TestCase("transcribe", @"C:\Classes\Kalam")]
     [TestCase("transcribe", @"C:\Classes\Kalam", "--again")]
     [TestCase("rebuild", @"C:\Classes\Kalam")]
@@ -258,13 +280,13 @@ public class AppTests
     [Test]
     public async Task A_fixed_file_counts_for_the_next_command()
     {
-        string[] record = ["record", "Kalam", "--device", "auto", "--output", @"D:\Classes"];
+        string[] transcribe = ["transcribe", @"C:\Classes\Kalam"];
         BreakTheSettings();
-        Assert.That(await RunAsync(record), Is.EqualTo(1));
+        Assert.That(await RunAsync(transcribe), Is.EqualTo(1));
         _settings.Write("""{ "Recording": { "FlushSeconds": 5 } }""");
 
-        Assert.That(await RunAsync(record), Is.EqualTo(0));
-        _commands.Verify(c => c.RecordAsync(It.Is<RecordRequest>(request => request.Name == "Kalam" && request.Transcribe), StartOrigin.CommandLine), Times.Once);
+        Assert.That(await RunAsync(transcribe), Is.EqualTo(0));
+        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(@"C:\Classes\Kalam", true, false)), Times.Once);
     }
 
     /// <summary>A failure becomes exit code 1 with the reason logged, and a cancel exit code 130.</summary>

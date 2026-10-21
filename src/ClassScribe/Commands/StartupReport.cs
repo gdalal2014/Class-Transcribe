@@ -369,7 +369,8 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
     /// </summary>
     private async Task<(StartupChoice? Choice, bool Ended)> CarryOutAsync(RunRecord? run, StartupAction action, Func<Task<int>> work)
     {
-        if (!gate.TryOpen(GateUse.MenuChoice)) return (null, true);
+        // Continuing a class is a recording, which a refused settings file never stops (amendment 4); T and U wait for a fixed file.
+        if (!gate.TryOpen(action == StartupAction.Continue ? GateUse.Recording : GateUse.MenuChoice)) return (null, true);
 
         if (run is not null) journal.MarkSeen(run.RunId);
         try

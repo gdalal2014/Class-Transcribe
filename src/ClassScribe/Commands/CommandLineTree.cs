@@ -38,6 +38,12 @@ public enum CommandKind
     /// </summary>
     Settings,
 
+    /// <summary>
+    /// record and record-only: the settings are read and checked first, keeping every value that passes and dropping the
+    /// rest, since a refused settings file never stops a class (build-plan amendment 4); then the report at the start.
+    /// </summary>
+    Recording,
+
     /// <summary>Any other command: the settings are read and checked first, then the report at the start is printed.</summary>
     Command
 }
@@ -233,7 +239,12 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             if (OwnKindWords.Contains(command.Command.Name)) return CommandKind.Settings;
         }
 
-        return parsed.CommandResult.Command.Name == AttachName ? CommandKind.Attach : CommandKind.Command;
+        return parsed.CommandResult.Command.Name switch
+        {
+            AttachName => CommandKind.Attach,
+            "record" or "record-only" => CommandKind.Recording,
+            _ => CommandKind.Command
+        };
     }
 
     /// <summary>Runs what <paramref name="parsed"/> names (see <see cref="Invocation"/>) and returns its exit code.</summary>

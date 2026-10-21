@@ -147,7 +147,8 @@ public sealed class MenuCommand(
             // question for the recording's name; the log is written on a thread of its own.
             if (_staleCopyShown is null && settings.DescribeStaleCopy() is { } stale) ui.WriteLine($"WARNING  {stale}.");
 
-            if (!gate.TryOpen(GateUse.MenuChoice)) return;
+            // A recording runs whatever the file says, without the settings the check refuses (amendment 4); the rest wait.
+            if (!gate.TryOpen(picked is '1' or '2' ? GateUse.Recording : GateUse.MenuChoice)) return;
 
             switch (picked)
             {
@@ -226,7 +227,7 @@ public sealed class MenuCommand(
         if (gate.Problems is [_, ..] settingsProblems)
         {
             foreach (var settingsProblem in settingsProblems) ui.WriteLine($"ERROR  {settingsProblem}");
-            ui.WriteLine("ERROR  No choice runs until the file is fixed. Until then ClassScribe keeps its last usable settings, or the defaults.");
+            ui.WriteLine("ERROR  Until the file is fixed, only recordings run (1, 2 and C), without the settings above; the other choices wait. ClassScribe keeps its last usable settings, or the defaults.");
         }
 
         if (string.IsNullOrWhiteSpace(elevenLabs.CurrentValue.ApiKey))
