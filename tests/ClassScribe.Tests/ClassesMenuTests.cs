@@ -181,6 +181,65 @@ public class ClassesMenuTests
         Assert.That(set.Choices.Clear, Is.Empty, "Enter keeps the folder, written again as it was");
     }
 
+    /// <summary>
+    /// E on a class that cannot be used names its problem, then asks the same questions with the class's own fields, as the
+    /// file holds them, for Enter: pressed through, every field is kept, its course, its microphone, the app it follows and
+    /// record only among them, and the stray field that makes it unusable is left for class set --clear or the file.
+    /// </summary>
+    [Test]
+    public async Task E_on_a_class_that_cannot_be_used_keeps_its_own_fields_for_Enter()
+    {
+        var fields = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ClassFields.Course] = "Aqidah - Sughra As-Sughra",
+            [ClassFields.Mode] = "ClassAndMicrophone",
+            [ClassFields.App] = "zoom",
+            [ClassFields.Microphone] = "Microphone Array",
+            [ClassFields.MicrophoneFollows] = "zoom",
+            [ClassFields.OutputFolder] = @"D:\Classes",
+            [ClassFields.Transcribe] = "false",
+            [ClassFields.CameraResolution] = "720p"
+        };
+        _ui.Type('e', '1');
+        _ui.TypeLine("");
+        _ui.Type('\r', '\r', '\r');
+        _ui.TypeLine("");
+        _ui.TypeLine("");
+        _ui.Type('\r');
+
+        Assert.That(await RunAsync(fields.ToDictionary(field => $"Classes:Sughra (Zoom app):{field.Key}", field => field.Value)), Is.EqualTo(0));
+
+        Assert.That(_ui.Screen, Does.Contain("The saved class \"Sughra (Zoom app)\" cannot be used: CameraResolution is set, but the class records no camera."));
+        Assert.That(_ui.Screen, Does.Contain("ClassScribe class set \"Sughra (Zoom app)\" --clear <field>"));
+        Assert.That(_ui.Screen, Does.Contain("Course, which names its folder and files (Enter: Aqidah - Sughra As-Sughra)"));
+        var set = (ClassRequest.Set)_changed.Single();
+        var after = new Dictionary<string, string?>(fields, StringComparer.OrdinalIgnoreCase);
+        Assert.That(set.Choices.ApplyTo(after), Is.Null);
+        Assert.That(after, Is.EquivalentTo(fields), "Enter at every question keeps every field");
+    }
+
+    /// <summary>
+    /// E on a class whose two sources make it unusable offers no Enter answer for the source, since it has no one source to
+    /// keep; the source picked replaces both, and the rest is kept.
+    /// </summary>
+    [Test]
+    public async Task E_on_a_class_with_two_sources_asks_for_one()
+    {
+        _ui.Type('e', '1');
+        _ui.TypeLine("");
+        _ui.Type('\r', 'w', '\r');
+        _ui.TypeLine("");
+        _ui.Type('\r');
+
+        await RunAsync();
+
+        Assert.That(_ui.Screen, Does.Contain("P in person (your microphone alone)."));
+        var set = (ClassRequest.Set)_changed.Single();
+        var fields = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { [ClassFields.Course] = "Broken", [ClassFields.App] = "chrome", [ClassFields.Device] = "Speakers" };
+        Assert.That(set.Choices.ApplyTo(fields), Is.Null);
+        Assert.That(SavedClasses.Check("Broken", fields).Class, Is.EqualTo(new SavedClass("Broken", "Broken", RecordingMode.Class, new ClassSource.Automatic(), null, null, null, true, null, null)));
+    }
+
     /// <summary>D and a number removes the class after Y, and keeps it for any other key.</summary>
     [Test]
     public async Task D_removes_a_class_after_Y()

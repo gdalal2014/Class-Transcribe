@@ -294,7 +294,10 @@ never counted as waiting; it goes up once it has stopped.
   camera), Enter answers each question; then the name, the course, what it records (A an app, D an
   output device, W whatever device the class plays on, P in person), your microphone and the app it
   follows, the recordings folder and whether to transcribe. E and a number changes a class, with its
-  own answers for Enter; D and a number removes it after Y (no recording is touched). Esc goes back.
+  own answers for Enter; for a class that cannot be used it says why first, and Enter keeps each
+  field as the file holds it, so a field the questions do not ask about is emptied with `ClassScribe
+  class set "<name>" --clear <field>` or changed in the file (S, then O). D and a number removes it
+  after Y (no recording is touched). Esc goes back.
 - **S Settings** shows the settings file and offers 1, the recordings folder (drag a folder onto the
   window or type it, then Enter): it says where the next class would go (`The next class of Mantiq
   would go to D:\Classes\Mantiq\2026-10-21.`), saves it, gives the warnings about that folder (see

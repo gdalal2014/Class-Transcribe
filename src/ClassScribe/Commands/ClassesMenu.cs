@@ -117,10 +117,27 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
         return answers is null ? 0 : await commands.ClassAsync(new ClassRequest.Add(name, answers));
     }
 
-    /// <summary>E: the same questions as N, with the class's own answers for Enter; saved through class set.</summary>
+    /// <summary>
+    /// E: the same questions as N, with the class's own answers for Enter; saved through class set. A class that cannot be
+    /// used says why first, and its Enter answers are its fields as the file holds them (see <see cref="Kept.FromFields"/>),
+    /// so that Enter through every question keeps its fields (where they disagree, as a microphone on a class recorded
+    /// alone does, its mode decides); a field the questions do not ask about is left for class set --clear or the file.
+    /// </summary>
     private async Task<int> EditAsync(SavedClassEntry entry)
     {
-        var answers = await AskAsync(entry.Name, entry.Class, lesson: false);
+        Kept kept;
+        if (entry.Class is { } usable)
+        {
+            kept = Kept.FromClass(usable);
+        }
+        else
+        {
+            ui.WriteLine(entry.CannotBeUsed);
+            ui.WriteLine($"Enter keeps each of its values as the file holds them. A field these questions do not ask about can be emptied with ClassScribe class set \"{entry.Name}\" --clear <field>, or changed in the file (S, then O).");
+            kept = Kept.FromFields(entry.Name, classes.FieldsOf(entry.Name) ?? []);
+        }
+
+        var answers = await AskAsync(entry.Name, kept, lesson: false);
         return answers is null ? 0 : await commands.ClassAsync(new ClassRequest.Set(entry.Name, answers));
     }
 
@@ -137,7 +154,7 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
     /// preset's when <paramref name="lesson"/>: the course; what it records; the microphone, and with the class the app it
     /// follows; in person the camera and its size; the folder; and whether to transcribe it. Null for Esc at any of them.
     /// </summary>
-    private async Task<ClassChoices?> AskAsync(string name, SavedClass? current, bool lesson)
+    private async Task<ClassChoices?> AskAsync(string name, Kept? current, bool lesson)
     {
         var course = current?.Course ?? name;
         ui.Write($"Course, which names its folder and files (Enter: {course}): ");
@@ -150,7 +167,7 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
         var inPerson = source.Option == SourceOption.InPerson;
         string? microphone = current?.Microphone;
         var withMicrophone = inPerson || current?.Mode == RecordingMode.ClassAndMicrophone;
-        string? follows = current?.Follows?.Word;
+        string? follows = current?.Follows;
         if (!inPerson)
         {
             ui.WriteLine($"Your microphone beside the class? Y records it, N records the class alone, Enter keeps {(withMicrophone ? "it" : "the class alone")}.");
@@ -204,8 +221,9 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
             }
         }
 
-        var transcribe = current?.Transcribe ?? true;
-        ui.WriteLine($"Transcribe it when it stops? Y transcribes, N records only, Enter keeps {(transcribe ? "transcribing" : "record only")}.");
+        // Null keeps the class's Transcribe as the file holds it, for one whose value is neither true nor false.
+        bool? transcribe = current is null ? true : current.Transcribe;
+        ui.WriteLine($"Transcribe it when it stops? Y transcribes, N records only, Enter keeps {transcribe switch { true => "transcribing", false => "record only", null => "it as the file holds it" }}.");
         var transcribeKey = await ui.ReadKeyAsync(CancellationToken.None);
         if (transcribeKey is not { } transcribeAnswer || IsBack(transcribeAnswer)) return null;
         if (transcribeAnswer.Key == ConsoleKey.Y) transcribe = true;
@@ -231,19 +249,12 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
 
     /// <summary>
     /// What the class records: A an app, from the apps with sound now or typed; D an output device, from those connected or
-    /// typed; W whatever device the class plays on; P in person, your microphone alone; Enter keeps <paramref name="current"/>'s.
-    /// Null for Esc.
+    /// typed; W whatever device the class plays on; P in person, your microphone alone; Enter keeps <paramref name="current"/>'s,
+    /// when it has one source. Null for Esc.
     /// </summary>
-    private async Task<SourceGiven?> AskSourceAsync(SavedClass? current)
+    private async Task<SourceGiven?> AskSourceAsync(Kept? current)
     {
-        var kept = current is null ? null
-            : current.Mode == RecordingMode.Microphone ? new SourceGiven(SourceOption.InPerson, current.Microphone)
-            : current.Source switch
-            {
-                ClassSource.App app => new SourceGiven(SourceOption.App, app.ProcessName),
-                ClassSource.Device device => new SourceGiven(SourceOption.Device, device.NamePart),
-                _ => new SourceGiven(SourceOption.Device, "auto")
-            };
+        var kept = current?.Source;
         ui.WriteLine($"What it records: A an app, D an output device, W whatever device the class plays on, P in person (your microphone alone){(kept is null ? "" : ", Enter keeps it")}.");
         while (true)
         {
@@ -375,4 +386,57 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
     /// <summary>True for the keys that go back to the menu: Esc, Q and Ctrl+C.</summary>
     private static bool IsBack(ConsoleKeyInfo key) =>
         key.Key is ConsoleKey.Escape or ConsoleKey.Q || (key.Key == ConsoleKey.C && key.Modifiers.HasFlag(ConsoleModifiers.Control));
+
+    /// <summary>The Enter answers E offers: a class's own values, from a usable class, or from the fields of one that cannot be used.</summary>
+    /// <param name="Course">The course.</param>
+    /// <param name="Mode">The class alone, with your microphone, or in person.</param>
+    /// <param name="Source">The source, as class set takes it; null when the class has no one source to keep, so Enter is not offered.</param>
+    /// <param name="Microphone">Part of the microphone's name; null for the settings and Windows' default.</param>
+    /// <param name="Follows">The app the microphone follows, as the file writes it; null for none written.</param>
+    /// <param name="Camera">The camera, in person: part of its name, or any; null for none.</param>
+    /// <param name="CameraResolution">The camera's picture size; null for the setting.</param>
+    /// <param name="OutputFolder">The recordings folder; null for the settings'.</param>
+    /// <param name="Transcribe">True or false; null for a value that is neither, which Enter keeps as the file holds it.</param>
+    private sealed record Kept(string Course, RecordingMode Mode, SourceGiven? Source, string? Microphone, string? Follows, string? Camera, string? CameraResolution,
+        string? OutputFolder, bool? Transcribe)
+    {
+        /// <summary>The Enter answers of a usable class: its own values.</summary>
+        public static Kept FromClass(SavedClass saved) => new(saved.Course, saved.Mode,
+            saved.Mode == RecordingMode.Microphone ? new SourceGiven(SourceOption.InPerson, saved.Microphone)
+            : saved.Source switch
+            {
+                ClassSource.App app => new SourceGiven(SourceOption.App, app.ProcessName),
+                ClassSource.Device device => new SourceGiven(SourceOption.Device, device.NamePart),
+                _ => new SourceGiven(SourceOption.Device, "auto")
+            },
+            saved.Microphone, saved.Follows?.Word, saved.Camera, saved.CameraResolution, saved.OutputFolder, saved.Transcribe);
+
+        /// <summary>
+        /// The Enter answers of the class <paramref name="name"/> that cannot be used, from its <paramref name="fields"/> as the
+        /// file holds them, so that Enter at every question writes back what is there: the course, else the name; the mode in
+        /// any case, and one that is none of the three taken as with your microphone when a microphone or the app it follows
+        /// is set, else the class alone; the source in person, or the one app or device set, none when both are; and the rest
+        /// as written.
+        /// </summary>
+        public static Kept FromFields(string name, IReadOnlyDictionary<string, string?> fields)
+        {
+            // A field's text, trimmed; null when it is not there or holds only spaces.
+            string? Field(string field) => fields.TryGetValue(field, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
+
+            var microphone = Field(ClassFields.Microphone);
+            var follows = Field(ClassFields.MicrophoneFollows);
+            var mode = Field(ClassFields.Mode) is not { } modeText ? RecordingMode.Class
+                : Enum.GetNames<RecordingMode>().FirstOrDefault(known => known.Equals(modeText, StringComparison.OrdinalIgnoreCase)) is { } known ? Enum.Parse<RecordingMode>(known)
+                : microphone is not null || follows is not null ? RecordingMode.ClassAndMicrophone
+                : RecordingMode.Class;
+            var (app, device) = (Field(ClassFields.App), Field(ClassFields.Device));
+            var source = mode == RecordingMode.Microphone ? new SourceGiven(SourceOption.InPerson, microphone)
+                : app is not null && device is not null ? null
+                : app is not null ? new SourceGiven(SourceOption.App, app)
+                : new SourceGiven(SourceOption.Device, device ?? "auto");
+            bool? transcribe = Field(ClassFields.Transcribe) is not { } text ? true : bool.TryParse(text, out var yes) ? yes : null;
+            return new Kept(Field(ClassFields.Course) ?? name, mode, source, microphone, follows, Field(ClassFields.Camera), Field(ClassFields.CameraResolution),
+                Field(ClassFields.OutputFolder), transcribe);
+        }
+    }
 }
