@@ -53,6 +53,8 @@ public static class CommandServices
         services.AddSingleton(_ => new CommandOutput(Console.Out, Console.Error));
         services.AddTransient<SettingsCommand>();
         services.AddTransient<ClassCommand>();
+        services.AddTransient<ClassesMenu>();
+        services.AddTransient<SettingsMenu>();
 
         // Reports nothing until the real report at the start is registered; added only when no report is there yet.
         services.TryAddSingleton<IStartupReport, NoStartupReport>();

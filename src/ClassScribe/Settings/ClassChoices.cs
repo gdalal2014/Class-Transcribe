@@ -50,6 +50,12 @@ public sealed record ClassChoices
     /// <summary>True when --mic was given.</summary>
     public bool Mic { get; init; }
 
+    /// <summary>
+    /// True to record the class alone, without your microphone, as menu C's editor answers it: the microphone and the app it
+    /// followed go, and a class in person is refused, since in person the microphone is the source.
+    /// </summary>
+    public bool ClassAlone { get; init; }
+
     /// <summary>The microphone --mic named; null for Recording:Microphone and Windows' default.</summary>
     public string? MicName { get; init; }
 
@@ -111,6 +117,14 @@ public sealed record ClassChoices
                     mode = Set(fields, RecordingMode.Class);
                 }
             }
+        }
+
+        if (ClassAlone)
+        {
+            if (mode == RecordingMode.Microphone) return "a class in person records your microphone alone, so it cannot be recorded without it";
+            fields.Remove(ClassFields.Microphone);
+            fields.Remove(ClassFields.MicrophoneFollows);
+            mode = Set(fields, RecordingMode.Class);
         }
 
         if (Mic)

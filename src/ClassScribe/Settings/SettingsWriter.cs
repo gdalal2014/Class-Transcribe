@@ -84,6 +84,9 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
     /// <summary>Called between the check and the second read of the file, so that a test can save the file there, as another program would.</summary>
     internal Action? BeforeSecondRead { get; set; }
 
+    /// <summary>The file the writer changes: the user's own, made at the first change; the file beside the program when there is no user folder.</summary>
+    public string FilePath => places.UserFile ?? places.ProgramFile;
+
     /// <summary>
     /// Changes the user's file by <paramref name="edit"/>, described as <paramref name="what"/> in the log, as the class
     /// says. <paramref name="freshCopy"/> starts from the defaults instead of the file, for settings reset --all, which alone

@@ -105,6 +105,12 @@ public interface ICommandRunner
 
     /// <summary>class: lists, shows or changes the saved classes as <paramref name="request"/> asks (see <see cref="ClassCommand"/>). Returns the exit code.</summary>
     Task<int> ClassAsync(ClassRequest request);
+
+    /// <summary>Menu choice C: the saved classes, to start, add, change or remove one (see <see cref="ClassesMenu"/>). Returns the exit code.</summary>
+    Task<int> ClassesMenuAsync();
+
+    /// <summary>Menu choice S: the recordings folder, the camera picture size and the settings file (see <see cref="SettingsMenu"/>). Returns the exit code.</summary>
+    Task<int> SettingsMenuAsync();
 }
 
 /// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>
@@ -310,6 +316,20 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     {
         await using var scope = scopes.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<ClassCommand>().RunAsync(request);
+    }
+
+    /// <summary>Shows menu choice C, the saved classes (<see cref="ClassesMenu"/>), in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> ClassesMenuAsync()
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ClassesMenu>().RunAsync();
+    }
+
+    /// <summary>Shows menu choice S, the settings (<see cref="SettingsMenu"/>), in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> SettingsMenuAsync()
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<SettingsMenu>().RunAsync();
     }
 
     /// <summary>

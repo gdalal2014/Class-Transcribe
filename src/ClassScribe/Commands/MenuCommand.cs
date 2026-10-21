@@ -18,6 +18,9 @@ namespace ClassScribe.Commands;
 /// The menu reaches every command through the runner (<see cref="ICommandRunner"/>), which runs each in a scope of its
 /// own, the microphone menu of choice 7, the microphone check of choice 8 and Google Drive's menu of choice 9 among them,
 /// and the runs only through the report, so that it is made before the services of the background recorder are registered.
+/// <paramref name="classes"/>, the saved classes, are named in the header when one cannot be used and offered by choices 1
+/// and 2 (C lists them); <paramref name="writer"/> saves choice 6's pick as the default with S. Without them, as in tests
+/// that do not need them, there are neither.
 /// </summary>
 public sealed class MenuCommand(
     ICommandRunner commands,
@@ -32,8 +35,16 @@ public sealed class MenuCommand(
     RecordingNamePrompt prompt,
     IDesktop desktop,
     TimeProvider time,
-    ILogger<MenuCommand> logger)
+    ILogger<MenuCommand> logger,
+    SavedClasses? classes = null,
+    SettingsWriter? writer = null)
 {
+    /// <summary>The key of the saved classes, menu C.</summary>
+    private const char ClassesKey = 'C';
+
+    /// <summary>The key of the settings, menu S.</summary>
+    private const char SettingsKey = 'S';
+
     /// <summary>How many recent recordings choice 3 offers, so that one digit picks one.</summary>
     private const int RecentRecordings = 9;
 
@@ -147,11 +158,23 @@ public sealed class MenuCommand(
             // question for the recording's name; the log is written on a thread of its own.
             if (_staleCopyShown is null && settings.DescribeStaleCopy() is { } stale) ui.WriteLine($"WARNING  {stale}.");
 
-            // A recording runs whatever the file says, without the settings the check refuses (amendment 4); the rest wait.
-            if (!gate.TryOpen(picked is '1' or '2' ? GateUse.Recording : GateUse.MenuChoice)) return;
+            // S changes the settings through the writer, which checks each change itself, so a file the gate refuses can be
+            // fixed from it; it opens without the gate.
+            if (picked == SettingsKey)
+            {
+                await commands.SettingsMenuAsync();
+                return;
+            }
+
+            // A recording runs whatever the file says, without the settings the check refuses (amendment 4), and C starts a
+            // saved class, or changes one through the writer; the rest wait for a file that passes.
+            if (!gate.TryOpen(picked is '1' or '2' or ClassesKey ? GateUse.Recording : GateUse.MenuChoice)) return;
 
             switch (picked)
             {
+                case ClassesKey:
+                    await commands.ClassesMenuAsync();
+                    break;
                 case '1':
                     await RecordAsync(transcribe: false);
                     break;
@@ -222,6 +245,7 @@ public sealed class MenuCommand(
             ui.WriteLine($"Settings folder: {settings.Places.UserFolder}, from {SettingsPlaces.FolderVariable}, as in a dry run; your own settings are not read in this window.");
         if (settings.Places.DescribeMissing() is { } missing) ui.WriteLine($"ERROR  {missing}");
         if (DefaultChanges.HeaderLine(gate.OlderDefaults.Count) is { } older) ui.WriteLine(older);
+        foreach (var unusable in classes?.All().Where(entry => !entry.Usable) ?? []) ui.WriteLine($"WARNING  {unusable.CannotBeUsed}");
         _staleCopyShown = settings.DescribeStaleCopy();
         if (_staleCopyShown is { } stale) ui.WriteLine($"WARNING  {stale}.");
         if (gate.Problems is [_, ..] settingsProblems)
@@ -248,6 +272,8 @@ public sealed class MenuCommand(
         ui.WriteLine("  8  Check the microphone or a camera (opens nothing)");
         ui.WriteLine("  9  Google Drive: upload, free room on this laptop, sign in");
         ui.WriteLine($"  {YouTubeKey}  YouTube: record videos as they play, or download them, then transcribe");
+        ui.WriteLine($"  {ClassesKey}  Saved classes: start, add, change or remove one");
+        ui.WriteLine($"  {SettingsKey}  Settings: recordings folder, camera picture size, the settings file");
         if (report.RecordingNow() is { Home: RunHome.Separate }) ui.WriteLine($"  {ShowKey}  Show the recording in progress");
         ui.WriteLine("  Q  Quit");
         ui.WriteLine();
@@ -321,7 +347,10 @@ public sealed class MenuCommand(
             {
                 choice.Device = null;
                 choice.App = null;
-                ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed, whatever the settings say. To keep that, leave Recording:Device and Recording:App empty in {settings.Path}.");
+                if (writer is null)
+                    ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed, whatever the settings say. To keep that, leave Recording:Device and Recording:App empty in {settings.Path}.");
+                else
+                    await OfferToSaveAsync([("Recording:Device", [""]), ("Recording:App", [""])]);
                 return;
             }
 
@@ -329,10 +358,24 @@ public sealed class MenuCommand(
             {
                 var entry = entries[pressed.KeyChar - '1'];
                 entry.Pick();
-                ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed, whatever the settings say. To keep that, set {entry.Setting} to \"{entry.Name}\" in {settings.Path}.");
+                if (writer is null)
+                    ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed, whatever the settings say. To keep that, set {entry.Setting} to \"{entry.Name}\" in {settings.Path}.");
+                else
+                    await OfferToSaveAsync([(entry.Setting, [entry.Name]), (entry.Setting == "Recording:App" ? "Recording:Device" : "Recording:App", [""])]);
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// After a pick in choice 6 (layout-config 1.8): says what is recorded now, and S keeps it as the default, saving
+    /// <paramref name="settingsToSave"/> through the writer; any other key uses it until ClassScribe is closed.
+    /// </summary>
+    private async Task OfferToSaveAsync(IReadOnlyList<(string Name, string[] Values)> settingsToSave)
+    {
+        ui.WriteLine($"Recording from {choice.Description} until ClassScribe is closed, whatever the settings say.");
+        ui.WriteLine($"Press S to keep this as the default (saved in {writer!.FilePath}), or any other key to use it until ClassScribe is closed.");
+        if ((await ui.ReadKeyAsync(CancellationToken.None))?.Key == ConsoleKey.S) writer.SetAll(settingsToSave);
     }
 
     /// <summary>
@@ -368,7 +411,7 @@ public sealed class MenuCommand(
     private sealed record SourceEntry(string Line, string Name, string Setting, Action Pick);
 
     /// <summary>
-    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 9, A, which comes back as
+    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 9; C or S; A, which comes back as
     /// <see cref="ShowKey"/>, or Y, as <see cref="YouTubeKey"/>. Returns null for Q, for Ctrl+C, or when nobody can type.
     /// </summary>
     private async Task<char?> ReadChoiceAsync()
@@ -380,6 +423,8 @@ public sealed class MenuCommand(
             if (pressed.KeyChar is >= '1' and <= '9') return pressed.KeyChar;
             if (pressed.Key == ConsoleKey.A && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return ShowKey;
             if (pressed.Key == ConsoleKey.Y && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return YouTubeKey;
+            if (pressed.Key == ConsoleKey.C && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return ClassesKey;
+            if (pressed.Key == ConsoleKey.S && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return SettingsKey;
         }
     }
 
@@ -387,15 +432,59 @@ public sealed class MenuCommand(
     /// Choices 1 and 2: ask for the recording's name, then hand the runner a request to record it, started from the menu:
     /// a new run id, what menu choice 6 or the settings say to record, the recordings folder of the settings, no time
     /// limit, the results opened at the end, and the question whether to continue a recent recording of the same name
-    /// left to the starter, which asks it. 2 also transcribes it.
+    /// left to the starter, which asks it. 2 also transcribes it. A name that is a saved class's, or its course, is offered
+    /// first (layout-config 4.3, amendment 17): Enter records the saved class as saved, O records with choice 6's source
+    /// instead; this comes before the camera's question and the continue question, which the starter asks.
     /// </summary>
     private async Task RecordAsync(bool transcribe)
     {
         if (await prompt.AskAsync() is not { } name) return;
 
+        if (await OfferSavedClassAsync(name) is { } offer)
+        {
+            if (offer.Back) return;
+            if (offer.Class is { } saved)
+            {
+                var root = saved.OutputFolder is { } own ? ClassFolders.RootFor(own) : folders.Root;
+                await commands.RecordAsync(new RecordRequest(RunIds.New(time.GetUtcNow()), saved.Course, transcribe, saved.Plan, root, ContinueChoice.Ask,
+                    ContinueBaseName: null, Minutes: null, Open: true, ClassName: saved.Name), StartOrigin.Menu);
+                return;
+            }
+        }
+
         var request = new RecordRequest(RunIds.New(time.GetUtcNow()), name, transcribe, choice.Current, folders.Root, ContinueChoice.Ask,
             ContinueBaseName: null, Minutes: null, Open: true);
         await commands.RecordAsync(request, StartOrigin.Menu);
+    }
+
+    /// <summary>
+    /// When <paramref name="name"/> is a usable saved class's name or course, asks whether to record it as saved: "Mantiq is
+    /// a saved class (chrome, with your microphone (...)). Enter records it as saved; O records with choice 6's source
+    /// instead." With several classes of that course, a number picks one. Null when no saved class is meant; Back for Esc;
+    /// no class for O.
+    /// </summary>
+    private async Task<(bool Back, SavedClass? Class)?> OfferSavedClassAsync(string name)
+    {
+        var matching = classes?.Matching(name).Select(entry => entry.Class).OfType<SavedClass>().ToList() ?? [];
+        if (matching.Count == 0) return null;
+
+        if (matching.Count == 1)
+            ui.WriteLine($"{name} is a saved class ({matching[0].Describe()}). Enter records it as saved; O records with choice 6's source instead.");
+        else
+        {
+            ui.WriteLine($"{name} is the course of saved classes:");
+            for (var i = 0; i < matching.Count && i < 9; i++) ui.WriteLine($"  {i + 1}  {matching[i].Name}  {matching[i].Describe()}");
+            ui.WriteLine("Press a class's number to record it as saved; O records with choice 6's source instead.");
+        }
+
+        while (true)
+        {
+            var key = await ui.ReadKeyAsync(CancellationToken.None);
+            if (key is not { } pressed || pressed.Key == ConsoleKey.Escape || IsQuit(pressed)) return (true, null);
+            if (pressed.Key == ConsoleKey.O) return (false, null);
+            if (matching.Count == 1 && pressed.Key == ConsoleKey.Enter) return (false, matching[0]);
+            if (matching.Count > 1 && pressed.KeyChar is >= '1' and <= '9' && pressed.KeyChar - '1' < matching.Count) return (false, matching[pressed.KeyChar - '1']);
+        }
     }
 
     /// <summary>
