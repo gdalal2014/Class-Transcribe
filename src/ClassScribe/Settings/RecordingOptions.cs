@@ -164,4 +164,20 @@ public sealed class RecordingOptions
     /// The names are taken in any case; a number is refused.
     /// </summary>
     public ClassAppMute ClassAppMute { get; init; } = ClassAppMute.Unknown;
+
+    /// <summary>
+    /// The size of the camera's picture when a lesson is recorded with the camera: 480p (848x480), 720p (1280x720, the
+    /// default, about 2.3 GB an hour with the sound), 1080p (1920x1080), or a width and a height such as 1024x576, checked by
+    /// <see cref="Camera.CameraSize.TryParse"/>. --resolution and menu choice 7 choose another for a run; this setting is
+    /// read when neither does (amendment 39).
+    /// </summary>
+    public string CameraResolution { get; init; } = Camera.CameraSize.DefaultText;
+
+    /// <summary>
+    /// When on, and the microphone being recorded belongs to a webcam and sends only exact zeros, ClassScribe opens that
+    /// webcam's picture, shared and never exclusively, keeps none of it, and so wakes a webcam that sleeps by itself (the
+    /// OBSBOT's Device Auto Sleep); the camera's light then comes on. Off by default (camera-first 3.4). In this build the
+    /// setting is checked and shown by camera-check only: the wake itself comes once the camera probe has chosen how.
+    /// </summary>
+    public bool WakeCameraMicrophone { get; init; }
 }

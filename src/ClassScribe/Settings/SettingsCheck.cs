@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Drive;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -75,6 +76,10 @@ public sealed class SettingsCheck
             problems.Add($"{follows} is \"{recording.MicrophoneFollows}\"; {FollowsAdvice}");
         else if (rule is FollowRule.Named named && named.Matches(OwnProcessName))
             problems.Add($"{follows} is \"{recording.MicrophoneFollows}\", which names ClassScribe itself; {FollowsAdvice}");
+
+        // The camera's picture size: the one parser the command line and the menu use too (amendment 39).
+        if (!CameraSize.TryParse(recording.CameraResolution, out _))
+            problems.Add($"{Name(recordingSection, nameof(RecordingOptions.CameraResolution))} is \"{recording.CameraResolution}\"; it must be {CameraSize.Rule}.");
 
         const string elevenLabsSection = ElevenLabsOptions.SectionName;
         var elevenLabs = Bind<ElevenLabsOptions>(configuration, elevenLabsSection, problems);

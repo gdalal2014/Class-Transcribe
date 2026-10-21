@@ -878,6 +878,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `Default`), `Recording:MicrophoneFollows` (refused when empty or when it names ClassScribe; not
   read in app mode) and `Recording:ClassAppMute` (`Visible`, `Invisible`, `Unknown`; a fact about
   the class app, so no command-line option), plus `Transcript:ShowGapsLongerThanSeconds` (0 or more).
+  The camera's settings (camera-first step 11) are `Recording:CameraResolution` (`720p`; `480p`, `720p`, `1080p` in any
+  case or `WxH`, checked by `CameraSize.TryParse`, the one parser `--resolution` and menu choice 7 use too; amendment 39)
+  and `Recording:WakeCameraMicrophone` (false, a yes or no; in this build checked and shown by `camera-check` only, the
+  wake waits for the probe). New choices are new keys, not new values of an existing enum (amendment 5): an older build
+  refuses a value it does not know, and a key it does not know it passes over.
   The cost line's settings are `ElevenLabs:PricePerHourUsd` (0.22) and
   `ElevenLabs:KeytermsPricePerHourUsd` (0.05), each from 0 to 100 dollars an hour, and
   `ElevenLabs:ReadAccountUsage` (true). The Drive section (`DriveOptions`, `Drive/`): `Drive:FolderName`
