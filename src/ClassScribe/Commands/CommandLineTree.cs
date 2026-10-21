@@ -32,6 +32,12 @@ public enum CommandKind
     /// <summary>Showing a recording in progress, which the settings never hold up.</summary>
     Attach,
 
+    /// <summary>
+    /// settings and class, commands of their own kind: neither the gate nor the report at the start runs before them, since
+    /// they must be able to fix a file the gate refuses; the settings writer checks each change itself.
+    /// </summary>
+    Settings,
+
     /// <summary>Any other command: the settings are read and checked first, then the report at the start is printed.</summary>
     Command
 }
@@ -202,13 +208,21 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         return new(parsed, null);
     }
 
-    /// <summary>What <paramref name="parsed"/> asks for: help, the version, the menu, showing a recording in progress, or any other command.</summary>
+    /// <summary>
+    /// What <paramref name="parsed"/> asks for: help, the version, the menu, showing a recording in progress, a command of
+    /// its own kind (settings or class, or one of their commands), or any other command.
+    /// </summary>
     public CommandKind KindOf(ParseResult parsed)
     {
         var tree = Tree;
         if (parsed.Action is HelpWithExamples) return CommandKind.Help;
         if (parsed.Action is VersionLine) return CommandKind.Version;
         if (parsed.CommandResult.Command == tree.Root) return parsed.GetValue(tree.LonePath) is null ? CommandKind.Menu : CommandKind.Command;
+
+        for (SymbolResult? result = parsed.CommandResult; result is CommandResult command; result = command.Parent)
+        {
+            if (OwnKindWords.Contains(command.Command.Name)) return CommandKind.Settings;
+        }
 
         return parsed.CommandResult.Command.Name == AttachName ? CommandKind.Attach : CommandKind.Command;
     }
@@ -254,6 +268,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(CameraCheckCommand(optionNames, examples));
         root.Add(DriveCommand(optionNames, examples));
         root.Add(YouTubeCommand(optionNames, examples));
+        root.Add(SettingsCommandTree(examples));
         root.Add(AttachCommand(examples));
 
         var help = new HelpWithExamples(examples);

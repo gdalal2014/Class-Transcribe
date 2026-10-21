@@ -21,13 +21,17 @@ if (CameraProtocol.IsCameraProcessStart(args, out var cameraJobId))
 // device names such as "Intel®" as they are.
 ConsoleUi.UseUnicode();
 
-// Settings are read from the user's own folder when it holds a copy, else from the folder the app lives in, whatever
-// folder it is started from. Decided here, once (see SettingsPlaces).
+// settings and class answer a script through a pipe in UTF-8, and with --json keep standard output for the JSON alone.
+if (CommandLineTree.IsOwnKind(args)) ConsoleUi.UseUtf8WhenRedirected();
+
+// Settings are read from the user's own folder when it holds a file, else from the folder the app lives in, whatever
+// folder it is started from; which one is decided again at every read (see SettingsPlaces).
 var places = SettingsPlaces.ForThisUser(AppContext.BaseDirectory);
 int exitCode;
 try
 {
-    using var host = AppHost.Build(places, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable));
+    using var host = AppHost.Build(places, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable),
+        CommandLineTree.WantsJson(args) ? AppHost.LogToStandardError : null);
     exitCode = await AppHost.RunAsync(host.Services, args);
 }
 catch (Exception ex)

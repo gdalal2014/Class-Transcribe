@@ -46,6 +46,12 @@ public static class CommandServices
         services.AddTransient<DriveCommand>();
         services.AddTransient<DriveUploadCommand>();
 
+        // The commands of their own kind, settings and class, which answer on standard output and say what is wrong on
+        // standard error, read at the moment the output is made, so that a UTF-8 writer Program put in place for redirected
+        // output is the one used. The window alone has the settings writer they need; a recorder never resolves them.
+        services.AddSingleton(_ => new CommandOutput(Console.Out, Console.Error));
+        services.AddTransient<SettingsCommand>();
+
         // Reports nothing until the real report at the start is registered; added only when no report is there yet.
         services.TryAddSingleton<IStartupReport, NoStartupReport>();
 

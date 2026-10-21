@@ -148,6 +148,13 @@ public static class AppHost
         await services.GetRequiredService<App>().RunAsync(args);
 
     /// <summary>
+    /// Sends every console log line to standard error, as settings and class do with --json, so that standard output holds
+    /// the JSON alone (layout-config 1.8). Program passes it to <see cref="Build"/> as the services' last change.
+    /// </summary>
+    public static void LogToStandardError(IServiceCollection services) =>
+        services.Configure<ConsoleLoggerOptions>(console => console.LogToStandardErrorThreshold = LogLevel.Trace);
+
+    /// <summary>
     /// Puts the recorder's own services in place of the window's: the clock, the log every logger writes to, ClassScribe's
     /// own folder and the places of the settings and the glossary as given; the link's console, whose keys come from the
     /// windows; no window signals, since a recorder has no window; for each run, the link's status sink, which sends the

@@ -14,6 +14,9 @@ public interface IDesktop
 
     /// <summary>Opens a file in the app Windows uses for its type, such as Notepad for a .txt file.</summary>
     void OpenFile(string path);
+
+    /// <summary>Opens a text file in Notepad, whatever app Windows uses for its type, as settings open does with the settings file.</summary>
+    void OpenInNotepad(string path);
 }
 
 /// <summary>Opens folders and files the Windows way. A failure is logged rather than thrown: showing the result is a convenience.</summary>
@@ -24,6 +27,9 @@ public sealed class WindowsDesktop(ILogger<WindowsDesktop> logger) : IDesktop
 
     /// <inheritdoc />
     public void OpenFile(string path) => Start(new ProcessStartInfo(path) { UseShellExecute = true }, path);
+
+    /// <inheritdoc />
+    public void OpenInNotepad(string path) => Start(new ProcessStartInfo("notepad.exe", $"\"{path}\"") { UseShellExecute = false }, path);
 
     /// <summary>Starts the program that shows <paramref name="path"/>.</summary>
     private void Start(ProcessStartInfo start, string path)

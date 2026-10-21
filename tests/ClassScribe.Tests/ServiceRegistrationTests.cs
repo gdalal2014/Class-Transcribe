@@ -312,6 +312,7 @@ public class ServiceRegistrationTests
         Assert.That(window.ProgramFolder, Is.EqualTo(_folder.Path));
         Assert.That(app.Services.GetRequiredService<SettingsFile>().Places, Is.SameAs(window));
         Assert.That(app.Services.GetRequiredService<SettingsWriter>(), Is.SameAs(app.Services.GetRequiredService<SettingsWriter>()), "one writer for the process");
+        using (var scope = app.Services.CreateScope()) Assert.That(scope.ServiceProvider.GetRequiredService<SettingsCommand>(), Is.Not.Null, "the settings command, in a run's scope");
         Assert.That(app.Services.GetRequiredService<KeytermLoader>().ResolvePath("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
         Assert.That(recorder.Services.GetRequiredService<KeytermLoader>().ResolvePath("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
         Assert.That(new[] { window.UserFolder, background.UserFolder },

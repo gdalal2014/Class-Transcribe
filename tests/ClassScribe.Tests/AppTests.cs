@@ -163,6 +163,25 @@ public class AppTests
         _report.VerifyNoOtherCalls();
     }
 
+    /// <summary>
+    /// settings is a command of its own kind (layout-config 1.8): it must be able to fix a file the gate refuses, so neither
+    /// the gate nor the report at the start runs before it, and it runs with a broken file.
+    /// </summary>
+    [TestCase("settings", "list")]
+    [TestCase("settings", "set", "Recording:FlushSeconds", "5")]
+    [TestCase("SETTINGS", "reset", "--all")]
+    public async Task Settings_runs_without_the_gate_and_the_report(params string[] args)
+    {
+        BreakTheSettings();
+        _commands.Setup(c => c.SettingsAsync(It.IsAny<SettingsRequest>())).Callback(() => _order.Add("settings")).ReturnsAsync(0);
+
+        Assert.That(await RunAsync(args), Is.EqualTo(0));
+
+        Assert.That(_order, Is.EqualTo(new[] { "settings" }));
+        Assert.That(_gateLog.Messages, Is.Empty, "the settings were not read by the gate");
+        _report.VerifyNoOtherCalls();
+    }
+
     /// <summary>The menu reads the settings itself before each choice, and shows the report itself, so App does neither before it.</summary>
     [Test]
     public async Task The_menu_reads_the_settings_itself()

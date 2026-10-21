@@ -99,6 +99,9 @@ public interface ICommandRunner
 
     /// <summary>Menu choice Y: asks for the links, the course and whether to transcribe, then runs the batch (see <see cref="YouTubeMenu"/>). Returns the exit code.</summary>
     Task<int> YouTubeMenuAsync();
+
+    /// <summary>settings: shows or changes the settings as <paramref name="request"/> asks (see <see cref="SettingsCommand"/>). Returns the exit code.</summary>
+    Task<int> SettingsAsync(SettingsRequest request);
 }
 
 /// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>
@@ -290,6 +293,13 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         Require<YouTubeMenu>("YouTube videos are not part of this build yet.");
         await using var scope = scopes.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<YouTubeMenu>().RunAsync();
+    }
+
+    /// <summary>Runs the settings command (<see cref="SettingsCommand"/>) as <paramref name="request"/> asks, in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> SettingsAsync(SettingsRequest request)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<SettingsCommand>().RunAsync(request);
     }
 
     /// <summary>
