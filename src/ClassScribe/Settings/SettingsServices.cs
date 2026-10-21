@@ -25,8 +25,9 @@ public static class SettingsServices
     }
 
     /// <summary>
-    /// Adds <paramref name="places"/>, the settings file they name, and what reads it again into <paramref name="configuration"/>,
-    /// through <paramref name="accepted"/>, which must be one of its sources. AppHost adds them, since it builds that configuration.
+    /// Adds <paramref name="places"/>, the settings file they name, what reads it again into <paramref name="configuration"/>,
+    /// through <paramref name="accepted"/>, which must be one of its sources, and the one writer of the user's file, which
+    /// reloads through it. AppHost adds them, since it builds that configuration; a recorder never writes the settings.
     /// </summary>
     public static IServiceCollection AddSettingsReload(this IServiceCollection services, ConfigurationManager configuration, CheckedSettingsSource accepted, SettingsPlaces places)
     {
@@ -42,6 +43,7 @@ public static class SettingsServices
             provider.GetRequiredService<SettingsFile>(),
             provider.GetRequiredService<SettingsCheck>(),
             provider.GetRequiredService<ILogger<SettingsReloader>>()));
+        services.AddSingleton<SettingsWriter>();
         return services;
     }
 }

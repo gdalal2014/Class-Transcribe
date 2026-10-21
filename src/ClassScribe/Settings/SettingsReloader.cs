@@ -149,6 +149,33 @@ public sealed class SettingsReloader(ConfigurationManager configuration, Checked
         $"{path} is no longer there, so the settings stay as they were when it was last read. Put it back ({SettingsPlaces.PreviousFileName} beside it is the version before your last change), or start again from the defaults with: ClassScribe settings reset --all.";
 
     /// <summary>
+    /// What a settings file holding <paramref name="bytes"/> would give, through the reloader's own parse, staging and
+    /// check, without accepting any of it (layout-config 1.6 step 5): the settings writer checks a change with it before
+    /// writing it, and settings list and get read the values in force with it. Null bytes stand for no file. The caller
+    /// disposes the result.
+    /// </summary>
+    public StagedSettings Stage(byte[]? bytes)
+    {
+        if (bytes is not null && string.IsNullOrWhiteSpace(Encoding.UTF8.GetString(bytes).TrimStart(ByteOrderMark)))
+            return StagedSettings.Unusable(["appsettings.json is empty. Write { } in it at least; the settings it leaves out then keep their defaults."]);
+
+        IReadOnlyDictionary<string, string?> values;
+        try
+        {
+            values = Parse(new SettingsText("", bytes));
+        }
+        catch (Exception ex) when (ex is JsonException or FormatException)
+        {
+            // Deliberately not rethrown: bytes that are not valid JSON are the answer asked for, in the reloader's own words.
+            logger.LogDebug(ex, "The settings staged are not valid JSON");
+            return StagedSettings.Unusable(DescribeUnreadable(ex));
+        }
+
+        var staged = Stage(values);
+        return new StagedSettings([], values, staged, check.FindProblemsByKey(staged), check.FindWarnings(staged));
+    }
+
+    /// <summary>
     /// The settings a separate recorder is given: the Recording, ElevenLabs, Transcript, Drive and Logging sections as they
     /// are now, overrides from environment variables included, by setting name, such as Recording:FlushSeconds. None of the
     /// Drive settings holds a secret: the Google client and sign-in are never in the settings. Never the whole of the

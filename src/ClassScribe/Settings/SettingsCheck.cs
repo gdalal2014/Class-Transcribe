@@ -12,11 +12,20 @@ using Microsoft.Extensions.Logging.Console;
 namespace ClassScribe.Settings;
 
 /// <summary>
+/// One problem the check found: the sentence that says it, starting with the setting's name, and the settings it names,
+/// which a recording drops from a file that fails the check while it keeps the rest (build-plan amendment 4). A name may be
+/// a section, such as Logging:Console, which stands for every setting under it.
+/// </summary>
+/// <param name="Text">The sentence.</param>
+/// <param name="Keys">The settings it names, the first being the one the sentence starts with.</param>
+public sealed record SettingsProblem(string Text, IReadOnlyList<string> Keys);
+
+/// <summary>
 /// Checks settings before they are used. Settings are otherwise read only when first used, which for the transcript
 /// layout is after the paid upload; here a value that cannot be read, or one that makes no sense, is found at once, with
 /// a message that names the setting. The settings to check are an argument, so that a staged copy of them is checked
 /// before any of it reaches the app (see <see cref="SettingsReloader"/>). The log's own settings are checked too, since
-/// they are read again with the others.
+/// they are read again with the others. Each problem names its settings (see <see cref="FindProblemsByKey"/>).
 /// </summary>
 public sealed class SettingsCheck
 {
@@ -39,9 +48,15 @@ public sealed class SettingsCheck
     private static readonly string[] OneDriveVariables = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"];
 
     /// <summary>Lists what is wrong with <paramref name="configuration"/>, one sentence per problem, each starting with the setting's name. Empty when it can be used.</summary>
-    public IReadOnlyList<string> FindProblems(IConfiguration configuration)
+    public IReadOnlyList<string> FindProblems(IConfiguration configuration) => [.. FindProblemsByKey(configuration).Select(problem => problem.Text)];
+
+    /// <summary>
+    /// The same problems, each with the settings it names (see <see cref="SettingsProblem"/>): the setting each sentence
+    /// starts with, and for a channel in both YouTube lists, both lists.
+    /// </summary>
+    public IReadOnlyList<SettingsProblem> FindProblemsByKey(IConfiguration configuration)
     {
-        List<string> problems = [];
+        Found problems = [];
 
         const string recordingSection = RecordingOptions.SectionName;
         var recording = Bind<RecordingOptions>(configuration, recordingSection, problems);
@@ -140,7 +155,7 @@ public sealed class SettingsCheck
     /// http only to this computer, for a local stub in a dry run: the client secret and the tokens go there, so an address
     /// elsewhere without encryption is refused.
     /// </summary>
-    private static void CheckDrive(IConfiguration configuration, List<string> problems)
+    private static void CheckDrive(IConfiguration configuration, Found problems)
     {
         const string driveSection = DriveOptions.SectionName;
         var drive = Bind<DriveOptions>(configuration, driveSection, problems);
@@ -170,7 +185,7 @@ public sealed class SettingsCheck
     /// titles are read from must be https, or http to this computer only, for a local stub. YouTube:DriveUpload, an enum, is
     /// checked by its names when the section is bound, and a list written as one value as a value that cannot be read.
     /// </summary>
-    private static void CheckYouTube(IConfiguration configuration, List<string> problems)
+    private static void CheckYouTube(IConfiguration configuration, Found problems)
     {
         const string youTubeSection = YouTubeOptions.SectionName;
         var youTube = Bind<YouTubeOptions>(configuration, youTubeSection, problems);
@@ -192,11 +207,11 @@ public sealed class SettingsCheck
         CheckChannels(problems, mayDownload, youTube.MayDownloadChannels);
         CheckChannels(problems, course, youTube.CourseChannels);
         foreach (var both in youTube.MayDownloadChannels.Where(entry => youTube.CourseChannels.Contains(entry.Trim(), StringComparer.OrdinalIgnoreCase)))
-            problems.Add($"{mayDownload} names {both}, which is also in {course}; a course's channel is never downloaded, so take it out of one of them.");
+            problems.Add($"{mayDownload} names {both}, which is also in {course}; a course's channel is never downloaded, so take it out of one of them.", course);
     }
 
     /// <summary>Adds a problem for each entry of the channel list <paramref name="name"/> that is neither a UC id nor an @handle, by its place.</summary>
-    private static void CheckChannels(List<string> problems, string name, string[] channels)
+    private static void CheckChannels(Found problems, string name, string[] channels)
     {
         for (var i = 0; i < channels.Length; i++)
         {
@@ -213,7 +228,7 @@ public sealed class SettingsCheck
     /// name, and <paramref name="install"/> how to get it. Environment variables are expanded and quotes around it taken off,
     /// as the program is found with it. Empty finds the program, and passes.
     /// </summary>
-    private static void CheckExe(List<string> problems, string name, string? value, string what, string whose, string install)
+    private static void CheckExe(Found problems, string name, string? value, string what, string whose, string install)
     {
         CheckPath(problems, name, value);
         var path = YouTubeOptions.Expanded(value);
@@ -232,7 +247,7 @@ public sealed class SettingsCheck
     /// the service's own address, <paramref name="example"/>, as the example: a request's answer, or a secret, must never
     /// travel unencrypted beyond this computer.
     /// </summary>
-    private static void CheckLocalOrHttpsAddress(List<string> problems, string name, string? value, string example)
+    private static void CheckLocalOrHttpsAddress(Found problems, string name, string? value, string example)
     {
         var usable = Uri.TryCreate(value, UriKind.Absolute, out var address)
             && (address.Scheme == Uri.UriSchemeHttps
@@ -295,7 +310,7 @@ public sealed class SettingsCheck
     /// console log's settings and those of its formats must be values the console log takes. Read again while
     /// ClassScribe runs, a value the log cannot take would keep it from taking any new settings at all.
     /// </summary>
-    private static void CheckLogging(IConfiguration configuration, List<string> problems)
+    private static void CheckLogging(IConfiguration configuration, Found problems)
     {
         foreach (var section in configuration.GetSection(LoggingSection).GetChildren())
         {
@@ -323,7 +338,7 @@ public sealed class SettingsCheck
     /// Binds the section at <paramref name="path"/> to <typeparamref name="TOptions"/> as the log does, and adds a problem
     /// when that fails: a value of the wrong kind, or one the log refuses. Returns true when the section can be used.
     /// </summary>
-    private static bool CheckBinding<TOptions>(IConfiguration configuration, string path, List<string> problems) where TOptions : new()
+    private static bool CheckBinding<TOptions>(IConfiguration configuration, string path, Found problems) where TOptions : new()
     {
         try
         {
@@ -345,7 +360,7 @@ public sealed class SettingsCheck
     /// its setting needs. Those values are left out of the binding, so that the section's other settings
     /// can still be checked; the settings left out keep their defaults here.
     /// </summary>
-    private static TOptions Bind<TOptions>(IConfiguration configuration, string section, List<string> problems) where TOptions : class, new()
+    private static TOptions Bind<TOptions>(IConfiguration configuration, string section, Found problems) where TOptions : class, new()
     {
         var unreadable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var property in typeof(TOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(property => property.CanWrite))
@@ -400,7 +415,7 @@ public sealed class SettingsCheck
     }
 
     /// <summary>Adds a problem when a whole-number setting is below <paramref name="min"/> or above <paramref name="max"/>.</summary>
-    private static void CheckRange(List<string> problems, string name, int value, int min, int max = int.MaxValue)
+    private static void CheckRange(Found problems, string name, int value, int min, int max = int.MaxValue)
     {
         if (value >= min && value <= max) return;
 
@@ -411,7 +426,7 @@ public sealed class SettingsCheck
     }
 
     /// <summary>Adds a problem when a number setting is not a number from <paramref name="min"/> to <paramref name="max"/>, saying in what <paramref name="unit"/>, with an <paramref name="example"/>.</summary>
-    private static void CheckRange(List<string> problems, string name, double value, double min, double max, string unit, string example)
+    private static void CheckRange(Found problems, string name, double value, double min, double max, string unit, string example)
     {
         if (double.IsFinite(value) && value >= min && value <= max) return;
 
@@ -419,7 +434,7 @@ public sealed class SettingsCheck
     }
 
     /// <summary>Adds a problem when a path holds a character no path can hold, which is what a single backslash in appsettings.json often turns into.</summary>
-    private static void CheckPath(List<string> problems, string name, string? path)
+    private static void CheckPath(Found problems, string name, string? path)
     {
         if (path is not null && path.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
             problems.Add($"{name} holds a tab, a line break or another character that cannot be part of a path. {PathAdvice}");
@@ -427,4 +442,18 @@ public sealed class SettingsCheck
 
     /// <summary>The full name of a setting, such as Recording:FlushSeconds.</summary>
     private static string Name(string section, string setting) => $"{section}:{setting}";
+
+    /// <summary>
+    /// The problems found so far. Every sentence starts with the name of the setting it is about, followed by a space, so
+    /// that name is the problem's first key; a problem about several settings names the others too.
+    /// </summary>
+    private sealed class Found : List<SettingsProblem>
+    {
+        /// <summary>Adds the problem <paramref name="text"/>, about the setting its first word names and any of <paramref name="others"/>.</summary>
+        public void Add(string text, params string[] others)
+        {
+            var space = text.IndexOf(' ');
+            Add(new SettingsProblem(text, [space > 0 ? text[..space] : text, .. others]));
+        }
+    }
 }
