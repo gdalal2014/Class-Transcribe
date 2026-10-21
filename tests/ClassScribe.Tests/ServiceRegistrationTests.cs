@@ -574,6 +574,30 @@ public class ServiceRegistrationTests
         Assert.That(await app.Services.GetRequiredService<App>().RunAsync(["record", "Kalam"]), Is.EqualTo(2));
     }
 
+    /// <summary>
+    /// Through the real services, record with a saved class's name and no source points at --class (N5) even while a
+    /// setting outside Classes is refused, so that the first read left none of the file's values in force: the registered
+    /// saved classes read the file's own classes for the hint.
+    /// </summary>
+    [Test]
+    public async Task A_saved_class_is_pointed_at_class_through_the_real_services_while_a_setting_is_refused()
+    {
+        using var app = BuildApp(new() { ["Recording:FlushSeconds"] = "0", ["Classes:Mantiq:Course"] = "Mantiq", ["Classes:Mantiq:App"] = "chrome" });
+        var errors = new StringWriter();
+        var before = Console.Error;
+        Console.SetError(errors);
+        try
+        {
+            Assert.That(await app.Services.GetRequiredService<App>().RunAsync(["record", "Mantiq"]), Is.EqualTo(2));
+        }
+        finally
+        {
+            Console.SetError(before);
+        }
+
+        Assert.That(errors.ToString(), Does.Contain("Mantiq is a saved class: ClassScribe record --class \"Mantiq\""));
+    }
+
     /// <summary>Each run gets signals of its own, so a Ctrl+C from one run does not leak into the next.</summary>
     [Test]
     public void Each_run_gets_its_own_signals()

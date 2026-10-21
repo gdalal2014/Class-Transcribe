@@ -679,7 +679,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         if (sources.Count == 0 && !withClass)
         {
             yield return $"{word} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person";
-            if (!string.IsNullOrWhiteSpace(name) && classes?.Find(name) is { } saved)
+            if (!string.IsNullOrWhiteSpace(name) && (classes?.Find(name) ?? classes?.FindInFile(name)) is { } saved)
                 yield return $"{name} is a saved class: ClassScribe {word} --class \"{saved.Name}\"";
         }
 

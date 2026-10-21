@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using ClassScribe.Commands;
+using ClassScribe.Settings;
 using Moq;
 
 namespace ClassScribe.Tests;
@@ -167,6 +168,28 @@ public class AppTests
         Assert.That(_gateLog.Messages, Is.Empty, "the settings were not read");
         _commands.VerifyNoOtherCalls();
         _report.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// N5's hint is given even while a setting outside Classes keeps the file from the settings in force, which is all the
+    /// first read gives before the gate reads the file for a recording: record with a saved class's name and no source is a
+    /// mistake, exit 2, that names --class from the classes the file holds, as record --class would record them (a recording
+    /// drops only the setting refused).
+    /// </summary>
+    [Test]
+    public async Task A_saved_class_is_pointed_at_class_while_another_setting_is_refused()
+    {
+        _settings.Write("""{ "Recording": { "FlushSeconds": 0 }, "Classes": { "Mantiq": { "Course": "Mantiq", "App": "chrome" } } }""");
+        Assert.That(_settings.Reloader.TryReload().Usable, Is.False);
+        Assert.That(new SavedClasses(_settings.Configuration).Find("Mantiq"), Is.Null, "the settings in force hold none of the file's values");
+        _ui = new FakeConsoleUi();
+        _line = new TestCommandLine(_commands.Object, _ui, _settings, _folder.Path, gate: _settings.Gate(_gateLog),
+            classes: new SavedClasses(_settings.Configuration, _settings.File, _settings.Reloader));
+
+        Assert.That(await new App(_line.Tree, _line.Gate, _report.Object, _log).RunAsync(["record", "mantiq"]).WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(2));
+
+        Assert.That(_line.Mistakes, Has.Member("mantiq is a saved class: ClassScribe record --class \"Mantiq\""));
+        _commands.VerifyNoOtherCalls();
     }
 
     /// <summary>
