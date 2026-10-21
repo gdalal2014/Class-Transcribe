@@ -360,6 +360,17 @@ internal interface IMMDeviceRaw
     [PreserveSig] int GetState(out int state);
 }
 
+/// <summary>
+/// IMMEndpoint: whether an endpoint plays or records. Its one method, read only by the test guard of Windows' activation of
+/// a microphone (see <see cref="Desktop.DeviceGuards"/>), so that a test can never activate a capture endpoint's audio client.
+/// </summary>
+[ComImport, Guid("1BE09788-6894-4089-8586-9A2A6C265AC5"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMEndpointRaw
+{
+    /// <summary>The endpoint's direction: <see cref="CoreAudio.Render"/> for one that plays, <see cref="CoreAudio.Capture"/> for one that records.</summary>
+    [PreserveSig] int GetDataFlow(out int dataFlow);
+}
+
 /// <summary>IPropertyStore: a device's properties, read one by one or in order. Only reads are made; the two writes are declared to keep Windows' order.</summary>
 [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IPropertyStoreRaw

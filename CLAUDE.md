@@ -130,7 +130,14 @@ advice after a format error (10 A).
   the microphones (`WasapiMicrophoneProvider`, `WasapiMicrophoneSessions`, the usage record) never
   ask Windows for an audio client, the object through which a program opens a microphone, so they
   cannot open one; the fake endpoints fail a test that asks for one. Keep it that way: the menu, the
-  `devices` command, the microphone check and the watch on the class app all rest on it.
+  `devices` command, the microphone check and the watch on the class app all rest on it. No test opens a
+  camera either. `DeviceGuards` (`Desktop/DeviceGuards.cs`, the switch `ClassScribe.Devices.RefuseTheRealDevices`,
+  turned on by `TestGuards` beside the others) makes the real start of a camera process and Windows' activation of a
+  capture endpoint (`WindowsAudioClientActivator`, which reads the endpoint's direction through `IMMEndpointRaw` only
+  while the switch is on) refuse in a test, naming the fake (`FakeCameraProcess`, `FakeAudioClientActivator`); an output
+  device, which `AudioClient2SlotTests` stands in for a microphone, passes. An `[Explicit]` test that must open a real
+  device turns the switch off for itself and on again in a `finally`. Listing cameras (WinRT's device lists) opens
+  nothing, so no light comes on.
 - Tests never read or write the real `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` or
   `%USERPROFILE%\ClassScribe`: temporary folders only (`TestRuntime`, `TempFolder`). The real
   `%LOCALAPPDATA%\ClassScribe` holds the run files and logs of real classes now, and

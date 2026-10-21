@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Desktop;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
@@ -197,7 +198,9 @@ internal interface IAudioClientActivator
 /// <summary>
 /// Windows' activation of an endpoint's audio client, through ClassScribe's own declarations: the endpoint is found by
 /// its id, RawProcessingSupported is read from its property store, and IAudioClient is activated on it. Every object
-/// but the client is released before this returns; nothing is initialised, so no stream is opened.
+/// but the client is released before this returns; nothing is initialised, so no stream is opened. In a test run a capture
+/// endpoint, a microphone, is refused before anything is activated (see <see cref="DeviceGuards"/>); an output device, which
+/// the tests of this activator stand in for a microphone, is not.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class WindowsAudioClientActivator : IAudioClientActivator
@@ -211,6 +214,9 @@ internal sealed class WindowsAudioClientActivator : IAudioClientActivator
             CoreAudio.Check(enumerator.GetDevice(endpointId, out var device));
             try
             {
+                // Read only while the test guard is on, so that a class never makes this call.
+                if (DeviceGuards.RefusingTheRealDevices) RefuseCaptureInTests(DataFlowOf(device));
+
                 var store = CoreAudio.OpenPropertyStore(device);
                 bool rawSupported;
                 try
@@ -235,5 +241,26 @@ internal sealed class WindowsAudioClientActivator : IAudioClientActivator
         {
             CoreAudio.Release(enumerator);
         }
+    }
+
+    /// <summary>
+    /// Refuses, while the test guard is on (see <see cref="DeviceGuards"/>), an endpoint whose <paramref name="dataFlow"/> is
+    /// <see cref="CoreAudio.Capture"/>: a microphone's audio client is never activated in a test, which uses
+    /// FakeAudioClientActivator instead. An output device passes.
+    /// </summary>
+    internal static void RefuseCaptureInTests(int dataFlow)
+    {
+        if (dataFlow == CoreAudio.Capture) DeviceGuards.RefuseInTests("Windows' activation of a microphone's audio client", "FakeAudioClientActivator");
+    }
+
+    /// <summary>
+    /// Whether <paramref name="device"/> plays (<see cref="CoreAudio.Render"/>) or records (<see cref="CoreAudio.Capture"/>), as
+    /// its IMMEndpoint says; reading it opens nothing. The interface is another view of the same object, which the caller
+    /// releases.
+    /// </summary>
+    internal static int DataFlowOf(IMMDeviceRaw device)
+    {
+        CoreAudio.Check(((IMMEndpointRaw)device).GetDataFlow(out var dataFlow));
+        return dataFlow;
     }
 }
