@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
@@ -72,6 +73,41 @@ public class CameraHostTests
             Is.EqualTo($"The job speaks version {CameraProtocol.Version + 1} of the camera's lines; this camera process speaks version {CameraProtocol.Version}"));
         Assert.That(await NotTakenAsync(channel => channel.SendAsync(CameraProtocol.Job, new CameraLog("x", "y"), CameraJson.Default.CameraLog, CancellationToken.None)),
             Does.StartWith("The job could not be read"));
+    }
+
+    /// <summary>
+    /// A job line without a body, or with a body that is not an object, is answered with failed and why, exit 4, never an
+    /// exception: the camera process never throws.
+    /// </summary>
+    [TestCase("{\"type\":\"job\"}", "The job had no body")]
+    [TestCase("{\"type\":\"job\",\"body\":null}", "The job had no body")]
+    [TestCase("{\"type\":\"job\",\"body\":\"Record\"}", "The job's body was not an object")]
+    public async Task A_job_without_a_body_is_not_taken(string line, string why)
+    {
+        using var input = new MemoryStream(Encoding.UTF8.GetBytes(line + "\n"));
+        using var output = new MemoryStream();
+
+        Assert.That(await new CameraHost().RunAsync(JobId, input, output), Is.EqualTo(CameraProtocol.JobNotTakenExitCode));
+
+        await using var written = new LineChannel(new MemoryStream(output.ToArray()));
+        Assert.That(CameraLines.Read((await written.ReceiveAsync(CancellationToken.None))!), Is.EqualTo(new CameraFailed(why)));
+    }
+
+    /// <summary>
+    /// A line of a type this build knows, without a body or with one that is not an object, is a <see cref="JsonException"/>
+    /// from <see cref="CameraLines.Read"/>, as its summary says, never another exception; a type it does not know is passed
+    /// over.
+    /// </summary>
+    [Test]
+    public void A_known_line_without_a_body_is_a_JSON_exception()
+    {
+        using var nothing = JsonDocument.Parse("null");
+        using var list = JsonDocument.Parse("[1]");
+
+        Assert.Throws<JsonException>(() => CameraLines.Read(new Envelope(CameraProtocol.Log)));
+        Assert.Throws<JsonException>(() => CameraLines.Read(new Envelope(CameraProtocol.Failed, nothing.RootElement)));
+        Assert.Throws<JsonException>(() => CameraLines.Read(new Envelope(CameraProtocol.Status, list.RootElement)));
+        Assert.That(CameraLines.Read(new Envelope("frame")), Is.Null);
     }
 
     /// <summary>The starter closing its end before a job came ends the process with 4 and nothing written.</summary>

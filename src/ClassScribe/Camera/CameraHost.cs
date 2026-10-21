@@ -55,8 +55,9 @@ public sealed class CameraHost
     }
 
     /// <summary>
-    /// The job, the first line: null when none came within the patience or the input ended first; a reason when the first
-    /// line is not a job this build can read.
+    /// The job, the first line: null when the input ended before any line came; a reason when no job came within the
+    /// patience, or the first line is not a job this build can read (another type, no body, a body that is not an object,
+    /// one it cannot read, or another version). It never throws for what the line holds.
     /// </summary>
     private static async Task<(CameraJob? Job, string? Why)?> ReadJobAsync(LineChannel channel, CancellationToken patience)
     {
@@ -79,6 +80,11 @@ public sealed class CameraHost
         if (first is null) return null;
         if (first.Type != CameraProtocol.Job) return (null, $"The first line was \"{first.Type}\", not a job");
 
+        // A line without a body holds an undefined element, which Deserialize refuses with an InvalidOperationException
+        // rather than a JsonException, so the body's kind is looked at first, as the link's readers do.
+        if (first.Body.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) return (null, "The job had no body");
+        if (first.Body.ValueKind != JsonValueKind.Object) return (null, "The job's body was not an object");
+
         CameraJob? job;
         try
         {
@@ -90,7 +96,7 @@ public sealed class CameraHost
             return (null, $"The job could not be read: {ex.Message}");
         }
 
-        if (job is null) return (null, "The job was empty");
+        if (job is null) return (null, "The job had no body");
         return job.Protocol == CameraProtocol.Version
             ? (job, null)
             : (null, $"The job speaks version {job.Protocol} of the camera's lines; this camera process speaks version {CameraProtocol.Version}");

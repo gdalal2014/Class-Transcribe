@@ -47,18 +47,28 @@ public static class CameraLines
     /// <summary>
     /// The message <paramref name="envelope"/> holds, as its type says: a <see cref="CameraLog"/>, <see cref="CameraFailed"/>,
     /// <see cref="CameraOpened"/> and so on; null for a type this build does not know, which a reader passes over. Throws a
-    /// <see cref="JsonException"/> for a body that is not its type's.
+    /// <see cref="JsonException"/> for a body that is not its type's, none or one that is not an object included.
     /// </summary>
-    public static object? Read(Envelope envelope) => envelope.Type switch
+    public static object? Read(Envelope envelope)
     {
-        CameraProtocol.Log => envelope.Body.Deserialize(CameraJson.Default.CameraLog),
-        CameraProtocol.Failed => envelope.Body.Deserialize(CameraJson.Default.CameraFailed),
-        CameraProtocol.Opened => envelope.Body.Deserialize(CameraJson.Default.CameraOpened),
-        CameraProtocol.Status => envelope.Body.Deserialize(CameraJson.Default.CameraStatus),
-        CameraProtocol.Problem => envelope.Body.Deserialize(CameraJson.Default.CameraProblem),
-        CameraProtocol.Piece => envelope.Body.Deserialize(CameraJson.Default.CameraPiece),
-        CameraProtocol.Progress => envelope.Body.Deserialize(CameraJson.Default.CameraProgress),
-        CameraProtocol.Made => envelope.Body.Deserialize(CameraJson.Default.CameraMade),
-        _ => null
-    };
+        Func<JsonElement, object?>? read = envelope.Type switch
+        {
+            CameraProtocol.Log => body => body.Deserialize(CameraJson.Default.CameraLog),
+            CameraProtocol.Failed => body => body.Deserialize(CameraJson.Default.CameraFailed),
+            CameraProtocol.Opened => body => body.Deserialize(CameraJson.Default.CameraOpened),
+            CameraProtocol.Status => body => body.Deserialize(CameraJson.Default.CameraStatus),
+            CameraProtocol.Problem => body => body.Deserialize(CameraJson.Default.CameraProblem),
+            CameraProtocol.Piece => body => body.Deserialize(CameraJson.Default.CameraPiece),
+            CameraProtocol.Progress => body => body.Deserialize(CameraJson.Default.CameraProgress),
+            CameraProtocol.Made => body => body.Deserialize(CameraJson.Default.CameraMade),
+            _ => null
+        };
+        if (read is null) return null;
+
+        // A line without a body holds an undefined element, which Deserialize refuses with an InvalidOperationException, and a
+        // null body would read as no message at all: both are a body that is not the type's.
+        return envelope.Body.ValueKind == JsonValueKind.Object
+            ? read(envelope.Body)
+            : throw new JsonException($"The camera's \"{envelope.Type}\" line has no body that is an object.");
+    }
 }
