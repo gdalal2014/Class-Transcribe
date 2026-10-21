@@ -129,11 +129,15 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     public event EventHandler? DevicesChanged;
 
     /// <inheritdoc />
-    public IReadOnlyList<OutputDevice> GetOutputDevices() => RunListing(ListOutputDevices, "output devices");
+    public IReadOnlyList<OutputDevice> GetOutputDevices() => RunListing<IReadOnlyList<OutputDevice>>(ListOutputDevices, [], "output devices");
 
     /// <inheritdoc />
     /// <remarks>ClassScribe's own processes, this one and any other ClassScribe, are left out: a recording's own capture shows up as a session.</remarks>
-    public IReadOnlyList<PlayingApp> GetPlayingApps() => RunListing(ListPlayingApps, "apps with sound");
+    public IReadOnlyList<PlayingApp> GetPlayingApps() => GetPlayingAppsListing().Apps;
+
+    /// <inheritdoc />
+    /// <remarks>ClassScribe's own processes, this one and any other ClassScribe, are left out: a recording's own capture shows up as a session.</remarks>
+    public PlayingAppsListing GetPlayingAppsListing() => RunListing(ListPlayingApps, new PlayingAppsListing([], []), "apps with sound");
 
     /// <inheritdoc />
     public IAudioCapture CreateCapture(CaptureTarget target)
@@ -232,18 +236,18 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
 
     /// <summary>
     /// Runs one listing on the listings' enumerator, made first when there is none, and returns what it found;
-    /// nothing once the provider is disposed. A listing that fails with a failed result (see
+    /// <paramref name="nothing"/> once the provider is disposed. A listing that fails with a failed result (see
     /// <see cref="AudioFailures.IsFailedResult"/>) is noted at Debug and rethrown, and the enumerator is kept for the
     /// next one. While Windows' audio service is down every look fails, once a second, and the recording warns about
     /// that itself. <paramref name="what"/> names the listing in the log.
     /// </summary>
-    private IReadOnlyList<T> RunListing<T>(Func<IMMDeviceEnumeratorRaw, IReadOnlyList<T>> listing, string what)
+    private T RunListing<T>(Func<IMMDeviceEnumeratorRaw, T> listing, T nothing, string what)
     {
         try
         {
             lock (_listingGate)
             {
-                if (_disposed) return [];
+                if (_disposed) return nothing;
 
                 try
                 {
@@ -317,14 +321,16 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     }
 
     /// <summary>
-    /// The apps with sound open on an active output device, each with the device it plays through. An app with sound
-    /// open on several devices, or several times on one, is listed once, at its loudest, with the device it is loudest on.
-    /// A device whose sessions Windows will not list costs only its own apps, and a session that cannot be read only
-    /// itself (see <see cref="ForEachSession"/>): each is left out with a Debug line, and the rest are listed.
+    /// The apps with sound open on an active output device, each with the device it plays through, and what could not be
+    /// read. An app with sound open on several devices, or several times on one, is listed once, at its loudest, with the
+    /// device it is loudest on. A device whose sessions Windows will not list costs only its own apps, and a session that
+    /// cannot be read only itself (see <see cref="ForEachSession"/> and <see cref="AddApp"/>): each is noted with a Debug
+    /// line and among the unread, and the rest are listed.
     /// </summary>
-    private List<PlayingApp> ListPlayingApps(IMMDeviceEnumeratorRaw enumerator)
+    private PlayingAppsListing ListPlayingApps(IMMDeviceEnumeratorRaw enumerator)
     {
         var apps = new Dictionary<int, PlayingApp>();
+        var unread = new List<UnreadAudioSession>();
 
         // A browser has many sessions from a few processes, so each name is looked up once per listing; not for
         // longer, because Windows gives the number of a process that has ended to the next one.
@@ -334,32 +340,55 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
             var deviceName = NameOf(id);
             try
             {
-                ForEachSession(device, session => AddApp(session, id, deviceName, apps, processNames));
+                ForEachSession(device, deviceName, unread, session => AddApp(session, id, deviceName, apps, processNames, unread));
             }
             catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
             {
                 // Deliberately not rethrown: the apps on the other devices are still worth listing, and a recording of
                 // one of them must not stop for this device's sake; a failed result failed the whole look with the Zoom
-                // app in a meeting on 18 October. The next look, a second later, asks again. Noted at Debug, since it
+                // app in a meeting on 18 October. The device is noted among the unread, so that an app missing from the
+                // list is not taken for closed, and the next look, a second later, asks again. Noted at Debug, since it
                 // may come at every look.
+                unread.Add(new UnreadAudioSession(deviceName, null, AudioFailures.Describe(ex), WholeDevice: true));
                 _logger.LogDebug(ex, "Left out the apps on the output device \"{Device}\", whose sessions Windows did not list (0x{Code:X8})", deviceName, ex.HResult);
             }
         });
 
-        return [.. apps.Values];
+        return new PlayingAppsListing([.. apps.Values], unread);
     }
 
     /// <summary>
     /// Adds the app behind one audio session on the device <paramref name="deviceId"/>, named <paramref name="deviceName"/>,
-    /// to <paramref name="apps"/>, unless the session is to be left out.
+    /// to <paramref name="apps"/>, unless the session is to be left out. A session whose state Windows does not give is
+    /// asked for its process all the same: an app it names is listed, since its process is what a recording of it
+    /// captures, and the session is noted in <paramref name="unread"/>, as is one whose process Windows does not give
+    /// either, and one whose state was read but not its process; one whose process is no app's is left out without a note.
     /// </summary>
-    private void AddApp(object sessionObject, string deviceId, string deviceName, Dictionary<int, PlayingApp> apps, Dictionary<int, string?> processNames)
+    private void AddApp(object sessionObject, string deviceId, string deviceName, Dictionary<int, PlayingApp> apps, Dictionary<int, string?> processNames,
+        List<UnreadAudioSession> unread)
     {
         var session = (IAudioSessionControl2Raw)sessionObject;
         var result = session.GetState(out var state);
         if (result < 0)
         {
-            _logger.LogDebug("Left out an audio session whose state Windows did not give (0x{Code:X8})", result);
+            var ownerKnown = session.GetProcessId(out var ownerId) >= 0;
+            var owner = ownerKnown ? AppName((int)ownerId, processNames) : null;
+            if (ownerKnown && owner is null)
+            {
+                // Windows' own sounds, ClassScribe, or a process that has ended: no app, so nothing an app list misses.
+                _logger.LogDebug("Left out an audio session of no app (process {ProcessId}) whose state Windows did not give (0x{Code:X8})", (int)ownerId, result);
+                return;
+            }
+
+            unread.Add(new UnreadAudioSession(deviceName, owner, AudioFailures.Describe(CoreAudio.Failure(result, nameof(session.GetState)))));
+            if (owner is null)
+            {
+                _logger.LogDebug("Left out an audio session whose state Windows did not give (0x{Code:X8})", result);
+                return;
+            }
+
+            _logger.LogDebug("Could not read the state of {App}'s audio session (0x{Code:X8}); {Listed} is listed all the same", owner, result, owner);
+            Add(apps, new PlayingApp((int)ownerId, owner, deviceName, ReadLevel(sessionObject), deviceId));
             return;
         }
 
@@ -368,20 +397,33 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
         result = session.GetProcessId(out var id);
         if (result < 0)
         {
+            unread.Add(new UnreadAudioSession(deviceName, null, AudioFailures.Describe(CoreAudio.Failure(result, nameof(session.GetProcessId)))));
             _logger.LogDebug("Left out an audio session whose process Windows did not give (0x{Code:X8})", result);
             return;
         }
 
-        // 0 is Windows' own sounds. This process is ClassScribe: a capture it runs shows up as a session too.
-        var processId = (int)id;
-        if (processId <= 0 || processId == Environment.ProcessId) return;
+        if (AppName((int)id, processNames) is not { } name) return;
+
+        Add(apps, new PlayingApp((int)id, name, deviceName, ReadLevel(sessionObject), deviceId));
+    }
+
+    /// <summary>
+    /// The app behind <paramref name="processId"/>, by its process's name, looked up once per listing; null for a session
+    /// that is no app's: Windows' own sounds (0), this process, any other ClassScribe (a capture it runs shows up as a
+    /// session too) and a process that has ended.
+    /// </summary>
+    private string? AppName(int processId, Dictionary<int, string?> processNames)
+    {
+        if (processId <= 0 || processId == Environment.ProcessId) return null;
 
         if (!processNames.TryGetValue(processId, out var name)) processNames[processId] = name = _readProcessName(processId);
-        if (name is null || string.Equals(name, _ownName, StringComparison.OrdinalIgnoreCase)) return;
+        return name is null || string.Equals(name, _ownName, StringComparison.OrdinalIgnoreCase) ? null : name;
+    }
 
-        var level = ReadLevel(sessionObject);
-        if (!apps.TryGetValue(processId, out var known) || level > known.Level)
-            apps[processId] = new PlayingApp(processId, name, deviceName, level, deviceId);
+    /// <summary>Adds <paramref name="app"/> to <paramref name="apps"/>, or keeps the louder of it and the one already there for its process.</summary>
+    private static void Add(Dictionary<int, PlayingApp> apps, PlayingApp app)
+    {
+        if (!apps.TryGetValue(app.ProcessId, out var known) || app.Level > known.Level) apps[app.ProcessId] = app;
     }
 
     /// <summary>Identifier of the default output device, or null when there is none.</summary>
@@ -438,11 +480,12 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
     }
 
     /// <summary>
-    /// Calls <paramref name="visit"/> with each audio session open on the device. A session that Windows will not hand
-    /// out, or whose visit fails with a failed result, is left out with a Debug line, and the others are visited. Each
-    /// session is released after its visit, and the session listing and the session manager at the end.
+    /// Calls <paramref name="visit"/> with each audio session open on the device named <paramref name="deviceName"/>. A
+    /// session that Windows will not hand out, or whose visit fails with a failed result, is left out with a Debug line
+    /// and noted in <paramref name="unread"/>, and the others are visited. Each session is released after its visit, and
+    /// the session listing and the session manager at the end.
     /// </summary>
-    private void ForEachSession(IMMDeviceRaw device, Action<object> visit)
+    private void ForEachSession(IMMDeviceRaw device, string deviceName, List<UnreadAudioSession> unread, Action<object> visit)
     {
         var managerId = SessionManagerId;
         CoreAudio.Check(device.Activate(ref managerId, CoreAudio.AllContexts, IntPtr.Zero, out var manager));
@@ -464,8 +507,9 @@ public sealed class WasapiLoopbackCaptureProvider : ILoopbackCaptureProvider, IM
                     {
                         // Deliberately not rethrown: one session that cannot be read, as may be one of an app's in a call,
                         // must not cost the other apps, nor a recording of one of them; it is left out, as AddApp leaves out
-                        // a session whose state or process Windows does not give. Noted at Debug, since it may come at
-                        // every look.
+                        // a session whose process Windows does not give, and noted among the unread, so that an app missing
+                        // from the list is not taken for closed. Noted at Debug, since it may come at every look.
+                        unread.Add(new UnreadAudioSession(deviceName, null, AudioFailures.Describe(ex)));
                         _logger.LogDebug(ex, "Left out an audio session that could not be read (0x{Code:X8})", ex.HResult);
                     }
                     finally

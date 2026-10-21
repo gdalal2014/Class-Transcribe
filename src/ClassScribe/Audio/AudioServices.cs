@@ -75,6 +75,9 @@ internal sealed class LazyLoopbackCaptureProvider(Func<ILoopbackCaptureProvider>
     public IReadOnlyList<PlayingApp> GetPlayingApps() => _inner.Value.GetPlayingApps();
 
     /// <inheritdoc />
+    public PlayingAppsListing GetPlayingAppsListing() => _inner.Value.GetPlayingAppsListing();
+
+    /// <inheritdoc />
     public IAudioCapture CreateCapture(CaptureTarget target) => _inner.Value.CreateCapture(target);
 
     /// <summary>Disposes the real provider, when it was made.</summary>

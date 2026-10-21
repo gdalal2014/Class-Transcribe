@@ -214,11 +214,14 @@ public sealed class DeviceCheckListingTests
     }
 
     /// <summary>
-    /// A session whose state or process Windows does not give, as with one being torn down during the look, is left
-    /// out with a Debug line, and the other apps are still listed: one such session must not fail the whole look.
+    /// A session whose state Windows does not give, as with one being torn down during the look, still names its process
+    /// when Windows gives that: its app is listed all the same, since its process is what a recording of it captures. A
+    /// session whose process Windows does not give is left out. Each is noted with a Debug line and in the listing's
+    /// unread sessions, with the call that failed, and the other apps are still listed: one such session must not fail
+    /// the whole look.
     /// </summary>
     [Test]
-    public void A_session_whose_state_or_process_cannot_be_read_is_left_out_and_the_others_are_listed()
+    public void A_session_whose_state_or_process_cannot_be_read_is_noted_and_the_others_are_listed()
     {
         var processes = new Dictionary<int, string> { [5150] = "chrome", [6000] = "Zoom", [7000] = "Teams" };
         var speakers = new FakeOutputDevice(SpeakersId, 0.5f,
@@ -227,29 +230,37 @@ public sealed class DeviceCheckListingTests
             new FakeAudioSession(5150, 0.3f));
         using var provider = Provider(() => new FakeDeviceEnumerator(speakers), processes.GetValueOrDefault);
 
-        var apps = provider.GetPlayingApps();
+        var listing = provider.GetPlayingAppsListing();
 
         Assert.Multiple(() =>
         {
-            Assert.That(apps, Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
+            Assert.That(listing.Apps, Is.EqualTo(new[] { new PlayingApp(6000, "Zoom", "Speakers", 0.9f, SpeakersId), new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
+            Assert.That(listing.Unread, Is.EqualTo(new[]
+            {
+                new UnreadAudioSession("Speakers", "Zoom", Reason("GetState", FakeResults.DeviceInvalidated)),
+                new UnreadAudioSession("Speakers", null, Reason("GetProcessId", FakeResults.DeviceInvalidated))
+            }));
             Assert.That(_log.At(LogLevel.Debug), Is.EqualTo(new[]
             {
-                "Left out an audio session whose state Windows did not give (0x88890004)",
+                "Could not read the state of Zoom's audio session (0x88890004); Zoom is listed all the same",
                 "Left out an audio session whose process Windows did not give (0x88890004)"
             }));
+            Assert.That(provider.GetPlayingApps(), Is.EqualTo(listing.Apps), "the apps alone, as the listing has them");
         });
     }
 
     /// <summary>
     /// As with the Zoom app in a meeting on 18 October, a session that answers E_INVALIDARG to a call the listing makes
-    /// of it, its state, its process, or the listing's own call that hands it out, is left out with a Debug line that
-    /// gives the result, and every other app is listed. It used to reach the caller as an ArgumentException, which no
-    /// catch expected, so the whole look failed. Whatever was handed out is released, and only the enumerator is kept.
+    /// of it, its state, its process, or the listing's own call that hands it out, is noted with a Debug line that gives
+    /// the result, and in the listing's unread sessions with the call, and every other app is listed. A session whose
+    /// state alone could not be read keeps its app listed by its process. It used to reach the caller as an
+    /// ArgumentException, which no catch expected, so the whole look failed. Whatever was handed out is released, and only
+    /// the enumerator is kept.
     /// </summary>
-    [TestCase("GetState")]
-    [TestCase("GetProcessId")]
-    [TestCase("GetSession")]
-    public void A_session_that_answers_E_INVALIDARG_is_left_out_and_the_other_apps_are_listed(string call)
+    [TestCase("GetState", true)]
+    [TestCase("GetProcessId", false)]
+    [TestCase("GetSession", false)]
+    public void A_session_that_answers_E_INVALIDARG_is_noted_and_the_other_apps_are_listed(string call, bool zoomListed)
     {
         var ledger = new FakeComLedger();
         var processes = new Dictionary<int, string> { [5150] = "chrome", [6000] = "Zoom" };
@@ -264,20 +275,25 @@ public sealed class DeviceCheckListingTests
             DeviceName, processes.GetValueOrDefault, ledger.Release);
         _log.Clear();
 
-        var apps = provider.GetPlayingApps();
+        var listing = provider.GetPlayingAppsListing();
         var heldBetweenListings = ledger.Unreleased;
         provider.Dispose();
 
+        var chrome = new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId);
         Assert.Multiple(() =>
         {
-            Assert.That(apps, Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
-            Assert.That(_log.At(LogLevel.Debug), Has.Exactly(1).Matches<string>(line => line.StartsWith("Left out an audio session", StringComparison.Ordinal) && line.Contains("(0x80070057)")));
+            Assert.That(listing.Apps, Is.EqualTo(zoomListed ? new[] { new PlayingApp(6000, "Zoom", "Speakers", 0.9f, SpeakersId), chrome } : [chrome]));
+            Assert.That(listing.Unread, Is.EqualTo(new[] { new UnreadAudioSession("Speakers", zoomListed ? "Zoom" : null, Reason(call, FakeResults.InvalidArgument)) }));
+            Assert.That(_log.At(LogLevel.Debug), Has.Exactly(1).Matches<string>(line => line.Contains("audio session", StringComparison.Ordinal) && line.Contains("(0x80070057)")));
             Assert.That(_log.Messages, Has.Count.EqualTo(1), "a Debug line alone: the look comes once a second");
             Assert.That(heldBetweenListings, Is.EqualTo(new[] { "FakeDeviceEnumerator x1" }), "held between listings");
             Assert.That(ledger.Unreleased, Is.Empty, "held after Dispose");
             Assert.That(ledger.OverReleased, Is.Empty, "released without being held");
         });
     }
+
+    /// <summary>The words the listing gives for <paramref name="call"/> failing with <paramref name="result"/>: the call, Windows' words and the result.</summary>
+    private static string Reason(string call, int result) => AudioFailures.Describe(CoreAudio.Failure(result, call));
 
     /// <summary>
     /// A session whose level meter answers E_INVALIDARG reads as silence, as a meter that fails always did, and its app is
@@ -318,7 +334,8 @@ public sealed class DeviceCheckListingTests
         _log.Clear();
 
         var devices = provider.GetOutputDevices();
-        var apps = provider.GetPlayingApps();
+        var listing = provider.GetPlayingAppsListing();
+        var apps = listing.Apps;
 
         Assert.Multiple(() =>
         {
@@ -328,6 +345,8 @@ public sealed class DeviceCheckListingTests
                 new OutputDevice(HeadphonesId, "Headphones", IsDefault: false, Level: 0)
             }));
             Assert.That(apps, Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
+            Assert.That(listing.Unread, Is.EqualTo(new[] { new UnreadAudioSession("Headphones", null, Reason("Activate", FakeResults.InvalidArgument), WholeDevice: true) }),
+                "the device whose sessions could not be listed, with the call");
             Assert.That(_log.At(LogLevel.Debug), Has.Exactly(1).Matches<string>(line => line.Contains("\"Headphones\"") && line.Contains("(0x80070057)")), "the device whose apps were left out");
             Assert.That(_log.At(LogLevel.Information).Concat(_log.At(LogLevel.Warning)), Is.Empty);
         });

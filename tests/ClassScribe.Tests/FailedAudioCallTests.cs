@@ -8,6 +8,7 @@ using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;
@@ -95,6 +96,73 @@ public sealed class FailedAudioCallTests
 
         Assert.That(failure!.Message, Is.EqualTo(Marshal.GetPInvokeErrorMessage(FakeResults.InvalidArgument)));
         Assert.That(failure.Message, Does.Not.Contain("expected range"));
+    }
+
+    /// <summary>
+    /// A failure notes which of Windows' calls answered with it, named from the checked expression (the outermost call,
+    /// past a cast), and the words a listing gives for it start with that call, so that the next time a call fails with
+    /// the Zoom app in a meeting, the devices command and the microphone check say which. An expression that calls
+    /// nothing, such as a variable holding a result, names no call.
+    /// </summary>
+    [TestCase("control.GetState(out var state)", "GetState")]
+    [TestCase("((IAudioSessionManager2Raw)activated).GetSessionEnumerator(out list)", "GetSessionEnumerator")]
+    [TestCase("device.Activate(ref interfaceId, CoreAudio.AllContexts, IntPtr.Zero, out activated)", "Activate")]
+    [TestCase("result", null)]
+    public void A_failure_names_the_call_it_came_from(string expression, string? call)
+    {
+        var failure = Assert.Throws<COMException>(() => CoreAudio.Check(FakeResults.InvalidArgument, expression))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(AudioFailures.CallOf(failure), Is.EqualTo(call));
+            Assert.That(AudioFailures.Describe(failure), Is.EqualTo(call is null ? $"{InvalidArgumentWords} (0x80070057)" : $"{call}: {InvalidArgumentWords} (0x80070057)"));
+            Assert.That(failure.Message, Is.EqualTo(Marshal.GetPInvokeErrorMessage(FakeResults.InvalidArgument)), "Windows' own words, as before");
+        });
+    }
+
+    /// <summary>The compiler hands the checked expression over by itself, so every check names its call without being told.</summary>
+    [Test]
+    public void A_checked_call_is_named_without_being_told()
+    {
+        var session = new FakeAudioSession(ZoomMeeting, 0.5f) { StateFailure = FakeResults.InvalidArgument };
+
+        var failure = Assert.Throws<COMException>(() => CoreAudio.Check(session.GetState(out _)))!;
+
+        Assert.That(AudioFailures.CallOf(failure), Is.EqualTo("GetState"));
+    }
+
+    /// <summary>
+    /// The Zoom app recorded by itself: when the listing cannot read the Zoom app's only session, so that the app is
+    /// missing from the apps with sound, the app has not been seen to close, so no warning says that it has; the
+    /// capture already open goes on, and one line at Information says why, naming the call that failed. Before, the
+    /// warning <c>"zoom" has closed; recording silence until it plays again</c> came while the Zoom app was open and
+    /// recorded, and again each time its session came back and failed again.
+    /// </summary>
+    [Test, Category("WindowsAudio")]
+    public void A_recorded_Zoom_app_whose_only_session_cannot_be_read_is_not_said_to_have_closed()
+    {
+        var processes = new Dictionary<int, string> { [ZoomMeeting] = "Zoom", [Chrome] = "chrome" };
+        var speakers = new FakeOutputDevice(SpeakersId, 0.5f,
+            new FakeAudioSession(ZoomMeeting, 0.6f) { HandOutFailure = FakeResults.InvalidArgument }, new FakeAudioSession(Chrome, 0.3f));
+        using var listings = new WasapiLoopbackCaptureProvider(NullLogger<WasapiLoopbackCaptureProvider>.Instance,
+            () => new FakeDeviceEnumerator(speakers) { DefaultId = SpeakersId }, _ => "Speakers", processes.GetValueOrDefault);
+        var log = new RecordingLogger<CaptureChooser>();
+        var chooser = new CaptureChooser(_time, new ClassSource.App("zoom"), log);
+        var recorded = $"process:{ZoomMeeting}";
+
+        var first = chooser.Choose(listings, recorded, sinceRecordedSound: null);
+        var second = chooser.Choose(listings, recorded, sinceRecordedSound: null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That((first, second), Is.EqualTo(((CaptureTarget?)null, (CaptureTarget?)null)), "nothing to move to: the open capture goes on");
+            Assert.That(log.Problems, Is.Empty, "no \"has closed\" warning");
+            Assert.That(log.Entries, Is.EqualTo(new[]
+            {
+                (LogLevel.Information, "\"zoom\" is not among the apps with sound at this look, but ClassScribe could not read an audio session on \"Speakers\" " +
+                    $"(GetSession: {InvalidArgumentWords} (0x80070057)), which may be its; its capture goes on")
+            }));
+        });
     }
 
     /// <summary>A success is not a failure: S_OK, S_FALSE, and AUDCLNT_S_NO_SINGLE_PROCESS, which a session that spans processes answers.</summary>
@@ -219,6 +287,75 @@ public sealed class FailedAudioCallTests
     }
 
     /// <summary>
+    /// The Zoom app's own launcher: the class recorded from the Zoom app, and your microphone following it. The Zoom app's
+    /// session on the microphone answers E_INVALIDARG when asked for its state at every look, so the sessions alone cannot
+    /// say whether it listens; while Windows' usage record says the Zoom app is using the microphone, the record stands in
+    /// for the state, the gate opens, and your voice is written beside the class. On 20 October the watch read nothing
+    /// known at every look, and your voice was dropped for the whole class.
+    /// </summary>
+    [Test]
+    public async Task Following_the_Zoom_app_whose_session_cannot_be_read_your_voice_is_recorded_while_the_usage_record_says_it_uses_the_microphone()
+    {
+        var record = new FakeMicrophoneUsageRecord();
+        record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: true));
+        using var run = ZoomAppWithYourMicrophone(record);
+
+        var (samples, gate, why) = await run.RecordAsync(_time);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(samples, Has.Some.EqualTo(9), "your voice was written");
+            Assert.That(gate, Is.EqualTo(MicrophoneGateState.Recording), why);
+            Assert.That(run.Recording.Watch!.Failure, Is.Null, "the watch never stopped");
+            Assert.That(_logs.Messages, Has.Some.StartsWith("Windows would not give the state of zoom's session on"), "said why the record decides");
+        });
+    }
+
+    /// <summary>
+    /// The same, with nothing in Windows' usage record about the Zoom app: nothing is known of its listening, so nothing
+    /// from the microphone is written, and the gate says, in the words that become the run's Alert after 10 seconds
+    /// (CANNOT READ THE MICROPHONE SESSIONS), whose session could not be read and which of Windows' calls failed. The
+    /// watch keeps looking, so that your voice is recorded again as soon as the session can be read.
+    /// </summary>
+    [Test]
+    public async Task Following_the_Zoom_app_whose_session_cannot_be_read_nothing_is_written_without_the_usage_record_and_the_gate_says_whose()
+    {
+        using var run = ZoomAppWithYourMicrophone(new FakeMicrophoneUsageRecord());
+
+        var (samples, gate, why) = await run.RecordAsync(_time);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(samples, Has.None.EqualTo(9), "nothing of your voice was written");
+            Assert.That(gate, Is.EqualTo(MicrophoneGateState.Unreadable));
+            Assert.That(why, Is.EqualTo($"cannot read zoom's microphone session: session 2 of 2 (Zoom, pid 9090) not readable: GetState: {InvalidArgumentWords} (0x80070057)"));
+            Assert.That(run.Recording.Watch!.Failure, Is.Null, "the watch never stopped");
+        });
+    }
+
+    /// <summary>Windows' own words for E_INVALIDARG, "The parameter is incorrect." on an English Windows.</summary>
+    private static string InvalidArgumentWords => Marshal.GetPInvokeErrorMessage(FakeResults.InvalidArgument).Trim();
+
+    /// <summary>
+    /// A recording as the Zoom app's launcher makes it: the class from the Zoom app's process, your microphone (the
+    /// array) following the Zoom app, read through the real sessions reader, on which the Zoom app's session answers
+    /// E_INVALIDARG when asked for its state; <paramref name="record"/> is Windows' usage record. The class app's mute
+    /// is set Visible, so that the gate is armed from the start.
+    /// </summary>
+    private ZoomRun ZoomAppWithYourMicrophone(FakeMicrophoneUsageRecord record)
+    {
+        var reader = SessionsReader(Array.Id, Array.Name);
+        var theClass = new FakeCaptureProvider();
+        theClass.ConnectDevice("Speakers");
+        var zoom = theClass.AddApp(ZoomMeeting, "Zoom", "Speakers", capture: new FakeAudioCapture(Pcm48KMono, "Zoom", $"process:{ZoomMeeting}") { DeliversContinuously = true })!;
+        var microphones = new FakeMicrophoneProvider().Connect(Array);
+        var microphone = microphones.Prepare(new FakeAudioCapture(Pcm48KMono, Array.Name, Array.Id) { DeliversContinuously = true });
+        var recording = (TrackSet)Factory(theClass, reader, microphones, new RecordingOptions { ClassAppMute = ClassAppMute.Visible }, record)
+            .Create(new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.App("zoom"), new MicrophoneChoice(null, Follows: null)), new RecordingClock(_time));
+        return new ZoomRun(reader, recording, zoom, microphone, _files);
+    }
+
+    /// <summary>
     /// The sessions reader over a fake of Windows' enumerator with one microphone, <paramref name="endpointId"/> named
     /// <paramref name="name"/>, on which chrome's audio service is listening and the Zoom app holds a session that answers
     /// E_INVALIDARG when asked for its state.
@@ -232,9 +369,14 @@ public sealed class FailedAudioCallTests
             device => ((FakeMicrophoneEndpoint)device).Name);
     }
 
-    /// <summary>The registered recording factory over <paramref name="loopback"/> and <paramref name="sessions"/>, with <paramref name="microphones"/> (none unless given) and <paramref name="options"/> (the defaults unless given).</summary>
-    private TrackSetFactory Factory(ILoopbackCaptureProvider loopback, IMicrophoneSessions sessions, FakeMicrophoneProvider? microphones = null, RecordingOptions? options = null) =>
-        new(loopback, microphones ?? new FakeMicrophoneProvider(), sessions, new FakeMicrophoneUsageRecord(), new FakeProcessNames(), new FakeOwnProcesses(Laptop.OwnProcess),
+    /// <summary>
+    /// The registered recording factory over <paramref name="loopback"/> and <paramref name="sessions"/>, with
+    /// <paramref name="microphones"/> (none unless given), <paramref name="options"/> (the defaults unless given) and
+    /// <paramref name="record"/>, Windows' usage record (an empty one unless given).
+    /// </summary>
+    private TrackSetFactory Factory(ILoopbackCaptureProvider loopback, IMicrophoneSessions sessions, FakeMicrophoneProvider? microphones = null, RecordingOptions? options = null,
+        FakeMicrophoneUsageRecord? record = null) =>
+        new(loopback, microphones ?? new FakeMicrophoneProvider(), sessions, record ?? new FakeMicrophoneUsageRecord(), new FakeProcessNames(), new FakeOwnProcesses(Laptop.OwnProcess),
             new FreezeWatch(new FakeSystemTimes(_time), _time, NullLogger<FreezeWatch>.Instance), TestOptions.Create(options ?? new RecordingOptions()),
             TestOptions.Create(new TranscriptOptions()), _time, _logs);
 
@@ -245,6 +387,52 @@ public sealed class FailedAudioCallTests
     private static int Count(List<WatchLook> looks)
     {
         lock (looks) return looks.Count;
+    }
+
+    /// <summary>
+    /// A recording of the class from the Zoom app with your microphone following it, as <see cref="ZoomAppWithYourMicrophone"/>
+    /// makes it, with the sessions reader it reads through and the two captures a test feeds.
+    /// </summary>
+    /// <param name="Reader">The real sessions reader, over fakes of Windows' objects.</param>
+    /// <param name="Recording">The recording.</param>
+    /// <param name="ClassSound">The capture of the Zoom app's sound.</param>
+    /// <param name="Microphone">The capture of your microphone.</param>
+    /// <param name="Files">Where the recording writes.</param>
+    private sealed record ZoomRun(WasapiMicrophoneSessions Reader, TrackSet Recording, FakeAudioCapture ClassSound, FakeAudioCapture Microphone, RecordingFiles Files)
+        : IDisposable
+    {
+        /// <summary>
+        /// Starts the recording, hands over a packet of the class and, a tenth of a second later, one of your voice, lets
+        /// the watch look for a second and a half, four times a second, and stops. Returns your microphone's samples, and
+        /// the gate's state with its words just before the stop.
+        /// </summary>
+        public async Task<(short[] Samples, MicrophoneGateState Gate, string? Why)> RecordAsync(ManualTimeProvider time)
+        {
+            var looks = 0;
+            Recording.Watch!.Looked += (_, _) => Interlocked.Increment(ref looks);
+
+            Recording.Start(Files, TimeSpan.Zero);
+            await Wait.UntilAsync(() => Volatile.Read(ref looks) >= 1);
+            var origin = time.GetTimestamp();
+            ClassSound.Deliver(Packet(7), origin);
+            Microphone.Deliver(Packet(9), origin + TimeSpan.FromSeconds(0.1).Ticks);
+            for (var look = 2; look <= 7; look++)
+            {
+                time.Advance(ClassMicrophoneWatch.Interval);
+                await Wait.UntilAsync(() => Volatile.Read(ref looks) >= look);
+            }
+
+            var (gate, why) = Recording.Gate!.Describe();
+            var summary = Recording.Stop();
+            return ([.. summary.MicrophoneSegments.SelectMany(part => TestAudio.ReadWav(part).Samples)], gate, why);
+        }
+
+        /// <summary>Disposes the recording and the reader.</summary>
+        public void Dispose()
+        {
+            Recording.Dispose();
+            Reader.Dispose();
+        }
     }
 
     /// <summary>
@@ -265,6 +453,9 @@ public sealed class FailedAudioCallTests
 
         /// <inheritdoc />
         public IReadOnlyList<PlayingApp> GetPlayingApps() => listings.GetPlayingApps();
+
+        /// <inheritdoc />
+        public PlayingAppsListing GetPlayingAppsListing() => listings.GetPlayingAppsListing();
 
         /// <inheritdoc />
         public IAudioCapture CreateCapture(CaptureTarget target) => captures.CreateCapture(target);

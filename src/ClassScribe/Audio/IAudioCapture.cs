@@ -104,6 +104,32 @@ public sealed record OutputDevice(string Id, string Name, bool IsDefault, float 
 /// <param name="DeviceId">Windows' identifier for the device the app plays through, which says whether that device is heard in the room; empty when not known.</param>
 public sealed record PlayingApp(int ProcessId, string Name, string DeviceName, float Level, string DeviceId = "");
 
+/// <summary>
+/// What the apps listing could not read in full: one audio session on an output device, or all of a device's sessions
+/// when Windows would not list them.
+/// </summary>
+/// <param name="DeviceName">The output device.</param>
+/// <param name="ProcessName">The app the session belongs to, when Windows named its process; null otherwise, and for a whole device.</param>
+/// <param name="Reason">Which call failed and why, such as "GetState: The parameter is incorrect. (0x80070057)".</param>
+/// <param name="WholeDevice">True when none of the device's sessions could be listed, rather than one session not read.</param>
+public sealed record UnreadAudioSession(string DeviceName, string? ProcessName, string Reason, bool WholeDevice = false)
+{
+    /// <summary>
+    /// What could not be read, with the reason, in words for a line: <c>Zoom's audio session on "Speakers" (GetState: ...)</c>,
+    /// <c>an audio session on "Speakers" (GetSession: ...)</c> or <c>the audio sessions on "Headphones" (Activate: ...)</c>.
+    /// </summary>
+    public string Describe()
+    {
+        var what = WholeDevice ? "the audio sessions" : ProcessName is { } name ? $"{name}'s audio session" : "an audio session";
+        return $"{what} on \"{DeviceName}\" ({Reason})";
+    }
+}
+
+/// <summary>The apps with sound open, as one look listed them, and what that look could not read.</summary>
+/// <param name="Apps">The apps, as <see cref="ILoopbackCaptureProvider.GetPlayingApps"/> lists them.</param>
+/// <param name="Unread">The sessions, or the devices' lists of sessions, that could not be read in full; empty when everything was.</param>
+public sealed record PlayingAppsListing(IReadOnlyList<PlayingApp> Apps, IReadOnlyList<UnreadAudioSession> Unread);
+
 /// <summary>What a capture records: an output device, or the sound of one app and its child processes.</summary>
 /// <param name="Id">The device's identifier, or <c>process:</c> and the app's process id.</param>
 /// <param name="Name">The device's or the app's name, for the log.</param>
@@ -132,6 +158,14 @@ public interface ILoopbackCaptureProvider : IDisposable
 
     /// <summary>The apps that have sound open on an output device right now, with how loud each is playing.</summary>
     IReadOnlyList<PlayingApp> GetPlayingApps();
+
+    /// <summary>
+    /// The apps as <see cref="GetPlayingApps"/> lists them, with what the listing could not read in full: an app whose
+    /// process Windows named is listed even when its session's state could not be read, since its process is what a
+    /// recording of it captures; any other session that could not be read is left out and noted here, so that an app
+    /// missing from the list is not taken for one that has closed.
+    /// </summary>
+    PlayingAppsListing GetPlayingAppsListing();
 
     /// <summary>Creates a capture of the device or the app the target names.</summary>
     IAudioCapture CreateCapture(CaptureTarget target);

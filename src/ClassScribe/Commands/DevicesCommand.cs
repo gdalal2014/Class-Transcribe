@@ -32,22 +32,28 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     /// Lists the output devices, then the apps with sound, then the microphones, each with its option, lined up in one
     /// column, then says that nothing was opened, and gives examples. A list Windows will not give says so, with the
     /// reason, in its place; when only the apps that hold each microphone cannot be read, the microphones are listed with
-    /// their own notes and a line says what is missing. Returns the exit code, 0: the command has listed what it could.
+    /// their own notes and a line says what is missing. What a list could read only in part is said below what it is
+    /// about, with whose it was and which call failed: an app's audio session below the apps, a microphone's sessions,
+    /// mute or name below that microphone. When anything could not be read, a line before the end says so, so that one
+    /// look at the end of the list tells. Returns the exit code, 0: the command has listed what it could.
     /// </summary>
     public int Run()
     {
         var (deviceList, devicesFailed) = Read("the output devices", () => outputs.Value.GetOutputDevices());
-        var (appList, appsFailed) = Read("the apps with sound", () => outputs.Value.GetPlayingApps());
+        var (appList, appsFailed) = Read("the apps with sound", () => outputs.Value.GetPlayingAppsListing());
         var (sessionList, sessionsFailed) = Read("which apps hold each microphone", () => sessions.Value.ReadAll());
         var (microphoneList, microphonesFailed) = Read("the microphones", () => microphones.Value.GetMicrophones());
         var listings = sessionList?.Listings ?? [];
         var holdersMissing = sessionsFailed ?? sessionList?.Problem;
 
         var devices = (deviceList ?? []).Select(device => (What: Describe(device), Option: $"--device \"{device.Name}\"")).ToList();
-        var apps = AppsByName(appList ?? []).Select(app => (What: Describe(app), Option: $"--app {Quoted(app.Name)}")).ToList();
-        var mics = (microphoneList ?? [])
-            .Select(microphone => (What: Describe(microphone, listings.FirstOrDefault(listing => listing.EndpointId == microphone.Id)), Option: MicOption(microphone)))
-            .ToList();
+        var apps = AppsByName(appList?.Apps ?? []).Select(app => (What: Describe(app), Option: $"--app {Quoted(app.Name)}")).ToList();
+        var unreadApps = appList?.Unread ?? [];
+        var mics = (microphoneList ?? []).Select(microphone =>
+        {
+            var listing = listings.FirstOrDefault(candidate => candidate.EndpointId == microphone.Id);
+            return (What: Describe(microphone, listing), Option: MicOption(microphone), Problem: listing?.Problem);
+        }).ToList();
         var width = devices.Select(row => row.What).Concat(apps.Select(row => row.What)).Concat(mics.Select(row => row.What))
             .Append(Automatic).Append(DefaultMicrophone).Max(what => what.Length);
 
@@ -59,16 +65,25 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
 
         ui.WriteLine("Apps with sound:");
         if (appsFailed is not null) ui.WriteLine(Unread(appsFailed));
-        else if (apps.Count == 0) ui.WriteLine("  None has sound open now.");
+        else if (apps.Count == 0 && unreadApps.Count == 0) ui.WriteLine("  None has sound open now.");
         foreach (var (what, option) in apps) ui.WriteLine(Row(what, option, width));
+        foreach (var session in unreadApps) ui.WriteLine(Unread(session.Describe()));
 
         ui.WriteLine("Microphones:");
         if (microphonesFailed is not null) ui.WriteLine(Unread(microphonesFailed));
         else if (mics.Count == 0) ui.WriteLine("  None is connected now.");
-        foreach (var (what, option) in mics) ui.WriteLine(Row(what, option, width));
+        foreach (var (what, option, problem) in mics)
+        {
+            ui.WriteLine(Row(what, option, width));
+            if (problem is not null) ui.WriteLine("  " + Unread(problem));
+        }
+
         if (mics.Count > 0 && holdersMissing is not null) ui.WriteLine($"  Which apps hold each microphone could not be read now: {holdersMissing}");
         ui.WriteLine(Row(DefaultMicrophone, "--mic", width));
 
+        var anythingUnread = devicesFailed is not null || appsFailed is not null || unreadApps.Count > 0 || microphonesFailed is not null ||
+            (mics.Count > 0 && holdersMissing is not null) || mics.Any(row => row.Problem is not null);
+        if (anythingUnread) ui.WriteLine("Not everything could be read from Windows just now: the lines above say what, and why.");
         ui.WriteLine("Nothing was opened or recorded to list these.");
         ui.WriteLine("For example: ClassScribe record \"Kalam\" --device auto --output \"D:\\Classes\"");
         ui.WriteLine("             ClassScribe record \"Kalam\" --app chrome --mic --output \"D:\\Classes\"");

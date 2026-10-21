@@ -192,10 +192,21 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   ArgumentException that stopped `devices` with the Zoom app in a meeting on 18 October); NAudio's
   calls still map, so the places that turn a failed look into a listing that says so
   (`RecordingMonitor.ClassDevice`, `BluetoothMicrophoneWatch.LookNow`, `WasapiMicrophoneSessions`,
-  `DevicesCommand.Read`) catch `AudioFailures.IsFailedResult`. In the apps with sound a session that
-  cannot be read, or a device whose sessions cannot be listed, is left out with a Debug line
-  (`WasapiLoopbackCaptureProvider.ForEachSession`, `ListPlayingApps`); `FailedAudioCallTests` plays
-  E_INVALIDARG through the real readers.
+  `DevicesCommand.Read`) catch `AudioFailures.IsFailedResult`. `CoreAudio.Check` takes the checked
+  expression (`CallerArgumentExpression`) and notes the call in the exception (`AudioFailures.CallKey`),
+  so `AudioFailures.Describe` says `GetState: The parameter is incorrect. (0x80070057)`. In the apps
+  with sound (`GetPlayingAppsListing`, a `PlayingAppsListing` with its `UnreadAudioSession`s) a
+  session whose state cannot be read keeps its app listed when Windows names its process; any other
+  session that cannot be read, or a device whose sessions cannot be listed, is left out, noted among
+  the unread and with a Debug line, and `CaptureChooser.ChooseApp` does not say a recorded app "has
+  closed" while an unread session may be its. `WasapiMicrophoneSessions` reads each session's process
+  first, so a listing's `Unread` (`UnreadCaptureSession`: process, name, state as far as read; null
+  when the list itself failed) and its problem (`session 2 of 3 (Zoom, pid 9090) not readable:
+  GetState: ...`) say whose it was; `ClassMicrophoneWatch` ignores another app's unread session, and
+  judges the followed app's own stateless one by the usage record (in use: Yes, closed: No, nothing
+  said or found on another microphone: Unknown). `devices` prints every unread part with
+  `Could not be read now:` and ends with `Not everything could be read from Windows just now`, exit 0.
+  `FailedAudioCallTests` plays E_INVALIDARG through the real readers, following chrome and zoom.
 - Time every interval on the steady clock (`TimeProvider.GetTimestamp` and `GetElapsedTime`), never
   the time of day, so a change of the Windows clock neither stretches nor shortens it. In tests,
   `ManualTimeProvider.Advance` moves both clocks and `StepWallClock` only the time of day; a test that

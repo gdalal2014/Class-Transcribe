@@ -412,6 +412,17 @@ the same one, which is why ClassScribe switches to the app's microphone. If you 
 find your own voice in a recording from a stretch when you were muted, the app does not let go of the
 microphone after all: set `Invisible` and use the microphone key or V.
 
+When Windows will not describe an app's session on the microphone, as happened with the Zoom app in a
+meeting, ClassScribe reads who the session belongs to first. Another app's session that cannot be read
+changes nothing. The followed app's own session, when its state cannot be read, is judged by Windows'
+record of which apps use the microphone (the one behind Settings > Privacy & security > Microphone):
+while the record says the app is using the microphone, it counts as listening, and the log says so
+once (`Windows would not give the state of zoom's session on "..." (...); until it does, Windows'
+microphone usage record says whether zoom is listening`); when the record says it closed the
+microphone, it counts as not listening. If the record says nothing of the app, or the session cannot
+even be told apart, nothing is written, and after 10 seconds the title shows `CANNOT READ THE
+MICROPHONE SESSIONS`, naming the session and the Windows call that failed.
+
 **V** switches your microphone off and on by hand, in any mode. Off releases the microphone, so
 Windows' microphone icon goes out unless the class app holds it, and the recording keeps its place:
 the time off is silence in the microphone's file. On opens it again within a moment, after a fresh
@@ -960,10 +971,16 @@ that picks it (`--in-person` takes the same name), then the row `Windows' defaul
 Bluetooth one  --mic`, or `None is connected now.` when there is none. It opens nothing
 (`Nothing was opened or recorded to list these.`), and ends with example lines for `--device auto`,
 `--app chrome --mic` and `--in-person`. A list Windows does not give at that moment says so in its
-place (`Could not be read now: The parameter is incorrect. (0x80070057)`) and the others are listed in
-full, with exit code 0; when only the apps that hold each microphone cannot be read, the microphones
-are listed with `Which apps hold each microphone could not be read now: ...` below them. One app's
-sound that Windows cannot describe is left out of the apps by itself.
+place (`Could not be read now: EnumAudioEndpoints: The parameter is incorrect. (0x80070057)`, the
+Windows call that failed first) and the others are listed in full, with exit code 0; when only the
+apps that hold each microphone cannot be read, the microphones are listed with `Which apps hold each
+microphone could not be read now: ...` below them. What a list could read only in part is said below
+what it is about, with whose it was and which call failed: below the apps, `Could not be read now:
+Zoom's audio session on "Speakers (...)" (GetState: The parameter is incorrect. (0x80070057))` (an
+app Windows names is still listed; a session of no app named is left out), and below a microphone,
+`Could not be read now: session 2 of 3 (Zoom, pid 9090) not readable: GetState: ...`. Whenever
+anything could not be read, the line before `Nothing was opened ...` says `Not everything could be
+read from Windows just now: the lines above say what, and why.`
 
 At the end, ClassScribe hands Windows an exit code, which a script can check (in PowerShell,
 `$LASTEXITCODE` holds it):
@@ -1231,6 +1248,9 @@ page gives a quiet log, which is a result in itself.
   roles for which it is Windows' default (Console for most programs, Multimedia, and Communications
   for calls, or `no`); `muted in Windows` is the switch a microphone key or the Sound settings flip,
   `YES` when muted; `input volume` is its level in Windows. A changed value is followed by `(was ...)`.
+  What Windows would not give about it follows as `problem: ...`, such as `problem: session 2 of 3
+  (Zoom, pid 9090) not readable: GetState: The parameter is incorrect. (0x80070057)`: whose session
+  it was, when Windows said, and which call failed.
 - `SESSION` lines are about one program's session on one microphone, which is what Windows gives a
   program when it opens the microphone: `#4 chrome (pid 24800) on Microphone Array (...): appeared:
   state: Active; session muted: no; program C:\...\chrome.exe; session id ...`, later `changed:
@@ -1578,7 +1598,7 @@ words you see.
 | `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0`. Build again, or edit that copy, for the change to count. |
 | `ClassScribe could not start.` and `An environment variable sets a value ClassScribe cannot use` | Change or remove the variable the message names (the setting's name, with `__` for each colon), then start ClassScribe again. |
 | `ClassScribe shows its menu only when someone can type into its window` | ClassScribe was started without a command from a script, or with its input redirected. Give it a command, such as `record` or `list`; the help follows the message. |
-| `Could not be read now: ...` under a list of `devices`, or `Which apps hold each microphone could not be read now: ...` | Windows did not give that list at that moment; the other lists are complete. Run `devices` again. If it keeps saying so, quit the other apps that use sound (Zoom, Teams, Discord, WhatsApp, tray icons included) and run it again; if it still does, restart Windows. One app's sound that Windows cannot describe is left out of the lists by itself, and a recording goes on beside it. |
+| `Could not be read now: ...` under a list of `devices`, below an app or a microphone, `Which apps hold each microphone could not be read now: ...`, and `Not everything could be read from Windows just now` at the end | Windows did not give that list, or one app's session in it, at that moment; the rest is complete. The line names the app when Windows did (`Zoom's audio session`, `(Zoom, pid 9090)`) and the Windows call that failed (`GetState: ...`). Run `devices` again. If it keeps saying so, quit the other apps that use sound (Zoom, Teams, Discord, WhatsApp, tray icons included) and run it again; if it still does, restart Windows. A recording goes on beside one app's session that cannot be read; when that app is the one your microphone follows, see `Cannot read zoom's microphone session` below. |
 | `Recording:StopAfterHours is 10; it must be from 0 to 9.5 (hours)`, `Recording:ContinueWithinMinutes is -5; it must be from 0 to 1440 (a day)` | The new settings are checked like the others: the message gives the range and an example. Fix the value, then choose again. |
 | `Recording:MicrophoneFollows is ""; it must be part of the class app's name, such as chrome, or auto (any app that holds the microphone) or none (V alone).`, `Recording:MicrophoneFollows is "scribe", which names ClassScribe itself; ...` | Name the class app (`chrome`), or write `auto` or `none`. ClassScribe's own recording holds the microphone for the whole class, so following it would record everything. |
 | `Recording:Mode is "Klass", which is not Class, ClassAndMicrophone or Microphone.` (likewise `Recording:MicrophoneProcessing`, `Raw` or `Default`, and `Recording:ClassAppMute`, `Visible`, `Invisible` or `Unknown`) | Write one of the names, in any letter case; a number is refused. |
@@ -1605,6 +1625,8 @@ words you see.
 | `uses an audio format this app cannot read`, `uses the unsupported encoding` | The device sends sound in a form ClassScribe cannot record, so the recording did not start. Choose another device with menu choice 6. |
 | `Cannot capture an output device right now` | Windows has no usable output device at that moment, or its audio service is restarting. ClassScribe tries again every second and says so every 30 seconds; plug in or switch on a device. |
 | `Nothing to record yet; waiting for ...`, `Still nothing to record` | The chosen device is not connected, the chosen app is not playing, or there is no output device. ClassScribe keeps looking; connect the device or start the sound, or press Q twice and choose something else with 6. |
+| `"zoom" has closed; recording silence until it plays again` | The recorded app has no sound open any more. Its capture stays open and records silence until the app plays again; start the app, or rejoin the meeting. |
+| `"zoom" is not among the apps with sound at this look, but ClassScribe could not read an audio session on "Speakers (...)" (GetSession: ...), which may be its; its capture goes on` | Windows would not give one audio session, so the app may still be playing there; it is not taken for closed, and its capture goes on. Said once per run at this level. Nothing to do; if it is followed by `has closed`, the app did close. |
 | `Could not write the recording`, `Still cannot write the recording` | The disk is full or went away. Free some space; the recording continues by itself in a new file. After two failures in a row it tries every 30 seconds, and the audio in between is lost. |
 | `The capture was held up for ...` | The recording probably has a gap there. If most of that time went on storing the audio, the disk was too slow: record to an internal drive. Otherwise the computer was very busy (close heavy programs) or went to sleep (keep it plugged in with the lid open, and set a longer sleep time in Windows' power settings). |
 | `The laptop slept from ... to ...; nothing was recorded then` | The lid was closed, the power button pressed or Start > Sleep chosen, or Windows put the laptop to sleep by itself. The recording went on after the gap. During a class keep the lid open and the laptop plugged in. |
@@ -1651,7 +1673,8 @@ words you see.
 | `The microphone starts switched off (V switches it on)` | `Recording:ClassAppMute` is `Unknown` or `Invisible`: your voice is recorded after you press V, and only while the class app holds the microphone. |
 | `chrome has not opened the microphone for 5 minutes; your voice is not recorded until it does. Join the class, or check that the page may use the microphone` (`MIC WAITING`) | Join the class, or allow the microphone in the page. The class is recorded meanwhile. |
 | `chrome uses "OBSBOT ..."; ClassScribe records "Microphone Array ..."` in the status line | The class app and ClassScribe use different microphones for a moment; ClassScribe moves to the app's at its next look. |
-| `Cannot read chrome's microphone session: ...; your voice is not recorded until the sessions can be read again` (`CANNOT READ THE MICROPHONE SESSIONS` in red after 10 seconds) | Windows' audio service is restarting, or refused the look. ClassScribe keeps looking four times a second, and the class is recorded all the while. |
+| `Cannot read chrome's microphone session: ...; your voice is not recorded until the sessions can be read again` (`CANNOT READ THE MICROPHONE SESSIONS` in red after 10 seconds) | Windows' audio service is restarting, or refused the look; the words after the colon say what could not be read, whose session it was when Windows said (`session 2 of 3 (Zoom, pid 9090) not readable: GetState: ...`) and which call failed. ClassScribe keeps looking four times a second, and the class is recorded all the while. Another app's session that cannot be read does not cause this; the followed app's own does when Windows' usage record says nothing of the app either. |
+| `Windows would not give the state of zoom's session on "Microphone Array ..." (...); until it does, Windows' microphone usage record says whether zoom is listening` | The followed app's own session on your microphone cannot be read beyond its process, as with the Zoom app in a meeting; Windows' record of which apps use the microphone stands in for it, so your voice is recorded while the record says the app uses the microphone. Nothing to do. |
 | `The microphone watch stopped: ...; your voice is not recorded for the rest of this run` | The watch failed in a way it did not expect. The class is still recorded; start the next run as usual. |
 | `Could not look at the class app's microphone sessions now; the looks so far decide` | A last look failed, at V or at the stop; the watch's own line says why. |
 | `chrome let go of the microphone at 19:12:03 and took it again at 19:12:40. If that was you muting and unmuting in the class page ...` | If those were your clicks, your mute is visible to Windows: set `Recording:ClassAppMute` to `Visible`. If it was a rejoin or a device change, leave it. |
