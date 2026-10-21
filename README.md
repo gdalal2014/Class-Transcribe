@@ -1279,6 +1279,12 @@ Take two minutes to check the whole path on your machine:
    `My Drive > ClassScribe > Dry run > <today's date>`. Delete it in Drive afterwards if you like;
    ClassScribe never deletes anything there.
 
+A new version is tried the same way before it reaches a class, through the dry-run kit: double-click
+`Start-DryRun.cmd` in `tools\dry-run` of that version's copy of the code. It runs a copy of that
+version beside your installed one, with a stand-in for ElevenLabs on this laptop (nothing is sent or
+billed), Google Drive off and your settings untouched, tells you what to do in the window, and checks
+the result. `tools\dry-run\README.md` says what it does and what it checks.
+
 ## How the recording is protected
 
 - Each packet of audio goes to Windows as it arrives, and the file's header is brought up to date
@@ -1864,6 +1870,7 @@ src/ClassScribe/
                       transcribe, rebuild, list, devices, mic-check, drive), the report at the start,
                       the view of a recording, the microphone check, and the settings check before each
 tests/ClassScribe.Tests/    NUnit and Moq
+tools/dry-run/      the dry-run kit: Start-DryRun.cmd, the stand-in for ElevenLabs, the test player
 ```
 
 In the tests, the transcription service, the upload preparation, the command runner and the desktop
@@ -1886,8 +1893,12 @@ browser and a listener the tests play, and with Drive's folders, files and resum
 included; a few tests use the real listener on `127.0.0.1` with the test as the browser, and the
 store's tests use Windows' real data protection in a temporary folder, never `%APPDATA%\ClassScribe`.
 The recordings the upload and free-space tests use are small files in temporary folders, in the
-course and date layout and the old flat one. No test ever starts ClassScribe itself, records, opens
+course and date layout and the old flat one. The dry-run kit's tests start a hidden Windows
+PowerShell 5.1 of their own to parse its scripts and try its checks on temporary folders, and run its
+stand-in for ElevenLabs on `127.0.0.1` with ClassScribe's own client; on request, one builds a
+stand-in `ClassScribe.exe` that records nothing and runs the whole dry run with it in temporary
+folders. No test ever starts ClassScribe itself, records, opens
 a device or a microphone, plays a sound, opens a browser, or sends anything to ElevenLabs or Google,
 and none reads or writes the real `%APPDATA%\ClassScribe`, `%LOCALAPPDATA%\ClassScribe` or
-`%USERPROFILE%\ClassScribe`. The suite holds 3,357 tests and takes about two minutes; a test run that
+`%USERPROFILE%\ClassScribe`. The suite holds 3,395 tests and takes about two minutes; a test run that
 hangs is stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).
