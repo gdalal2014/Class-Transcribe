@@ -43,43 +43,60 @@ internal sealed class PipedProcess : IDisposable
     /// Starts <paramref name="application"/> with <paramref name="commandLine"/> in <paramref name="workingFolder"/>, with
     /// <paramref name="environment"/> as its whole environment, through <paramref name="api"/>. Null when Windows refuses,
     /// or the job would not take it (which ends it first), with Windows' error in <paramref name="error"/>; nothing is left
-    /// open then. Throws a <see cref="System.ComponentModel.Win32Exception"/> when Windows will not make the job.
+    /// open then, nor when the start throws, which is rethrown as it was. Throws a
+    /// <see cref="System.ComponentModel.Win32Exception"/> when Windows will not make the job.
     /// </summary>
     public static PipedProcess? Start(IProcessCreationApi api, string application, string commandLine, string workingFolder,
         IReadOnlyDictionary<string, string> environment, out int error)
     {
         var job = ToolJob.Create();
-        var input = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
-        var output = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-        var errors = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-        var launch = new ProcessLaunch(application, commandLine, InheritHandles: true,
-            ProcessCreationFlags.NoWindow | ProcessCreationFlags.UnicodeEnvironment, workingFolder, Show: null)
-        {
-            Environment = environment,
-            Handles = new StandardHandles(input.ClientSafePipeHandle, output.ClientSafePipeHandle, errors.ClientSafePipeHandle),
-            Job = job.Handle
-        };
-
-        StartedProcess? started;
+        AnonymousPipeServerStream? input = null, output = null, errors = null;
         try
         {
-            started = api.Start(launch, out error);
+            input = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
+            output = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+            errors = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+            var launch = new ProcessLaunch(application, commandLine, InheritHandles: true,
+                ProcessCreationFlags.NoWindow | ProcessCreationFlags.UnicodeEnvironment, workingFolder, Show: null)
+            {
+                Environment = environment,
+                Handles = new StandardHandles(input.ClientSafePipeHandle, output.ClientSafePipeHandle, errors.ClientSafePipeHandle),
+                Job = job.Handle
+            };
+
+            StartedProcess? started;
+            try
+            {
+                started = api.Start(launch, out error);
+            }
+            finally
+            {
+                // The program holds its own ends now; this process keeps only the ends it uses, so the pipes end with the program.
+                input.DisposeLocalCopyOfClientHandle();
+                output.DisposeLocalCopyOfClientHandle();
+                errors.DisposeLocalCopyOfClientHandle();
+            }
+
+            if (started is not null) return new PipedProcess(started, job, input, output, errors);
         }
-        finally
+        catch
         {
-            // The program holds its own ends now; this process keeps only the ends it uses, so the pipes end with the program.
-            input.DisposeLocalCopyOfClientHandle();
-            output.DisposeLocalCopyOfClientHandle();
-            errors.DisposeLocalCopyOfClientHandle();
+            // The start threw, Windows' own or a test run's guard: nothing it made is left open, and the exception goes on as it was.
+            LetGo(job, input, output, errors);
+            throw;
         }
 
-        if (started is not null) return new PipedProcess(started, job, input, output, errors);
-
-        input.Dispose();
-        output.Dispose();
-        errors.Dispose();
-        job.Dispose();
+        LetGo(job, input, output, errors);
         return null;
+    }
+
+    /// <summary>Closes this process's ends of the pipes that were made, then the job, for a start that came to nothing.</summary>
+    private static void LetGo(ToolJob job, AnonymousPipeServerStream? input, AnonymousPipeServerStream? output, AnonymousPipeServerStream? errors)
+    {
+        input?.Dispose();
+        output?.Dispose();
+        errors?.Dispose();
+        job.Dispose();
     }
 
     /// <summary>Ends the program, and everything it started, at once, for a cancel or a program that hangs.</summary>
