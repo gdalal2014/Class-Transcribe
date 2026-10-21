@@ -11,7 +11,14 @@
     <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
     <!-- The hang guard: a run that takes too long fails instead of hanging (see ClassScribe.Tests.runsettings). -->
     <RunSettingsFilePath>$(MSBuildProjectDirectory)\ClassScribe.Tests.runsettings</RunSettingsFilePath>
+    <!-- The dry-run kit's stand-in for ElevenLabs is compiled in below without its one line of program, which this
+         constant leaves out, so that its tests reach its parts directly (DryRunStandInTests). -->
+    <DefineConstants>$(DefineConstants);DRY_RUN_KIT_TESTS</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\tools\dry-run\ElevenLabsStub.cs" Link="DryRunKit\ElevenLabsStub.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />

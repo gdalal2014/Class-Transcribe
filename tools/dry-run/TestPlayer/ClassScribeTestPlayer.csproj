@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The dry-run kit's test player (Program.cs says what it does). Built by Start-DryRun.ps1 with -Player only; it is
+       not in ClassScribe.sln, so the suite neither builds nor runs it. The process name, ClassScribeTestPlayer, is the
+       app the dry run records with app loopback when the kit is given a clip to play. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ClassScribeTestPlayer</AssemblyName>
+    <RootNamespace>ClassScribe.DryRun.TestPlayer</RootNamespace>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The same NAudio as ClassScribe, so that a build needs nothing ClassScribe's own build has not fetched already. -->
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+
+</Project>

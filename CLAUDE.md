@@ -299,6 +299,61 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
 - Cite sources for research and other non-code answers.
 - Arabic terms in IJMES transliteration (this governs `src/ClassScribe/keyterms.txt`).
 
+## Git flow, worktrees and dry runs
+
+This round's plan is `design\final\build-plan.md` in the durable home,
+`C:\Users\gdala\OneDrive\Documents\ClassScribe design\` (outside the repository, kept by OneDrive, out of `%TEMP%`,
+which Storage Sense clears): the three designs beside it, the probes, the prototype scripts and the earlier stand-ins
+(`testplayer`, `livetest`) are there too. Where the plan and a design disagree about order, branches or versions, the
+plan wins.
+
+- `main` holds released versions only: every commit it points at is tagged `vX.Y.Z`. It moves only by
+  `git merge --ff-only` to a finished release or hotfix branch, in the repository's checkout
+  (`C:\Users\gdala\OneDrive\Documents\GitHub\Repos\Class-Transcribe`), which stays on `main` and clean, because
+  Gulzar's class launchers build its working tree (`Start-Class.ps1`, until step 2's launcher). Nobody edits files there:
+  agents only fast-forward `main`, tag and push, with his OK, when it is clean and no class runs (and not within an hour
+  of one); `docs/HANDOFF.md` is the one file they may write there. `main` stays GitHub's default branch.
+- `develop` is the integration branch (worktree `%LOCALAPPDATA%\csw\develop`). Each step is a `feature/<name>` branch
+  from `develop`, in a worktree under `%LOCALAPPDATA%\csw` (never `%TEMP%` or OneDrive), committed at the end of every
+  session after `git status` has been read for deletions nobody made. Before its merge it is rebased on `develop`, the
+  suite run again, and `git range-diff` read, so that a conflict resolved in the rebase is reviewed too. It is merged
+  with `--no-ff` when green and reviewed, so `git revert -m 1 <merge>` takes it out again (and reverting that revert
+  brings it back). A feature goes into `develop` only when it may reach a class with the next release.
+- A release is `release/<version>`, cut from `develop` once its steps are merged, one open at a time. The cut is one
+  commit: the `<Version>` line in `src/ClassScribe/ClassScribe.csproj` (and, from step 1, the version of each
+  `DefaultChanges` row left empty). Then its weekday dry run through the kit, from the release's own worktree, which
+  records the commit it tested. The finish: `main` merged into it first when `main` holds a hotfix it lacks, and the
+  suite run again; when its head is not the commit the dry run tested (that merge, or a fix after the dry run), a
+  five-minute kit run (`-Short`) on the head first; then in the checkout `git merge --ff-only release/<version>`,
+  `git tag -a v<version>`, the push (his OK); the release merged into `develop` with `--no-ff`; the branch and its
+  worktree removed; and, until step 2, the release built and installed the day before its first class with
+  `Start-Class.ps1 -Name "Mantiq" -NoRecord`, away from any class (from step 2, the installer).
+- A hotfix is `hotfix/<version>`, from `main` (or from the head of a release `main` is about to reach), with its own
+  weekday dry run (short when the fix is narrow), finished as a release is, then merged into `develop` and into a release
+  then open.
+- Versions: every release takes a new minor number, a hotfix the next patch number of the release it fixes. Version
+  strings are set only on release and hotfix branches, never on a feature branch. 0.3.3 is `43ba9c6` with no version
+  line, so its build shows `1.0.0+<commit>`.
+- The way back on a class day, until step 2: the previous tag checked out in the checkout
+  (`git switch --detach v<previous>`), which `Start-Class.ps1` then builds; `git switch main` once a hotfix is finished.
+  Never during a class.
+- Dry runs, and every manual run of a side build, go through the kit in `tools\dry-run` (its `README.md`).
+  `Start-DryRun.cmd`, double-clicked by Gulzar in Explorer so that the window and its recorder start outside any job,
+  publishes the worktree to `%LOCALAPPDATA%\Programs\ClassScribe-Dry` (never through an installer, never single-file),
+  starts the stand-in for ElevenLabs (`ElevenLabsStub.cs`, a .NET 10 file-based app on 127.0.0.1), sets a dummy key,
+  `ElevenLabs__BaseUrl`, `Drive__Enabled=false` and `CLASSSCRIBE_SETTINGS_FOLDER` in its own process only (never at
+  user scope; builds before 0.5.0 read only the `appsettings.json` beside their exe and pass over the variable, and the
+  kit says which the build reads), runs `record ... --new --output "%USERPROFILE%\ClassScribe dry runs"`, checks the run
+  file (`home` `Separate`), the transcript, the recording's log and the stand-in's log, compares the listings of
+  `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` and `%USERPROFILE%\ClassScribe` before and after, and adds the
+  result to `%LOCALAPPDATA%\ClassScribe-DryRuns\runs.log`, which a release's finish reads. It refuses while a class
+  records, by the run files, never by opening `recording.lock`. `-Real` (billed) and `-Player` (plays a clip aloud
+  through the test player) are only at Gulzar's word, which the script asks him to type. Agents stop every ClassScribe
+  process they started before a session ends, and leave none running over a class time.
+- Everything in `tools\` (and in `installer\` once it exists) is ASCII only, with no byte-order mark: Windows PowerShell
+  5.1 reads a script without one in the ANSI code page. Scripts there run under Windows PowerShell 5.1 (no `&&`, `??`
+  or ternaries). `DryRunScriptTests` fails on any byte above 127 and parses every `.ps1` with 5.1's own parser.
+
 ## Commands (PowerShell, from the repo root)
 
 ```powershell
@@ -311,7 +366,10 @@ dotnet test --filter TestCategory=AudioDevice                          # Explici
 dotnet test --filter TestCategory=WindowsProcess                       # real processes, pipes, windows, all of the test's own
 dotnet test --filter TestCategory=WindowsRegistry                      # reads two HKCU values every profile has; creates nothing
 dotnet test --filter "FullyQualifiedName~Four_simulated_hours"         # the Explicit four-hour soak; run it before any path moves onto the clock
+dotnet test --filter TestCategory=DryRunKit                            # Explicit: the whole dry run with a stand-in ClassScribe.exe, in temporary folders
 dotnet build --no-incremental --disable-build-servers                  # when other builds run at the same time; must report 0 warnings
+tools\dry-run\Start-DryRun.cmd                                         # a dry run of this worktree; Gulzar double-clicks it in Explorer (tools\dry-run\README.md)
+dotnet run tools\dry-run\ElevenLabsStub.cs -- 0 "<log>" --ready "<file>"   # the stand-in for ElevenLabs on 127.0.0.1 alone; the kit starts it itself
 dotnet run --project src/ClassScribe                                   # the menu (a recording then runs in the window)
 dotnet run --project src/ClassScribe -- record "Kalam" --device auto --output "<folder>"       # record; Q twice stops and transcribes
 dotnet run --project src/ClassScribe -- record-only "Kalam" --app chrome --output "<folder>"   # record only
@@ -420,7 +478,18 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `MicrophoneUsageRecordTests` read the real sessions and the real usage record (no entry for the
   test exe); `AudioClient2SlotTests` activates the default output device's audio client, never
   initialised, to pin ClassScribe's `IAudioClient2` slot. `WindowsRegistry` (`RegistryValuesTests`)
-  reads values every profile has and creates nothing; `ProcessNamesTests` is `WindowsProcess`.
+  reads values every profile has and creates nothing; `ProcessNamesTests` is `WindowsProcess`. The
+  dry-run kit's tests: `DryRunScriptTests` (`WindowsProcess`) start a hidden Windows PowerShell 5.1 of
+  the test's own (`WindowsPowerShell` in `TestDoubles.DryRun.cs`, from a script file, since
+  `-EncodedCommand` copies every Write-Host line to the error stream as CLIXML) to parse the kit's
+  scripts and run its functions over temporary folders, and check that `tools\` is ASCII;
+  `DryRunStandInTests` run the stand-in, compiled into the tests from `tools\dry-run\ElevenLabsStub.cs`
+  with `DRY_RUN_KIT_TESTS` (which leaves out its one line of program), on 127.0.0.1 with ClassScribe's
+  own preparer, client and reader; and the Explicit `DryRunKit` category (`DryRunWholeTests`) builds a
+  stand-in ClassScribe.exe without a window, which records nothing, and runs the whole dry run with
+  it in temporary folders, and builds the test player without starting it (about half a minute:
+  before merging a change to `tools\dry-run`, and never within an hour of a class, since a process
+  named ClassScribe runs for a few seconds).
   `EndToEndTests` also covers in person from the command line, the class with the microphone
   following chrome through a cycle of listening and not (mixed by the real preparer), and
   `mic-check --seconds 1`. Nothing is played or recorded. The suite had 887 tests at the end of
@@ -431,8 +500,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   queued again during its upload, a folder moved or deleted by hand, a done recording asked for
   again, a grown log whose copy is gone or trashed, a manifest that cannot be written, the recordings
   folder with a kept answer at its top, choice 4 on a freed class, the queue counted without a class
-  being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests), and 3,370 after a false
-  start stopped taking its date folder; 3,370 is the count now,
+  being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests), 3,370 after a false
+  start stopped taking its date folder, and 3,387 after the dry-run kit (step 0a; its 17 tests take
+  about 5 seconds, and its 3 Explicit `DryRunKit` tests about half a minute); 3,387 is the count now,
   all passing, in about two minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -468,7 +538,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about two
-  minutes (2 min 9 s for 3,357 tests on 17 October 2026, plus the build). `[CancelAfter]` cannot
+  minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October, plus
+  the build). `[CancelAfter]` cannot
   interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1034,6 +1105,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   declared with `ITaskbarList`'s and `ITaskbarList2`'s methods first, since COM interop ignores
   interface inheritance), `WindowFinder` (`NativeProcessTree`), `WindowsPowerRequests` and
   `WindowsSystemTimes`.
+- `tools/dry-run`: the dry-run kit (its `README.md`): `Start-DryRun.cmd` and `Start-DryRun.ps1` (dot-sourced, it
+  defines its functions and runs nothing; `Invoke-DryRun -Roots` takes the folders, `Get-DryRunRoots` gives this
+  user's), `ElevenLabsStub.cs` (the stand-in for ElevenLabs: `SoundFinder`, `StandInTranscript`, `StandInUpload`,
+  `StandInServer`, `StandInProgram`, in a block namespace `ClassScribe.DryRun`), `TestPlayer\` (plays a clip aloud as the
+  class, only with `-Player`; not in the solution) and a `.gitattributes` that keeps `.cmd` and `.ps1` in CRLF.
 - `tests/ClassScribe.Tests`: NUnit and Moq. Hand-written fakes for the device, keyboard, clock and
   HTTP transport are in `TestDoubles.cs`, with `TestOptions<T>`, `TestSettings`,
   `FakeAudioCapture.DeliversContinuously` (default false, like device loopback), and
@@ -1065,7 +1141,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `FakeMicrophoneUsageRecord`, `FakeProcessNames`, `FakeOwnProcesses`, `ScriptedLooks`, and the
   COM-level fakes of the capture endpoints), `TestDoubles.MicrophoneRun.cs`
   (`FakeMicrophoneRecording`, `FakeMicrophoneRecordingFactory`), `TestDoubles.TrackSet.cs`
-  (`TestLoggerFactory`) and `TestDoubles.Account.cs` (`FakeElevenLabsAccount`). The cost line's
+  (`TestLoggerFactory`), `TestDoubles.Account.cs` (`FakeElevenLabsAccount`) and `TestDoubles.DryRun.cs`
+  (`WindowsPowerShell`, a hidden Windows PowerShell 5.1 for the kit's tests). The cost line's
   tests are `TranscriptionCostTests`, `ElevenLabsAccountTests` (on `StubHttpHandler`),
   `UsageReportTests`, and the order checks in `TranscriptionWorkflowTests`, `RecordCommandTests`,
   `TranscribeCommandTests` and `EndToEndTests`; the Bluetooth watch's are
