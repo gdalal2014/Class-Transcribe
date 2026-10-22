@@ -44,7 +44,7 @@ public class WindowsCameraCaptureTests
     {
         using var capture = new WindowsCameraCapture(LaptopCameras.Obsbot.Id, "a camera never opened");
 
-        var refused = Assert.Throws<InvalidOperationException>(capture.InitializeShared);
+        var refused = Assert.Throws<InvalidOperationException>(() => capture.InitializeShared(cpuFrames: true));
 
         Assert.That(refused!.Message, Does.Contain("MediaCapture.InitializeAsync").And.Contain("FakeCameraCapture"));
     }

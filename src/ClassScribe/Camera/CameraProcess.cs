@@ -44,6 +44,14 @@ public static class CameraLines
     public static ValueTask SendStopAsync(LineChannel channel, CameraStop stop, CancellationToken cancellationToken) =>
         channel.SendAsync(CameraProtocol.Stop, stop, CameraJson.Default.CameraStop, cancellationToken);
 
+    /// <summary>Sends the recording clock's whole state to a record job (see <see cref="CameraProtocol.Clock"/>).</summary>
+    public static ValueTask SendClockAsync(LineChannel channel, Audio.Timeline.ClockState clock, CancellationToken cancellationToken) =>
+        channel.SendAsync(CameraProtocol.Clock, clock, CameraJson.Default.ClockState, cancellationToken);
+
+    /// <summary>Sends a line that needs no body: <see cref="CameraProtocol.Off"/>, <see cref="CameraProtocol.On"/> or <see cref="CameraProtocol.Cancel"/>.</summary>
+    public static ValueTask SendSignalAsync(LineChannel channel, string type, CancellationToken cancellationToken) =>
+        channel.SendAsync(type, new CameraEmpty(), CameraJson.Default.CameraEmpty, cancellationToken);
+
     /// <summary>
     /// The message <paramref name="envelope"/> holds, as its type says: a <see cref="CameraLog"/>, <see cref="CameraFailed"/>,
     /// <see cref="CameraOpened"/> and so on; null for a type this build does not know, which a reader passes over. Throws a

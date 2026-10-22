@@ -201,6 +201,7 @@ public sealed class FakeCameraCapture : ICameraCapture
     private readonly List<string> _calls = [];
     private readonly List<string> _tooEarly = [];
     private Action? _onFrame;
+    private Action<ICameraFrame>? _onPixels;
     private Action<string>? _onEvent;
     private bool _initialized;
 
@@ -253,10 +254,14 @@ public sealed class FakeCameraCapture : ICameraCapture
     /// <inheritdoc />
     public void FindSourceGroup() => Step(nameof(FindSourceGroup));
 
+    /// <summary>True when the camera was opened with its frames in CPU memory, as a record job opens it.</summary>
+    public bool CpuFrames { get; private set; }
+
     /// <inheritdoc />
-    public void InitializeShared()
+    public void InitializeShared(bool cpuFrames)
     {
         Step(nameof(InitializeShared));
+        CpuFrames = cpuFrames;
         lock (_gate) _initialized = true;
     }
 
@@ -292,12 +297,32 @@ public sealed class FakeCameraCapture : ICameraCapture
     }
 
     /// <inheritdoc />
+    public void AddFrameReader(Action<ICameraFrame> onFrame)
+    {
+        Step(nameof(AddFrameReader));
+        _onPixels = onFrame;
+    }
+
+    /// <inheritdoc />
     public string StartReader()
     {
         Step(nameof(StartReader));
         Streaming = StartStatus == CameraRoute.Success;
         Frames(FramesOnStart);
         return StartStatus;
+    }
+
+    /// <summary>
+    /// Hands over a frame with its pixels, as the reader's thread would for a record job, while streaming: taken at
+    /// <paramref name="stamp100ns"/> (null for none), at the size the reader converts to, its picture of
+    /// <paramref name="brightness"/> throughout. False when the capture does not stream, or has no record job's reader.
+    /// </summary>
+    public bool Deliver(long? stamp100ns, byte brightness = 128)
+    {
+        if (!Streaming || _onPixels is null || ConvertedTo is not { } size) return false;
+
+        _onPixels(new FakeCameraFrame(stamp100ns, size.Width, size.Height, brightness));
+        return true;
     }
 
     /// <inheritdoc />
@@ -342,6 +367,141 @@ public sealed class FakeCameraCapture : ICameraCapture
 
         if (Stuck.TryGetValue(name, out var stuck)) stuck.Wait();
         if (Failures.TryGetValue(name, out var failure)) throw failure;
+    }
+}
+
+/// <summary>A frame as a test hands it over: its stamp, its size, and a picture of one brightness, in NV12.</summary>
+/// <param name="stamp">When it was taken, in units of 100 nanoseconds; null for none.</param>
+/// <param name="width">Its width.</param>
+/// <param name="height">Its height.</param>
+/// <param name="brightness">The brightness of every pixel.</param>
+public sealed class FakeCameraFrame(long? stamp, int width, int height, byte brightness) : ICameraFrame
+{
+    /// <inheritdoc />
+    public long? Stamp100ns => stamp;
+
+    /// <inheritdoc />
+    public int Width => width;
+
+    /// <inheritdoc />
+    public int Height => height;
+
+    /// <inheritdoc />
+    public bool CopyNv12To(byte[] target)
+    {
+        target.AsSpan(0, width * height).Fill(brightness);
+        target.AsSpan(width * height, width * height / 2).Fill(128);
+        return true;
+    }
+}
+
+/// <summary>One sample a <see cref="FakePieceWriter"/> was handed: when, and whether it was black or the brightness of the frame.</summary>
+/// <param name="At">Its time from the piece's start.</param>
+/// <param name="Black">True for a black frame the writer made (the first, and one for a camera lost).</param>
+/// <param name="Brightness">The brightness of the frame's first pixel.</param>
+public sealed record WrittenSample(TimeSpan At, bool Black, byte Brightness);
+
+/// <summary>
+/// A piece writer as a test plays it (teach-video 11): it writes nothing to disk but an empty file at its path, so that the
+/// piece is there as a real one would be, and notes each sample, the black frame at 0 first, and the end it was finished
+/// at. A test can make the Nth write fail as an encoder or a disk would.
+/// </summary>
+/// <param name="path">The piece's file.</param>
+/// <param name="settings">How it is encoded.</param>
+public sealed class FakePieceWriter(string path, PieceSettings settings) : IPieceWriter
+{
+    private readonly Lock _gate = new();
+    private readonly List<WrittenSample> _samples = [new(TimeSpan.Zero, true, 16)];
+
+    /// <inheritdoc />
+    public string Path => path;
+
+    /// <summary>How the piece is encoded.</summary>
+    public PieceSettings Settings => settings;
+
+    /// <inheritdoc />
+    public string Encoder => settings.Software ? "software encoder (Fake H.264 Encoder)" : "hardware encoder (Fake H.264 Encoder)";
+
+    /// <summary>The samples so far, the black frame at 0 first.</summary>
+    public IReadOnlyList<WrittenSample> Samples
+    {
+        get { lock (_gate) return [.. _samples]; }
+    }
+
+    /// <summary>The end the piece was finished at; null before.</summary>
+    public TimeSpan? FinishedAt { get; private set; }
+
+    /// <summary>True once disposed.</summary>
+    public bool Disposed { get; private set; }
+
+    /// <summary>When set, the write numbered so (1 for the first frame after the black one) throws this.</summary>
+    public (int Number, Exception Failure)? FailWrite { get; set; }
+
+    /// <inheritdoc />
+    public void Write(byte[] nv12, TimeSpan at) => Add(new WrittenSample(at, false, nv12[0]));
+
+    /// <inheritdoc />
+    public void WriteBlack(TimeSpan at) => Add(new WrittenSample(at, true, 16));
+
+    /// <inheritdoc />
+    public void Finish(TimeSpan end)
+    {
+        if (FinishedAt is not null) throw new InvalidOperationException("Finished twice.");
+        FinishedAt = end;
+    }
+
+    /// <inheritdoc />
+    public void Dispose() => Disposed = true;
+
+    /// <summary>Notes a sample, later than the last, or fails as the test asked.</summary>
+    private void Add(WrittenSample sample)
+    {
+        lock (_gate)
+        {
+            if (FinishedAt is not null) throw new InvalidOperationException("Written after the finish.");
+            if (FailWrite is { } fail && _samples.Count == fail.Number) throw fail.Failure;
+            if (sample.At <= _samples[^1].At) throw new InvalidOperationException($"A sample at {sample.At} is not later than the last, at {_samples[^1].At}.");
+            _samples.Add(sample);
+        }
+    }
+}
+
+/// <summary>Makes <see cref="FakePieceWriter"/>s, keeping each; a start with the hardware encoder can be refused, as Intel's may be.</summary>
+public sealed class FakePieceWriterFactory : IPieceWriterFactory
+{
+    private readonly Lock _gate = new();
+    private readonly List<FakePieceWriter> _made = [];
+
+    /// <summary>When set, a start with the hardware encoder throws this.</summary>
+    public Exception? HardwareRefuses { get; set; }
+
+    /// <summary>When set, every start throws this.</summary>
+    public Exception? Refuses { get; set; }
+
+    /// <summary>Sets up each writer as it is made, such as to fail a write.</summary>
+    public Action<FakePieceWriter>? Prepare { get; set; }
+
+    /// <summary>The writers made, in order.</summary>
+    public IReadOnlyList<FakePieceWriter> Made
+    {
+        get { lock (_gate) return [.. _made]; }
+    }
+
+    /// <inheritdoc />
+    public IPieceWriter Create(string path, PieceSettings settings)
+    {
+        if (Refuses is { } refused) throw refused;
+        if (!settings.Software && HardwareRefuses is { } refusal)
+        {
+            File.WriteAllBytes(path, []);
+            throw refusal;
+        }
+
+        using (new FileStream(path, FileMode.CreateNew, FileAccess.Write)) { }
+        var writer = new FakePieceWriter(path, settings);
+        Prepare?.Invoke(writer);
+        lock (_gate) _made.Add(writer);
+        return writer;
     }
 }
 

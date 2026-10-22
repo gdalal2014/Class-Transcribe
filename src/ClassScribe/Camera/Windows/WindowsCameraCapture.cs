@@ -44,6 +44,7 @@ public sealed class WindowsCameraCapture(string cameraId, string cameraName) : I
     private MediaFrameSource? _source;
     private MediaFrameReader? _reader;
     private Action? _onFrame;
+    private Action<ICameraFrame>? _onPixels;
     private Action<string>? _onEvent;
     private int _handlerFailures;
     private int _disposed;
@@ -65,7 +66,7 @@ public sealed class WindowsCameraCapture(string cameraId, string cameraName) : I
     }
 
     /// <inheritdoc />
-    public void InitializeShared()
+    public void InitializeShared(bool cpuFrames)
     {
         DeviceGuards.RefuseInTests("the real opening of a camera (MediaCapture.InitializeAsync)", "FakeCameraCapture");
         var group = _group ?? throw new InvalidOperationException("The camera's source group was not found, so it is not opened: Windows' default camera is never opened in its place");
@@ -74,7 +75,7 @@ public sealed class WindowsCameraCapture(string cameraId, string cameraName) : I
             SourceGroup = group,
             SharingMode = MediaCaptureSharingMode.SharedReadOnly,
             StreamingCaptureMode = StreamingCaptureMode.Video,
-            MemoryPreference = MediaCaptureMemoryPreference.Auto
+            MemoryPreference = cpuFrames ? MediaCaptureMemoryPreference.Cpu : MediaCaptureMemoryPreference.Auto
         };
         _capture.InitializeAsync(settings).AsTask().GetAwaiter().GetResult();
     }
@@ -123,6 +124,13 @@ public sealed class WindowsCameraCapture(string cameraId, string cameraName) : I
     }
 
     /// <inheritdoc />
+    public void AddFrameReader(Action<ICameraFrame> onFrame)
+    {
+        _onPixels = onFrame;
+        Reader.FrameArrived += OnFrameWithPixels;
+    }
+
+    /// <inheritdoc />
     public string StartReader() => Reader.StartAsync().AsTask().GetAwaiter().GetResult().ToString();
 
     /// <inheritdoc />
@@ -140,6 +148,7 @@ public sealed class WindowsCameraCapture(string cameraId, string cameraName) : I
         if (_reader is { } reader)
         {
             reader.FrameArrived -= OnFrameArrived;
+            reader.FrameArrived -= OnFrameWithPixels;
             reader.Dispose();
         }
 
@@ -164,6 +173,29 @@ public sealed class WindowsCameraCapture(string cameraId, string cameraName) : I
         {
             // Deliberately not rethrown: an exception on Windows' frame thread would end the camera process; the first one
             // is reported through the events, and a frame that cannot be taken is simply not counted.
+            if (Interlocked.Increment(ref _handlerFailures) == 1)
+                _onEvent?.Invoke($"A frame could not be taken: {CameraHresults.Describe(ex.HResult, ex.Message.Split('\n')[0])}");
+        }
+    }
+
+    /// <summary>
+    /// A frame for a record job: taken, handed over with its stamp and its pixels (in CPU memory, NV12 at the reader's size),
+    /// then released. Runs on a thread of Windows' own, so nothing may escape it.
+    /// </summary>
+    private void OnFrameWithPixels(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
+    {
+        try
+        {
+            using var frame = sender.TryAcquireLatestFrame();
+            if (frame is null) return;
+
+            using var bitmap = frame.VideoMediaFrame?.SoftwareBitmap;
+            _onPixels?.Invoke(new WindowsCameraFrame(frame.SystemRelativeTime?.Ticks, bitmap));
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: an exception on Windows' frame thread would end the camera process; the first one
+            // is reported through the events, and a frame that cannot be taken is simply not written.
             if (Interlocked.Increment(ref _handlerFailures) == 1)
                 _onEvent?.Invoke($"A frame could not be taken: {CameraHresults.Describe(ex.HResult, ex.Message.Split('\n')[0])}");
         }

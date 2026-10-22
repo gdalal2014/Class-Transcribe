@@ -260,8 +260,11 @@ public interface ICameraCapture : IDisposable
     /// </summary>
     void FindSourceGroup();
 
-    /// <summary>MediaCapture.InitializeAsync with the camera's source group, SharedReadOnly, video only, no memory preference.</summary>
-    void InitializeShared();
+    /// <summary>
+    /// MediaCapture.InitializeAsync with the camera's source group, SharedReadOnly, video only: with no memory preference,
+    /// or with CPU memory when <paramref name="cpuFrames"/>, so that a record job's frames come as pixels it can copy.
+    /// </summary>
+    void InitializeShared(bool cpuFrames);
 
     /// <summary>MediaCapture.CameraStreamStateChanged += (only reports).</summary>
     void AddStreamStateChanged(Action<string> onEvent);
@@ -283,6 +286,12 @@ public interface ICameraCapture : IDisposable
 
     /// <summary>MediaFrameReader.FrameArrived +=: each frame is taken and released at once, its pixels never touched, then <paramref name="onFrame"/> is called.</summary>
     void AddFrameArrived(Action onFrame);
+
+    /// <summary>
+    /// MediaFrameReader.FrameArrived +=, for a record job: each frame is taken, handed to <paramref name="onFrame"/> with its
+    /// stamp and its pixels while Windows holds it, then released.
+    /// </summary>
+    void AddFrameReader(Action<ICameraFrame> onFrame);
 
     /// <summary>MediaFrameReader.StartAsync; returns its status by name, Success when frames will come.</summary>
     string StartReader();
@@ -328,6 +337,9 @@ public static class CameraRoute
     /// <summary>The open itself.</summary>
     public const string Initialize = "MediaCapture.InitializeAsync (SharedReadOnly, video only)";
 
+    /// <summary>The open itself, for a record job, whose frames come in CPU memory to be copied.</summary>
+    public const string InitializeForPixels = "MediaCapture.InitializeAsync (SharedReadOnly, video only, CPU memory)";
+
     /// <summary>An event that only reports, registered after InitializeAsync.</summary>
     public const string StreamState = "MediaCapture.CameraStreamStateChanged +=";
 
@@ -352,6 +364,9 @@ public static class CameraRoute
     /// <summary>The frame handler.</summary>
     public const string FrameArrived = "MediaFrameReader.FrameArrived +=";
 
+    /// <summary>The frame handler of a record job, which copies each frame's pixels before it is released.</summary>
+    public const string FrameArrivedForPixels = "MediaFrameReader.FrameArrived += (each frame's pixels copied, then released)";
+
     /// <summary>The start of the frames.</summary>
     public const string Start = "MediaFrameReader.StartAsync";
 
@@ -375,19 +390,21 @@ public static class CameraRoute
     /// <summary>
     /// Opens the camera <paramref name="cameraId"/> shared, through <paramref name="factory"/>, in the documented order, each
     /// call recorded in <paramref name="log"/>: with the reader converting nothing when <paramref name="convertTo"/> is null
-    /// (the hold), else to NV12 at that size (the camera check). <paramref name="onEvent"/> hears what MediaCapture reports
-    /// (Failed, the stream's state, exclusive control); <paramref name="onFrame"/> is called for each frame, released unread.
-    /// Throws <see cref="CameraCallFailedException"/> naming the call that failed, after letting the camera go.
+    /// (the hold), else to NV12 at that size (the camera check and a lesson). <paramref name="onEvent"/> hears what
+    /// MediaCapture reports (Failed, the stream's state, exclusive control); <paramref name="onFrame"/> is called for each
+    /// frame, released unread, unless <paramref name="onPixels"/> is given: then the frames come in CPU memory and each is
+    /// handed to it with its stamp and pixels before it is released (a record job). Throws
+    /// <see cref="CameraCallFailedException"/> naming the call that failed, after letting the camera go.
     /// </summary>
     public static CameraOpening Open(ICameraCaptureFactory factory, string cameraId, string cameraName, CameraSize? convertTo, CameraCallLog log,
-        Action<string> onEvent, Action onFrame)
+        Action<string> onEvent, Action onFrame, Action<ICameraFrame>? onPixels = null)
     {
         var capture = log.Required(Create, () => factory.Create(cameraId, cameraName));
         try
         {
             log.Required(Failed, () => capture.AddFailed(onEvent));
             log.Required(Source, capture.FindSourceGroup);
-            log.Required(Initialize, capture.InitializeShared);
+            log.Required(onPixels is null ? Initialize : InitializeForPixels, () => capture.InitializeShared(cpuFrames: onPixels is not null));
 
             // Only after InitializeAsync has completed: these only report, so a refusal is recorded and passed over.
             log.Optional(StreamState, () => capture.AddStreamStateChanged(onEvent));
@@ -400,7 +417,8 @@ public static class CameraRoute
                 : $"{Reader} (as the camera sends it, nothing converted)";
             var reader = log.Required(readerName, () => capture.CreateReader(convertTo));
             log.Required(Realtime, capture.UseRealtime);
-            log.Required(FrameArrived, () => capture.AddFrameArrived(onFrame));
+            if (onPixels is { } pixels) log.Required(FrameArrivedForPixels, () => capture.AddFrameReader(pixels));
+            else log.Required(FrameArrived, () => capture.AddFrameArrived(onFrame));
             var status = log.Required(Start, capture.StartReader);
             if (status != Success)
             {
