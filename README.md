@@ -725,6 +725,8 @@ and every file of a recording carries the name and the time the recording starte
             Mantiq_2026-10-17_14-04-42Z.json         the full ElevenLabs response, with word timings
             Mantiq_2026-10-17_14-04-42Z.upload.wav   the 16 kHz copy that is uploaded, while it is needed
             Mantiq_2026-10-17_14-04-42Z.unread.json  only when a paid answer did not become a transcript
+            Mantiq_2026-10-17_14-04-42Z.cam.mp4      a lesson's camera picture, when recorded with the camera (never uploaded)
+            Mantiq_2026-10-17_14-04-42Z.cam@00-41-07.250.mp4  a later piece of it, beginning 41:07.25 into the recording
             Class_1_slides.pdf                       your own files: left alone, never uploaded
         2026-10-17 (2)\                              a second class of the name on the same day
             Mantiq_2026-10-17_22-00-05Z.wav
@@ -743,8 +745,8 @@ The date folder is the local date, while the files keep the UTC time: an evening
 Eastern time that starts at 21:30 on 17 October goes to `2026-10-17`, although its files say
 `2026-10-18_01-30-00Z`. A second, separate class of the same name that day goes to
 `2026-10-17 (2)`, a third to `(3)`, and so on. A date folder counts as taken only when it holds a
-class: a recording's audio, a transcript or ElevenLabs' answer, or a recording whose audio is on
-Google Drive alone. One that is empty, holds only the `.log` and marks of a start that recorded
+class: a recording's audio, a camera's piece, a transcript or ElevenLabs' answer, or a recording whose
+audio is on Google Drive alone. One that is empty, holds only the `.log` and marks of a start that recorded
 nothing, or holds only your own files (the class's PDFs and slides, say), is used as it is, and
 those files stay where they are. A class that runs past midnight stays
 in the folder it started in, and a recording continued as its next part (C, `--continue`, or after
@@ -1266,32 +1268,83 @@ by the free `rebuild` command.
 
 ### Recording with the camera
 
-For a lesson video, ClassScribe is to record your camera's picture beside your microphone, in person:
-the laptop's own camera or a USB webcam such as the OBSBOT Meet Flip. **This build does not record the
-picture yet**: it lists and checks the cameras, lets you choose one and its size, and refuses a
-recording with the camera before anything records, so that no class starts with a half-built camera.
+For a lesson video, ClassScribe records your camera's picture beside your microphone, in person: the
+laptop's own camera or a USB webcam such as the OBSBOT Meet Flip. The sound is recorded exactly as
+without a camera, and is still what is transcribed; the picture goes into the camera's own files, its
+**pieces**, on the same clock as the sound, so the two stay together through a pause, a sleep and a long
+lesson. Making the finished lesson video (the picture with its sound, as one `.mp4`) comes in a later
+build; this one keeps the picture safe in its pieces. Run [the camera check](#checking-the-cameras)
+once first, so that Bitdefender asks about ClassScribe while you watch.
 
 - In the menu: choice 7, I, your microphone, then the camera's number and the picture's size
   (`Picture size: Enter for 720p (your setting), 1 480p, 2 720p, 3 1080p, T to type a size`). The
   header then reads `Recording from: your microphone "OBSBOT", in person, with the camera "OBSBOT Meet
   Flip StreamCamera" (720p)`. The camera is no setting: it holds until ClassScribe is closed, and
-  every start from the menu asks first. In this build that start says `Camera "OBSBOT Meet Flip
-  StreamCamera" (720p): The camera's recording is not built yet in this build of ClassScribe, so this
-  recording cannot take the camera. Enter records the sound only; Esc goes back.` Once a build records
-  the picture, it asks `Enter records with the camera; S records the sound only.`
+  every start from the menu asks first: `Camera "OBSBOT Meet Flip StreamCamera" (720p): Enter records
+  with the camera; S records the sound only.` (Esc goes back.)
 - On the command line: `record "Tajwid 4" --in-person "OBSBOT" --camera "OBSBOT" --resolution 720p
   --output "<folder>"`. `--camera` takes part of a camera's name, or nothing for a USB camera when one
   is plugged in, else the built-in front camera (a phone's virtual camera only when named), and only
   with `--in-person` (`--camera records only in person in this build: give it with --in-person`, exit
   2). `--resolution` takes `480p`, `720p`, `1080p` or a size such as `1024x576`, only with `--camera`
-  (`--resolution needs --camera`, exit 2). In this build the command says `The camera's recording is not
-  built yet in this build of ClassScribe, so this recording cannot take the camera. Nothing was
-  recorded; leave out --camera to record the sound alone.` and ends with exit 1.
+  (`--resolution needs --camera`, exit 2). The command line is your word: it records with the camera
+  without asking.
 - The picture's size: `--resolution`, else the menu's pick, else `Recording:CameraResolution`, else
   720p, decided by the window before the recording starts and kept in its run file.
-- Before the size counts, the start also refuses the camera when Windows is older than 10 version 2004,
+- Before the size counts, the start refuses the camera when Windows is older than 10 version 2004,
   when Windows' privacy switches keep desktop apps from the camera, or when no H.264 encoder is
-  installed, with the same words as the camera check.
+  installed, with the same words as the camera check: in the menu Enter then records the sound only;
+  on the command line nothing is recorded, exit 1.
+
+What happens while it records:
+
+- The start says `Recording from your microphone "OBSBOT", in person, and the camera "OBSBOT" at 720p`,
+  then, once the camera opens, `Camera: "OBSBOT Meet Flip StreamCamera" (USB), 1280x720 at 30 frames a
+  second, 5 Mbit/s, hardware encoder (...). Its light is on while it records; P lets it go during a
+  pause`. The camera is opened **shared**, never taken from another app: a class app can use it at the
+  same time.
+- The picture is H.264 at the size you chose, at most 30 frames a second, at a constant bitrate: about
+  2.5 Mbit/s at 480p, 5 at 720p, 8 at 1080p (a typed size between them in proportion to its pixels).
+  The encoder's settings are fixed (Main profile, the level the size needs, no B-frames, a keyframe every
+  second). The graphics' own encoder is used when Windows offers it; when it refuses, Windows' software
+  encoder takes over, with the line `The hardware encoder could not start (...); the camera's picture is
+  encoded by Windows' software encoder instead`.
+- **P** pauses the sound and the picture together, and lets the camera go, so its light goes off during
+  the break; P again opens it, and the picture carries on where the sound does.
+- **The status line** adds `camera 1280x720, 29.9 frames a second, 3 dropped`, or `camera not
+  recording`. The title adds `CAM WAITING` while the picture is not recording (not open yet, unplugged,
+  refused, restarting) and `CAM DARK` while it is black.
+- **The stop** (Q twice): the sound is stopped and saved first; then the camera's piece is finished at
+  the very end of the sound, within 15 seconds, after which its camera process is ended. A camera can
+  never hold up or cost the sound.
+- **A camera that fails** costs the picture only. Unplugged or folded, its picture stops: a black frame
+  marks where, the line `The camera "..." stopped sending its picture; the sound records on. Plug it back
+  in` comes (with `Its microphone may be silent too while the camera is away or asleep` when its
+  microphone is the one recorded), and ClassScribe opens it again every 2 seconds into the same piece.
+  There is never a stand-in camera. If the camera's process stops working three times within 10
+  minutes, the rest of the lesson is recorded without its picture (`The camera stopped working three
+  times; ...`).
+- **Room on the disk** counts the picture twice (its pieces, and later the finished video): two hours at
+  720p take about 10 GB with the sound. When the disk has room for less than 30 minutes of sound and
+  picture together, the camera is let go and the sound records on: `Little room is left on D:\ (...
+  free), so the camera is let go: the rest of this lesson is recorded without its picture. The sound
+  records on`.
+- **Continuing** a lesson (C, or `--continue`) is offered only to a run with the camera, and a recording
+  without one only to a run without; the continued part's picture goes into a new piece.
+
+The pieces are `<base>.cam.mp4`, and `<base>.cam@hh-mm-ss.fff.mp4` for one that begins later on the
+clock (a continued part, or after the camera's process was started again), the name holding where it
+begins. Each is a fragmented MP4 of the picture alone: if the laptop loses power or ClassScribe is
+ended, a piece is readable up to its last second or so. A piece holds the picture alone, without sound.
+The pieces are never sent to Google Drive.
+
+**Matching the picture to the sound.** Every camera shows its picture a little early or late against the
+sound. To measure yours: record a short lesson clapping once in view of the camera, open the piece and
+the recording's `.wav` side by side (any video editor), and note how many milliseconds the clap's
+picture comes before (negative) or after (positive) its sound. Put it in `appsettings.json` under
+`Recording:CameraOffsets`, by part of the camera's name: `"CameraOffsets": { "OBSBOT": -60 }`. The
+start then says `The picture is placed 60 ms earlier for "OBSBOT Meet Flip StreamCamera"
+(Recording:CameraOffsets)`.
 
 ### Checking the cameras
 
@@ -1328,8 +1381,7 @@ opened, shared, and sent its picture: 148 frames in 5 seconds.` Do this once bef
 `Recording:WakeCameraMicrophone`, and after installing a new build if Bitdefender asks again.
 
 The exit code is 0, or 1 when a `PROBLEM` line keeps the camera from being used, or the camera that was
-opened sent no picture or could not be opened. A recording with the camera is still refused before
-anything records in this build (see [Recording with the camera](#recording-with-the-camera)).
+opened sent no picture or could not be opened.
 
 ### A webcam's microphone (the OBSBOT)
 
@@ -2142,7 +2194,8 @@ The ones you are most likely to change:
 | `Recording:MicrophoneProcessing` | `Raw` | `Raw` asks Windows for the microphone's audio without its sound processing, and takes `Default` when that is not available; `Default` takes the processed audio, as any app gets it. |
 | `Recording:MicrophoneFollows` | `chrome` | With the class and your microphone, when the class is recorded from a device: the app whose microphone use your microphone follows, by part of its process name. Your voice is recorded only while that app has the microphone open and taking sound. `auto` follows any app that holds the microphone; `none` records whenever V is on. In app mode the recorded app is followed and this is not read; `--mic-follows` and menu choice 7 can name another for a run. Empty, or naming ClassScribe itself, is refused. |
 | `Recording:ClassAppMute` | `Unknown` | Whether the class app lets go of the microphone when you mute in it: `Visible` (it does; ClassScribe follows your mute by itself), `Invisible` (it keeps the microphone open; your voice is recorded only after you press V, and only while the app holds the microphone) or `Unknown` (as `Invisible`, and ClassScribe reports when it sees the app let go of the microphone). Measure your class page with the microphone check before setting `Visible`. |
-| `Recording:CameraResolution` | `720p` | The size of the camera's picture for a lesson recorded with the camera: `480p` (848x480, about 1.2 GB an hour with the sound), `720p` (1280x720, about 2.3 GB an hour) or `1080p` (1920x1080, about 3.7 GB an hour), in any letter case, or a width and a height such as `1024x576`: the width from 320 to 1920 and the height from 240 to 1080, both even, in a shape from 4:3 to 16:9 (a typed size was not measured; the camera records the closest it offers). `--resolution` and menu choice 7 choose another for a run. This file is replaced by the next build of the program folder, so to keep another size, use the menu or the command line. The camera's recording itself comes in a later build; `camera-check` shows the size in force. |
+| `Recording:CameraResolution` | `720p` | The size of the camera's picture for a lesson recorded with the camera: `480p` (848x480, about 1.2 GB an hour with the sound), `720p` (1280x720, about 2.3 GB an hour) or `1080p` (1920x1080, about 3.7 GB an hour), in any letter case, or a width and a height such as `1024x576`: the width from 320 to 1920 and the height from 240 to 1080, both even, in a shape from 4:3 to 16:9 (a typed size was not measured; the camera records the closest it offers). `--resolution` and menu choice 7 choose another for a run. This file is replaced by the next build of the program folder, so to keep another size, use the menu or the command line. The picture is encoded at a constant bitrate by the size: about 2.5 Mbit/s at 480p, 5 at 720p, 8 at 1080p. `camera-check` shows the size in force. |
+| `Recording:CameraOffsets` | `{}` | Moves a camera's picture against the sound in a lesson, by part of the camera's name, in milliseconds: `{ "OBSBOT": -60, "Integrated": -30 }` (negative is earlier). When several parts are in a camera's name, the longest applies. Each name part 1 to 200 characters, without control characters or a colon; each figure a whole number from -1000 to 1000. Empty: no camera is moved. A lesson keeps the offset it was recorded with. To measure a camera's, see [Recording with the camera](#recording-with-the-camera). This file is replaced by the next build of the program folder, so to keep an offset, set it for the ClassScribe you start (`Recording__CameraOffsets__OBSBOT=-60` in its environment). |
 | `Recording:WakeCameraMicrophone` | false | When on, and the microphone being recorded belongs to a webcam (by the container it shares with a camera that is neither built in nor virtual), ClassScribe keeps that webcam's picture open, shared and never exclusively, from before the microphone opens until the recording ends, keeping none of it, so that a webcam that sleeps by itself, such as the OBSBOT Meet Flip with Device Auto Sleep on, cannot fall asleep and silence its microphone. The camera's light stays on while recording. Run `camera-check` and type Y once before turning it on, so that a security program such as Bitdefender asks about ClassScribe while you watch. This file is replaced by the next build of the program folder, so to keep it on, set it for the ClassScribe you start (`Recording__WakeCameraMicrophone=true` in its environment). See [A webcam's microphone](#a-webcams-microphone-the-obsbot). |
 | `Recording:SilenceWarningSeconds` | 60 | Warn after this much silence. At least 1. |
 | `Recording:KeepUploadFile` | false | Keep the 16 kHz copy that was uploaded, after a failed or cancelled try as well. When off, the copy is removed after every try, whether it worked or not. |
@@ -2474,8 +2527,21 @@ words you see.
 
 | What you see | What to do |
 | --- | --- |
-| `The camera's recording is not built yet in this build of ClassScribe, so this recording cannot take the camera` | This build lists, checks and chooses cameras but does not record their picture. In the menu press Enter to record the sound only; on the command line leave out `--camera`. |
 | `--camera records only in person in this build: give it with --in-person` (exit code 2) | The camera goes with your microphone alone, in person: use `--in-person` as the source. |
+| `Camera: "..." (USB), 1280x720 at 30 frames a second, 5 Mbit/s, hardware encoder (...). Its light is on while it records; P lets it go during a pause` | The camera opened and its picture records. Nothing to do. |
+| `The camera "..." stopped sending its picture; the sound records on. Plug it back in`, with `CAM WAITING` in the title (an Alert) | The camera was unplugged, folded, or went to sleep. Plug it in or unfold it; ClassScribe opens it again every 2 seconds into the same piece, and says `The camera "..." is recording its picture again`. The sound was never interrupted. |
+| `The camera "..." gave no picture. Windows allows it, so a security program may be blocking ClassScribe (Bitdefender: Privacy > Video & Audio Protection > Webcam Protection). The sound records on` | The camera opened but sent nothing for 5 seconds. Allow ClassScribe in Bitdefender's Webcam Protection (run `camera-check` and type Y to be asked while you watch). |
+| `The camera "..." was refused: ... E_ACCESSDENIED ...` | Windows' camera privacy switch, or a security program, refused it. Turn on Let desktop apps access your camera in Settings > Privacy & security > Camera, and allow ClassScribe in the security program. ClassScribe tries again every 2 seconds. |
+| `The camera "..." is held by another app (...). Close it there; ClassScribe takes the camera as soon as it is free` | Another app holds the camera alone (ClassScribe only ever shares it). Close the camera in that app. |
+| `The camera "OBSBOT" is not connected, so its picture is not recording; ClassScribe looks for it every 5 seconds` | No camera of that name is plugged in. Plug it in; ClassScribe never records another camera in its place. |
+| `The camera's picture has been black for 10 seconds: is its lens covered or folded?`, with `CAM DARK` in the title (a Notice) | The picture is black, often a lens cap or a folded lens. The picture records on; it clears when the picture brightens. |
+| `ClassScribe's camera process for "..." stopped working; ClassScribe starts it again in 2 seconds. The sound records on` | The camera's own process ended, as after a driver fault; a new one writes a new piece from that moment. |
+| `The camera stopped working three times; the rest of this lesson is recorded without its picture. The sound records on` | The camera's process ended three times within 10 minutes. The lesson's sound records on to its end; record the next lesson after plugging the camera in again, or restarting the laptop. |
+| `The hardware encoder could not start (...); the camera's picture is encoded by Windows' software encoder instead` | The graphics' encoder refused; Windows' own encoder writes the picture instead, using a little more of the processor. Nothing to do. |
+| `The camera's picture could not be written (writing its picture failed (...)). The sound records on` | The disk or the encoder failed while writing the picture. ClassScribe starts a new piece, with Windows' software encoder when the encoder failed. Check the disk's free space. |
+| `Little room is left on D:\ (... free), so the camera is let go: the rest of this lesson is recorded without its picture. The sound records on` | The disk has room for less than 30 minutes of sound and picture together. Free some space; the sound records on. |
+| `The camera process did not finish its piece within 15 seconds of the stop, so it was ended; its piece is readable to its last second or so` | At the stop, the camera's process hung. The sound was saved first; the piece keeps all but its last moments. |
+| `The picture is placed 60 ms earlier for "..." (Recording:CameraOffsets)` | The camera's offset from your settings applies. See [Recording with the camera](#recording-with-the-camera) to measure it. |
 | `--resolution needs --camera` or `--resolution takes 480p, 720p or 1080p, ...` (exit code 2) | Give `--resolution` only with `--camera`, and one of the three sizes or a width and a height such as `1024x576` within the limits the message gives. |
 | `PROBLEM  Windows does not let desktop apps use the camera: ...` (camera check, exit code 1) | Turn on Let desktop apps access your camera in Settings > Privacy & security > Camera (the line names the page), then run the camera check again. |
 | `PROBLEM  No H.264 video encoder is installed, ...` | A Windows N edition lacks it: add the Media Feature Pack in Settings > System > Optional features. |

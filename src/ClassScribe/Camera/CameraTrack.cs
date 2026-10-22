@@ -215,16 +215,17 @@ public sealed class CameraTrack : ICameraTrack
     /// <inheritdoc />
     public async Task StopAsync(TimeSpan endPosition, CancellationToken cancellationToken)
     {
-        ICameraProcess? process;
         lock (_gate)
         {
             if (_stopping) return;
             _stopping = true;
-            process = _givenUp ? null : _process;
         }
 
+        // The loop ends first, a start under way with it, so that the process read next is the last one started.
         await _ending.CancelAsync();
         await _loop;
+        ICameraProcess? process;
+        lock (_gate) process = _givenUp ? null : _process;
         if (process is null)
         {
             _logger.LogDebug("No camera process is recording the picture at the stop");
@@ -263,7 +264,9 @@ public sealed class CameraTrack : ICameraTrack
 
         if (reading is not null)
         {
-            var waited = await Task.WhenAny(reading, Task.Delay(StopWait, _time, cancellationToken)).ConfigureAwait(false);
+            using var waiting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var waited = await Task.WhenAny(reading, Task.Delay(StopWait, _time, waiting.Token)).ConfigureAwait(false);
+            await waiting.CancelAsync();
             if (waited != reading)
             {
                 _logger.LogWarning("The camera process did not finish its piece within {Seconds} seconds of the stop, so it was ended; its piece is readable to its last second or so",
@@ -521,6 +524,7 @@ public sealed class CameraTrack : ICameraTrack
     private void Failed(string why)
     {
         var now = _time.GetTimestamp();
+        CameraConcern? restarting = null;
         lock (_gate)
         {
             while (_failures.Count > 0 && _time.GetElapsedTime(_failures.Peek(), now) > FailuresWithin) _failures.Dequeue();
@@ -528,13 +532,12 @@ public sealed class CameraTrack : ICameraTrack
             if (_failures.Count < MostFailures)
             {
                 _nextStart = now + Ticks(RestartAfter);
-                _concern = new CameraConcern(true, "CAMERA RESTARTING", $"{why}; ClassScribe starts it again in {RestartAfter.TotalSeconds:0} seconds. The sound records on");
-                _logger.LogWarning("{Text}", _concern.Text);
-                return;
+                restarting = _concern = new CameraConcern(true, "CAMERA RESTARTING", $"{why}; ClassScribe starts it again in {RestartAfter.TotalSeconds:0} seconds. The sound records on");
             }
         }
 
-        GiveUp(GivenUpText);
+        if (restarting is not null) _logger.LogWarning("{Text}", restarting.Text);
+        else GiveUp(GivenUpText);
     }
 
     /// <summary>The camera opened: the start line the first time (teach-video 6.10), a Debug line after.</summary>

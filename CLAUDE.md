@@ -5,7 +5,8 @@ plays, by WASAPI loopback: the output device the class plays on, a device pinned
 app's sound through process loopback. It can record the user's microphone beside the class, as a
 second track on the same clock, written only while the class app is listening on that microphone
 and Windows is not muting it, and mixed into the class's track at upload; or the microphone alone,
-for a class in a room. The recording runs in a separate recorder process
+for a class in a room, and then, for a lesson video, the camera's picture beside it, shared, into pieces on the same
+clock, written by a camera process of its own (the finished lesson video comes in a later slice). The recording runs in a separate recorder process
 (`ClassScribe.exe --recorder <run id>`), which the window shows through a named pipe, so closing
 the window does not end a class. When stopped, it sends the recording to ElevenLabs Scribe v2 with
 a glossary of Arabic terms and saves a Markdown transcript and ElevenLabs' JSON answer beside the
@@ -142,7 +143,10 @@ advice after a format error (10 A).
   nothing, so no light comes on. The camera's real open, `WindowsCameraCapture.InitializeShared` (MediaCapture's
   InitializeAsync), refuses in a test too, naming `FakeCameraCapture`, before anything is asked of Windows; the one real
   MediaCapture a test makes (`WindowsCameraCaptureTests`, WindowsCamera) is never initialised, which touches no device
-  (the probe fix's rule 6: it checks that Windows still refuses before InitializeAsync what the fake refuses).
+  (the probe fix's rule 6: it checks that Windows still refuses before InitializeAsync what the fake refuses). The lesson's
+  pieces are written by Media Foundation's sink writer, which opens no device: `MediaFoundationPieceWriterTests`
+  (WindowsMedia, run with the suite) encode generated frames with the software encoder into a temporary folder and read
+  them back. Every other test of the picture uses `FakePieceWriter` and `FakeCameraCapture`.
 - Tests never read or write the real `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` or
   `%USERPROFILE%\ClassScribe`: temporary folders only (`TestRuntime`, `TempFolder`). The real
   `%LOCALAPPDATA%\ClassScribe` holds the run files and logs of real classes now, and
@@ -313,7 +317,8 @@ advice after a format error (10 A).
   `RecordingClock` is one per run (origin at the first packet of any track, the offset when
   continuing, pauses and cut freezes as exclusions; `Now()` is a position), and `TrackPlacer` decides
   where a packet goes (`Append`, `Pad`, `Trim`, `Drop`, `CheckFreeze`, `LongGap`, `TooFarAhead`), with
-  the device position never used. A `TrackSpec` is `Contiguous` (class-only recordings: audio appended
+  the device position never used. `ClockState` is the clock's whole state as an immutable snapshot, whose placement is the
+  clock's own code; the camera process places a lesson's frames by it (see "The lesson's picture"). A `TrackSpec` is `Contiguous` (class-only recordings: audio appended
   as it comes, as always, with a gap note at `Transcript:ShowGapsLongerThanSeconds`) or
   `ClockAligned` (both tracks with the microphone, and the microphone in person: padded with zeros
   by a one-second timer to 1.5 s behind the clock, in chunks of at most a second, and to one end
@@ -455,6 +460,7 @@ dotnet test --filter TestCategory=AudioDevice                          # Explici
 dotnet test --filter TestCategory=WindowsProcess                       # real processes, pipes, windows, all of the test's own
 dotnet test --filter TestCategory=WindowsRegistry                      # reads two HKCU values every profile has; creates nothing
 dotnet test --filter TestCategory=WindowsCamera                        # the real camera list, and a MediaCapture never initialised; opens no camera, no light
+dotnet test --filter TestCategory=WindowsMedia                         # Media Foundation's sink writer on generated frames in a temporary folder; opens no device
 dotnet test --filter "FullyQualifiedName~Four_simulated_hours"         # the Explicit four-hour soak; run it before any path moves onto the clock
 dotnet build --no-incremental --disable-build-servers                  # when other builds run at the same time; must report 0 warnings
 dotnet run --project src/ClassScribe                                   # the menu (a recording then runs in the window)
@@ -610,8 +616,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   process's role), and 4,012 after the review's fixes to them (a camera job or line without a body, a tool start that
   throws, and the tests that pin the microphone guard's wiring and the camera start's order and registration), and 4,068
   after the camera's shared open (the probe fix's order), the camera process's hold and check jobs, the webcam hold, the
-  webcam zeros rules and the camera check's open after a typed Y; 4,068 is
-  the count now, all passing, in about three minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
+  webcam zeros rules and the camera check's open after a typed Y, 4,095 after the review's last fixes to the camera's
+  basics, and 4,194 after the camera recorded (slice 7 on `feature/camera-record`: `ClockState`, the pieces' files, the
+  record job and the sink writer, the camera track, the run's camera, its soak and the end-to-end lesson); 4,194 is
+  the count now, all passing, in about three and a half minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
   `DriveQueueReportTests`,
@@ -696,13 +704,13 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   17), which resolves the size into the request (`--resolution`, else menu 7's pick, else `Recording:CameraResolution`,
   else 720p, so the recorder never reads it and the run file keeps it), then refuses with the set-up's first problem or
   `ICameraRecorder.NotReady`: in the menu `Camera "...": <why>. Enter records the sound only; Esc goes back.`, elsewhere
-  `<why>. Nothing was recorded; leave out --camera to record the sound alone.` with exit 1; a ready build would ask
-  `Enter records with the camera; S records the sound only.` in the menu. `ICameraRecorder` (`Camera/CameraRecorder.cs`,
-  with `ICameraTrack` and `CameraTrackStart`) is the seam the camera process fills in slice 7; this build registers
-  `CameraRecorderNotBuilt` (`Words`: "The camera's recording is not built yet in this build of ClassScribe, so this
-  recording cannot take the camera"), a `RecordStarter` without a `CameraStart` refuses the same way, and
-  `TrackSetFactory.Create` throws `CameraNotBuiltException` for a plan with a camera, so no class starts with a half-built
-  camera. `CommandLine.Record` keeps `--camera` and `--resolution`. Amendment 2's extension data: `RunRecord`,
+  `<why>. Nothing was recorded; leave out --camera to record the sound alone.` with exit 1; otherwise the menu asks
+  `Enter records with the camera; S records the sound only.`, and the command line goes on. `ICameraRecorder`
+  (`Camera/CameraRecorder.cs`, with `ICameraTrack`, `CameraTrackStart`, `CameraTrackState`, `CameraConcern` and
+  `CameraOffsets`) is registered as `CameraRecorder` (slice 7, "The lesson's picture" below; `NotReady` only before Windows
+  10 version 2004); `CameraRecorderNotBuilt` stays as a stand-in for the refusal's tests, a `RecordStarter` without a
+  `CameraStart` refuses with its words, and `TrackSetFactory.Create` throws `CameraNotBuiltException` for a plan with a
+  camera outside person, or without a ready camera recorder. `CommandLine.Record` keeps `--camera` and `--resolution`. Amendment 2's extension data: `RunRecord`,
   `RecordRequest` and `SourcePlan` carry `[JsonExtensionData] Dictionary<string, JsonElement>? Extra` (null when nothing
   unknown was read, so records still compare equal), with a setter, not `init`: the generated reader fills init-only
   properties through the constructor, where extension data cannot go. A build older than this one still drops what it
@@ -833,7 +841,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   failed or cancelled included, unless `Recording:KeepUploadFile`) and `.unread.json` (an answer
   ElevenLabs charged for that did not become a transcript; a `.json` left without its `.md` counts as
   one too, see `RecordingFiles.FindKeptAnswers`; menu choice 3 shows `answer kept` and asks before a
-  charged retry). `RecordingFiles` owns the naming and `TranscriptCopies` the copy numbers: a
+  charged retry), and for a lesson with the camera its pieces, `<base>.cam.mp4` and `<base>.cam@hh-mm-ss.fff.mp4`
+  (`RecordingFiles.CameraPiece(start)`, `FindCameraPieces()` in their order on the clock, `IsCameraPiece`; a sign of a
+  class for the date folders; held while written for `IsBeingWritten`, the newest piece open for writing with reading
+  allowed; never sent to Drive, `RecordingUpload.FilesToUpload` and `UploadManifests.OnDisk` leave them out; continued
+  only by a run with the camera, `ClassFolders.FindContinuable(..., camera)` and the run files alike). `Track` has no
+  `Camera` value: `FindSegments` stays `.wav`'s. `RecordingFiles` owns the naming and `TranscriptCopies` the copy numbers: a
   transcript is never overwritten (`(2).md`, `(3).md`), not even by two processes at once, because
   each copy's `.json` and `.md` are claimed with `FileMode.CreateNew`. `HasTranscript` counts any
   copy; `ClassFolders` measures a recording by its longest track, reports `HasMicrophone` (`list`
@@ -919,7 +932,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   case or `WxH`, checked by `CameraSize.TryParse`, the one parser `--resolution` and menu choice 7 use too; amendment 39)
   and `Recording:WakeCameraMicrophone` (false, a yes or no: the webcam hold, see "The webcam hold" below;
   turned on for one ClassScribe through its environment, `Recording__WakeCameraMicrophone=true`, which the window's
-  settings snapshot carries to the recorder, until a settings file of the user's own exists). New choices are new keys, not new values of an existing enum (amendment 5): an older build
+  settings snapshot carries to the recorder, until a settings file of the user's own exists), and `Recording:CameraOffsets`
+  (`{}`: a camera's name part to the milliseconds its picture is moved against the sound, the longest part in the
+  camera's name applying, `CameraOffsets.For`; each part 1 to 200 characters without control characters or a colon, each
+  figure a whole number from -1000 to 1000; checked by `SettingsCheck.CheckWholeNumberMap` before the bind, so a value that
+  is no whole number is a problem in words, not a binder's exception; resolved by `TrackSetFactory` from the run's
+  snapshot into the camera track's start; `Recording__CameraOffsets__OBSBOT=-60` sets one for a ClassScribe's environment,
+  as the kit does for the long checks). Amendment 25's `settings set Recording:CameraOffsets:<camera>` waits for step 1's
+  settings writer (camera-first step 12 point 1). New choices are new keys, not new values of an existing enum (amendment 5): an older build
   refuses a value it does not know, and a key it does not know it passes over.
   The cost line's settings are `ElevenLabs:PricePerHourUsd` (0.22) and
   `ElevenLabs:KeytermsPricePerHourUsd` (0.05), each from 0 to 100 dollars an hour, and
@@ -1290,15 +1310,19 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (Gulzar's decision; his face sometimes shows in Zoom). Every call goes through `CameraCallLog` (name, time, OK or the
   HRESULT with its name from `CameraHresults`, the probe's checked table, and Windows' words), so a failure names its call;
   `CameraRoute.Close` lets the camera go, every call optional. `ICameraCapture` is the seam, one member a step;
-  `Camera/Windows/WindowsCameraCapture.cs` is the real MediaCapture (no memory preference), made by
-  `WindowsCameraCaptureFactory`. `CameraThread` is the camera process's own STA thread: every call on the route runs
+  `Camera/Windows/WindowsCameraCapture.cs` is the real MediaCapture (no memory preference, or CPU memory for a record job,
+  `InitializeShared(cpuFrames)`), made by `WindowsCameraCaptureFactory`. A record job opens with `onPixels`: CPU memory
+  (`CameraRoute.InitializeForPixels`), NV12 at the picture's size, and `AddFrameReader` in place of `AddFrameArrived`
+  (`CameraRoute.FrameArrivedForPixels`), each frame handed over as an `ICameraFrame` (its SystemRelativeTime, its size,
+  `CopyNv12To`) while Windows holds it: `WindowsCameraFrame` copies the SoftwareBitmap's two planes row by row, at their own
+  strides, through `IMemoryBufferByteAccess` on the CsWinRT object (`MemoryBufferBytes`, without unsafe code). `CameraThread` is the camera process's own STA thread: every call on the route runs
   there, each waited for at most the probe's 30 s (`CameraHost.CallLimit`), after which the thread is abandoned and the
   job ends. Fakes: `FakeCameraCapture` (refuses what Windows refuses before InitializeAsync, with Windows' exception and
   code; any step can fail, or get `Stuck` until a gate is set; `FramesOnStart`) and `FakeCameraCaptureFactory`; tests
   `CameraRouteTests` (the order of 21 October fails on the fake as every open did), `CameraThreadTests` (STA, the limit
   on the manual clock, every later call refused unqueued) and `WindowsCameraCaptureTests` (a camera id Windows does not
   list throws in `FindSourceGroup`, never a fallback to another group).
-- The camera process (teach-video 6.2, amendment 24; its hold and check jobs open the camera, only shared):
+- The camera process (teach-video 6.2, amendment 24; its hold, check and record jobs open the camera, only shared):
   `ClassScribe.exe --camera-process <job id>` (under dotnet, `dotnet ClassScribe.dll --camera-process <job id>`), taken
   by `Program` before anything touches the console, as `--recorder` is, and only for exactly the switch and an id
   `RunIds.IsWellFormed` takes (`CameraProtocol.IsCameraProcessStart`; `RecorderHost.IsRecorderStart` now checks its id the
@@ -1306,8 +1330,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   input, and speaks the lines of `CameraProtocol` (`Camera/CameraProtocol.cs`: the job, `CameraJob` with `CameraJobKind`
   Record, Finish, Check or Hold (the wake job renamed); to it `clock`, `off`, `on`, `stop` (`CameraStop`), `cancel`; from it
   `opened`, `status`, `problem`, `piece`, `progress`, `made`, `failed`, `log`; `CameraJson`, strict as the link's) on its
-  standard output, as lines of UTF-8 JSON through `LineChannel` over a `JoinedStream` of the two pipes. Two jobs are
-  taken (`Camera/CameraJobs.cs`), each on a `CameraThread`: the hold (`CameraHoldJob`: the camera opened shared, nothing
+  standard output, as lines of UTF-8 JSON through `LineChannel` over a `JoinedStream` of the two pipes. Version 2 (slice 7)
+  defined the `clock` line's body (`ClockState`), the empty body of `off`, `on` and `cancel` (`CameraEmpty`,
+  `CameraLines.SendSignalAsync`), `CameraJob.SoftwareEncoder`, `CameraStatus.FramesPerSecond` and `Capturing` (defaulted),
+  and `CameraProblemKind.NoPicture`. Three jobs are taken, each on a `CameraThread`: the record job (`CameraRecordJob`, "The
+  lesson's picture" below), and in `Camera/CameraJobs.cs` the hold (`CameraHoldJob`: the camera opened shared, nothing
   converted; a `status` at the first frame of each open and once a second, with the frames and the seconds since the last;
   a refused open said once per cause as a `problem` through `CameraProblems.ForFailedOpen` (E_ACCESSDENIED as privacy or a
   security program, a sharing violation or busy as another app, a camera not listed or not connected) and tried again
@@ -1315,12 +1342,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `cancel` or closed end lets the camera go and ends it with 0; a starter found gone on a send ends it too) and the check
   (`CameraCheckJob`: the camera opened at the job's size, each call sent as a `log` line, a failed required call at
   Warning, `opened`, then a `status` with the frames over `CameraHost.CheckFor` (5 s), let go; 0 with frames, else `failed`
-  and 1). A hold or check naming no camera is not taken. A record or finish job is answered with a log line and `failed`
-  (`CameraRecorderNotBuilt.Words`), opens nothing, and exits 4; no job within `JobPatience` (30 s), a first line that is no
+  and 1). A hold, check or record job naming no camera is not taken. A finish job (the lesson's video, slice 8) is answered
+  with a log line and `failed` (`CameraHost.FinishNotBuilt`), opens nothing, and exits 4; no job within `JobPatience` (30 s), a first line that is no
   job, a job without a body or with one that is not an object, or a job of another `CameraProtocol.Version`, is not taken
   either, with why in `failed`; it never throws. Its exit codes are internal: 0 done, 1 failed, 4 a job it cannot take,
-  130 cancelled. `ICameraProcessStarter` (`CameraProcessStarter`, registered in `CameraServices`, used by the webcam hold
-  and the camera check) starts it through `PipedProcess` (`Desktop/Windows/PipedProcess.cs`,
+  130 cancelled. `ICameraProcessStarter` (`CameraProcessStarter`, registered in `CameraServices`, used by the webcam hold,
+  the camera check and a lesson's camera track) starts it through `PipedProcess` (`Desktop/Windows/PipedProcess.cs`,
   factored out of `ProcessToolRunner`, which now starts its tools through it): CreateProcessW, no window, three pipes and no
   other handle, `ChildEnvironment.WithoutTheKey`, the working folder `%LOCALAPPDATA%\ClassScribe`, and a kill-on-close
   `ToolJob` made before it runs, the job and the pipes let go again when Windows refuses or the start throws
@@ -1335,6 +1362,68 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   and `CameraLinesSeen` (a starter's reader of every line); tests `CameraHostTests`, `CameraJobTests` (the real host over
   the fake capture on the manual clock, stuck calls included: the hold's `failed` and exit 1, the check naming the call)
   and `CameraProcessStarterTests`.
+- The lesson's picture (teach-video 6.5 to 6.14, slice 7; camera-first step 12; shared only, as every open): a lesson in
+  person with `SourcePlan.Camera` records the sound exactly as without one, and its camera's picture into pieces on the
+  same clock. `ClockState` (`Audio/Timeline/ClockState.cs`) is the clock's whole state, immutable: offset, origin, the
+  exclusions (`ClockExclusion`), the open pause and a version that grows with every change; `RecordingClock.Snapshot()`
+  hands one out under the clock's lock, and `Position` and `IsExcluded` are the clock's own code moved into it
+  (`PositionOf`, `IsExcludedIn`, `Covered`), which the clock calls under its lock, so both processes place by one
+  implementation (`ClockStateTests`: random sequences, earlier snapshots unchanged, the JSON round trip). In the recorder,
+  `TrackSetFactory` gives a lesson's `TrackSet` a camera starter (its `ICameraRecorder`, optional) with the run's
+  `Recording:CameraOffsets`; `TrackSet.Start` starts the `CameraTrack` once the sound records (a track that cannot start is
+  an error line, the sound records on); `Pause`, `Resume` and `OnFrozen` (after the cut) reach it; `Stop` finishes the
+  sound first (stopped, padded to the end, flushed) and then waits for the camera's stop at that same end (a failing stop is
+  an error line); `TrackSet` implements `ICameraRecording` (`Camera`, `LetGoOfTheCamera`). No webcam hold runs beside a
+  picture (`WakeCameraMicrophone` is passed off for a plan with a camera; the webcam is still found for the zeros rules).
+  `CameraTrack` (`Camera/CameraTrack.cs`) pins the camera by `Cameras.Choose` and its id (never a stand-in; not connected is
+  said and looked for every 5 s), resolves the offset (`CameraOffsets.For`), starts a camera process with a record job
+  (the first piece from the run's offset, a later one from the clock's position then), sends the clock's state at once and
+  whenever its version changed, from its own loop every 250 ms or at once when nudged, and `off`/`on` for P after the clock's
+  line; `Nudge`, `Pause` and `Resume` take no lock (a flag and a task completed with its continuation run elsewhere), and the
+  track takes no session's gate, only the clock's lock inside `Snapshot()` and its own. Its stop sends the clock's last line
+  and `stop` with the end, waits for the process at most `StopWait` (15 s), then kills it. A process that ends by itself, or
+  does not start, is started again `RestartAfter` (2 s) later, with the software encoder after an `Encoder` problem; the
+  `MostFailures`th (3) within `FailuresWithin` (10 min) gives the picture up (`GivenUpText`). Its `State`
+  (`CameraTrackState`) carries the frames, the rate, capturing, dark and a `CameraConcern` in the run's words with the
+  camera's name (lost, no picture as Bitdefender's block, refused, in use, encoder or disk, restarting, not connected, given
+  up as Alerts; dark as a Notice), cleared when frames come again. The run: `MonitorContext.Camera`; `RecordingMonitor`
+  makes the concern a condition (only a picture given up while paused; a lost camera whose microphone shares its container
+  adds that its microphone may be silent too), adds `; camera 1280x720, 29.9 frames a second, 3 dropped` to the status
+  line, and counts the picture twice in the room (`CameraBytesPerHour`): with room for less than 30 minutes of sound and
+  picture, `MonitorTick.LetGoOfTheCamera` and the loop lets it go. `RecorderState.Camera` (`CameraState`, a last field with
+  a default) gives the title `CAM WAITING` and `CAM DARK` while recording. In the camera process, `CameraRecordJob`
+  (`Camera/CameraRecordJob.cs`) refuses a piece already there (never written over), makes the writer (hardware unless the
+  job asks for software; a refused hardware start falls back to software once, with a warning line), opens the camera
+  shared with CPU frames, and queues each frame (`FrameQueue`, `Camera/CameraPieces.cs`: 24 pooled buffers, each frame
+  waiting `Hold` 0.5 s so a pause's clock line arrives before the frames it leaves out, more than `RingLimit` 15 letting the
+  oldest go early); every `LookEvery` (100 ms) the due frames are placed by the latest clock line (`FramePlacer`, pure:
+  before the origin, excluded, before the piece, at or before the last, under `ShortestGap` 25 ms after it, or after the
+  end, dropped; else written at the clock's position plus the offset less the piece's start; no stamp, its arrival). Lost
+  for `StoppedAfter` 3 s: a black frame right after the last frame (never at now's position, which a cut not yet known
+  could put beyond the frames after), let go, `Lost`, opened again every `RetryEvery` 2 s into the same piece; no first
+  frame in `FirstFrameLimit` 5 s: `NoPicture`; black for `DarkAfter` 10 s: `Dark` once a stretch; a status line a second.
+  The stop places every waiting frame, lets the last last to the end and sends `piece`, exit 0; a cancel or the starter's
+  end closing finishes the piece at its last frame, 130; a failed write finishes it as far as it goes, `problem` (`Disk` or
+  `Encoder`) and `failed`, 1; a stuck call, 1. `PieceSettings` fixes the encoding: the picture's size, Main profile, the
+  level from its macroblocks at 30 frames a second (3.1 at 480p as at 720p, which the probe's self-check found when Windows
+  refused 3.0 at 848x480; 4.0 at 1080p), no B-frames, a keyframe every 30 frames, constant bitrate by the height's band
+  (2.5, 5, 8 Mbit/s) scaled by the pixels. `MediaFoundationPieceWriter` (`Camera/Windows`) writes the piece with Media
+  Foundation's sink writer through NAudio's declarations (ClassScribe's own `VideoGuids`), fragmented MP4
+  (MFTranscodeContainerType_FMPEG4), the encoder's settings passed as the sink writer's encoding parameters (no ICodecAPI
+  declaration), over a file ClassScribe makes itself with others allowed to read (`FileStreamAsIStream` into
+  `MFCreateMFByteStreamOnStream`), the black frame at 0 first and each sample lasting until the next. Fakes:
+  `FakeCameraFrame` and `FakeCameraCapture.Deliver(stamp, brightness)`, `FakePieceWriter(Factory)` (`Samples` as
+  `WrittenSample`, `FinishedAt`, `FailWrite`, `HardwareRefuses`), `FakeCameraTrack` and `FakeCameraRecorder`,
+  `FakeCameraRecording`, `PlayedCameraProcess` (`Received`, `Clocks`, `Stop`, `HangOnStop`, `OpenedAsync`,
+  `RecordStatusAsync`; a record job's stop answered with its piece through `FakeCameraProcess.EndAsync`, which closes its
+  own end so the starter reads its last lines), `FakeCameraProcess.Exited`. Tests: `CameraPiecesTests`, `CameraRecordJobTests`
+  (the real host over the fakes on the manual clock), `MediaFoundationPieceWriterTests` (WindowsMedia: generated frames
+  encoded with the software encoder into a temporary folder and read back, an unfinished piece readable, a piece being
+  written holding its recording; no device), `CameraTrackTests`, `TrackSetCameraTests`, `RecordingMonitorCameraTests`,
+  `TitleTextCameraTests`, `CameraOffsetsTests`, `CameraFilesTests`, `CameraSoakTests` (three simulated minutes through the
+  real track set, camera recorder and camera host: each mark's bright frame where its click is in the sound, through a
+  pause, a cut sleep and a lost camera) and `EndToEndTests.A_lesson_with_the_camera_records_its_picture_beside_the_sound`.
+  The lesson's finished video (`finish`, `finish-video`, the report's V) is slice 8.
 - The webcam hold (`Camera/WebcamHold.cs`; camera-first 3.4 as amended on 21 October, behind
   `Recording:WakeCameraMicrophone`, off by default): `TrackSetFactory` gives each microphone track a `WebcamHold` from
   `WebcamHolds` (registered in `CameraServices`; optional, so a factory without it has no webcam). At each pick
@@ -1465,7 +1554,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   registered provider.
 - `src/ClassScribe/Audio/Timeline`: the QPC timeline of design section 3: `MediaTime` (positions in
   100-ns units, conversions without overflow), `RecordingClock` (origin, offset, pauses and cuts,
-  positions, the paused and cut totals) and `TrackPlacer` (where a packet goes on a track, the
+  positions, the paused and cut totals, `Snapshot()`), `ClockState` (the clock's whole state, immutable, placing by the
+  clock's own code; `ClockExclusion`) and `TrackPlacer` (where a packet goes on a track, the
   padding target, the drift corrections).
 - `src/ClassScribe/Audio/Microphone` (namespace `ClassScribe.Audio.Microphones`, plural on purpose: a
   `Microphone` namespace would hide the `Microphone` record): `Microphone.cs` (the contracts:
@@ -1490,8 +1580,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   never a virtual one unnamed; `CameraOf` and `MicrophoneOf`, a webcam's microphone by the container it shares with its
   camera, never a built-in camera and never by the computer's own container `Cameras.ThisComputer`; `WebcamOf`, never a
   virtual camera either, for the hold and the zeros rules), `CameraRoute.cs` (the shared open and its call log),
-  `CameraThread.cs`, `CameraJobs.cs` (the hold and check jobs, `CameraProblems`), `WebcamHold.cs` (`WebcamHold`,
+  `CameraThread.cs`, `CameraJobs.cs` (the hold and check jobs, `CameraProblems`), `CameraRecordJob.cs` (the record job),
+  `CameraPieces.cs` (`PieceSettings`, `IPieceWriter`, `IPieceWriterFactory`, `ICameraFrame`, `CameraPicture`,
+  `FramePlacer`, `FrameQueue`), `CameraRecorder.cs` (`ICameraRecorder`, `CameraRecorder`, `ICameraTrack`,
+  `CameraTrackStart`, `CameraTrackState`, `CameraConcern`, `CameraOffsets`, `CameraRecorderNotBuilt`), `CameraTrack.cs`
+  (the recorder's side of a lesson's picture), `WebcamHold.cs` (`WebcamHold`,
   `WebcamHolds`, `WebcamState`), `Windows/WindowsCameraCapture.cs` (the real MediaCapture),
+  `Windows/WindowsCameraFrame.cs` (a frame's pixels copied out, `MemoryBufferBytes`), `Windows/MediaFoundationPieceWriter.cs`
+  (the piece writer and its factory, `VideoGuids`, `FileStreamAsIStream`),
   `Windows/WindowsCameraProvider.cs` (WinRT's `DeviceInformation.FindAllAsync` with `System.Devices.ContainerId` and
   `MediaFrameSourceGroup.FindAllAsync`, which open nothing; Windows older than 10.0.19041 and a list Windows will not give,
   whatever exception WinRT maps its HRESULT to, answer with a `CameraList` that says why, and only the caller's own cancel
@@ -1567,7 +1663,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `VideoWindow`), `VideoPlayback`, `VideoEnds.cs` (`VideoEnds`, `VideoWindowClosedException`) and
   `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`).
 - `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`: course and date folders, the old flat layout read too; `CreateRecordingIn` and `IsVideo` for YouTube), recording file names (both
-  tracks), numbered transcript copies (`TranscriptCopies`, never overwritten), marks, the
+  tracks, and a lesson's camera pieces, `CameraPieceFile`), numbered transcript copies (`TranscriptCopies`, never overwritten), marks, the
   microphone check's log file (`MicCheckLog`: the header, the cost line, flushed per line), and
   `RoamingFolder` (`%APPDATA%\ClassScribe`, where `google-drive.dat` is kept; tests give a temporary one),
   and `IAudioOnDrive.cs` (`AudioOnDrive`, `IAudioOnDrive`, `NoAudioOnDrive`: what the lists and commands

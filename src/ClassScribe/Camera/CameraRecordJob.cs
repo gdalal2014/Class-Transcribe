@@ -72,8 +72,11 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
     /// <summary>False while the starter's off holds (a pause): the camera is let go.</summary>
     private volatile bool _wantOpen = true;
 
-    /// <summary>The end position the starter's stop gave; null before it.</summary>
-    private TimeSpan? _stopAt;
+    /// <summary>The end position the starter's stop gave, in ticks; -1 before it.</summary>
+    private long _stopAtTicks = -1;
+
+    /// <summary>The end position the starter's stop gave; null before it. Read from any thread: the frames', the loop's and the control's.</summary>
+    private TimeSpan? StopAt => Volatile.Read(ref _stopAtTicks) is var ticks and >= 0 ? TimeSpan.FromTicks(ticks) : null;
 
     /// <summary>True once the starter's cancel came, or its end of the lines closed.</summary>
     private volatile bool _cancelled;
@@ -129,7 +132,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
         var settings = PieceSettings.For(size);
         _queue = new FrameQueue(settings.FrameBytes, FrameQueue.PoolSize);
         var placer = new FramePlacer(pieceStart, offset);
-        await LogAsync("Information", string.Create(CultureInfo.InvariantCulture,
+        await LogAsync("Debug", string.Create(CultureInfo.InvariantCulture,
             $"Recording the camera \"{name}\" shared into {Path.GetFileName(path)}, from {Durations.Format(pieceStart)} on the clock: {settings.Words}, {writer.Encoder}"));
         if (offset != TimeSpan.Zero)
             await LogAsync("Information", string.Create(CultureInfo.InvariantCulture,
@@ -164,7 +167,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
             while (true)
             {
                 var now = time.GetTimestamp();
-                if (_stopAt is not null || _cancelled) break;
+                if (StopAt is not null || _cancelled) break;
 
                 var open = _open;
                 if (_wantOpen && open is null && now >= nextTry)
@@ -253,12 +256,12 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
                 _open = null;
             }
 
-            var end = _stopAt;
+            var end = StopAt;
             PlaceDue(writer, placer, all: true, end);
             var endPosition = end is { } stop && stop > placer.Last ? stop : placer.Last + FrameTime;
             writer.Finish(endPosition - placer.PieceStart);
             await SendAsync(CameraProtocol.Piece, new CameraPiece(writer.Path, placer.PieceStart.TotalSeconds, endPosition.TotalSeconds), CameraJson.Default.CameraPiece);
-            await LogAsync("Information", string.Create(CultureInfo.InvariantCulture,
+            await LogAsync("Debug", string.Create(CultureInfo.InvariantCulture,
                 $"The camera's piece {Path.GetFileName(writer.Path)} is finished: {Durations.Format(endPosition - placer.PieceStart)}, {placer.Written} frames written, {placer.Dropped + _queue.Dropped} dropped"));
             return end is not null ? CameraProtocol.DoneExitCode : CameraProtocol.CancelledExitCode;
         }
@@ -334,7 +337,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
     /// <summary>A frame from the camera, with its pixels: queued with when it arrived, its brightness followed. Runs on Windows' frame thread, so it never throws.</summary>
     private void OnFrame(ICameraFrame frame)
     {
-        if (_stopAt is not null || _cancelled) return;
+        if (StopAt is not null || _cancelled) return;
 
         var arrival = MediaTime.Now(time);
         Interlocked.Increment(ref _arrived);
@@ -421,7 +424,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
                         _wantOpen = true;
                         break;
                     case CameraProtocol.Stop:
-                        _stopAt = TimeSpan.FromSeconds(Math.Max(0, ReadStop(line)?.EndSeconds ?? 0));
+                        Volatile.Write(ref _stopAtTicks, TimeSpan.FromSeconds(Math.Max(0, ReadStop(line)?.EndSeconds ?? 0)).Ticks);
                         await _ending.CancelAsync();
                         return;
                     case CameraProtocol.Cancel:
@@ -438,7 +441,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
         {
             // Deliberately not rethrown: the job is ending, the starter is gone, or a line could not be read; each finishes the
             // piece as far as it goes.
-            if (_stopAt is null) _cancelled = true;
+            if (StopAt is null) _cancelled = true;
         }
 
         await _ending.CancelAsync();
@@ -523,7 +526,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
             // Deliberately not rethrown: the starter is gone, so nobody is left to tell; the piece is finished as far as it
             // goes and the job ends.
             _starterGone = true;
-            if (_stopAt is null) _cancelled = true;
+            if (StopAt is null) _cancelled = true;
             await _ending.CancelAsync();
         }
     }
