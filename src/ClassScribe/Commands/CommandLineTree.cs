@@ -50,7 +50,7 @@ public enum CommandKind
 /// ClassScribe list [--output "&lt;folder&gt;"]
 /// ClassScribe devices
 /// ClassScribe mic-check [--seconds &lt;n&gt;] [--log-folder "&lt;folder&gt;"]
-/// ClassScribe camera-check ["&lt;camera&gt;"] [--resolution &lt;size&gt;]    opens no camera in this build
+/// ClassScribe camera-check ["&lt;camera&gt;"] [--resolution &lt;size&gt;]    opens the camera, shared, only after a typed Y
 /// ClassScribe drive signin [--client "&lt;downloaded client file&gt;"]    the first time needs --client
 /// ClassScribe drive signout
 /// ClassScribe drive status
@@ -834,7 +834,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// camera-check: the cameras from Windows' own lists, which apps use one, the camera and the picture's size a lesson
-    /// recorded with --camera would take, and the camera's set-up lines; it opens no camera in this build. Part of a camera's
+    /// recorded with --camera would take, and the camera's set-up lines; it opens the camera for 5 seconds, shared, only after a typed Y. Part of a camera's
     /// name and --resolution, checked as record's are, show what a lesson with them would take.
     /// </summary>
     private Command CameraCheckCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
@@ -851,7 +851,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         };
 
         var command = new Command("camera-check",
-            "List the cameras, which apps use one now, the camera and the size a lesson would take, and what the camera needs on this computer. Opens no camera in this build.")
+            "List the cameras, which apps use one now, the camera and the size a lesson would take, and what the camera needs on this computer. Opens the camera for 5 seconds, shared, only after you type Y.")
         {
             camera, resolution
         };
@@ -1093,8 +1093,8 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
           ClassScribe camera-check
           ClassScribe camera-check "OBSBOT" --resolution 1080p
 
-        No camera is opened, so no light comes on: the cameras come from Windows' own lists, and the set-up lines from Windows' settings and its Security Center.
-        Exit code 0 when the camera can be used on this computer; 1 when a set-up line says what keeps it from being used.
+        The cameras come from Windows' own lists, and the set-up lines from Windows' settings and its Security Center, which open nothing. Then, only after you type Y and Enter, the chosen camera is opened for 5 seconds, shared, as a lesson will: its light comes on, each call is shown with its outcome, and a security program such as Bitdefender may ask about ClassScribe; allow it. Nothing of the picture is kept.
+        Exit code 0 when the camera can be used on this computer; 1 when a set-up line says what keeps it from being used, or the camera opened and sent no picture.
         """;
 
     /// <summary>The examples and notes under the help of drive.</summary>

@@ -230,7 +230,7 @@ public sealed class MenuCommand(
         ui.WriteLine("  5  Open the recordings folder");
         ui.WriteLine("  6  Choose what to record: a device or an app");
         ui.WriteLine("  7  Microphone and camera: none, with the class, or in person");
-        ui.WriteLine("  8  Check the microphone or a camera (opens nothing)");
+        ui.WriteLine("  8  Check the microphone, or a camera (a camera opens only after you type Y)");
         ui.WriteLine("  9  Google Drive: upload, free room on this laptop, sign in");
         ui.WriteLine($"  {YouTubeKey}  YouTube: record videos as they play, or download them, then transcribe");
         if (report.RecordingNow() is { Home: RunHome.Separate }) ui.WriteLine($"  {ShowKey}  Show the recording in progress");
@@ -322,14 +322,14 @@ public sealed class MenuCommand(
 
     /// <summary>
     /// Choice 8: W watches what apps do with the microphone (the microphone check, until it is stopped in this window); C
-    /// checks the cameras (the camera check, which opens no camera in this build). Esc, Q or Ctrl+C go back; other keys are
+    /// checks the cameras (the camera check, which opens the chosen camera, shared, only after a typed Y). Esc, Q or Ctrl+C go back; other keys are
     /// ignored. Neither opens a device.
     /// </summary>
     private async Task CheckAsync()
     {
         ui.WriteLine("Check:");
         ui.WriteLine("  W  Watch what apps do with the microphone (opens nothing)");
-        ui.WriteLine("  C  The cameras: list them and what the camera needs on this computer (opens nothing)");
+        ui.WriteLine("  C  The cameras: list them, what the camera needs on this computer, and open one for 5 seconds after you type Y");
         ui.WriteLine("Press W or C, or Esc to go back.");
 
         while (true)

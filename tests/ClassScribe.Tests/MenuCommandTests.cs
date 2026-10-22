@@ -187,7 +187,7 @@ public class MenuCommandTests
             .And.Contain("5  Open the recordings folder")
             .And.Contain("6  Choose what to record: a device or an app")
             .And.Contain("7  Microphone and camera: none, with the class, or in person")
-            .And.Contain("8  Check the microphone or a camera (opens nothing)")
+            .And.Contain("8  Check the microphone, or a camera (a camera opens only after you type Y)")
             .And.Contain("9  Google Drive: upload, free room on this laptop, sign in")
             .And.Contain("Recording from: the device the class plays on")
             .And.Contain(_folder.Path));
@@ -1106,7 +1106,7 @@ public class MenuCommandTests
 
         Assert.That(await RunMenuAsync(), Is.EqualTo(0));
 
-        Assert.That(_ui.Screen, Does.Contain("C  The cameras: list them and what the camera needs on this computer (opens nothing)"));
+        Assert.That(_ui.Screen, Does.Contain("C  The cameras: list them, what the camera needs on this computer, and open one for 5 seconds after you type Y"));
         _commands.Verify(c => c.CameraCheckAsync(new CameraCheckRequest(null, null)), Times.Once);
         _commands.VerifyNoOtherCalls();
     }

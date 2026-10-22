@@ -205,6 +205,9 @@ public sealed class FakeCameraCapture : ICameraCapture
     /// <summary>The steps that fail, by the member's name (such as nameof(InitializeShared)), with what they throw.</summary>
     public Dictionary<string, Exception> Failures { get; } = [];
 
+    /// <summary>How many frames the reader hands over as soon as it has started, as a camera that streams at once; none unless a test says.</summary>
+    public int FramesOnStart { get; set; }
+
     /// <summary>What StartReader answers: Success unless a test says otherwise.</summary>
     public string StartStatus { get; set; } = CameraRoute.Success;
 
@@ -273,6 +276,7 @@ public sealed class FakeCameraCapture : ICameraCapture
     {
         Step(nameof(StartReader));
         Streaming = StartStatus == CameraRoute.Success;
+        Frames(FramesOnStart);
         return StartStatus;
     }
 
@@ -412,6 +416,9 @@ public sealed class FakeCameraProcessStarter : ICameraProcessStarter
     /// <summary>True to play each process started: it reads its job, and ends at its starter's stop.</summary>
     public bool PlayEach { get; init; }
 
+    /// <summary>When set, runs as each process starts, on the thread pool, with the process and its job id: such as the real camera host over the process's own end.</summary>
+    public Func<FakeCameraProcess, string, Task>? Run { get; set; }
+
     /// <summary>When set, each start throws this, as Windows not starting the process would.</summary>
     public Exception? StartFailure { get; set; }
 
@@ -438,6 +445,7 @@ public sealed class FakeCameraProcessStarter : ICameraProcessStarter
             var process = new FakeCameraProcess(7001 + _started.Count);
             _started.Add((jobId, process));
             if (PlayEach) _played.Add(new PlayedCameraProcess(process));
+            if (Run is { } run) _ = Task.Run(() => run(process, jobId));
             return process;
         }
     }

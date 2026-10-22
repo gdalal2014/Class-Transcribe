@@ -20,6 +20,8 @@ public class CameraCheckTests
     private FakeCameraSystem _system = null!;
     private FakeRegistryValues _registry = null!;
     private TestOptions<RecordingOptions> _recording = null!;
+    private FakeCameraProcessStarter _starter = null!;
+    private FakeCameraCaptureFactory _captures = null!;
 
     /// <summary>The laptop's cameras and microphones, the OBSBOT's microphone in its camera's container, and the settings as shipped.</summary>
     [SetUp]
@@ -33,6 +35,11 @@ public class CameraCheckTests
         _system = new FakeCameraSystem();
         _registry = new FakeRegistryValues();
         _recording = new TestOptions<RecordingOptions>(new RecordingOptions());
+        _captures = new FakeCameraCaptureFactory { Prepare = (capture, _) => capture.FramesOnStart = 148 };
+        _starter = new FakeCameraProcessStarter
+        {
+            Run = (process, jobId) => new CameraHost { Captures = _captures, CheckFor = TimeSpan.FromMilliseconds(50) }.RunAsync(jobId, process.ProcessStream, process.ProcessStream)
+        };
         _choice = null;
     }
 
@@ -41,7 +48,8 @@ public class CameraCheckTests
 
     /// <summary>The check over the fakes.</summary>
     private CameraCheckCommand Command() =>
-        new(_cameras, _microphones, _usage, new CameraSetupFacts(_system, _usage, _registry), _choice ??= new Audio.SourceChoice(_recording), _recording, _ui);
+        new(_cameras, _microphones, _usage, new CameraSetupFacts(_system, _usage, _registry), _choice ??= new Audio.SourceChoice(_recording), _recording, _ui, _starter,
+            TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<CameraCheckCommand>.Instance);
 
     /// <summary>What is chosen for the session, made with the settings on first use.</summary>
     private Audio.SourceChoice? _choice;
@@ -67,8 +75,9 @@ public class CameraCheckTests
         Assert.That(_ui.Screen, Does.Contain("No app is using a camera now, as Windows' camera record shows."));
         Assert.That(_ui.Screen, Does.Contain("A lesson recorded with --camera would take the camera \"OBSBOT Meet Flip StreamCamera\", at 720p (1280x720; Recording:CameraResolution)."));
         Assert.That(_ui.Screen, Does.Contain("Set-up:"));
-        Assert.That(_ui.Screen, Does.EndWith(CameraCheckCommand.OpensNothing));
+        Assert.That(_ui.Screen, Does.EndWith(CameraCheckCommand.NotOpened));
         Assert.That(_microphones.Opened, Is.Empty, "no microphone was opened");
+        Assert.That(_starter.Started, Is.Empty, "no camera was opened without a Y");
     }
 
     /// <summary>A camera named, and a size given, show what a lesson with them would take; a name that fits no camera says the lesson would wait.</summary>
@@ -230,5 +239,101 @@ public class CameraCheckTests
         Assert.That(defender[3], Is.EqualTo(new CameraSetupLine(CameraSetupState.Note, "Windows Defender Antivirus is a security program here: if it asks about ClassScribe and the camera, allow it")));
         Assert.That(unknown[3].Text, Does.StartWith("Windows' Security Center did not say which security program runs"));
         Assert.That(none.Select(line => line.Text), Has.None.Contains("security program"));
+    }
+
+    /// <summary>
+    /// After a typed Y the chosen camera is opened through a camera process's check job (the real host over the fake
+    /// capture): shared, at the picture's size, each call shown with its outcome, the camera's format and the frames that
+    /// came; the check ends with 0.
+    /// </summary>
+    [Test]
+    public async Task After_a_typed_Y_the_camera_is_opened_shared_and_each_call_shown()
+    {
+        _ui.TypeLine("y");
+
+        var exitCode = await Command().RunAsync(new CameraCheckRequest(Resolution: "1080p"));
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(_ui.Screen, Does.Contain(CameraCheckCommand.Question));
+        Assert.That(_ui.Screen, Does.Contain("Opening \"OBSBOT Meet Flip StreamCamera\" for 5 seconds, shared, at 1080p:"));
+        Assert.That(_ui.Screen, Does.Contain("  4. MediaCapture.InitializeAsync (SharedReadOnly, video only): OK"));
+        Assert.That(_ui.Screen, Does.Contain("  Open, shared; the camera's format: MJPG 1920x1080 at 30 frames a second, read as NV12 1920x1080"));
+        Assert.That(_ui.Screen, Does.Contain("  Frames in 5 seconds: 148"));
+        Assert.That(_ui.Screen, Does.EndWith("The camera \"OBSBOT Meet Flip StreamCamera\" opened, shared, and sent its picture: 148 frames in 5 seconds."));
+        var (cameraId, _, capture) = _captures.Made.Single();
+        Assert.That(cameraId, Is.EqualTo(LaptopCameras.Obsbot.Id));
+        Assert.That(capture.ConvertedTo, Is.EqualTo(CameraSize.P1080));
+        Assert.That(capture.Disposed, Is.True, "the camera let go");
+    }
+
+    /// <summary>Anything but Y leaves the camera closed: no camera process starts.</summary>
+    [TestCase("")]
+    [TestCase("n")]
+    [TestCase("yes please")]
+    public async Task Anything_but_Y_leaves_the_camera_closed(string answer)
+    {
+        _ui.TypeLine(answer);
+
+        var exitCode = await Command().RunAsync(new CameraCheckRequest());
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(_starter.Started, Is.Empty);
+        Assert.That(_ui.Screen, Does.EndWith(CameraCheckCommand.NotOpened));
+    }
+
+    /// <summary>A window that takes no typing cannot be asked for the Y, so the camera is not opened, and the check says why.</summary>
+    [Test]
+    public async Task Without_typing_the_camera_is_not_opened()
+    {
+        _ui = new FakeConsoleUi { IsInteractive = false };
+
+        var exitCode = await Command().RunAsync(new CameraCheckRequest());
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(_starter.Started, Is.Empty);
+        Assert.That(_ui.Screen, Does.EndWith(CameraCheckCommand.NotAsked));
+        Assert.That(_ui.Screen, Does.Not.Contain(CameraCheckCommand.Question));
+    }
+
+    /// <summary>A camera that is refused is shown call by call, the failed call with its HRESULT, then why in words and what to do; exit 1.</summary>
+    [Test]
+    public async Task A_refused_camera_is_shown_call_by_call_and_ends_with_1()
+    {
+        _captures.Prepare = (capture, _) => capture.Failures[nameof(ICameraCapture.InitializeShared)] =
+            new UnauthorizedAccessException("Access is denied.") { HResult = CameraHresults.AccessDenied };
+        _ui.TypeLine("Y");
+
+        var exitCode = await Command().RunAsync(new CameraCheckRequest("integrated"));
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_ui.Screen, Does.Contain("  4. MediaCapture.InitializeAsync (SharedReadOnly, video only): failed (").And.Contain("ms): 0x80070005 E_ACCESSDENIED (Windows: \"Access is denied.\")"));
+        Assert.That(_ui.Screen, Does.Contain("The camera \"Integrated Camera\" could not be opened: Windows' camera privacy settings or a security program"));
+        Assert.That(_ui.Screen, Does.EndWith(CameraCheckCommand.TryAgain));
+    }
+
+    /// <summary>A camera process Windows does not start is said in words; exit 1.</summary>
+    [Test]
+    public async Task A_camera_process_that_does_not_start_is_said()
+    {
+        _starter.StartFailure = new System.ComponentModel.Win32Exception(5, "Access is denied");
+        _ui.TypeLine("Y");
+
+        var exitCode = await Command().RunAsync(new CameraCheckRequest());
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_ui.Screen, Does.EndWith("Windows did not start ClassScribe's camera process: Access is denied."));
+    }
+
+    /// <summary>With no camera to choose there is nothing to open, and nothing is asked.</summary>
+    [Test]
+    public async Task With_no_camera_nothing_is_asked()
+    {
+        _cameras.Connected = [];
+
+        var exitCode = await Command().RunAsync(new CameraCheckRequest());
+
+        Assert.That(exitCode, Is.EqualTo(0));
+        Assert.That(_ui.Screen, Does.Not.Contain(CameraCheckCommand.Question));
+        Assert.That(_starter.Started, Is.Empty);
     }
 }

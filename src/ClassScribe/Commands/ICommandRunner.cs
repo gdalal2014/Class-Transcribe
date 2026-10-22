@@ -38,7 +38,7 @@ public interface ICommandRunner
 
     /// <summary>
     /// The camera check (see <see cref="CameraCheckCommand"/>): the cameras, which apps use one, the camera and size a lesson
-    /// would take, and the camera's set-up lines; opens no camera in this build. Returns the exit code.
+    /// would take, and the camera's set-up lines; opens the camera, shared, only after a typed Y. Returns the exit code.
     /// </summary>
     Task<int> CameraCheckAsync(CameraCheckRequest request);
 
