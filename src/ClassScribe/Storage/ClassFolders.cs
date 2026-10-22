@@ -244,16 +244,16 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// continue, however recent. It is offered only when all of this holds: it has no transcript; no
     /// answer ElevenLabs was paid for is kept for it (see <see cref="KeptAnswerOf(RecordingFiles)"/>), beside it, in the
     /// root or in the recordings folder given for the run; it has the same tracks as a run of <paramref name="mode"/>,
-    /// which the microphone's .mic.wav files tell, and the camera's pieces when <paramref name="camera"/> (a lesson with
-    /// the camera is offered only to a run with one, and a recording without pieces only to a run without; teach-video
-    /// 6.8); it is not being written, on either track nor its newest piece; it has no upload copy, which
+    /// which the microphone's .mic.wav files tell; a lesson with the camera's pieces is offered only to a run with the camera
+    /// (<paramref name="camera"/>; teach-video 6.8); it is not being written, on either track nor its newest piece; it has no upload copy, which
     /// is there while a recorder or a window transcribes it, after a transcription that was cut off, and after a failed one
     /// whose copy Recording:KeepUploadFile kept; its audio was last written no more than <paramref name="within"/> ago (zero
     /// never offers one); and it is shorter than <see cref="TranscriptionWorkflow.LongestRecording"/>, so that continued it
     /// can still be sent in one file. So a recording ElevenLabs has billed, or may be billing, is not offered: continued, it
     /// would be sent again whole and billed twice. The files cannot tell a recording of the class alone from one made in
-    /// person, both a single main track, nor show a recorder in the moment between the end of its capture and the making of
-    /// its upload copy: the run files can, for the caller to check.
+    /// person, both a single main track, nor a recording made without the camera from a lesson whose camera never gave a
+    /// piece (not connected, or its process never started), both without pieces, nor show a recorder in the moment between
+    /// the end of its capture and the making of its upload copy: the run files can, for the caller to check.
     /// </summary>
     public ContinueCandidate? FindContinuable(string name, RecordingMode mode, TimeSpan within, string? root = null, bool camera = false)
     {
@@ -278,7 +278,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         var unfit = newest.HasTranscript ? "it has a transcript"
             : kept is not null ? $"ElevenLabs' answer to it, which has been paid for, is kept in {kept}"
             : microphone.Count > 0 != (mode == RecordingMode.ClassAndMicrophone) ? "its tracks are not those of this run"
-            : pieces.Count > 0 != camera ? camera ? "it was recorded without the camera, and this run records the camera" : "it was recorded with the camera, and this run records no camera"
+            : pieces.Count > 0 && !camera ? "it was recorded with the camera, and this run records no camera"
             : IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone) || IsNewestHeldForWriting(pieces) ? "it is being recorded now"
             : File.Exists(newest.Upload) ? "its upload copy is there: it is being transcribed, or a transcription of it was cut off"
             : time.GetUtcNow() - stopped > within ? $"it stopped more than {Durations.Format(within)} ago"

@@ -77,8 +77,27 @@ public sealed class MediaFoundationPieceWriter : IPieceWriter
         {
             Release();
             _file.Dispose();
-            File.Delete(path);
+            DeleteHalfMade(path);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Deletes the half-made piece at <paramref name="path"/> after the encoder or its settings were refused; one that cannot
+    /// be deleted now (a scanner holding the new file) is left, so that the refusal itself is what is thrown, and the software
+    /// encoder's start then deletes it or says why it cannot.
+    /// </summary>
+    internal static void DeleteHalfMade(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: the encoder's refusal, rethrown by the caller, is the failure to say; an exception
+            // from this clean-up would take its place, and turn a refused hardware encoder, which the software encoder
+            // replaces, into a disk failure, which costs the picture.
         }
     }
 

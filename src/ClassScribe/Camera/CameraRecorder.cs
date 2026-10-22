@@ -57,6 +57,12 @@ public interface ICameraTrack : IAsyncDisposable
     /// <summary>Lets the camera go for the rest of the run, as when the disk is nearly full, and says why: the sound records on.</summary>
     void GiveUp(string why);
 
+    /// <summary>
+    /// The sound ends at <paramref name="endPosition"/>: said to the camera process at once, before the sound is stopped, so
+    /// that no frame after it is written while the sound is stopped and saved; <see cref="StopAsync"/> follows. Takes no lock.
+    /// </summary>
+    void EndAt(TimeSpan endPosition);
+
     /// <summary>Stops the picture at <paramref name="endPosition"/>, where the sound tracks end, and waits for the piece, at most 15 seconds.</summary>
     Task StopAsync(TimeSpan endPosition, CancellationToken cancellationToken);
 }

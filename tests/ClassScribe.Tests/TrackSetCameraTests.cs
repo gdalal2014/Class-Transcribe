@@ -110,8 +110,9 @@ public sealed class TrackSetCameraTests
     }
 
     /// <summary>
-    /// At the stop the sound is stopped, padded to the end and its files finished first; then the camera stops at that same
-    /// end, where the sound ends.
+    /// At the stop the camera hears the sound's end first, while the sound is still being written, so that it writes no frame
+    /// after it; the sound is then stopped, padded to the end and its files finished; then the camera stops at that same end,
+    /// where the sound ends.
     /// </summary>
     [Test]
     public void The_sound_is_finished_before_the_camera_stops_at_the_same_end()
@@ -125,9 +126,35 @@ public sealed class TrackSetCameraTests
         var summary = recording.Stop();
 
         var track = _cameras.Tracks.Single();
+        Assert.That(track.SoundBeingWrittenAtEnd, Is.True, "the end came before the sound was stopped");
         Assert.That(track.SoundBeingWrittenAtStop, Is.False, "the sound's files were finished before the camera's stop");
-        Assert.That(track.Calls, Is.EqualTo(new[] { $"stop at {summary.Length}" }));
+        Assert.That(track.Calls, Is.EqualTo(new[] { $"end at {summary.Length}", $"stop at {summary.Length}" }));
         Assert.That(summary.Length, Is.EqualTo(TimeSpan.FromSeconds(30)).Within(TimeSpan.FromMilliseconds(1)));
+    }
+
+    /// <summary>
+    /// A camera whose stop never returns holds the sound's summary up no longer than <see cref="TrackSet.CameraStopLimit"/>:
+    /// the stop then goes on without it, with a line saying so, so that the transcript and the next class never wait on it.
+    /// </summary>
+    [Test]
+    public async Task A_camera_whose_stop_never_returns_holds_up_the_stop_at_most_its_limit()
+    {
+        var microphone = MicrophoneCapture();
+        using var recording = (TrackSet)Factory().Create(Lesson, _clock);
+        recording.Start(_files, TimeSpan.Zero);
+        microphone.Deliver(new byte[960], _time.GetTimestamp());
+        var track = _cameras.Tracks.Single();
+        track.StopHangs = true;
+
+        var stopping = Task.Run(recording.Stop);
+        await Wait.UntilAsync(() => track.Calls.Any(call => call.StartsWith("stop at", StringComparison.Ordinal)));
+        var moved = await _time.AdvanceUntilAsync(() => stopping.IsCompleted, TimeSpan.FromSeconds(1), atMost: TimeSpan.FromMinutes(2));
+        var summary = await stopping;
+
+        Assert.That(moved, Is.InRange(TrackSet.CameraStopLimit, TrackSet.CameraStopLimit + TimeSpan.FromSeconds(1)));
+        Assert.That(summary.MainSegments, Has.Count.EqualTo(1));
+        Assert.That(_logs.MessagesOf<TrackSet>(), Has.Some.EqualTo(
+            "The camera's picture did not stop within 25 seconds of the sound's stop; the recording goes on without it, and its piece is kept as far as it was written"));
     }
 
     /// <summary>A camera track that cannot be started costs the picture only: the sound records, and the line says why.</summary>

@@ -137,14 +137,18 @@ public sealed class CameraFilesTests
         Assert.That(next.Folder, Is.EqualTo(_folder.File(@"Tajwid\2026-10-14 (2)")));
     }
 
-    /// <summary>A lesson with pieces is offered to be continued only to a run with the camera, and a recording without them only to a run without.</summary>
+    /// <summary>
+    /// A lesson with pieces is offered to be continued only to a run with the camera. A recording without them is offered by
+    /// its files to either: they cannot tell a recording made without the camera from a lesson whose camera never gave a
+    /// piece, so the run files decide (see <see cref="ContinueQuestionTests"/>).
+    /// </summary>
     [Test]
     public void A_lesson_with_the_camera_is_continued_only_with_the_camera()
     {
         var plain = WriteStopped(TimeSpan.FromMinutes(5));
 
         Assert.That(Folders().FindContinuable("Tajwid", RecordingMode.Microphone, TimeSpan.FromHours(1))?.Files, Is.EqualTo(plain));
-        Assert.That(Folders().FindContinuable("Tajwid", RecordingMode.Microphone, TimeSpan.FromHours(1), camera: true), Is.Null);
+        Assert.That(Folders().FindContinuable("Tajwid", RecordingMode.Microphone, TimeSpan.FromHours(1), camera: true)?.Files, Is.EqualTo(plain));
 
         WritePiece(plain, TimeSpan.Zero);
 

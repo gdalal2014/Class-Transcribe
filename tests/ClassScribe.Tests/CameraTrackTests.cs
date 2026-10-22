@@ -80,6 +80,23 @@ public sealed class CameraTrackTests
     }
 
     /// <summary>
+    /// The start line says the frames a second the camera sends as it runs, shared with other apps, which the piece keeps; and
+    /// that it keeps up to 30 a second when Windows does not say the camera's rate.
+    /// </summary>
+    [TestCase(15, "1280x720 at 15 frames a second")]
+    [TestCase(0, "1280x720 at up to 30 frames a second")]
+    public async Task The_start_line_says_the_camera_s_own_frame_rate(double framesPerSecond, string words)
+    {
+        var played = await StartAsync();
+
+        await played.OpenedAsync(framesPerSecond: framesPerSecond);
+        await WaitAsync(() => _log.Messages.Any(message => message.StartsWith("Camera: ", StringComparison.Ordinal)));
+
+        Assert.That(_log.Messages.Single(message => message.StartsWith("Camera: ", StringComparison.Ordinal)),
+            Is.EqualTo($"Camera: \"{LaptopCameras.Obsbot.Name}\" (USB), {words}, 5 Mbit/s, hardware encoder (Fake H.264 Encoder). Its light is on while it records; P lets it go during a pause"));
+    }
+
+    /// <summary>
     /// P sends the clock's pause and then off, at once, without waiting for the track's next look; P again the clock and on.
     /// So the pause reaches the camera process before the frames it leaves out are placed.
     /// </summary>
@@ -169,6 +186,79 @@ public sealed class CameraTrackTests
         Assert.That(played.Clocks[^1].Version, Is.EqualTo(_clock.Snapshot().Version));
         Assert.That(_log.Messages, Does.Contain("The camera's piece Tajwid_2026-10-22_14-00-00Z.cam.mp4 is finished, from 00:00:00 to 00:00:40 on the clock"));
         Assert.That(played.Process.Killed, Is.False);
+    }
+
+    /// <summary>
+    /// The sound's end goes to the camera process at once, without waiting for the track's next look and before any stop, so
+    /// that no frame after it is written while the sound is being stopped and saved.
+    /// </summary>
+    [Test]
+    public async Task The_sound_s_end_goes_to_the_camera_process_at_once()
+    {
+        var played = await StartAsync();
+        _clock.Begin(MediaTime.Now(_time));
+        _time.Advance(TimeSpan.FromSeconds(4));
+        var end = _clock.Now();
+
+        _track!.EndAt(end);
+        await WaitAsync(() => played.End is not null);
+
+        Assert.That(played.End, Is.EqualTo(new CameraStop(end.TotalSeconds)));
+        Assert.That(played.StopReceived, Is.False, "the stop follows once the sound is saved");
+    }
+
+    /// <summary>
+    /// A camera process that stops reading its input, so that a line to it never goes out, is ended 5 seconds into that
+    /// line, which breaks its pipe; the stop then returns, and never waited on the line any longer.
+    /// </summary>
+    [Test]
+    public async Task A_camera_process_that_stops_reading_its_input_is_ended_and_the_stop_returns()
+    {
+        var played = await StartAsync();
+        _clock.Begin(MediaTime.Now(_time));
+        await _time.AdvanceUntilAsync(() => played.Clocks.Any(clock => clock.Origin is not null), Step);
+
+        played.Process.InputStuck = true;
+        var stopping = _track!.StopAsync(_clock.Now(), CancellationToken.None);
+        await WaitAsync(() => _time.UntilNextTimer == CameraTrack.SendLimit);
+        var moved = await _time.AdvanceUntilAsync(() => stopping.IsCompleted, TimeSpan.FromSeconds(1));
+        await stopping;
+
+        Assert.That(moved, Is.EqualTo(CameraTrack.SendLimit));
+        Assert.That(played.Process.Killed, Is.True);
+        Assert.That(_log.Problems, Has.Some.EqualTo("The camera process did not take a line within 5 seconds, so it was ended"));
+    }
+
+    /// <summary>
+    /// A camera process that cannot be let go (it cannot be ended, so its error output never closes) holds up the stop at
+    /// most 5 seconds after its piece was said.
+    /// </summary>
+    [Test]
+    public async Task A_camera_process_that_cannot_be_let_go_holds_up_the_stop_at_most_5_seconds()
+    {
+        var played = await StartAsync();
+        played.Process.DisposeHangs = true;
+
+        var stopping = _track!.StopAsync(_clock.Now(), CancellationToken.None);
+        await WaitAsync(() => played.Process.DisposeEntered && _time.UntilNextTimer == CameraTrack.DisposeWait);
+        var moved = await _time.AdvanceUntilAsync(() => stopping.IsCompleted, TimeSpan.FromSeconds(1));
+        await stopping;
+
+        Assert.That(moved, Is.EqualTo(CameraTrack.DisposeWait));
+        Assert.That(_log.Problems.Single(), Is.EqualTo("The camera process could not be let go within 5 seconds; it ends with ClassScribe at the latest"));
+    }
+
+    /// <summary>Frames that come but cannot be written are an Alert in the run's words, naming what comes.</summary>
+    [Test]
+    public async Task Frames_that_cannot_be_written_are_an_Alert_in_the_run_s_words()
+    {
+        var played = await StartAsync();
+
+        await played.ProblemAsync(CameraProblemKind.Unwritable, "its frames come at 1920x1080, not the 1280x720 asked for");
+        await WaitAsync(() => _track!.State.Concern is not null);
+
+        Assert.That(_track!.State.Concern, Is.EqualTo(new CameraConcern(true, "CAMERA NOT WRITTEN",
+            $"The camera \"{LaptopCameras.Obsbot.Name}\" sends its picture, but it cannot be written: its frames come at 1920x1080, not the 1280x720 asked for. ClassScribe opens it again every 2 seconds. The sound records on")));
     }
 
     /// <summary>A camera process that does not finish its piece within 15 seconds of the stop is ended, and the stop returns; the sound never waited longer.</summary>
@@ -348,6 +438,7 @@ public sealed class CameraTrackTests
         Assert.That(_starter.Played, Has.Count.EqualTo(1));
         Assert.That(_track.State.GivenUp, Is.True);
         Assert.That(_track.State.Concern, Is.EqualTo(new CameraConcern(true, CameraTrack.GivenUpShort, "Little room is left on the disk")));
+        Assert.That(_log.Problems.Count(problem => problem == "Little room is left on the disk"), Is.EqualTo(1), "the track says why, once");
     }
 
     /// <summary>A lesson of the OBSBOT at 720p into a recording, from <paramref name="start"/> on the clock, with <paramref name="offsets"/>.</summary>

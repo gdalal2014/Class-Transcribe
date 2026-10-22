@@ -53,6 +53,12 @@ public static class CameraProtocol
     /// <summary>Stop at an end position (see <see cref="CameraStop"/>).</summary>
     public const string Stop = "stop";
 
+    /// <summary>
+    /// The sound's end position (see <see cref="CameraStop"/>), sent as soon as the recorder takes it and before it stops the
+    /// sound: a frame placed after it is dropped from then on. The stop follows once the sound is saved.
+    /// </summary>
+    public const string End = "end";
+
     /// <summary>Give the job up at once, keeping what is written; an empty body.</summary>
     public const string Cancel = "cancel";
 
@@ -177,7 +183,10 @@ public enum CameraProblemKind
     Disk,
 
     /// <summary>The camera opened but sent no picture: a security program may be blocking it.</summary>
-    NoPicture
+    NoPicture,
+
+    /// <summary>The camera's frames come, but none can be written: of another size than the picture's, or without NV12 pixels that can be read.</summary>
+    Unwritable
 }
 
 /// <summary>A problem with the camera, with its words.</summary>

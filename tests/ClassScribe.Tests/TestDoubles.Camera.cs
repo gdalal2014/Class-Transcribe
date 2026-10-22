@@ -118,13 +118,17 @@ public sealed class FakeCameraProvider : ICameraProvider
 /// <summary>
 /// A camera process as a test plays it (teach-video 11): its lines go over an in-memory pipe (<see cref="DuplexStreamPair"/>),
 /// the starter's end as <see cref="Channel"/> and the process's end read and written by the test, as the process would: its
-/// job, then whatever lines the test scripts. Its exit and a kill are the test's to say. Nothing is started and no camera
-/// is opened.
+/// job, then whatever lines the test scripts. Its exit and a kill are the test's to say. A test can make it stop reading its
+/// input, so that the starter's writes hang as on a full pipe until the process ends, and make letting it go never finish,
+/// as for a process stuck inside Windows. Nothing is started and no camera is opened.
 /// </summary>
 public sealed class FakeCameraProcess : ICameraProcess
 {
     /// <summary>The in-memory pipe between the starter and the process.</summary>
     private readonly DuplexStreamPair _pipe = new();
+
+    /// <summary>Completed when the process ends, by itself or by a kill: what a write that hangs waits for.</summary>
+    private readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>The process's end of the lines, made when the test first speaks as the process.</summary>
     private Link.LineChannel? _processEnd;
@@ -133,8 +137,21 @@ public sealed class FakeCameraProcess : ICameraProcess
     public FakeCameraProcess(int processId = 7001)
     {
         ProcessId = processId;
-        Channel = new Link.LineChannel(_pipe.WindowEnd);
+        Channel = new Link.LineChannel(new StickingInput(_pipe.WindowEnd, this));
     }
+
+    /// <summary>
+    /// True once the process stopped reading its input: each write of the starter's from then on hangs, whatever its
+    /// cancellation says, as a write to a synchronous pipe that is full does, until the process ends, and then fails as a
+    /// broken pipe does.
+    /// </summary>
+    public bool InputStuck { get; set; }
+
+    /// <summary>True for a letting go that never finishes, as when the process cannot be ended and its error output stays open.</summary>
+    public bool DisposeHangs { get; set; }
+
+    /// <summary>True once the starter began to let the process go.</summary>
+    public bool DisposeEntered { get; private set; }
 
     /// <inheritdoc />
     public int ProcessId { get; }
@@ -166,10 +183,15 @@ public sealed class FakeCameraProcess : ICameraProcess
     {
         ExitCode = exitCode;
         _pipe.Break();
+        _ended.TrySetResult();
     }
 
     /// <summary>Notes that the process ended with <paramref name="exitCode"/>, as when the real camera host it ran has returned and closed its lines itself.</summary>
-    public void Exited(int exitCode) => ExitCode = exitCode;
+    public void Exited(int exitCode)
+    {
+        ExitCode = exitCode;
+        _ended.TrySetResult();
+    }
 
     /// <summary>
     /// Ends the process with <paramref name="exitCode"/> once its starter has its last lines: its own end of the lines closes,
@@ -179,6 +201,7 @@ public sealed class FakeCameraProcess : ICameraProcess
     {
         ExitCode = exitCode;
         await ProcessEnd.DisposeAsync();
+        _ended.TrySetResult();
     }
 
     /// <inheritdoc />
@@ -191,9 +214,89 @@ public sealed class FakeCameraProcess : ICameraProcess
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        DisposeEntered = true;
+        if (DisposeHangs) await new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
         await Channel.DisposeAsync();
         if (_processEnd is not null) await _processEnd.DisposeAsync();
         _pipe.Dispose();
+    }
+
+    /// <summary>
+    /// The starter's end of the pipe, which writes as the in-memory pipe does until the process stops reading its input
+    /// (<see cref="InputStuck"/>); from then on a write waits for the process to end, its cancellation passed over as a
+    /// synchronous pipe's is, and then fails as a broken pipe does.
+    /// </summary>
+    /// <param name="inner">The in-memory pipe's end.</param>
+    /// <param name="process">The process whose input it is.</param>
+    private sealed class StickingInput(Stream inner, FakeCameraProcess process) : Stream
+    {
+        /// <inheritdoc />
+        public override bool CanRead => true;
+
+        /// <inheritdoc />
+        public override bool CanWrite => true;
+
+        /// <inheritdoc />
+        public override bool CanSeek => false;
+
+        /// <summary>Not supported: a pipe has no length.</summary>
+        public override long Length => throw new NotSupportedException();
+
+        /// <summary>Not supported: a pipe has no position.</summary>
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        /// <inheritdoc />
+        public override void Flush() => inner.Flush();
+
+        /// <inheritdoc />
+        public override Task FlushAsync(CancellationToken cancellationToken) => inner.FlushAsync(cancellationToken);
+
+        /// <inheritdoc />
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+
+        /// <inheritdoc />
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            inner.ReadAsync(buffer, offset, count, cancellationToken);
+
+        /// <inheritdoc />
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => inner.ReadAsync(buffer, cancellationToken);
+
+        /// <inheritdoc />
+        public override void Write(byte[] buffer, int offset, int count) => WriteAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        /// <inheritdoc />
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        /// <inheritdoc />
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (process.InputStuck)
+            {
+                await process._ended.Task;
+                throw new IOException("Pipe is broken.");
+            }
+
+            await inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        /// <summary>Not supported: a pipe cannot seek.</summary>
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        /// <summary>Not supported: a pipe has no length.</summary>
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        /// <inheritdoc />
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
+        }
     }
 }
 
@@ -338,6 +441,19 @@ public sealed class FakeCameraCapture : ICameraCapture
         return true;
     }
 
+    /// <summary>
+    /// Hands over <paramref name="frame"/> as it is, as the reader's thread would for a record job, while streaming: such as a
+    /// frame of another size than the reader was asked for, or one whose pixels cannot be read. False when the capture does
+    /// not stream, or has no record job's reader.
+    /// </summary>
+    public bool DeliverFrame(ICameraFrame frame)
+    {
+        if (!Streaming || _onPixels is null) return false;
+
+        _onPixels(frame);
+        return true;
+    }
+
     /// <inheritdoc />
     public void StopReader()
     {
@@ -383,12 +499,17 @@ public sealed class FakeCameraCapture : ICameraCapture
     }
 }
 
-/// <summary>A frame as a test hands it over: its stamp, its size, and a picture of one brightness, in NV12.</summary>
+/// <summary>
+/// A frame as a test hands it over: its stamp, its size, and a picture of one brightness, in NV12; or, unless
+/// <paramref name="readable"/>, a frame whose pixels cannot be read, as one Windows hands over in another format or outside
+/// CPU memory.
+/// </summary>
 /// <param name="stamp">When it was taken, in units of 100 nanoseconds; null for none.</param>
 /// <param name="width">Its width.</param>
 /// <param name="height">Its height.</param>
 /// <param name="brightness">The brightness of every pixel.</param>
-public sealed class FakeCameraFrame(long? stamp, int width, int height, byte brightness) : ICameraFrame
+/// <param name="readable">False for a frame whose NV12 pixels cannot be copied.</param>
+public sealed class FakeCameraFrame(long? stamp, int width, int height, byte brightness, bool readable = true) : ICameraFrame
 {
     /// <inheritdoc />
     public long? Stamp100ns => stamp;
@@ -402,6 +523,8 @@ public sealed class FakeCameraFrame(long? stamp, int width, int height, byte bri
     /// <inheritdoc />
     public bool CopyNv12To(byte[] target)
     {
+        if (!readable) return false;
+
         target.AsSpan(0, width * height).Fill(brightness);
         target.AsSpan(width * height, width * height / 2).Fill(128);
         return true;
@@ -520,8 +643,8 @@ public sealed class FakePieceWriterFactory : IPieceWriterFactory
 
 /// <summary>
 /// A lesson's camera track as a test plays it, in place of <see cref="CameraTrack"/>: it starts no process, and notes every
-/// call in order (pause, resume, nudge, give up, stop with its end, dispose), with whether the recording's sound was still
-/// being written when the stop came. A test can make its stop throw.
+/// call in order (pause, resume, nudge, give up, the end, stop with its end, dispose), with whether the recording's sound was
+/// still being written when the end and the stop came. A test can make its stop throw, or never return.
 /// </summary>
 /// <param name="start">Where the track begins.</param>
 /// <param name="clock">The clock it was given.</param>
@@ -529,6 +652,19 @@ public sealed class FakeCameraTrack(CameraTrackStart start, Audio.Timeline.Recor
 {
     private readonly Lock _gate = new();
     private readonly List<string> _calls = [];
+
+    /// <summary>Whether the recording's sound was being written when the end came; null before it.</summary>
+    public bool? SoundBeingWrittenAtEnd { get; private set; }
+
+    /// <summary>True for a stop that never returns, as one waiting on a camera process stuck inside Windows.</summary>
+    public bool StopHangs { get; set; }
+
+    /// <inheritdoc />
+    public void EndAt(TimeSpan endPosition)
+    {
+        SoundBeingWrittenAtEnd = Storage.ClassFolders.IsBeingWritten(new Storage.RecordingFiles(start.Folder, start.BaseName));
+        Note($"end at {endPosition}");
+    }
 
     /// <summary>Where the track begins.</summary>
     public CameraTrackStart Start => start;
@@ -568,6 +704,7 @@ public sealed class FakeCameraTrack(CameraTrackStart start, Audio.Timeline.Recor
     {
         SoundBeingWrittenAtStop = Storage.ClassFolders.IsBeingWritten(new Storage.RecordingFiles(start.Folder, start.BaseName));
         Note($"stop at {endPosition}");
+        if (StopHangs) return new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
         return StopFailure is { } failure ? Task.FromException(failure) : Task.CompletedTask;
     }
 
@@ -792,6 +929,7 @@ public sealed class PlayedCameraProcess
     private volatile CameraJob? _job;
     private volatile bool _stopReceived;
     private volatile CameraStop? _stop;
+    private volatile CameraStop? _end;
 
     /// <summary>The types of the lines the starter sent after the job, in order.</summary>
     public IReadOnlyList<string> Received
@@ -808,12 +946,16 @@ public sealed class PlayedCameraProcess
     /// <summary>The stop the starter sent; null before it.</summary>
     public CameraStop? Stop => _stop;
 
+    /// <summary>The sound's end the starter sent before its stop; null before it.</summary>
+    public CameraStop? End => _end;
+
     /// <summary>True to answer the stop with nothing at all, as a process stuck inside Windows, until the starter kills it.</summary>
     public bool HangOnStop { get; set; }
 
-    /// <summary>Sends the opened line of a record job: the size and the encoder.</summary>
-    public ValueTask OpenedAsync(int width = 1280, int height = 720, string encoder = "hardware encoder (Fake H.264 Encoder)") =>
-        Process.ProcessEnd.SendAsync(CameraProtocol.Opened, new CameraOpened(Job?.CameraName ?? "camera", width, height, 30, encoder), CameraJson.Default.CameraOpened, CancellationToken.None);
+    /// <summary>Sends the opened line of a record job: the size, the frames a second the piece keeps (0 when Windows did not say the camera's) and the encoder.</summary>
+    public ValueTask OpenedAsync(int width = 1280, int height = 720, string encoder = "hardware encoder (Fake H.264 Encoder)", double framesPerSecond = 30) =>
+        Process.ProcessEnd.SendAsync(CameraProtocol.Opened, new CameraOpened(Job?.CameraName ?? "camera", width, height, framesPerSecond, encoder), CameraJson.Default.CameraOpened,
+            CancellationToken.None);
 
     /// <summary>Sends a record job's status line: <paramref name="frames"/> so far, whether the camera records and whether its picture is dark.</summary>
     public ValueTask RecordStatusAsync(long frames, bool capturing = true, bool dark = false, double framesPerSecond = 30, long dropped = 0) =>
@@ -868,6 +1010,7 @@ public sealed class PlayedCameraProcess
                     if (line.Type == CameraProtocol.Clock) _clocks.Add(System.Text.Json.JsonSerializer.Deserialize(line.Body, CameraJson.Default.ClockState)!);
                 }
 
+                if (line.Type == CameraProtocol.End) _end = System.Text.Json.JsonSerializer.Deserialize(line.Body, CameraJson.Default.CameraStop);
                 if (line.Type != CameraProtocol.Stop) continue;
 
                 _stop = System.Text.Json.JsonSerializer.Deserialize(line.Body, CameraJson.Default.CameraStop);

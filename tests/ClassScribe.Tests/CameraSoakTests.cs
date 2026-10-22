@@ -154,6 +154,53 @@ public sealed class CameraSoakTests
         Assert.That(_captures.Made.Select(made => made.Capture.Disposed), Has.All.True);
     }
 
+    /// <summary>
+    /// A stop whose sound takes two seconds to let go of its microphone, the camera streaming all the while: the frames taken
+    /// after the sound's end never reach the piece, which ends where the sound ends.
+    /// </summary>
+    [Test]
+    public async Task The_piece_ends_with_the_sound_though_the_sound_takes_seconds_to_stop()
+    {
+        var factory = new TrackSetFactory(new FakeCaptureProvider(), _microphones, new FakeMicrophoneSessions(), new FakeMicrophoneUsageRecord(), new FakeProcessNames(),
+            new FakeOwnProcesses(Laptop.OwnProcess), _freezes, TestOptions.Create(new RecordingOptions()), TestOptions.Create(new TranscriptOptions()), _time,
+            NullLoggerFactory.Instance, cameraRecorder: new CameraRecorder(new FakeCameraProvider(), _starter, _time, NullLoggerFactory.Instance));
+        var plan = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT", "320x240"));
+        using var letGo = new ManualResetEventSlim();
+        var microphone = _microphones.Prepare(new FakeAudioCapture(Pcm16KMono, Obsbot.Name, Obsbot.Id) { DeliversContinuously = true, DisposeGate = letGo });
+        using var recording = (TrackSet)factory.Create(plan, new RecordingClock(_time));
+        recording.Start(_files, TimeSpan.Zero);
+        for (var step = 1; step <= 1_000; step++) await PlayAsync(step, microphone);
+
+        var stopping = Task.Run(recording.Stop);
+        await Wait.UntilAsync(() => microphone.DisposeCalls > 0);
+        await Task.Delay(50);
+        for (var step = 1; step <= 200; step++) await PlayAsync(step, microphone: null);
+        letGo.Set();
+        var summary = await stopping.WaitAsync(TimeSpan.FromSeconds(20));
+
+        var writer = _writers.Made.Single();
+        Assert.That(writer.Samples.Count(sample => !sample.Black), Is.GreaterThan(40), "the picture of the ten seconds before the stop");
+        Assert.That(writer.Samples.Max(sample => sample.At), Is.LessThanOrEqualTo(summary.Length), "no frame after the sound's end");
+        Assert.That(writer.FinishedAt, Is.EqualTo(summary.Length).Within(TimeSpan.FromMilliseconds(1)), "the piece ends with the sound");
+    }
+
+    /// <summary>
+    /// One step of a simulation: a packet of <paramref name="microphone"/>'s when given, a frame of the camera's every
+    /// <see cref="StepsPerFrame"/> steps, then the clock moved on a step, with a moment every hundred milliseconds for the
+    /// camera's track and job to run.
+    /// </summary>
+    private async Task PlayAsync(int step, FakeAudioCapture? microphone)
+    {
+        var stamp = _time.GetTimestamp();
+        microphone?.Deliver(Packet(Level), stamp);
+        if (step % StepsPerFrame == 0) _captures.Last?.Deliver(stamp, Grey);
+        _time.Advance(Step);
+        if (step % 10 != 0) return;
+
+        _freezes.Tick();
+        await Task.Delay(2);
+    }
+
     /// <summary>A packet of the microphone at one value, 10 ms long.</summary>
     private static byte[] Packet(short value) => TestAudio.Shorts(Enumerable.Repeat(value, Rate / 100).ToArray());
 

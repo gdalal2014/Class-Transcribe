@@ -259,6 +259,22 @@ public sealed class FramePlacer(TimeSpan pieceStart, TimeSpan offset)
     }
 }
 
+/// <summary>Why a frame offered to a <see cref="FrameQueue"/> was not queued.</summary>
+public enum FrameRefusal
+{
+    /// <summary>It was queued.</summary>
+    None,
+
+    /// <summary>No buffer was free: the job is behind, and the frame is dropped, though the camera's frames are fine.</summary>
+    NoBuffer,
+
+    /// <summary>Its size is not the picture's, so it can never be written.</summary>
+    WrongSize,
+
+    /// <summary>It holds no NV12 pixels of its size that can be read (another format, or none in CPU memory), so it can never be written.</summary>
+    Unreadable
+}
+
 /// <summary>A frame waiting in the queue: its pixels in a pooled buffer, its stamp (null when Windows gave none), when it arrived, and its brightness.</summary>
 /// <param name="Pixels">The NV12 pixels, in a buffer of the queue's pool.</param>
 /// <param name="Stamp">When the frame was taken, in units of 100 nanoseconds; null when Windows gave no stamp.</param>
@@ -308,24 +324,35 @@ public sealed class FrameQueue(int frameBytes, int buffers)
     /// Copies <paramref name="frame"/> into a free buffer and queues it as arrived at <paramref name="arrival"/>; returns its
     /// brightness, or null when it was dropped: no buffer free, or no pixels of the queue's size that could be read.
     /// </summary>
-    public double? Offer(ICameraFrame frame, long arrival)
-    {
-        if (frame.Width * frame.Height * 3 / 2 != frameBytes || Rent() is not { } buffer)
-        {
-            Interlocked.Increment(ref _dropped);
-            return null;
-        }
+    public double? Offer(ICameraFrame frame, long arrival) => Offer(frame, arrival, out _);
 
+    /// <summary>
+    /// Copies <paramref name="frame"/> into a free buffer and queues it as arrived at <paramref name="arrival"/>; returns its
+    /// brightness, or null when it was dropped, with why in <paramref name="refusal"/>: no buffer free, a size other than the
+    /// queue's, or no NV12 pixels that could be read.
+    /// </summary>
+    public double? Offer(ICameraFrame frame, long arrival, out FrameRefusal refusal)
+    {
+        if ((long)frame.Width * frame.Height * 3 / 2 != frameBytes) return Drop(FrameRefusal.WrongSize, out refusal);
+        if (Rent() is not { } buffer) return Drop(FrameRefusal.NoBuffer, out refusal);
         if (!frame.CopyNv12To(buffer))
         {
             Return(buffer);
-            Interlocked.Increment(ref _dropped);
-            return null;
+            return Drop(FrameRefusal.Unreadable, out refusal);
         }
 
+        refusal = FrameRefusal.None;
         var brightness = CameraPicture.MeanBrightness(buffer, frame.Width, frame.Height);
         _waiting.Enqueue(new QueuedFrame(buffer, frame.Stamp100ns, arrival, brightness));
         return brightness;
+    }
+
+    /// <summary>Counts a frame dropped for <paramref name="why"/>, hands the reason out as <paramref name="refusal"/>, and returns no brightness.</summary>
+    private double? Drop(FrameRefusal why, out FrameRefusal refusal)
+    {
+        Interlocked.Increment(ref _dropped);
+        refusal = why;
+        return null;
     }
 
     /// <summary>

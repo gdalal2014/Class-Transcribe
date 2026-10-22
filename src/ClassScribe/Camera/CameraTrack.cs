@@ -11,8 +11,11 @@ namespace ClassScribe.Camera;
 /// starts a camera process with a record job beside the sound, and talks to it. From its own loop, which looks at least every
 /// <see cref="LookEvery"/> and at once when nudged, it sends the clock's whole state (<see cref="ClockState"/>) whenever it
 /// has changed, and off and on for P after the clock's line, so that the pause reaches the camera process before the frames
-/// it leaves out are placed. The stop sends the clock's last line and the end position, and waits for the piece at most
-/// <see cref="StopWait"/>, then ends the process. A camera process that ends by itself while recording gets a new one
+/// it leaves out are placed. As the run stops, <see cref="EndAt"/> sends the sound's end at once, before the sound is stopped,
+/// so that no frame after it is written; the stop then sends the clock's last line and the end position, and waits for the
+/// piece at most <see cref="StopWait"/>, then ends the process. A line the process does not take within
+/// <see cref="SendLimit"/> ends it, as stuck, and letting a process go waits at most <see cref="DisposeWait"/>, so that
+/// nothing of the camera's waits without end. A camera process that ends by itself while recording gets a new one
 /// <see cref="RestartAfter"/> later, writing a new piece from the position then; the software encoder is asked for after an
 /// encoder failure; the third such end within <see cref="FailuresWithin"/> gives the picture up for the rest of the run. A
 /// camera not connected at the start is looked for every <see cref="FindEvery"/>; there is never a stand-in camera. What the
@@ -44,6 +47,12 @@ public sealed class CameraTrack : ICameraTrack
 
     /// <summary>How long the stop waits for the piece before the camera process is ended.</summary>
     public static readonly TimeSpan StopWait = TimeSpan.FromSeconds(15);
+
+    /// <summary>How long a line to the camera process may take to go out before the process counts as stuck and is ended.</summary>
+    public static readonly TimeSpan SendLimit = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long letting a camera process go may take before the track goes on without it.</summary>
+    public static readonly TimeSpan DisposeWait = TimeSpan.FromSeconds(5);
 
     /// <summary>The title's words while the picture is given up.</summary>
     public const string GivenUpShort = "NO CAMERA";
@@ -102,11 +111,20 @@ public sealed class CameraTrack : ICameraTrack
     /// <summary>Whether the camera process was told to let the camera go (off) last; null before any word.</summary>
     private bool? _sentOff;
 
+    /// <summary>The sound's end <see cref="EndAt"/> gave, in ticks; -1 before it.</summary>
+    private long _endAtTicks = -1;
+
+    /// <summary>The sound's end the camera process now was sent, in ticks; -1 before it was sent one.</summary>
+    private long _sentEndTicks = -1;
+
     /// <summary>True while P holds: the camera is to be let go.</summary>
     private volatile bool _wantOff;
 
     /// <summary>True once the stop began: nothing more is started.</summary>
     private volatile bool _stopping;
+
+    /// <summary>The stop, once it began; null before. A later stop and the disposal wait for it.</summary>
+    private Task? _stopped;
 
     /// <summary>True once the picture is given up for the rest of the run.</summary>
     private bool _givenUp;
@@ -196,6 +214,13 @@ public sealed class CameraTrack : ICameraTrack
     public void Nudge() => Volatile.Read(ref _nudge).TrySetResult();
 
     /// <inheritdoc />
+    public void EndAt(TimeSpan endPosition)
+    {
+        Volatile.Write(ref _endAtTicks, endPosition.Ticks);
+        Nudge();
+    }
+
+    /// <inheritdoc />
     public void GiveUp(string why)
     {
         ICameraProcess? process;
@@ -213,14 +238,20 @@ public sealed class CameraTrack : ICameraTrack
     }
 
     /// <inheritdoc />
-    public async Task StopAsync(TimeSpan endPosition, CancellationToken cancellationToken)
+    /// <remarks>The first call stops the track; a later one, the disposal's among them, waits for that same stop.</remarks>
+    public Task StopAsync(TimeSpan endPosition, CancellationToken cancellationToken)
     {
         lock (_gate)
         {
-            if (_stopping) return;
+            if (_stopped is not null) return _stopped;
             _stopping = true;
+            return _stopped = Task.Run(() => StopOnceAsync(endPosition, cancellationToken), CancellationToken.None);
         }
+    }
 
+    /// <summary>The stop itself, run once: the loop ended, then the process now let go at <paramref name="endPosition"/>.</summary>
+    private async Task StopOnceAsync(TimeSpan endPosition, CancellationToken cancellationToken)
+    {
         // The loop ends first, a start under way with it, so that the process read next is the last one started.
         await _ending.CancelAsync();
         await _loop;
@@ -235,7 +266,7 @@ public sealed class CameraTrack : ICameraTrack
         await LetGoAsync(process, endPosition, cancellationToken);
     }
 
-    /// <summary>Stops the picture at the clock's position now, if the stop has not come.</summary>
+    /// <summary>Stops the picture at the clock's position now, if the stop has not come, or waits for the stop under way; then lets the loop's signal go.</summary>
     public async ValueTask DisposeAsync()
     {
         await StopAsync(_clock.Now(), CancellationToken.None);
@@ -243,8 +274,9 @@ public sealed class CameraTrack : ICameraTrack
     }
 
     /// <summary>
-    /// Ends <paramref name="process"/>'s piece at <paramref name="end"/>: the clock's last line, then the stop; waits for the
-    /// piece, at most <see cref="StopWait"/>, then ends the process if it is still there, and lets it go.
+    /// Ends <paramref name="process"/>'s piece at <paramref name="end"/>: the clock's last line, then the stop, each within
+    /// <see cref="SendLimit"/>; waits for the piece, at most <see cref="StopWait"/>, then ends the process if it is still
+    /// there, and lets it go, at most <see cref="DisposeWait"/>.
     /// </summary>
     private async Task LetGoAsync(ICameraProcess process, TimeSpan end, CancellationToken cancellationToken)
     {
@@ -252,8 +284,8 @@ public sealed class CameraTrack : ICameraTrack
         lock (_gate) reading = _reading;
         try
         {
-            await CameraLines.SendClockAsync(process.Channel, _clock.Snapshot(), CancellationToken.None);
-            await CameraLines.SendStopAsync(process.Channel, new CameraStop(end.TotalSeconds), CancellationToken.None);
+            await SendWithinAsync(process, () => CameraLines.SendClockAsync(process.Channel, _clock.Snapshot(), CancellationToken.None));
+            await SendWithinAsync(process, () => CameraLines.SendStopAsync(process.Channel, new CameraStop(end.TotalSeconds), CancellationToken.None));
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or ArgumentException)
         {
@@ -275,13 +307,63 @@ public sealed class CameraTrack : ICameraTrack
             }
         }
 
-        await process.DisposeAsync();
+        await LetGoOfAsync(process);
         lock (_gate)
         {
             if (ReferenceEquals(_process, process)) _process = null;
             _capturing = false;
         }
     }
+
+    /// <summary>
+    /// Sends a line to <paramref name="process"/> through <paramref name="send"/>, waiting at most <see cref="SendLimit"/>. A
+    /// line to a process that stopped reading its input never goes out, and the write on its pipe cannot be cancelled: the
+    /// process is ended, which breaks the pipe and so ends the write, and an <see cref="IOException"/> says so, as for a
+    /// process that is gone.
+    /// </summary>
+    private async Task SendWithinAsync(ICameraProcess process, Func<ValueTask> send)
+    {
+        var sending = send().AsTask();
+        try
+        {
+            await sending.WaitAsync(SendLimit, _time);
+        }
+        catch (TimeoutException)
+        {
+            // Deliberately not rethrown as is: the camera process is stuck, so it is ended, and the timeout is handed on as what
+            // it now means, the IOException of a process that is gone, which every caller already answers (a new process, or
+            // the stop going on), so that the stop, the sound's transcript and the next class never wait on a line.
+            _logger.LogWarning("The camera process did not take a line within {Seconds} seconds, so it was ended", SendLimit.TotalSeconds);
+            process.Kill();
+            LogWhenFaulted(sending, "The line the camera process did not take failed once it was ended");
+            throw new IOException(string.Create(CultureInfo.InvariantCulture, $"The camera process did not take a line within {SendLimit.TotalSeconds:0} seconds, so it was ended"));
+        }
+    }
+
+    /// <summary>
+    /// Lets <paramref name="process"/> go, waiting at most <see cref="DisposeWait"/>: a process that cannot be ended, whose
+    /// error output so never closes, is left to end with ClassScribe, whose job ends it at the latest.
+    /// </summary>
+    private async Task LetGoOfAsync(ICameraProcess process)
+    {
+        var disposing = process.DisposeAsync().AsTask();
+        try
+        {
+            await disposing.WaitAsync(DisposeWait, _time);
+        }
+        catch (TimeoutException)
+        {
+            // Deliberately not rethrown: the process was stopped or ended already, and its job ends it with ClassScribe at the
+            // latest; waiting longer would hold up the stop, and with it the sound's transcript and the next class.
+            _logger.LogWarning("The camera process could not be let go within {Seconds} seconds; it ends with ClassScribe at the latest", DisposeWait.TotalSeconds);
+            LogWhenFaulted(disposing, "Letting the camera process go failed in the end");
+        }
+    }
+
+    /// <summary>Logs <paramref name="task"/>'s failure at Debug, with <paramref name="words"/>, should it fail after nobody waits for it any more.</summary>
+    private void LogWhenFaulted(Task task, string words) =>
+        _ = task.ContinueWith(failed => _logger.LogDebug(failed.Exception, "{Words}", words), CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
     /// <summary>
     /// The track's loop until the stop: a look at once and whenever nudged, and every <see cref="LookEvery"/> otherwise. It
@@ -302,6 +384,8 @@ public sealed class CameraTrack : ICameraTrack
                 _logger.LogWarning(ex, "The camera's track could not look at its camera process; it tries again");
             }
 
+            if (_stopping) break;
+
             var nudge = Volatile.Read(ref _nudge);
             try
             {
@@ -318,7 +402,8 @@ public sealed class CameraTrack : ICameraTrack
 
     /// <summary>
     /// One look: a camera process when none runs and its time has come (the camera found first), else the clock's line when
-    /// the clock has changed, and off or on when P has changed.
+    /// the clock has changed, off or on when P has changed, and the sound's end once it is given; each line within
+    /// <see cref="SendLimit"/>.
     /// </summary>
     private async Task LookAsync()
     {
@@ -337,18 +422,25 @@ public sealed class CameraTrack : ICameraTrack
 
         var snapshot = _clock.Snapshot();
         var off = _wantOff;
+        var end = Volatile.Read(ref _endAtTicks);
         try
         {
             if (snapshot.Version != _sentVersion)
             {
-                await CameraLines.SendClockAsync(process.Channel, snapshot, CancellationToken.None);
+                await SendWithinAsync(process, () => CameraLines.SendClockAsync(process.Channel, snapshot, CancellationToken.None));
                 _sentVersion = snapshot.Version;
             }
 
             if (_sentOff != off)
             {
-                await CameraLines.SendSignalAsync(process.Channel, off ? CameraProtocol.Off : CameraProtocol.On, CancellationToken.None);
+                await SendWithinAsync(process, () => CameraLines.SendSignalAsync(process.Channel, off ? CameraProtocol.Off : CameraProtocol.On, CancellationToken.None));
                 _sentOff = off;
+            }
+
+            if (end >= 0 && _sentEndTicks != end)
+            {
+                await SendWithinAsync(process, () => CameraLines.SendEndAsync(process.Channel, new CameraStop(TimeSpan.FromTicks(end).TotalSeconds), CancellationToken.None));
+                _sentEndTicks = end;
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
@@ -389,22 +481,23 @@ public sealed class CameraTrack : ICameraTrack
         var off = _wantOff;
         try
         {
-            await CameraLines.SendJobAsync(process.Channel, job, CancellationToken.None);
-            await CameraLines.SendClockAsync(process.Channel, snapshot, CancellationToken.None);
-            if (off) await CameraLines.SendSignalAsync(process.Channel, CameraProtocol.Off, CancellationToken.None);
+            await SendWithinAsync(process, () => CameraLines.SendJobAsync(process.Channel, job, CancellationToken.None));
+            await SendWithinAsync(process, () => CameraLines.SendClockAsync(process.Channel, snapshot, CancellationToken.None));
+            if (off) await SendWithinAsync(process, () => CameraLines.SendSignalAsync(process.Channel, CameraProtocol.Off, CancellationToken.None));
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
-            // Deliberately not rethrown: the process ended before it took its job; it is let go, and counts as the camera
-            // stopping working.
+            // Deliberately not rethrown: the process ended before it took its job, or would not take it; it is let go, and
+            // counts as the camera stopping working.
             process.Kill();
-            await process.DisposeAsync();
+            await LetGoOfAsync(process);
             Failed($"ClassScribe's camera process ended before it took its job ({ex.Message.TrimEnd('.')})");
             return;
         }
 
         _sentVersion = snapshot.Version;
         _sentOff = off;
+        _sentEndTicks = -1;
         lock (_gate)
         {
             _first = false;
@@ -512,7 +605,7 @@ public sealed class CameraTrack : ICameraTrack
         if (failedEncoder) _software = true;
         _logger.LogDebug("The camera process recording \"{Camera}\" ended (exit {Code})", camera.Name,
             process.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "not known");
-        await process.DisposeAsync();
+        await LetGoOfAsync(process);
         Failed($"ClassScribe's camera process for \"{camera.Name}\" stopped working");
     }
 
@@ -565,8 +658,13 @@ public sealed class CameraTrack : ICameraTrack
             CameraPlace.Virtual => " (virtual)",
             _ => ""
         };
+
+        // The rate is the camera's own as it runs, shared with other apps, up to the 30 the piece keeps; Windows may not say it.
+        var rate = opened.FramesPerSecond > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"at {opened.FramesPerSecond:0.##} frames a second")
+            : string.Create(CultureInfo.InvariantCulture, $"at up to {PieceSettings.FramesPerSecond} frames a second");
         _logger.LogInformation("{Line}", string.Create(CultureInfo.InvariantCulture,
-            $"Camera: \"{camera.Name}\"{place}, {opened.Width}x{opened.Height} at {opened.FramesPerSecond:0} frames a second, {PieceSettings.BitrateFor(size) / 1e6:0.#} Mbit/s, {opened.Encoder}. Its light is on while it records; P lets it go during a pause"));
+            $"Camera: \"{camera.Name}\"{place}, {opened.Width}x{opened.Height} {rate}, {PieceSettings.BitrateFor(size) / 1e6:0.#} Mbit/s, {opened.Encoder}. Its light is on while it records; P lets it go during a pause"));
     }
 
     /// <summary>A status line: the frames, the rate, whether the camera records and whether its picture is dark; a picture back mends what was wrong.</summary>
@@ -616,6 +714,8 @@ public sealed class CameraTrack : ICameraTrack
                 $"The camera \"{name}\" was refused: {problem.Words}. Check Settings > Privacy & security > Camera, and the security program. The sound records on"),
             CameraProblemKind.Encoder or CameraProblemKind.Disk => (true, "CAMERA NOT WRITTEN",
                 $"The camera's picture could not be written ({problem.Words}). The sound records on"),
+            CameraProblemKind.Unwritable => (true, "CAMERA NOT WRITTEN",
+                $"The camera \"{name}\" sends its picture, but it cannot be written: {problem.Words}. ClassScribe opens it again every 2 seconds. The sound records on"),
             _ => (true, "CAMERA LOST", $"The camera \"{name}\" could not be opened: {problem.Words}. The sound records on")
         };
         Concern(alert, shortWords, text);

@@ -309,9 +309,42 @@ public interface ICameraCaptureFactory
 
 /// <summary>A camera opened shared and streaming: the capture, the calls that opened it, and what it streams.</summary>
 /// <param name="Capture">The capture, to let go with <see cref="CameraRoute.Close"/>.</param>
-/// <param name="Format">The colour source's format as it runs, in words: a shared open cannot change it.</param>
+/// <param name="Format">The colour source's format as it runs, in words (see <see cref="CameraFormats.Words"/>): a shared open cannot change it.</param>
 /// <param name="Reader">What the frame reader hands over, in words.</param>
-public sealed record CameraOpening(ICameraCapture Capture, string Format, string Reader);
+public sealed record CameraOpening(ICameraCapture Capture, string Format, string Reader)
+{
+    /// <summary>The frames a second the camera sends as it runs, by its format; null when Windows did not say.</summary>
+    public double? FramesPerSecond => CameraFormats.FramesPerSecondOf(Format);
+}
+
+/// <summary>
+/// A camera's format as it runs, in the words the camera's lines use, such as <c>MJPG 1920x1080 at 30 frames a second</c>,
+/// and the frame rate read back from them. One place writes and reads them, so the two stay in step.
+/// </summary>
+public static class CameraFormats
+{
+    /// <summary>What ends a format's words, after its rate.</summary>
+    private const string RateEnding = " frames a second";
+
+    /// <summary>What comes before a format's rate.</summary>
+    private const string RateMark = " at ";
+
+    /// <summary>A format in words: <c>MJPG 1920x1080 at 30 frames a second</c>, the rate to two decimals at most.</summary>
+    public static string Words(string subtype, uint? width, uint? height, double framesPerSecond) =>
+        string.Create(CultureInfo.InvariantCulture, $"{subtype} {width}x{height}{RateMark}{framesPerSecond:0.##}{RateEnding}");
+
+    /// <summary>The frame rate a format's <paramref name="words"/> hold; null when they hold none above 0, as "not said by Windows".</summary>
+    public static double? FramesPerSecondOf(string? words)
+    {
+        if (words is null || !words.EndsWith(RateEnding, StringComparison.Ordinal)) return null;
+
+        var at = words.LastIndexOf(RateMark, StringComparison.Ordinal);
+        if (at < 0) return null;
+
+        var number = words[(at + RateMark.Length)..^RateEnding.Length];
+        return double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out var rate) && rate > 0 ? rate : null;
+    }
+}
 
 /// <summary>
 /// The route of a shared open, in the order Microsoft documents and Windows enforces (ROOT-CAUSE.md beside the camera

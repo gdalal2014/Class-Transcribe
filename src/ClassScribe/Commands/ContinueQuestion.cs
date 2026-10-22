@@ -96,7 +96,9 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
     /// being recorded, nor a report from being made: the failure is logged to <paramref name="logger"/> as a warning that
     /// ends with <paramref name="ifUnreadable"/>, what the caller does instead, such as "a new recording starts", and
     /// there is none to continue. A run with the camera (<paramref name="camera"/>) continues only a lesson recorded with
-    /// it, and a run without only a recording without it, by the files and by the run files alike.
+    /// it, and a run without only a recording without it, by one rule: the run files decide, and a lesson whose run asked for
+    /// the camera is continued with it even when it holds no piece, the new part writing the first; when no run file of the
+    /// recording is left, the camera's pieces decide.
     /// </summary>
     internal static ContinueCandidate? FindContinuable(ClassFolders folders, RunJournal journal, string name, RecordingMode mode, TimeSpan within, string root,
         ILogger logger, string ifUnreadable, bool camera = false)
@@ -117,7 +119,18 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
 
         if (candidate is null) return null;
 
-        foreach (var run in journal.List().Where(run => Records(run.Record, candidate.Files)))
+        var runs = journal.List().Where(run => Records(run.Record, candidate.Files)).ToList();
+
+        // With no run file left, the files decide: a lesson with pieces is the camera's (the files refused it to a run without),
+        // and one without is not.
+        if (runs.Count == 0 && camera && !candidate.Files.FindCameraPieces().Any())
+        {
+            logger.LogDebug("{Recording} is not offered to be continued: it holds no piece of the camera's and no run file says it was recorded with the camera, and this run records the camera",
+                candidate.Files.BaseName);
+            return null;
+        }
+
+        foreach (var run in runs)
         {
             if (run.IsAlive)
             {

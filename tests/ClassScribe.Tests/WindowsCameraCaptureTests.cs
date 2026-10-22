@@ -65,6 +65,22 @@ public class WindowsCameraCaptureTests
         Assert.That(refused!.Message, Is.EqualTo("Windows no longer lists the camera \"OBSBOT\"; is it unplugged? Windows' default camera is never opened in its place"));
     }
 
+    /// <summary>
+    /// The open asks Windows for the camera shared and read only, video alone, never with exclusive control (Gulzar's decision
+    /// of 21 October: his face sometimes shows in the class app, which must keep the camera): the settings InitializeAsync is
+    /// given, made here without a device. A record job's frames come in CPU memory; the other jobs leave the memory to Windows.
+    /// </summary>
+    [TestCase(true, global::Windows.Media.Capture.MediaCaptureMemoryPreference.Cpu)]
+    [TestCase(false, global::Windows.Media.Capture.MediaCaptureMemoryPreference.Auto)]
+    public void The_camera_is_only_ever_asked_for_shared(bool cpuFrames, global::Windows.Media.Capture.MediaCaptureMemoryPreference memory)
+    {
+        var settings = WindowsCameraCapture.SettingsFor(group: null, cpuFrames);
+
+        Assert.That(settings.SharingMode, Is.EqualTo(global::Windows.Media.Capture.MediaCaptureSharingMode.SharedReadOnly));
+        Assert.That(settings.StreamingCaptureMode, Is.EqualTo(global::Windows.Media.Capture.StreamingCaptureMode.Video));
+        Assert.That(settings.MemoryPreference, Is.EqualTo(memory));
+    }
+
     /// <summary>The fake's refusal is the same exception type and code Windows gives, so the route's tests stand for Windows.</summary>
     [Test]
     public void The_fake_refuses_with_Windows_own_exception_and_code()

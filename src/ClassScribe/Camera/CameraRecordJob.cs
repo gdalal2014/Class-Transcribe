@@ -13,17 +13,21 @@ namespace ClassScribe.Camera;
 /// software encoder taken once when it refuses. The camera is opened only shared, its reader converting to NV12 at the
 /// picture's size, through <see cref="CameraRoute"/> on the process's STA thread. Each frame waits half a second in the
 /// queue (<see cref="FrameQueue"/>) and is then placed on the run's clock, by the latest clock line, with the camera's
-/// offset (<see cref="FramePlacer"/>). The starter's off lets the camera go for a pause, its on takes it again; its stop
-/// writes the waiting frames, lets the last last to the end position, finishes the piece and says so; its cancel, or its
-/// end of the lines closing, finishes the piece as far as it goes.
+/// offset (<see cref="FramePlacer"/>). The starter's off lets the camera go for a pause, its on takes it again; its end line
+/// gives the sound's end ahead of the stop, after which no frame placed beyond it is written; its stop writes the waiting
+/// frames, lets the last last to the end position, finishes the piece and says so; its cancel, or its end of the lines
+/// closing, finishes the piece as far as it goes. The opened line gives the camera's own frame rate as it runs, up to the
+/// piece's 30, or 0 when Windows does not say it.
 /// </summary>
 /// <remarks>
 /// <para>Watched once every <see cref="LookEvery"/>: a camera that cannot be opened is said once per cause and tried again
-/// every <see cref="RetryEvery"/>; one that opens but sends no frame in <see cref="FirstFrameLimit"/> is said (a security
-/// program may be blocking it) and let go; one whose frames stop for <see cref="StoppedAfter"/> (unplugged, folded) gets a
-/// black frame right after its last one, is let go and said, and is opened again every <see cref="RetryEvery"/>; the same piece
-/// goes on. A picture black for <see cref="DarkAfter"/> is said once, and the status says dark until it brightens. A status
-/// line goes out once a second. An encoder or a disk that fails finishes the piece as far as it goes and ends the job with
+/// every <see cref="RetryEvery"/>; one that opens but sends no frame that can be written in <see cref="FirstFrameLimit"/> is
+/// said (a security program may be blocking it, or what comes is said: frames of another size, or without NV12 pixels that
+/// can be read) and let go; one whose frames that can be written stop for <see cref="StoppedAfter"/> (unplugged, folded, or
+/// frames come that cannot be written) gets a black frame right after its last one, is let go and said, and is opened again
+/// every <see cref="RetryEvery"/>; the same piece goes on. Only frames that can be written count as the picture, for the
+/// watch and for the status's capturing. A picture black for <see cref="DarkAfter"/> is said once, and the status says dark
+/// until it brightens. A status line goes out once a second. An encoder or a disk that fails finishes the piece as far as it goes and ends the job with
 /// failed, exit 1, for the starter to start a new piece; so does a call on the route that does not return.</para>
 /// </remarks>
 /// <param name="channel">The lines to and from the starter.</param>
@@ -78,6 +82,15 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
     /// <summary>The end position the starter's stop gave; null before it. Read from any thread: the frames', the loop's and the control's.</summary>
     private TimeSpan? StopAt => Volatile.Read(ref _stopAtTicks) is var ticks and >= 0 ? TimeSpan.FromTicks(ticks) : null;
 
+    /// <summary>The sound's end the starter's end line gave, in ticks; -1 before it.</summary>
+    private long _endAtTicks = -1;
+
+    /// <summary>
+    /// Where no frame may be placed after: the stop's end, or the sound's end the end line gave ahead of the stop; null before
+    /// either. A frame placed after it is dropped.
+    /// </summary>
+    private TimeSpan? EndAt => StopAt ?? (Volatile.Read(ref _endAtTicks) is var ticks and >= 0 ? TimeSpan.FromTicks(ticks) : null);
+
     /// <summary>True once the starter's cancel came, or its end of the lines closed.</summary>
     private volatile bool _cancelled;
 
@@ -93,11 +106,20 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
     /// <summary>The camera while it is open; null while it is let go, not open yet, or lost.</summary>
     private CameraOpening? _open;
 
-    /// <summary>The frames that arrived from the camera in this job, over every open.</summary>
+    /// <summary>The picture's size, which every frame must have to be written.</summary>
+    private CameraSize _size = CameraSize.Default;
+
+    /// <summary>The frames that arrived from the camera in this job and could be written, over every open: the picture the watch and the status rest on.</summary>
     private long _arrived;
 
-    /// <summary>When the last frame arrived, on the steady clock; 0 before the first.</summary>
+    /// <summary>When the last frame that could be written arrived, on the steady clock; 0 before the first.</summary>
     private long _lastArrival;
+
+    /// <summary>When the last frame that came but could never be written arrived, on the steady clock; 0 before any.</summary>
+    private long _lastUnusable;
+
+    /// <summary>What the last frame that could never be written was; null before any.</summary>
+    private volatile UnusableFrame? _unusable;
 
     /// <summary>Since when the picture has been black, on the steady clock; 0 while it is not.</summary>
     private long _darkSince;
@@ -110,6 +132,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
             return await FailAsync("The record job names no recording to write the camera's picture into");
 
         var size = CameraSize.TryParse(job.Resolution, out var asked) ? asked : CameraSize.Default;
+        _size = size;
         var pieceStart = TimeSpan.FromMilliseconds(Math.Max(0, Math.Round(job.StartSeconds * 1000, MidpointRounding.AwayFromZero)));
         var offset = TimeSpan.FromMilliseconds(job.OffsetMilliseconds);
         var path = new RecordingFiles(job.Folder, job.BaseName).CameraPiece(pieceStart);
@@ -181,7 +204,8 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
                         arrivedAtOpen = Interlocked.Read(ref _arrived);
                         lastProblem = null;
                         await SendLinesAsync(log);
-                        await SendAsync(CameraProtocol.Opened, new CameraOpened(name, size.Width, size.Height, PieceSettings.FramesPerSecond, writer.Encoder), CameraJson.Default.CameraOpened);
+                        await SendAsync(CameraProtocol.Opened, new CameraOpened(name, size.Width, size.Height, KeptRate(open.FramesPerSecond), writer.Encoder),
+                            CameraJson.Default.CameraOpened);
                     }
                     catch (CameraCallFailedException failure)
                     {
@@ -203,29 +227,39 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
                     nextTry = time.GetTimestamp();
                 }
 
-                // The arrival watch: no first frame after an open, or frames that stopped.
+                // The arrival watch: no first frame that can be written after an open, or such frames that stopped. Frames that
+                // come but can never be written (another size, or no pixels that can be read) are no picture: they are said as
+                // what they are, in place of a camera that gave nothing or stopped.
                 now = time.GetTimestamp();
                 if (open is not null)
                 {
                     var thisOpen = Interlocked.Read(ref _arrived) - arrivedAtOpen;
-                    var since = time.GetElapsedTime(Math.Max(Interlocked.Read(ref _lastArrival), openedAt), now);
+                    var lastWritable = Math.Max(Interlocked.Read(ref _lastArrival), openedAt);
+                    var since = time.GetElapsedTime(lastWritable, now);
                     if (thisOpen == 0 && since >= FirstFrameLimit || thisOpen > 0 && since >= StoppedAfter)
                     {
                         // The black frame goes right after the last frame written, where the picture stopped: placed by no stamp
-                        // of now, it cannot land beyond a sleep the clock has yet to cut, which would hold back the frames after.
-                        PlaceDue(writer, placer, all: true);
+                        // of now, it cannot land beyond a sleep the clock has yet to cut, which would hold back the frames after;
+                        // nor after the sound's end.
+                        var soundEnd = EndAt;
+                        PlaceDue(writer, placer, all: true, soundEnd);
                         var lost = thisOpen > 0;
-                        if (lost && placer.PlaceBlack(placer.Last + FrameTime) is { Written: true } black) writer.WriteBlack(black.At);
+                        var blackAt = placer.Last + FrameTime;
+                        if (lost && (soundEnd is null || blackAt <= soundEnd) && placer.PlaceBlack(blackAt) is { Written: true } black) writer.WriteBlack(black.At);
                         await CloseAsync(open);
                         _open = open = null;
-                        var problem = lost ? new CameraProblem(CameraProblemKind.Lost, CameraProblems.Stopped) : new CameraProblem(CameraProblemKind.NoPicture, NoPictureWords);
+                        var problem = Interlocked.Read(ref _lastUnusable) > lastWritable && _unusable is { } unusable
+                            ? new CameraProblem(CameraProblemKind.Unwritable, unusable.Words(_size))
+                            : lost
+                                ? new CameraProblem(CameraProblemKind.Lost, CameraProblems.Stopped)
+                                : new CameraProblem(CameraProblemKind.NoPicture, NoPictureWords);
                         lastProblem = problem.Words;
                         await SendAsync(CameraProtocol.Problem, problem, CameraJson.Default.CameraProblem);
                         nextTry = now + Ticks(RetryEvery);
                     }
                 }
 
-                PlaceDue(writer, placer, all: false);
+                PlaceDue(writer, placer, all: false, EndAt);
 
                 // The picture black for DarkAfter: said once a stretch; the status carries it while it lasts.
                 var darkSince = Interlocked.Read(ref _darkSince);
@@ -334,18 +368,54 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
         }
     }
 
-    /// <summary>A frame from the camera, with its pixels: queued with when it arrived, its brightness followed. Runs on Windows' frame thread, so it never throws.</summary>
+    /// <summary>
+    /// A frame from the camera, with its pixels: queued with when it arrived, its brightness followed. One that can never be
+    /// written (another size than the picture's, or no NV12 pixels that can be read) is no picture: it is noted apart, for the
+    /// arrival watch to say what comes, and never counts as arrived. Runs on Windows' frame thread, so it never throws.
+    /// </summary>
     private void OnFrame(ICameraFrame frame)
     {
         if (StopAt is not null || _cancelled) return;
 
         var arrival = MediaTime.Now(time);
+        var brightness = _queue.Offer(frame, arrival, out var refusal);
+        if (refusal is FrameRefusal.WrongSize or FrameRefusal.Unreadable)
+        {
+            if (_unusable is not { } seen || seen.Refusal != refusal || seen.Width != frame.Width || seen.Height != frame.Height)
+                _unusable = new UnusableFrame(refusal, frame.Width, frame.Height);
+            Interlocked.Exchange(ref _lastUnusable, time.GetTimestamp());
+            return;
+        }
+
         Interlocked.Increment(ref _arrived);
         Interlocked.Exchange(ref _lastArrival, time.GetTimestamp());
-        if (_queue.Offer(frame, arrival) is not { } brightness) return;
+        if (brightness is not { } value) return;
 
-        if (brightness < CameraPicture.DarkBelow) Interlocked.CompareExchange(ref _darkSince, time.GetTimestamp(), 0);
+        if (value < CameraPicture.DarkBelow) Interlocked.CompareExchange(ref _darkSince, time.GetTimestamp(), 0);
         else Interlocked.Exchange(ref _darkSince, 0);
+    }
+
+    /// <summary>
+    /// The frames a second the piece keeps of a camera that sends <paramref name="cameraRate"/> as it runs: its own rate, up to
+    /// the piece's <see cref="PieceSettings.FramesPerSecond"/>; 0 when Windows did not say it.
+    /// </summary>
+    private static double KeptRate(double? cameraRate) => cameraRate is { } rate && rate > 0 ? Math.Min(rate, PieceSettings.FramesPerSecond) : 0;
+
+    /// <summary>A frame that came but could never be written: why, and its size as Windows handed it over.</summary>
+    /// <param name="Refusal">Why it could not be written: <see cref="FrameRefusal.WrongSize"/> or <see cref="FrameRefusal.Unreadable"/>.</param>
+    /// <param name="Width">Its width; 0 when Windows handed over no pixels in memory.</param>
+    /// <param name="Height">Its height; 0 when Windows handed over no pixels in memory.</param>
+    private sealed record UnusableFrame(FrameRefusal Refusal, int Width, int Height)
+    {
+        /// <summary>
+        /// What comes, in the run's words, against the picture's <paramref name="size"/>: "its frames come at 1920x1080, not the
+        /// 1280x720 asked for", "its frames come at 1280x720 without NV12 pixels that can be read", or "its frames come
+        /// without pixels in memory".
+        /// </summary>
+        public string Words(CameraSize size) =>
+            Width <= 0 || Height <= 0 ? "its frames come without pixels in memory"
+            : Refusal == FrameRefusal.WrongSize ? string.Create(CultureInfo.InvariantCulture, $"its frames come at {Width}x{Height}, not the {size.Width}x{size.Height} asked for")
+            : string.Create(CultureInfo.InvariantCulture, $"its frames come at {Width}x{Height} without NV12 pixels that can be read");
     }
 
     /// <summary>What MediaCapture reported, from Windows' threads, sent on as a log line.</summary>
@@ -403,8 +473,9 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
 
     /// <summary>
     /// Reads the starter's lines until its stop or cancel, or its end closing: a clock line replaces the clock if it is newer,
-    /// off and on let the camera go and take it again. A line this build does not know is passed over; a clock line that cannot
-    /// be read too, with a log line, since the next one mends it.
+    /// off and on let the camera go and take it again, and the sound's end keeps every frame placed after it out of the piece.
+    /// A line this build does not know is passed over; a clock line that cannot be read too, with a log line, since the next
+    /// one mends it.
     /// </summary>
     private async Task ReadControlAsync()
     {
@@ -422,6 +493,9 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
                         break;
                     case CameraProtocol.On:
                         _wantOpen = true;
+                        break;
+                    case CameraProtocol.End:
+                        if (ReadStop(line) is { } end) Volatile.Write(ref _endAtTicks, TimeSpan.FromSeconds(Math.Max(0, end.EndSeconds)).Ticks);
                         break;
                     case CameraProtocol.Stop:
                         Volatile.Write(ref _stopAtTicks, TimeSpan.FromSeconds(Math.Max(0, ReadStop(line)?.EndSeconds ?? 0)).Ticks);

@@ -115,8 +115,75 @@ public sealed class MediaFoundationPieceWriterTests
         Assert.That(read.Times[0], Is.EqualTo(TimeSpan.Zero));
     }
 
-    /// <summary>What a piece holds, as Media Foundation's source reader reads it back: each sample's time, where the last ends, the picture's size and whether it is H.264.</summary>
-    private sealed record ReadPiece(IReadOnlyList<TimeSpan> Times, TimeSpan End, (int Width, int Height) Size, bool H264);
+    /// <summary>
+    /// A keyframe comes at least every 30 frames, from the first, so that each fragment is about a second and a crash costs
+    /// about that (teach-video 6.5); the stream is H.264's Main profile at the level the size needs.
+    /// </summary>
+    [Test]
+    public void A_keyframe_comes_at_least_every_30_frames_in_the_Main_profile()
+    {
+        var path = new RecordingFiles(_folder.Path, BaseName).CameraPiece(TimeSpan.Zero);
+        using (var writer = new MediaFoundationPieceWriter(path, Small))
+        {
+            for (var frame = 1; frame <= 150; frame++) writer.Write(Frame((byte)(30 + frame)), TimeSpan.FromTicks(333_333 * frame));
+            writer.Finish(TimeSpan.FromSeconds(5.1));
+        }
+
+        var read = ReadBack(path);
+        var keyframes = read.Keyframes.Select((keyframe, index) => (keyframe, index)).Where(sample => sample.keyframe).Select(sample => sample.index).ToList();
+        var gaps = keyframes.Zip(keyframes.Skip(1), (before, after) => after - before).Append(read.Times.Count - keyframes[^1]).ToList();
+
+        Assert.That(read.Times, Has.Count.EqualTo(151));
+        Assert.That(keyframes[0], Is.Zero, "the black frame at 0 is a keyframe");
+        Assert.That(gaps, Has.All.LessThanOrEqualTo(PieceSettings.KeyframeEvery), $"keyframes at {string.Join(", ", keyframes)}");
+        Assert.That(read.Profile, Is.EqualTo(PieceSettings.MainProfile));
+        Assert.That(read.Level, Is.EqualTo(Small.Level));
+    }
+
+    /// <summary>
+    /// A half-made piece that cannot be deleted, as while a scanner holds the new file, is left, and the deleting throws
+    /// nothing: the encoder's own refusal, which the writer rethrows after it, stays what is said, so that the software
+    /// encoder can still take over.
+    /// </summary>
+    [Test]
+    public void A_half_made_piece_that_cannot_be_deleted_is_left_without_a_word()
+    {
+        var path = new RecordingFiles(_folder.Path, BaseName).CameraPiece(TimeSpan.Zero);
+        File.WriteAllText(path, "half made");
+
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            Assert.DoesNotThrow(() => MediaFoundationPieceWriter.DeleteHalfMade(path));
+
+        Assert.That(File.Exists(path), Is.True);
+        MediaFoundationPieceWriter.DeleteHalfMade(path);
+        Assert.That(File.Exists(path), Is.False);
+    }
+
+    /// <summary>
+    /// What a piece holds, as Media Foundation's source reader reads it back: each sample's time and whether it is a keyframe
+    /// (a clean point), where the last ends, the picture's size, whether it is H.264, and its profile and level as the
+    /// container declares them (0 when it does not).
+    /// </summary>
+    private sealed record ReadPiece(IReadOnlyList<TimeSpan> Times, IReadOnlyList<bool> Keyframes, TimeSpan End, (int Width, int Height) Size, bool H264, int Profile, int Level);
+
+    /// <summary>MFSampleExtension_CleanPoint: a sample that can be decoded alone, a keyframe.</summary>
+    private static readonly Guid CleanPoint = new("9cdf01d8-a0f0-43ba-b077-eaa06cbd728a");
+
+    /// <summary>A whole-number attribute of <paramref name="attributes"/>; 0 when it is not there.</summary>
+    private static int Number(IMFAttributes attributes, Guid key)
+    {
+        try
+        {
+            attributes.GetUINT32(key, out var value);
+            return value;
+        }
+        catch (COMException)
+        {
+            // Deliberately not rethrown: an attribute that is not there (MF_E_ATTRIBUTENOTFOUND) reads as 0, which the
+            // assertions then name.
+            return 0;
+        }
+    }
 
     /// <summary>Reads <paramref name="path"/> back, sample by sample, without decoding it.</summary>
     private static ReadPiece ReadBack(string path)
@@ -130,9 +197,12 @@ public sealed class MediaFoundationPieceWriterTests
             reader.GetCurrentMediaType(MediaFoundationInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, out var type);
             type.GetGUID(MediaFoundationAttributes.MF_MT_SUBTYPE, out var subtype);
             type.GetUINT64(VideoGuids.FrameSize, out var packed);
+            var profile = Number(type, VideoGuids.Mpeg2Profile);
+            var level = Number(type, VideoGuids.Mpeg2Level);
             Marshal.ReleaseComObject(type);
 
             var times = new List<TimeSpan>();
+            var keyframes = new List<bool>();
             var end = TimeSpan.Zero;
             while (true)
             {
@@ -141,6 +211,7 @@ public sealed class MediaFoundationPieceWriterTests
                 {
                     sample.GetSampleDuration(out var duration);
                     times.Add(TimeSpan.FromTicks((long)time));
+                    keyframes.Add(Number(sample, CleanPoint) != 0);
                     end = TimeSpan.FromTicks((long)time + duration);
                     Marshal.ReleaseComObject(sample);
                 }
@@ -148,7 +219,7 @@ public sealed class MediaFoundationPieceWriterTests
                 if ((flags & MF_SOURCE_READER_FLAG.MF_SOURCE_READERF_ENDOFSTREAM) != 0) break;
             }
 
-            return new ReadPiece(times, end, ((int)(packed >> 32), (int)(packed & 0xFFFFFFFF)), subtype == VideoGuids.H264);
+            return new ReadPiece(times, keyframes, end, ((int)(packed >> 32), (int)(packed & 0xFFFFFFFF)), subtype == VideoGuids.H264, profile, level);
         }
         finally
         {

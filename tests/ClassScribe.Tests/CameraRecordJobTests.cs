@@ -82,6 +82,26 @@ public sealed class CameraRecordJobTests
         Assert.That(seen.Of<CameraProblem>(), Is.Empty);
     }
 
+    /// <summary>
+    /// The opened line carries the frames a second the camera sends as it runs (a shared open cannot set them), up to the 30
+    /// the piece keeps at most; 0 when Windows does not say the camera's format.
+    /// </summary>
+    [TestCase("MJPG 1920x1080 at 15 frames a second", 15)]
+    [TestCase("MJPG 1920x1080 at 30 frames a second", 30)]
+    [TestCase("NV12 1280x720 at 60 frames a second", 30)]
+    [TestCase("YUY2 640x480 at 29.97 frames a second", 29.97)]
+    [TestCase("not said by Windows", 0)]
+    public async Task The_opened_line_carries_the_camera_s_own_frame_rate(string format, double framesPerSecond)
+    {
+        _captures.Prepare = (capture, _) => capture.Format = format;
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Record());
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraOpened>().Count == 1, Step);
+        await CancelAsync(process, host);
+
+        Assert.That(seen.Of<CameraOpened>().Single().FramesPerSecond, Is.EqualTo(framesPerSecond));
+    }
+
     /// <summary>A continued lesson's piece is named by its start on the clock and written from it.</summary>
     [Test]
     public async Task A_continued_lesson_s_piece_begins_at_its_start_on_the_clock()
@@ -396,6 +416,101 @@ public sealed class CameraRecordJobTests
         Assert.That(paused.Capturing, Is.False);
     }
 
+    /// <summary>
+    /// Frames that come but whose pixels cannot be read are no picture: the status never says the camera records, nothing is
+    /// written, and after 5 seconds the run hears what came, in place of a camera that gave nothing, and the camera is let go
+    /// and opened again.
+    /// </summary>
+    [Test]
+    public async Task Frames_whose_pixels_cannot_be_read_are_no_picture_and_are_said()
+    {
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Record());
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraOpened>().Count == 1, Step);
+        await BeginTheClockAsync(process);
+        var first = _captures.Last!;
+
+        await PlayAsync(first, TimeSpan.FromSeconds(6), frame: stamp => new FakeCameraFrame(stamp, 1280, 720, 128, readable: false));
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraProblem>().Count == 1 && _captures.Made.Count == 2, Step, atMost: TimeSpan.FromSeconds(3));
+        var statuses = seen.Of<CameraStatus>();
+        await CancelAsync(process, host);
+
+        Assert.That(seen.Of<CameraProblem>().Single(), Is.EqualTo(new CameraProblem(CameraProblemKind.Unwritable, "its frames come at 1280x720 without NV12 pixels that can be read")));
+        Assert.That(statuses, Is.Not.Empty);
+        Assert.That(statuses.Select(status => status.Capturing), Has.None.True, "frames that cannot be written are no picture");
+        Assert.That(_writers.Made.Single().Samples, Has.Count.EqualTo(1), "the black frame at 0 alone");
+        Assert.That(first.Disposed, Is.True);
+    }
+
+    /// <summary>Frames of another size than the picture's are no picture either, and the run hears their size against the one asked for.</summary>
+    [Test]
+    public async Task Frames_of_another_size_are_no_picture_and_are_said_by_their_size()
+    {
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Record());
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraOpened>().Count == 1, Step);
+        await BeginTheClockAsync(process);
+
+        await PlayAsync(_captures.Last!, TimeSpan.FromSeconds(6), frame: stamp => new FakeCameraFrame(stamp, 1920, 1080, 128));
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraProblem>().Count == 1, Step, atMost: TimeSpan.FromSeconds(1));
+        await CancelAsync(process, host);
+
+        Assert.That(seen.Of<CameraProblem>().Single(), Is.EqualTo(new CameraProblem(CameraProblemKind.Unwritable, "its frames come at 1920x1080, not the 1280x720 asked for")));
+        Assert.That(seen.Of<CameraStatus>().Select(status => status.Capturing), Has.None.True);
+        Assert.That(_writers.Made.Single().Samples, Has.Count.EqualTo(1));
+    }
+
+    /// <summary>
+    /// A picture whose frames go on coming but can no longer be written stops as a lost camera's does, a black frame right
+    /// after its last frame, and the run hears what comes in place of a camera that stopped sending.
+    /// </summary>
+    [Test]
+    public async Task A_picture_whose_frames_can_no_longer_be_written_is_said_as_such()
+    {
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Record());
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraOpened>().Count == 1, Step);
+        await BeginTheClockAsync(process);
+        var first = _captures.Last!;
+        await PlayAsync(first, TimeSpan.FromSeconds(2.5));
+        var recorded = seen.Of<CameraStatus>().Any(status => status.Capturing);
+
+        await PlayAsync(first, TimeSpan.FromSeconds(4), frame: stamp => new FakeCameraFrame(stamp, 1280, 720, 128, readable: false));
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraProblem>().Count == 1, Step, atMost: TimeSpan.FromSeconds(1));
+        await CancelAsync(process, host);
+
+        var samples = _writers.Made.Single().Samples;
+        Assert.That(recorded, Is.True, "the picture recorded before");
+        Assert.That(seen.Of<CameraProblem>().Single(), Is.EqualTo(new CameraProblem(CameraProblemKind.Unwritable, "its frames come at 1280x720 without NV12 pixels that can be read")));
+        Assert.That(samples[^1].Black, Is.True, "a black frame where the picture stopped");
+        Assert.That(samples[^1].At, Is.EqualTo(samples[^2].At + CameraRecordJob.FrameTime));
+        Assert.That(first.Disposed, Is.True);
+    }
+
+    /// <summary>
+    /// The end line, which the recorder sends as soon as it takes the sound's end and before it stops the sound, keeps every
+    /// frame taken after that end out of the piece, though the stop comes seconds later; the piece then ends with the sound.
+    /// </summary>
+    [Test]
+    public async Task The_end_line_keeps_the_frames_after_the_sound_s_end_out_of_the_piece()
+    {
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Record());
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraOpened>().Count == 1, Step);
+        var origin = await BeginTheClockAsync(process);
+        var before = await PlayAsync(_captures.Last!, TimeSpan.FromSeconds(1));
+
+        var end = _clock.Now();
+        await CameraLines.SendEndAsync(process.Channel, new CameraStop(end.TotalSeconds), CancellationToken.None);
+        await PlayAsync(_captures.Last!, TimeSpan.FromSeconds(2));
+        await StopAsync(process, host, end);
+
+        var writer = _writers.Made.Single();
+        Assert.That(writer.Samples.Skip(1).Select(sample => sample.At), Is.EqualTo(before.Select(stamp => new TimeSpan(stamp - origin)).Where(at => at <= end)));
+        Assert.That(writer.FinishedAt, Is.EqualTo(end));
+        Assert.That(seen.Of<CameraPiece>().Single().EndSeconds, Is.EqualTo(end.TotalSeconds));
+    }
+
     /// <summary>A record job's job: the OBSBOT at 720p into the temporary folder, from <paramref name="startSeconds"/> on the clock.</summary>
     private CameraJob Record(double startSeconds = 0, int offsetMilliseconds = 0) =>
         new(CameraProtocol.Version, CameraJobKind.Record, LaptopCameras.Obsbot.Id, LaptopCameras.Obsbot.Name, "720p", offsetMilliseconds, _folder.Path, BaseName, startSeconds);
@@ -421,16 +536,17 @@ public sealed class CameraRecordJobTests
 
     /// <summary>
     /// Plays the camera for <paramref name="length"/> at 30 frames a second, each frame stamped a little before it arrives,
-    /// as a camera's are, giving the job's loop room to run; returns the stamps handed over.
+    /// as a camera's are, giving the job's loop room to run; returns the stamps handed over. Each frame is a picture of
+    /// <paramref name="brightness"/> at the reader's size, or what <paramref name="frame"/> makes of its stamp.
     /// </summary>
-    private async Task<List<long>> PlayAsync(FakeCameraCapture capture, TimeSpan length, byte brightness = 128)
+    private async Task<List<long>> PlayAsync(FakeCameraCapture capture, TimeSpan length, byte brightness = 128, Func<long, ICameraFrame>? frame = null)
     {
         var stamps = new List<long>();
         for (var played = TimeSpan.Zero; played + FrameTime <= length + TimeSpan.FromTicks(10); played += FrameTime)
         {
             _time.Advance(FrameTime);
             var stamp = MediaTime.Now(_time) - Latency.Ticks;
-            if (capture.Deliver(stamp, brightness)) stamps.Add(stamp);
+            if (frame is null ? capture.Deliver(stamp, brightness) : capture.DeliverFrame(frame(stamp))) stamps.Add(stamp);
             if (stamps.Count % 3 == 0) await Task.Delay(2);
         }
 

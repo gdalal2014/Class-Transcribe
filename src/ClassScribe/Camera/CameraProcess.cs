@@ -44,6 +44,10 @@ public static class CameraLines
     public static ValueTask SendStopAsync(LineChannel channel, CameraStop stop, CancellationToken cancellationToken) =>
         channel.SendAsync(CameraProtocol.Stop, stop, CameraJson.Default.CameraStop, cancellationToken);
 
+    /// <summary>Sends the sound's end, <paramref name="end"/>, to a record job, ahead of its stop (see <see cref="CameraProtocol.End"/>).</summary>
+    public static ValueTask SendEndAsync(LineChannel channel, CameraStop end, CancellationToken cancellationToken) =>
+        channel.SendAsync(CameraProtocol.End, end, CameraJson.Default.CameraStop, cancellationToken);
+
     /// <summary>Sends the recording clock's whole state to a record job (see <see cref="CameraProtocol.Clock"/>).</summary>
     public static ValueTask SendClockAsync(LineChannel channel, Audio.Timeline.ClockState clock, CancellationToken cancellationToken) =>
         channel.SendAsync(CameraProtocol.Clock, clock, CameraJson.Default.ClockState, cancellationToken);

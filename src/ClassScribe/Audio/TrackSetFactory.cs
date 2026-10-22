@@ -91,11 +91,11 @@ public sealed class TrackSetFactory(
             case RecordingMode.ClassAndMicrophone:
                 var rule = FollowRuleFor(source, settings);
                 var theClass = ClassSession(source, new TrackSpec(Track.Main, TrackPlacement.ClockAligned), clock);
-                return new TrackSet(clock, theClass, MicrophoneTrack(source, Track.Microphone, rule, settings, clock), freezes, loggers.CreateLogger<TrackSet>());
+                return new TrackSet(clock, theClass, MicrophoneTrack(source, Track.Microphone, rule, settings, clock), freezes, loggers.CreateLogger<TrackSet>(), time: time);
 
             case RecordingMode.Microphone:
                 return new TrackSet(clock, classTrack: null, MicrophoneTrack(source, Track.Main, follows: null, settings, clock), freezes, loggers.CreateLogger<TrackSet>(),
-                    CameraFor(source, settings));
+                    CameraFor(source, settings), time);
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(source), source.Mode, "Not a recording mode ClassScribe knows.");

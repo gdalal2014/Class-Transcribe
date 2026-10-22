@@ -1302,7 +1302,9 @@ What happens while it records:
   then, once the camera opens, `Camera: "OBSBOT Meet Flip StreamCamera" (USB), 1280x720 at 30 frames a
   second, 5 Mbit/s, hardware encoder (...). Its light is on while it records; P lets it go during a
   pause`. The camera is opened **shared**, never taken from another app: a class app can use it at the
-  same time.
+  same time. Shared, ClassScribe takes the camera's pictures at the rate it is running (another app may
+  have set it), so the line gives that rate, up to the 30 a second a piece keeps; when Windows does not
+  say it, the line says `at up to 30 frames a second`, and the status line gives the rate measured.
 - The picture is H.264 at the size you chose, at most 30 frames a second, at a constant bitrate: about
   2.5 Mbit/s at 480p, 5 at 720p, 8 at 1080p (a typed size between them in proportion to its pixels).
   The encoder's settings are fixed (Main profile, the level the size needs, no B-frames, a keyframe every
@@ -1314,9 +1316,11 @@ What happens while it records:
 - **The status line** adds `camera 1280x720, 29.9 frames a second, 3 dropped`, or `camera not
   recording`. The title adds `CAM WAITING` while the picture is not recording (not open yet, unplugged,
   refused, restarting) and `CAM DARK` while it is black.
-- **The stop** (Q twice): the sound is stopped and saved first; then the camera's piece is finished at
-  the very end of the sound, within 15 seconds, after which its camera process is ended. A camera can
-  never hold up or cost the sound.
+- **The stop** (Q twice): the camera hears at once where the sound ends, so that no picture after it is
+  kept; the sound is stopped and saved first; then the camera's piece is finished at the very end of the
+  sound, within 15 seconds, after which its camera process is ended. The stop waits for the camera 25
+  seconds at most in all, even for a camera process stuck inside Windows, so a camera can never hold up
+  or cost the sound, the transcript or the next class.
 - **A camera that fails** costs the picture only. Unplugged or folded, its picture stops: a black frame
   marks where, the line `The camera "..." stopped sending its picture; the sound records on. Plug it back
   in` comes (with `Its microphone may be silent too while the camera is away or asleep` when its
@@ -1330,7 +1334,9 @@ What happens while it records:
   free), so the camera is let go: the rest of this lesson is recorded without its picture. The sound
   records on`.
 - **Continuing** a lesson (C, or `--continue`) is offered only to a run with the camera, and a recording
-  without one only to a run without; the continued part's picture goes into a new piece.
+  without one only to a run without; the continued part's picture goes into a new piece. A lesson
+  recorded with the camera is still one even when its camera never gave a picture (it was not
+  connected, say), so a run with the camera continues it and writes its first piece.
 
 The pieces are `<base>.cam.mp4`, and `<base>.cam@hh-mm-ss.fff.mp4` for one that begins later on the
 clock (a continued part, or after the camera's process was started again), the name holding where it
@@ -2528,7 +2534,8 @@ words you see.
 | What you see | What to do |
 | --- | --- |
 | `--camera records only in person in this build: give it with --in-person` (exit code 2) | The camera goes with your microphone alone, in person: use `--in-person` as the source. |
-| `Camera: "..." (USB), 1280x720 at 30 frames a second, 5 Mbit/s, hardware encoder (...). Its light is on while it records; P lets it go during a pause` | The camera opened and its picture records. Nothing to do. |
+| `Camera: "..." (USB), 1280x720 at 30 frames a second, 5 Mbit/s, hardware encoder (...). Its light is on while it records; P lets it go during a pause` | The camera opened and its picture records. Nothing to do. The rate is the camera's own as it runs, which another app sharing it may have set lower, up to 30; `at up to 30 frames a second` when Windows does not say it. |
+| `The camera "..." sends its picture, but it cannot be written: its frames come at ... ClassScribe opens it again every 2 seconds. The sound records on`, with `CAM WAITING` in the title (an Alert) | Frames arrive from the camera, but in a size or a format ClassScribe cannot write, so none of the picture is kept. Close other apps using the camera, unplug it and plug it back in; if it goes on, record without the camera and report the line. The sound was never interrupted. |
 | `The camera "..." stopped sending its picture; the sound records on. Plug it back in`, with `CAM WAITING` in the title (an Alert) | The camera was unplugged, folded, or went to sleep. Plug it in or unfold it; ClassScribe opens it again every 2 seconds into the same piece, and says `The camera "..." is recording its picture again`. The sound was never interrupted. |
 | `The camera "..." gave no picture. Windows allows it, so a security program may be blocking ClassScribe (Bitdefender: Privacy > Video & Audio Protection > Webcam Protection). The sound records on` | The camera opened but sent nothing for 5 seconds. Allow ClassScribe in Bitdefender's Webcam Protection (run `camera-check` and type Y to be asked while you watch). |
 | `The camera "..." was refused: ... E_ACCESSDENIED ...` | Windows' camera privacy switch, or a security program, refused it. Turn on Let desktop apps access your camera in Settings > Privacy & security > Camera, and allow ClassScribe in the security program. ClassScribe tries again every 2 seconds. |
@@ -2541,6 +2548,10 @@ words you see.
 | `The camera's picture could not be written (writing its picture failed (...)). The sound records on` | The disk or the encoder failed while writing the picture. ClassScribe starts a new piece, with Windows' software encoder when the encoder failed. Check the disk's free space. |
 | `Little room is left on D:\ (... free), so the camera is let go: the rest of this lesson is recorded without its picture. The sound records on` | The disk has room for less than 30 minutes of sound and picture together. Free some space; the sound records on. |
 | `The camera process did not finish its piece within 15 seconds of the stop, so it was ended; its piece is readable to its last second or so` | At the stop, the camera's process hung. The sound was saved first; the piece keeps all but its last moments. |
+| `The camera process did not take a line within 5 seconds, so it was ended` | The camera's process stopped answering, stuck inside Windows. While recording, ClassScribe starts it again in 2 seconds into a new piece; at the stop, the piece keeps all but its last moments. The sound was never interrupted. |
+| `The camera process could not be let go within 5 seconds; it ends with ClassScribe at the latest` | The camera's process could not be ended at once, often a camera driver stuck inside Windows. Nothing to do: the stop goes on, and the process ends when ClassScribe does. If the camera's light stays on afterwards, unplug the camera. |
+| `The camera's picture did not stop within 25 seconds of the sound's stop; the recording goes on without it, and its piece is kept as far as it was written` | The camera hung at the stop. The sound was saved first, and the transcript and the next class go on; the piece keeps all but its last moments. |
+| `The camera's track did not let go within 25 seconds; it is left to finish by itself` | The same, when the recording's files were closed. Nothing to do. |
 | `The picture is placed 60 ms earlier for "..." (Recording:CameraOffsets)` | The camera's offset from your settings applies. See [Recording with the camera](#recording-with-the-camera) to measure it. |
 | `--resolution needs --camera` or `--resolution takes 480p, 720p or 1080p, ...` (exit code 2) | Give `--resolution` only with `--camera`, and one of the three sizes or a width and a height such as `1024x576` within the limits the message gives. |
 | `PROBLEM  Windows does not let desktop apps use the camera: ...` (camera check, exit code 1) | Turn on Let desktop apps access your camera in Settings > Privacy & security > Camera (the line names the page), then run the camera check again. |

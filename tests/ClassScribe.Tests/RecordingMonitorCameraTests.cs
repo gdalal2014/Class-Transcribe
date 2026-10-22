@@ -97,7 +97,8 @@ public partial class RecordingMonitorTests
 
     /// <summary>
     /// The room on the disk counts the picture twice (its pieces and the finished video): with room for less than 30 minutes
-    /// of the sound and the picture together, the camera is let go, said, and the sound alone is measured against the room,
+    /// of the sound and the picture together, the camera is let go, with words that the camera's track says when it lets go
+    /// (so they are not among the check's own lines, and are said once), and the sound alone is measured against the room,
     /// so no disk Alert comes while the sound fits.
     /// </summary>
     [Test]
@@ -110,7 +111,7 @@ public partial class RecordingMonitorTests
         var tick = Look(LessonSnapshot());
 
         Assert.That(tick.LetGoOfTheCamera, Is.EqualTo(@"Little room is left on D:\ (1.0 GB free), so the camera is let go: the rest of this lesson is recorded without its picture. The sound records on"));
-        Assert.That(Warnings(tick), Does.Contain(tick.LetGoOfTheCamera));
+        Assert.That(Texts(tick), Does.Not.Contain(tick.LetGoOfTheCamera), "the camera's track says it as it lets go");
         Assert.That(tick.Attention.Short, Is.Not.EqualTo("DISK NEARLY FULL"));
         Assert.That(RecordingMonitor.CameraBytesPerHour(_context), Is.EqualTo(2L * 5_000_000 / 8 * 3600));
     }

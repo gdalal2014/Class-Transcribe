@@ -844,8 +844,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   charged retry), and for a lesson with the camera its pieces, `<base>.cam.mp4` and `<base>.cam@hh-mm-ss.fff.mp4`
   (`RecordingFiles.CameraPiece(start)`, `FindCameraPieces()` in their order on the clock, `IsCameraPiece`; a sign of a
   class for the date folders; held while written for `IsBeingWritten`, the newest piece open for writing with reading
-  allowed; never sent to Drive, `RecordingUpload.FilesToUpload` and `UploadManifests.OnDisk` leave them out; continued
-  only by a run with the camera, `ClassFolders.FindContinuable(..., camera)` and the run files alike). `Track` has no
+  allowed; never sent to Drive, `RecordingUpload.FilesToUpload` and `UploadManifests.OnDisk` leave them out; a lesson with
+  pieces continued only by a run with the camera, `ClassFolders.FindContinuable(..., camera)`; one without pieces is the run
+  files' to decide, `ContinueQuestion.FindContinuable`: a run that asked for the camera is continued with it, a piece or
+  none, and with no run file left, no piece means no camera). `Track` has no
   `Camera` value: `FindSegments` stays `.wav`'s. `RecordingFiles` owns the naming and `TranscriptCopies` the copy numbers: a
   transcript is never overwritten (`(2).md`, `(3).md`), not even by two processes at once, because
   each copy's `.json` and `.md` are claimed with `FileMode.CreateNew`. `HasTranscript` counts any
@@ -1371,9 +1373,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   implementation (`ClockStateTests`: random sequences, earlier snapshots unchanged, the JSON round trip). In the recorder,
   `TrackSetFactory` gives a lesson's `TrackSet` a camera starter (its `ICameraRecorder`, optional) with the run's
   `Recording:CameraOffsets`; `TrackSet.Start` starts the `CameraTrack` once the sound records (a track that cannot start is
-  an error line, the sound records on); `Pause`, `Resume` and `OnFrozen` (after the cut) reach it; `Stop` finishes the
-  sound first (stopped, padded to the end, flushed) and then waits for the camera's stop at that same end (a failing stop is
-  an error line); `TrackSet` implements `ICameraRecording` (`Camera`, `LetGoOfTheCamera`). No webcam hold runs beside a
+  an error line, the sound records on); `Pause`, `Resume` and `OnFrozen` (after the cut) reach it; `Stop` tells the camera
+  the end first (`ICameraTrack.EndAt`, taking no lock: the `end` line, after which the job drops every frame placed beyond
+  it), then finishes the sound (stopped, padded to the end, flushed) and then waits for the camera's stop at that same end,
+  at most `TrackSet.CameraStopLimit` (25 s, on the factory's `TimeProvider`; a failing or late stop is an error line, and
+  `Dispose` waits as long at most); `TrackSet` implements `ICameraRecording` (`Camera`, `LetGoOfTheCamera`). No webcam hold runs beside a
   picture (`WakeCameraMicrophone` is passed off for a plan with a camera; the webcam is still found for the zeros rules).
   `CameraTrack` (`Camera/CameraTrack.cs`) pins the camera by `Cameras.Choose` and its id (never a stand-in; not connected is
   said and looked for every 5 s), resolves the offset (`CameraOffsets.For`), starts a camera process with a record job
@@ -1381,16 +1385,22 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   whenever its version changed, from its own loop every 250 ms or at once when nudged, and `off`/`on` for P after the clock's
   line; `Nudge`, `Pause` and `Resume` take no lock (a flag and a task completed with its continuation run elsewhere), and the
   track takes no session's gate, only the clock's lock inside `Snapshot()` and its own. Its stop sends the clock's last line
-  and `stop` with the end, waits for the process at most `StopWait` (15 s), then kills it. A process that ends by itself, or
+  and `stop` with the end, waits for the process at most `StopWait` (15 s), then kills it. Every line to the process goes
+  within `SendLimit` (5 s), else the process is killed as stuck, which breaks its pipe, and the send fails as an
+  `IOException` (a synchronous pipe's write cannot be cancelled); letting a process go waits at most `DisposeWait` (5 s),
+  and `StartedCameraProcess.DisposeAsync` waits for its standard error 5 s at most. A process that ends by itself, or
   does not start, is started again `RestartAfter` (2 s) later, with the software encoder after an `Encoder` problem; the
   `MostFailures`th (3) within `FailuresWithin` (10 min) gives the picture up (`GivenUpText`). Its `State`
   (`CameraTrackState`) carries the frames, the rate, capturing, dark and a `CameraConcern` in the run's words with the
-  camera's name (lost, no picture as Bitdefender's block, refused, in use, encoder or disk, restarting, not connected, given
-  up as Alerts; dark as a Notice), cleared when frames come again. The run: `MonitorContext.Camera`; `RecordingMonitor`
+  camera's name (lost, no picture as Bitdefender's block, frames that cannot be written, refused, in use, encoder or disk,
+  restarting, not connected, given up as Alerts; dark as a Notice), cleared when frames come again. Its start line gives the
+  camera's own frame rate as it runs (`CameraOpened.FramesPerSecond`, read from the format's words by `CameraFormats`, up to
+  30; 0 when Windows does not say, and the line then says `at up to 30 frames a second`). The run: `MonitorContext.Camera`; `RecordingMonitor`
   makes the concern a condition (only a picture given up while paused; a lost camera whose microphone shares its container
   adds that its microphone may be silent too), adds `; camera 1280x720, 29.9 frames a second, 3 dropped` to the status
   line, and counts the picture twice in the room (`CameraBytesPerHour`): with room for less than 30 minutes of sound and
-  picture, `MonitorTick.LetGoOfTheCamera` and the loop lets it go. `RecorderState.Camera` (`CameraState`, a last field with
+  picture, `MonitorTick.LetGoOfTheCamera` and the loop lets it go (the words are not among the tick's lines: the track's
+  `GiveUp` says them, once). `RecorderState.Camera` (`CameraState`, a last field with
   a default) gives the title `CAM WAITING` and `CAM DARK` while recording. In the camera process, `CameraRecordJob`
   (`Camera/CameraRecordJob.cs`) refuses a piece already there (never written over), makes the writer (hardware unless the
   job asks for software; a refused hardware start falls back to software once, with a warning line), opens the camera
@@ -1402,6 +1412,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   for `StoppedAfter` 3 s: a black frame right after the last frame (never at now's position, which a cut not yet known
   could put beyond the frames after), let go, `Lost`, opened again every `RetryEvery` 2 s into the same piece; no first
   frame in `FirstFrameLimit` 5 s: `NoPicture`; black for `DarkAfter` 10 s: `Dark` once a stretch; a status line a second.
+  Only frames that can be written count, for the watch and the status's capturing (`FrameQueue.Offer(..., out
+  FrameRefusal)`): frames of another size, or without NV12 pixels that can be read, are said as `Unwritable` with what comes
+  (`its frames come at 1920x1080, not the 1280x720 asked for`) in place of `NoPicture` or `Lost`. The `end` line keeps every
+  frame placed after the sound's end out of the piece before the stop comes.
   The stop places every waiting frame, lets the last last to the end and sends `piece`, exit 0; a cancel or the starter's
   end closing finishes the piece at its last frame, 130; a failed write finishes it as far as it goes, `problem` (`Disk` or
   `Encoder`) and `failed`, 1; a stuck call, 1. `PieceSettings` fixes the encoding: the picture's size, Main profile, the
@@ -1412,17 +1426,23 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (MFTranscodeContainerType_FMPEG4), the encoder's settings passed as the sink writer's encoding parameters (no ICodecAPI
   declaration), over a file ClassScribe makes itself with others allowed to read (`FileStreamAsIStream` into
   `MFCreateMFByteStreamOnStream`), the black frame at 0 first and each sample lasting until the next. Fakes:
-  `FakeCameraFrame` and `FakeCameraCapture.Deliver(stamp, brightness)`, `FakePieceWriter(Factory)` (`Samples` as
-  `WrittenSample`, `FinishedAt`, `FailWrite`, `HardwareRefuses`), `FakeCameraTrack` and `FakeCameraRecorder`,
-  `FakeCameraRecording`, `PlayedCameraProcess` (`Received`, `Clocks`, `Stop`, `HangOnStop`, `OpenedAsync`,
-  `RecordStatusAsync`; a record job's stop answered with its piece through `FakeCameraProcess.EndAsync`, which closes its
-  own end so the starter reads its last lines), `FakeCameraProcess.Exited`. Tests: `CameraPiecesTests`, `CameraRecordJobTests`
+  `FakeCameraFrame` (`readable: false` for one whose pixels cannot be read) and `FakeCameraCapture.Deliver(stamp,
+  brightness)` or `DeliverFrame(frame)`, `FakePieceWriter(Factory)` (`Samples` as
+  `WrittenSample`, `FinishedAt`, `FailWrite`, `HardwareRefuses`), `FakeCameraTrack` (`EndAt`, `SoundBeingWrittenAtEnd`,
+  `StopHangs`) and `FakeCameraRecorder`, `FakeCameraRecording`, `PlayedCameraProcess` (`Received`, `Clocks`, `End`, `Stop`,
+  `HangOnStop`, `OpenedAsync`, `RecordStatusAsync`; a record job's stop answered with its piece through
+  `FakeCameraProcess.EndAsync`, which closes its own end so the starter reads its last lines), `FakeCameraProcess.Exited`,
+  `InputStuck` (the starter's writes hang, cancellation passed over, until the process ends) and `DisposeHangs`. Tests:
+  `CameraPiecesTests`, `CameraRecordJobTests`
   (the real host over the fakes on the manual clock), `MediaFoundationPieceWriterTests` (WindowsMedia: generated frames
   encoded with the software encoder into a temporary folder and read back, an unfinished piece readable, a piece being
-  written holding its recording; no device), `CameraTrackTests`, `TrackSetCameraTests`, `RecordingMonitorCameraTests`,
-  `TitleTextCameraTests`, `CameraOffsetsTests`, `CameraFilesTests`, `CameraSoakTests` (three simulated minutes through the
+  written holding its recording, a keyframe at least every 30 frames in the Main profile; no device), `CameraTrackTests`,
+  `TrackSetCameraTests`, `RecordingMonitorCameraTests`, `RecordingLoopCameraTests` (the loop lets the camera go with too
+  little room), `WindowsCameraCaptureTests` (the open's settings: shared and read only, never exclusive), `TitleTextCameraTests`,
+  `CameraOffsetsTests`, `CameraFilesTests`, `CameraSoakTests` (three simulated minutes through the
   real track set, camera recorder and camera host: each mark's bright frame where its click is in the sound, through a
-  pause, a cut sleep and a lost camera) and `EndToEndTests.A_lesson_with_the_camera_records_its_picture_beside_the_sound`.
+  pause, a cut sleep and a lost camera; and a stop whose sound takes two seconds, the piece still ending with the sound) and
+  `EndToEndTests.A_lesson_with_the_camera_records_its_picture_beside_the_sound`.
   The lesson's finished video (`finish`, `finish-video`, the report's V) is slice 8.
 - The webcam hold (`Camera/WebcamHold.cs`; camera-first 3.4 as amended on 21 October, behind
   `Recording:WakeCameraMicrophone`, off by default): `TrackSetFactory` gives each microphone track a `WebcamHold` from

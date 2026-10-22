@@ -24,7 +24,8 @@ namespace ClassScribe.Commands;
 /// </param>
 /// <param name="LetGoOfTheCamera">
 /// Why the lesson's camera is to be let go for the rest of the run, as when the disk has room for less than 30 minutes of
-/// the sound and the picture together; null while it records on.
+/// the sound and the picture together; null while it records on. The words are not among <paramref name="Lines"/>: the
+/// camera's track says them as it lets go.
 /// </param>
 public sealed record MonitorTick(IReadOnlyList<(LogLevel Level, string Text)> Lines, IReadOnlyList<TimelineNote> Notes, Attention Attention,
     string? StopBecause, (Track Track, string Reason)? Reopen, DateTimeOffset? StopsAtUtc, string? LetGoOfTheCamera = null);
@@ -682,11 +683,11 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         var drive = Path.GetPathRoot(context.Folder) is { Length: > 0 } root ? root : context.Folder;
 
         // The sound is the class: with room for less than 30 minutes of the sound and the picture together, the camera is let
-        // go (teach-video 6.14), and the sound alone is measured against the room left.
+        // go (teach-video 6.14), and the sound alone is measured against the room left. The words are not among this check's
+        // lines: the camera's track says them as it lets go, once.
         if (camera > 0 && fits < SpaceAlertBelow)
         {
             _letGoOfTheCamera = $"Little room is left on {drive} ({Size(bytes)} free), so the camera is let go: the rest of this lesson is recorded without its picture. The sound records on";
-            lines.Add((LogLevel.Warning, _letGoOfTheCamera));
             fits = TimeSpan.FromHours((double)Math.Max(0, bytes) / sound);
         }
 

@@ -109,9 +109,11 @@ public sealed record MicrophoneTrack(RecordingSession Session, MicrophoneSource 
 /// </summary>
 /// <remarks>
 /// A lesson in person may record the camera's picture too (teach-video 6.6 to 6.8): its camera track starts once the sound's
-/// tracks have started, is told of every pause, resume and cut (a cut only nudges it, taking no lock), and stops after the
-/// sound's tracks have stopped, been padded to the end and flushed, at that same end, within its own 15 seconds; the sound
-/// never waits on the camera before that, and a camera that fails costs the picture only.
+/// tracks have started, is told of every pause, resume and cut (a cut only nudges it, taking no lock), hears the sound's end
+/// as soon as the stop takes it, before the sound is stopped, so that it writes no frame after it, and stops after the
+/// sound's tracks have stopped, been padded to the end and flushed, at that same end; the stop waits for it at most
+/// <see cref="CameraStopLimit"/>. The sound never waits on the camera before that, and a camera that fails or hangs costs
+/// the picture only.
 /// </remarks>
 /// <param name="clock">The clock every track is placed on, shared with nothing outside this recording.</param>
 /// <param name="classTrack">The class's session, on the main track; null in person.</param>
@@ -122,10 +124,20 @@ public sealed record MicrophoneTrack(RecordingSession Session, MicrophoneSource 
 /// Starts the lesson's camera track into the recording's files at the run's offset, on the clock; null for a recording
 /// without the camera's picture.
 /// </param>
+/// <param name="time">The clock the wait for the camera's stop is timed on; the system's when none is given.</param>
 public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack, MicrophoneTrack? microphone, FreezeWatch freezes, ILogger<TrackSet> logger,
-    Func<RecordingFiles, TimeSpan, RecordingClock, Camera.ICameraTrack>? camera = null)
+    Func<RecordingFiles, TimeSpan, RecordingClock, Camera.ICameraTrack>? camera = null, TimeProvider? time = null)
     : IRecording, IMicrophoneRecording, ICameraRecording
 {
+    /// <summary>The clock the wait for the camera's stop is timed on.</summary>
+    private readonly TimeProvider _time = time ?? TimeProvider.System;
+
+    /// <summary>
+    /// The longest the stop waits for the camera's picture to stop, after the sound is saved: the camera track's own wait for
+    /// its piece, and ten seconds more for its lines and letting its process go. A camera that takes longer is left behind.
+    /// </summary>
+    public static readonly TimeSpan CameraStopLimit = ClassScribe.Camera.CameraTrack.StopWait + TimeSpan.FromSeconds(10);
+
     /// <summary>The lesson's camera track once started; null without a camera, or before the start.</summary>
     private Camera.ICameraTrack? _camera;
 
@@ -358,11 +370,14 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
             LastLook();
             StopWatch();
             var end = clock.Now();
+
+            // The camera hears the end at once, taking no lock, so that it writes no frame after it while the sound stops.
+            Volatile.Read(ref _camera)?.EndAt(end);
             var (main, second) = StopTracks(end);
             freezes.Frozen -= OnFrozen;
 
-            // The sound is stopped, padded to the end and flushed first; then the camera has its time, at most its 15
-            // seconds, to end its piece at that same end.
+            // The sound is stopped, padded to the end and flushed first; then the camera has its time, at most
+            // CameraStopLimit, to end its piece at that same end.
             StopTheCamera(end);
 
             // The webcam's picture is held until the microphone has stopped, and let go before anything is uploaded.
@@ -408,8 +423,8 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
     }
 
     /// <summary>
-    /// Stops the camera's picture at <paramref name="end"/>, where the sound ends, waiting at most its track's own limit; a
-    /// camera that fails to stop costs its picture's last moments only.
+    /// Stops the camera's picture at <paramref name="end"/>, where the sound ends, waiting at most <see cref="CameraStopLimit"/>;
+    /// a camera that fails to stop, or takes longer, costs its picture's last moments only, and the stop goes on without it.
     /// </summary>
     private void StopTheCamera(TimeSpan end)
     {
@@ -417,13 +432,41 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
 
         try
         {
-            track.StopAsync(end, CancellationToken.None).GetAwaiter().GetResult();
+            track.StopAsync(end, CancellationToken.None).WaitAsync(CameraStopLimit, _time).GetAwaiter().GetResult();
+        }
+        catch (TimeoutException)
+        {
+            // Deliberately not rethrown: the sound is stopped and saved already, and the recording lock is still held; a camera
+            // that does not stop in time must not hold up the transcript or the next class. Its stop goes on by itself, and
+            // the piece is readable to its last fragment.
+            logger.LogError("The camera's picture did not stop within {Seconds} seconds of the sound's stop; the recording goes on without it, and its piece is kept as far as it was written",
+                CameraStopLimit.TotalSeconds);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Deliberately not rethrown: the sound is stopped and saved already; a camera that fails at its stop costs its piece's
             // last moments only, which the line says, and the run goes on to its transcript.
             logger.LogError(ex, "The camera's picture could not be stopped cleanly: {Reason}; its piece is kept as far as it was written", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Lets the camera's track go, waiting at most <see cref="CameraStopLimit"/>, as its stop does: a track still stopping is
+    /// left to finish by itself.
+    /// </summary>
+    private void DisposeTheCamera()
+    {
+        if (Volatile.Read(ref _camera) is not { } track) return;
+
+        try
+        {
+            track.DisposeAsync().AsTask().WaitAsync(CameraStopLimit, _time).GetAwaiter().GetResult();
+        }
+        catch (TimeoutException)
+        {
+            // Deliberately not rethrown: the sound's files are closed already; a camera track that will not let go is left to
+            // finish by itself, and its camera process ends with ClassScribe at the latest.
+            logger.LogError("The camera's track did not let go within {Seconds} seconds; it is left to finish by itself", CameraStopLimit.TotalSeconds);
         }
     }
 
@@ -516,7 +559,7 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
         finally
         {
             freezes.Frozen -= OnFrozen;
-            Volatile.Read(ref _camera)?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            DisposeTheCamera();
             if (microphone is { } track)
             {
                 track.Source.Picked -= OnMicrophonePicked;
