@@ -341,10 +341,10 @@ public class ServiceRegistrationTests
     }
 
     /// <summary>
-    /// The window's starter is given the camera's start: from the menu, a lesson with a camera picked hears why the camera
-    /// cannot record in this build and is offered the sound only, rather than being refused with exit 1 as a starter without
-    /// one refuses it. The cameras, Windows' camera facts, its record and the registry are stand-ins, and nobody types, so
-    /// the offer goes back and nothing starts.
+    /// The window's starter is given the camera's start, and the app the camera recorder that records the picture: from the
+    /// menu, a lesson with a camera picked is asked Enter (with the camera) or S (the sound only), rather than refused with
+    /// exit 1 as a starter without the camera's start refuses it. The cameras, Windows' camera facts, its record and the
+    /// registry are stand-ins, and nobody types, so the question goes back and nothing starts.
     /// </summary>
     [Test]
     public async Task The_windows_starter_has_the_cameras_start()
@@ -367,9 +367,11 @@ public class ServiceRegistrationTests
 
         var exitCode = await scope.ServiceProvider.GetRequiredService<IRecordStarter>().RunAsync(lesson, StartOrigin.Menu);
 
-        Assert.That(exitCode, Is.Zero, "nobody typed, so the offer went back");
-        Assert.That(ui.Screen, Does.Contain(CameraStart.SoundOnlyOffer));
+        Assert.That(exitCode, Is.Zero, "nobody typed, so the question went back");
+        Assert.That(ui.Screen, Does.Contain(CameraStart.Prompt));
         Assert.That(ui.Screen, Does.Not.Contain(CameraStart.NothingStarted));
+        Assert.That(app.Services.GetRequiredService<Camera.ICameraRecorder>(), Is.InstanceOf<Camera.CameraRecorder>());
+        Assert.That(scope.ServiceProvider.GetRequiredService<TrackSetFactory>().CameraRecorder, Is.InstanceOf<Camera.CameraRecorder>());
     }
 
     /// <summary>

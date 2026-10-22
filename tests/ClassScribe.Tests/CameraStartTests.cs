@@ -174,19 +174,19 @@ public class CameraStartTests
     [Test]
     public void The_recordings_factory_refuses_a_plan_with_a_camera()
     {
-        var refused = Assert.Throws<CameraNotBuiltException>(() => new CameraRecorderNotBuilt().Start(new CameraTrackStart(new CameraChoice(null), "folder", "base", TimeSpan.Zero)));
+        var refused = Assert.Throws<CameraNotBuiltException>(() => new CameraRecorderNotBuilt().Start(new CameraTrackStart(new CameraChoice(null), "folder", "base", TimeSpan.Zero), new ClassScribe.Audio.Timeline.RecordingClock(TimeProvider.System)));
 
         Assert.That(refused!.Message, Is.EqualTo(CameraRecorderNotBuilt.Words));
         Assert.That(new CameraRecorderNotBuilt().NotReady, Is.EqualTo(CameraRecorderNotBuilt.Words));
     }
 
-    /// <summary>A camera recorder as a later build will be: ready, though nothing here starts it.</summary>
+    /// <summary>A camera recorder that is ready, though nothing here starts it: the window never starts a camera track.</summary>
     private sealed class ReadyRecorder : ICameraRecorder
     {
         /// <inheritdoc />
         public string? NotReady => null;
 
         /// <inheritdoc />
-        public ICameraTrack Start(CameraTrackStart start) => throw new AssertionException("no camera track is started by the window");
+        public ICameraTrack Start(CameraTrackStart start, ClassScribe.Audio.Timeline.RecordingClock clock) => throw new AssertionException("no camera track is started by the window");
     }
 }

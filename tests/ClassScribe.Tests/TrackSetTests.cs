@@ -97,8 +97,8 @@ public sealed class TrackSetTests
     private TrackSet InPerson(string? microphone = null) => (TrackSet)Factory().Create(InPersonPlan(microphone), _clock);
 
     /// <summary>
-    /// A plan with a camera is refused by the factory in this build, before any capture is made: the window refuses one
-    /// before anything records, and nothing can put a camera's picture beside the sound yet.
+    /// A plan with a camera is refused by a factory without a camera recorder, before any capture is made: nothing could put
+    /// the camera's picture beside the sound (see <see cref="TrackSetCameraTests"/> for the lesson with one).
     /// </summary>
     [Test]
     public void A_plan_with_a_camera_is_refused_before_any_capture_is_made()

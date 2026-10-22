@@ -38,6 +38,10 @@ namespace ClassScribe.Audio;
 /// its picture held open, shared, while the microphone records (see <see cref="Camera.WebcamHold"/>); null for none, as for
 /// the tests that need none.
 /// </param>
+/// <param name="cameraRecorder">
+/// Records a lesson's picture beside the sound, in person (see <see cref="Camera.ICameraRecorder"/>); null where none is at
+/// hand, as for the tests that need none, and a plan with a camera is then refused.
+/// </param>
 public sealed class TrackSetFactory(
     ILoopbackCaptureProvider loopback,
     IMicrophoneProvider microphones,
@@ -51,23 +55,31 @@ public sealed class TrackSetFactory(
     TimeProvider time,
     ILoggerFactory loggers,
     YouTube.VideoPlayback? video = null,
-    Camera.WebcamHolds? webcams = null) : IRecordingFactory
+    Camera.WebcamHolds? webcams = null,
+    Camera.ICameraRecorder? cameraRecorder = null) : IRecordingFactory
 {
     /// <summary>What makes each recording's webcam hold; null when none was given. For the tests of the registration.</summary>
     internal Camera.WebcamHolds? Webcams => webcams;
+
+    /// <summary>What records a lesson's picture; null when none was given. For the tests of the registration.</summary>
+    internal Camera.ICameraRecorder? CameraRecorder => cameraRecorder;
 
     /// <summary>A recording, not started yet, of what <paramref name="source"/> names, on a recording clock of its own.</summary>
     public IRecording Create(SourcePlan source) => Create(source, new RecordingClock(time));
 
     /// <summary>
     /// A recording, not started yet, of what <paramref name="source"/> names, placed on <paramref name="clock"/>, which belongs
-    /// to it alone; the class alone needs no clock and ignores it. A plan with a camera is refused with a
-    /// <see cref="Camera.CameraNotBuiltException"/>: the window refuses one before anything records, and this build has no
-    /// camera track to put beside the sound (slice 7 adds it, through <see cref="Camera.ICameraRecorder"/>).
+    /// to it alone; the class alone needs no clock and ignores it. A plan with a camera, in person, gets the lesson's camera
+    /// track beside the sound, its offset from Recording:CameraOffsets; a plan with a camera in another mode, or with no
+    /// camera recorder at hand, or one that cannot record, is refused with a <see cref="Camera.CameraNotBuiltException"/>: the
+    /// window refuses those before anything records.
     /// </summary>
     public IRecording Create(SourcePlan source, RecordingClock clock)
     {
-        if (source.Camera is not null) throw new Camera.CameraNotBuiltException(Camera.CameraRecorderNotBuilt.Words);
+        if (source.Camera is not null && (source.Mode != RecordingMode.Microphone || cameraRecorder is null || cameraRecorder.NotReady is not null))
+            throw new Camera.CameraNotBuiltException(source.Mode != RecordingMode.Microphone
+                ? "The camera records only in person in this build"
+                : cameraRecorder?.NotReady ?? Camera.CameraRecorderNotBuilt.Words);
 
         var settings = options.Value;
         switch (source.Mode)
@@ -82,11 +94,24 @@ public sealed class TrackSetFactory(
                 return new TrackSet(clock, theClass, MicrophoneTrack(source, Track.Microphone, rule, settings, clock), freezes, loggers.CreateLogger<TrackSet>());
 
             case RecordingMode.Microphone:
-                return new TrackSet(clock, classTrack: null, MicrophoneTrack(source, Track.Main, follows: null, settings, clock), freezes, loggers.CreateLogger<TrackSet>());
+                return new TrackSet(clock, classTrack: null, MicrophoneTrack(source, Track.Main, follows: null, settings, clock), freezes, loggers.CreateLogger<TrackSet>(),
+                    CameraFor(source, settings));
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(source), source.Mode, "Not a recording mode ClassScribe knows.");
         }
+    }
+
+    /// <summary>
+    /// How the lesson's camera track starts, for a plan with a camera: into the recording's files, its piece from the run's
+    /// offset, with the cameras' offsets of the run's settings; null for a plan without one.
+    /// </summary>
+    private Func<Storage.RecordingFiles, TimeSpan, RecordingClock, Camera.ICameraTrack>? CameraFor(SourcePlan source, RecordingOptions settings)
+    {
+        if (source.Camera is not { } choice || cameraRecorder is not { } recorder) return null;
+
+        var offsets = new Dictionary<string, int>(settings.CameraOffsets, StringComparer.OrdinalIgnoreCase);
+        return (files, offset, clock) => recorder.Start(new Camera.CameraTrackStart(choice, files.Folder, files.BaseName, offset, offsets), clock);
     }
 
     /// <summary>A session, not started yet, that records the class from what <paramref name="source"/> names, or the device the class plays on when it names none, writing as <paramref name="spec"/> says.</summary>
@@ -104,7 +129,9 @@ public sealed class TrackSetFactory(
     /// </summary>
     private MicrophoneTrack MicrophoneTrack(SourcePlan source, Track track, FollowRule? follows, RecordingOptions settings, RecordingClock clock)
     {
-        var hold = webcams?.Create(settings.WakeCameraMicrophone);
+        // A lesson that records the camera's picture keeps its camera streaming by itself, so no hold is started beside it
+        // (camera-first 3.4, "Not when"); the webcam is still found, for the webcam zeros rules.
+        var hold = webcams?.Create(settings.WakeCameraMicrophone && source.Camera is null);
         var tap = new MicrophoneProviderTap(microphones, hold is null ? null : hold.BeforeOpen);
         var chooser = new MicrophoneChooser(source.Microphone?.NamePart ?? settings.Microphone, time, loggers.CreateLogger<MicrophoneChooser>());
         var microphoneSource = new MicrophoneSource(tap, chooser, settings.MicrophoneProcessing);

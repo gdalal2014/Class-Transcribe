@@ -23,8 +23,8 @@ public static class CameraServices
         // Recording:WakeCameraMicrophone on its picture held open, shared, in a camera process.
         services.AddSingleton<WebcamHolds>();
 
-        // The seam the camera process fills in slice 7; until then no run records a camera's picture.
-        services.AddSingleton<ICameraRecorder, CameraRecorderNotBuilt>();
+        // A lesson's picture (slice 7): each run's camera track starts camera processes with record jobs.
+        services.AddSingleton<ICameraRecorder, CameraRecorder>();
 
         // The start of a camera process (--camera-process <job id>), in a kill-on-close job, from ClassScribe's own folder;
         // the webcam hold and the camera check start one, and a test run refuses the real start (DeviceGuards).

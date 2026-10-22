@@ -21,7 +21,7 @@ namespace ClassScribe.Camera;
 /// <para>Watched once every <see cref="LookEvery"/>: a camera that cannot be opened is said once per cause and tried again
 /// every <see cref="RetryEvery"/>; one that opens but sends no frame in <see cref="FirstFrameLimit"/> is said (a security
 /// program may be blocking it) and let go; one whose frames stop for <see cref="StoppedAfter"/> (unplugged, folded) gets a
-/// black frame at that position, is let go and said, and is opened again every <see cref="RetryEvery"/>; the same piece
+/// black frame right after its last one, is let go and said, and is opened again every <see cref="RetryEvery"/>; the same piece
 /// goes on. A picture black for <see cref="DarkAfter"/> is said once, and the status says dark until it brightens. A status
 /// line goes out once a second. An encoder or a disk that fails finishes the piece as far as it goes and ends the job with
 /// failed, exit 1, for the starter to start a new piece; so does a call on the route that does not return.</para>
@@ -53,6 +53,9 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
 
     /// <summary>How often a status line is sent.</summary>
     public static readonly TimeSpan StatusEvery = TimeSpan.FromSeconds(1);
+
+    /// <summary>A frame's time at the piece's 30 frames a second: how long the last frame lasts at a cancel, and where a lost camera's black frame goes after it.</summary>
+    public static readonly TimeSpan FrameTime = TimeSpan.FromSeconds(1.0 / PieceSettings.FramesPerSecond);
 
     /// <summary>The words of the problem when the camera opened but sent no picture.</summary>
     public const string NoPictureWords = "it opened but sent no picture";
@@ -205,9 +208,11 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
                     var since = time.GetElapsedTime(Math.Max(Interlocked.Read(ref _lastArrival), openedAt), now);
                     if (thisOpen == 0 && since >= FirstFrameLimit || thisOpen > 0 && since >= StoppedAfter)
                     {
+                        // The black frame goes right after the last frame written, where the picture stopped: placed by no stamp
+                        // of now, it cannot land beyond a sleep the clock has yet to cut, which would hold back the frames after.
                         PlaceDue(writer, placer, all: true);
                         var lost = thisOpen > 0;
-                        if (lost && placer.PlaceBlack(Snapshot().Position(MediaTime.Now(time))) is { Written: true } black) writer.WriteBlack(black.At);
+                        if (lost && placer.PlaceBlack(placer.Last + FrameTime) is { Written: true } black) writer.WriteBlack(black.At);
                         await CloseAsync(open);
                         _open = open = null;
                         var problem = lost ? new CameraProblem(CameraProblemKind.Lost, CameraProblems.Stopped) : new CameraProblem(CameraProblemKind.NoPicture, NoPictureWords);
@@ -250,7 +255,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
 
             var end = _stopAt;
             PlaceDue(writer, placer, all: true, end);
-            var endPosition = end is { } stop && stop > placer.Last ? stop : placer.Last + TimeSpan.FromSeconds(1.0 / PieceSettings.FramesPerSecond);
+            var endPosition = end is { } stop && stop > placer.Last ? stop : placer.Last + FrameTime;
             writer.Finish(endPosition - placer.PieceStart);
             await SendAsync(CameraProtocol.Piece, new CameraPiece(writer.Path, placer.PieceStart.TotalSeconds, endPosition.TotalSeconds), CameraJson.Default.CameraPiece);
             await LogAsync("Information", string.Create(CultureInfo.InvariantCulture,
@@ -383,7 +388,7 @@ public sealed class CameraRecordJob(LineChannel channel, CameraJob job, ICameraC
     {
         try
         {
-            writer.Finish(placer.Last - placer.PieceStart + TimeSpan.FromSeconds(1.0 / PieceSettings.FramesPerSecond));
+            writer.Finish(placer.Last - placer.PieceStart + FrameTime);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

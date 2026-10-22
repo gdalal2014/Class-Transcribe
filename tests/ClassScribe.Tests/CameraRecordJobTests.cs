@@ -159,7 +159,7 @@ public sealed class CameraRecordJobTests
     }
 
     /// <summary>
-    /// Frames that stop for 3 seconds (unplugged, folded) leave a black frame at that position, let the camera go, are said,
+    /// Frames that stop for 3 seconds (unplugged, folded) leave a black frame right after the last, let the camera go, are said,
     /// and the camera is opened again 2 seconds later into the same piece.
     /// </summary>
     [Test]
@@ -183,7 +183,8 @@ public sealed class CameraRecordJobTests
         Assert.That(stopped, Is.GreaterThanOrEqualTo(CameraRecordJob.StoppedAfter));
         Assert.That(again, Is.GreaterThanOrEqualTo(CameraRecordJob.RetryEvery));
         Assert.That(first.Disposed, Is.True);
-        Assert.That(black.At, Is.GreaterThan(TimeSpan.FromSeconds(3.9)).And.LessThan(TimeSpan.FromSeconds(4.2)), "the black frame where the picture was found gone");
+        var before = samples[samples.ToList().IndexOf(black) - 1];
+        Assert.That(black.At, Is.EqualTo(before.At + CameraRecordJob.FrameTime), "the black frame right after the last frame, where the picture stopped");
         Assert.That(samples.SkipWhile(sample => !sample.Black || sample.At == TimeSpan.Zero).Skip(1).Count(), Is.GreaterThan(25), "the picture goes on after it, in the same piece");
         Assert.That(_writers.Made, Has.Count.EqualTo(1));
     }
@@ -331,7 +332,7 @@ public sealed class CameraRecordJobTests
 
         var writer = _writers.Made.Single();
         Assert.That(code, Is.EqualTo(CameraProtocol.CancelledExitCode));
-        Assert.That(writer.FinishedAt, Is.EqualTo(writer.Samples[^1].At + TimeSpan.FromSeconds(1.0 / 30)));
+        Assert.That(writer.FinishedAt, Is.EqualTo(writer.Samples[^1].At + CameraRecordJob.FrameTime));
         Assert.That(writer.Samples, Has.Count.EqualTo(31));
         Assert.That(_captures.Last!.Disposed, Is.True);
     }
