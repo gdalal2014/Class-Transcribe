@@ -141,4 +141,22 @@ public static class RunEndCause
 
     /// <summary>A failure ended it.</summary>
     public const string Error = "Error";
+
+    /// <summary>A YouTube video's recording: its window was closed, as Gulzar closing it does (design 4.4, rule 1). Its end is confirmed.</summary>
+    public const string VideoClosed = "VideoClosed";
+
+    /// <summary>A YouTube video's recording: its window moved on to the next video, as YouTube's Autoplay does once a video ends (rule 2). Confirmed.</summary>
+    public const string VideoEnded = "VideoEnded";
+
+    /// <summary>A YouTube video's recording gave way to a class that started (rule 4, the yield). Not confirmed: it may be cut short.</summary>
+    public const string ClassStarted = "ClassStarted";
+
+    /// <summary>A YouTube video's recording heard nothing for 2 minutes after sound (rule 5). Not confirmed: a paused video sounds the same.</summary>
+    public const string VideoSilent = "VideoSilent";
+
+    /// <summary>A YouTube video's window played nothing in its first 5 minutes (rule 6). Nothing was recorded.</summary>
+    public const string NothingPlayed = "NothingPlayed";
+
+    /// <summary>A YouTube video's recording reached YouTube:LongestVideoHours (rule 7). Not confirmed: the video may go on.</summary>
+    public const string VideoLimit = "VideoLimit";
 }

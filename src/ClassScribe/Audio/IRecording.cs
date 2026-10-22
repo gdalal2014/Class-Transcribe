@@ -31,8 +31,9 @@ public sealed record TimelineNote(TimeSpan Position, string Text);
 /// <param name="Off">True while the track is switched off (V switches the microphone); it keeps its place on the clock.</param>
 /// <param name="WriteFailing">True while writing the track's files fails, as on a full disk.</param>
 /// <param name="OnlyZeros">True when the track has received nothing but exact zeros for a while, as from a microphone muted in Windows.</param>
+/// <param name="HeardSound">True once audible sound has reached the track's files in this run; sound heard only while paused does not count.</param>
 public sealed record TrackSnapshot(string Source, string? WaitingFor, TimeSpan Written, TimeSpan SinceLastSound, TimeSpan? SinceLastPacket,
-    bool DeliversContinuously, float? RecordedLevel, bool SoundWhilePaused, bool Capturing, bool Off, bool WriteFailing, bool OnlyZeros);
+    bool DeliversContinuously, float? RecordedLevel, bool SoundWhilePaused, bool Capturing, bool Off, bool WriteFailing, bool OnlyZeros, bool HeardSound = false);
 
 /// <summary>A running recording as the checks made once a second see it.</summary>
 /// <param name="Position">Where the recording is now: what a mark set now gets (see <see cref="IRecording.Position"/>).</param>

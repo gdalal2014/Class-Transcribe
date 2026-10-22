@@ -50,10 +50,13 @@ public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, IComman
     /// The request that continues the recording of <paramref name="lost"/>, whose recorder was lost while it recorded, as its
     /// next part, from <paramref name="now"/>: the same name, source, folder, choice to transcribe and to open, a new run id,
     /// and the minutes it had left of --minutes, counted from its start. Null when those minutes had run out: the recording
-    /// was due to stop.
+    /// was due to stop; and null for a YouTube video's run, which is never continued (design 2.5): its audio so far is kept,
+    /// and the same command records the video again.
     /// </summary>
     public static RecordRequest? ContinuationOf(RunRecord lost, DateTimeOffset now)
     {
+        if (lost.Request.Video is not null) return null;
+
         double? minutes = null;
         if (lost.Request.Minutes is { } total)
         {

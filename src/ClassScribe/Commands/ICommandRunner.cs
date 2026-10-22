@@ -84,6 +84,15 @@ public interface ICommandRunner
     /// Google Drive is checked; nothing on Drive is touched (see <see cref="DriveUploadCommand"/>). Returns the exit code.
     /// </summary>
     Task<int> DriveFreeSpaceAsync(string path);
+
+    /// <summary>Runs the batch of YouTube videos <paramref name="request"/> describes (see <see cref="YouTubeCommand"/>). Returns the exit code.</summary>
+    Task<int> YouTubeAsync(YouTube.YouTubeRequest request);
+
+    /// <summary>youtube check: where yt-dlp and its helpers are, their versions, and what to install or update. Returns the exit code.</summary>
+    Task<int> YouTubeCheckAsync();
+
+    /// <summary>Menu choice Y: asks for the links, the course and whether to transcribe, then runs the batch (see <see cref="YouTubeMenu"/>). Returns the exit code.</summary>
+    Task<int> YouTubeMenuAsync();
 }
 
 /// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>
@@ -243,6 +252,30 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         Require<DriveUploadCommand>("Freeing room once recordings are on Google Drive is not part of this build yet.");
         await using var scope = scopes.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<DriveUploadCommand>().FreeSpaceAsync(path);
+    }
+
+    /// <summary>Runs a batch of YouTube videos with the youtube command (<see cref="YouTubeCommand"/>), in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> YouTubeAsync(YouTube.YouTubeRequest request)
+    {
+        Require<YouTubeCommand>("YouTube videos are not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<YouTubeCommand>().RunAsync(request);
+    }
+
+    /// <summary>Checks yt-dlp and its helpers with the youtube command, in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> YouTubeCheckAsync()
+    {
+        Require<YouTubeCommand>("YouTube videos are not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<YouTubeCommand>().CheckAsync();
+    }
+
+    /// <summary>Shows menu choice Y, YouTube videos (<see cref="YouTubeMenu"/>), in a scope of its own. Returns its exit code.</summary>
+    public async Task<int> YouTubeMenuAsync()
+    {
+        Require<YouTubeMenu>("YouTube videos are not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<YouTubeMenu>().RunAsync();
     }
 
     /// <summary>

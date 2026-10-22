@@ -29,6 +29,10 @@ namespace ClassScribe.Audio;
 /// <param name="transcript">The run's transcript settings: how long a stretch with nothing playing must be for a heading, in a recording of the class alone.</param>
 /// <param name="time">The clock everything is measured on.</param>
 /// <param name="loggers">Makes a logger for each part of the recording.</param>
+/// <param name="video">
+/// The run's YouTube video window, which a video's run records and a class's leaves out (see <see cref="CaptureChooser"/>); null
+/// when none is known of, as for the tests that need none.
+/// </param>
 public sealed class TrackSetFactory(
     ILoopbackCaptureProvider loopback,
     IMicrophoneProvider microphones,
@@ -40,7 +44,8 @@ public sealed class TrackSetFactory(
     IOptionsSnapshot<RecordingOptions> options,
     IOptionsSnapshot<TranscriptOptions> transcript,
     TimeProvider time,
-    ILoggerFactory loggers) : IRecordingFactory
+    ILoggerFactory loggers,
+    YouTube.VideoPlayback? video = null) : IRecordingFactory
 {
     /// <summary>A recording, not started yet, of what <paramref name="source"/> names, on a recording clock of its own.</summary>
     public IRecording Create(SourcePlan source) => Create(source, new RecordingClock(time));
@@ -71,7 +76,7 @@ public sealed class TrackSetFactory(
     /// <summary>A session, not started yet, that records the class from what <paramref name="source"/> names, or the device the class plays on when it names none, writing as <paramref name="spec"/> says.</summary>
     private RecordingSession ClassSession(SourcePlan source, TrackSpec spec, RecordingClock? clock)
     {
-        var chooser = new CaptureChooser(time, source.Class ?? new ClassSource.Automatic(), loggers.CreateLogger<CaptureChooser>());
+        var chooser = new CaptureChooser(time, source.Class ?? new ClassSource.Automatic(), loggers.CreateLogger<CaptureChooser>(), video);
         return new RecordingSession(new LoopbackSource(loopback, chooser), spec, clock, options, time, loggers.CreateLogger<RecordingSession>());
     }
 

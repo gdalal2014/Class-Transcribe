@@ -28,7 +28,7 @@ namespace ClassScribe.Tests;
 /// warnings, the status line) is tested with the loop itself (see <see cref="RecordingLoopTests"/>).
 /// </summary>
 [TestFixture]
-public class RecordCommandTests
+public partial class RecordCommandTests
 {
     private static readonly AudioFormat Pcm16KMono = new(16000, 1, 16, false);
 
@@ -143,7 +143,8 @@ public class RecordCommandTests
     private RecordCommand CreateCommand(
         string apiKey = "test-key", TimeProvider? time = null, bool openWhenDone = false, string? outputFolder = null, KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
         bool blockShutdown = true, IRecordingFactory? recordings = null, RuntimeFolder? runtimeFolder = null, ILogger<RecordCommand>? logger = null,
-        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown)
+        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown, YouTube.VideoPlayback? video = null,
+        IVideoYield? yield = null)
     {
         time ??= TimeProvider.System;
         var recording = TestOptions.Create(new RecordingOptions
@@ -179,7 +180,7 @@ public class RecordCommandTests
             .Set(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue, 3);
         var bluetooth = new BluetoothMicrophoneWatch(new FakeMicrophoneSessions(), new FakeMicrophoneProvider(), new FakeOwnProcesses(), time, NullLogger<BluetoothMicrophoneWatch>.Instance);
         var monitor = new RecordingMonitor(new FreezeWatch(_times, time, NullLogger<FreezeWatch>.Instance), new FakeFreeSpace(), recording,
-            new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _provider, bluetooth, time);
+            new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _provider, bluetooth, time, video, TestOptions.Create(new YouTubeOptions()));
         var loop = new RecordingLoop(_ui, _signals, marks, monitor, status, time, _loopLog);
 
         var ownFolder = runtimeFolder ?? _runtime.Folder;
@@ -195,8 +196,8 @@ public class RecordCommandTests
 
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
-                NullLogger<ClassRecording>.Instance),
-            loop, workflow, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log);
+                NullLogger<ClassRecording>.Instance, video),
+            loop, workflow, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield);
     }
 
     /// <summary>

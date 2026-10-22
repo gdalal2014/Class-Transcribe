@@ -6,7 +6,10 @@ class as you hear it; that sound and your microphone together, so that what you 
 in the transcript too; or your microphone alone, for a class held in a room. See
 [Your microphone](#your-microphone). Once it is signed in to your own Google Drive, each class also
 goes up there by itself, every file checked against Drive's own MD5, and the audio can then be
-deleted from the laptop to free room (see [Google Drive](#google-drive)).
+deleted from the laptop to free room (see [Google Drive](#google-drive)). It also takes YouTube
+videos, one or a list of them, and makes each an ordinary recording of a course, transcribed like a
+class: recorded as it plays in a Chrome window of ClassScribe's own, or, for videos you may download,
+downloaded with yt-dlp (see [YouTube videos](#youtube-videos)).
 
 ## Set up once
 
@@ -63,6 +66,15 @@ deleted from the laptop to free room (see [Google Drive](#google-drive)).
    them in a way Windows cannot record, so ClassScribe records silence. ClassScribe warns when it
    sees this, at the start of a recording and whenever it begins (see
    [While recording](#while-recording)).
+8. Optional, for YouTube videos you may download (see [YouTube videos](#youtube-videos)): in a new
+   terminal run `winget install --source winget --id yt-dlp.yt-dlp`, which brings Deno and FFmpeg
+   with it, then `ClassScribe youtube check`, which should end with `yt-dlp and its helpers are in
+   place.` If Bitdefender flags `yt-dlp.exe`, a program that unpacks itself each time it starts, add
+   an exception for it as in step 5, with the path `youtube check` printed. Recording videos as they
+   play needs nothing new: only Chrome.
+9. Optional, if you have YouTube Premium: sign in to YouTube once in ClassScribe's own Chrome window
+   for videos, so that the videos it records as they play come without ads (see
+   [Your Premium sign-in in the video window](#your-premium-sign-in-in-the-video-window)).
 
 ### Google Drive (set up once)
 
@@ -145,6 +157,7 @@ ClassScribe starts with a menu. Press the number of what you want:
   7  Microphone: none, with the class, or in person
   8  Check the microphone: watch what apps do with it (opens nothing)
   9  Google Drive: upload, free room on this laptop, sign in
+  Y  YouTube: record videos as they play, or download them, then transcribe
   A  Show the recording in progress        (only while one records)
   Q  Quit
 ```
@@ -155,7 +168,10 @@ T to transcribe it and F to forget it (see [If a recording was interrupted](#if-
 If a recording is running, the menu shows it at once; Esc comes back to the menu, which then offers
 A to show it again. Above the choices, the header names what runs in the background, such as
 `Recording now: "Kalam" since 19:00 (00:42:13). A shows it.` or
-`Being transcribed in the background: "Fiqh" (uploading 40%).`
+`Being transcribed in the background: "Fiqh" (uploading 40%).` A YouTube video's run is named as the
+video, never as its course: `Recording now: the YouTube video "The creed, part 1" since 19:00
+(00:12:13). A shows it.`, and a transcript that a YouTube batch makes in another window
+`Being transcribed in another ClassScribe window (process 1234): the YouTube video "The creed, part 1" (uploading 40%).`
 
 Once Google Drive is set up, the report at the start also says what waits to go up, such as
 `Google Drive: 1 recording waits to go up (Mantiq_2026-10-17_14-04-42Z, 727 MB; last try 17 Oct 21:40:
@@ -237,6 +253,14 @@ never counted as waiting; it goes up once it has stopped.
   signs out. Not signed in, S signs in: drag the client file Google gave you onto the window, or press
   Enter alone to sign in again with the client ClassScribe keeps (see
   [Google Drive (set up once)](#google-drive-set-up-once)). Esc goes back.
+- **Y YouTube** takes YouTube links, pasted one or more on a line or as a text file of links dragged
+  onto the window (an empty line ends the list), then the course they belong to (Enter takes the
+  last one named while the window is open), then R to record each as it plays in a Chrome window of
+  ClassScribe's own or D to download its audio with yt-dlp, then T to transcribe each one (the line
+  says about what an hour costs, such as `about $0.27 an hour of audio with the glossary`) or O to
+  fetch only the audio. The plan follows; nothing is fetched, recorded or sent before you confirm it.
+  Esc goes back at every step. The videos go to `Recording:OutputFolder`, as the menu's classes do.
+  See [YouTube videos](#youtube-videos).
 
 When a choice is done, the menu comes back, after an error too. Q or Ctrl+C leaves it.
 
@@ -591,7 +615,8 @@ class can start while the last one is still being uploaded. The menu's header th
 again until it is done (`... is being transcribed in the background; its transcript will appear
 in ...`). A second recording is refused: `Only one recording at a time: "Fiqh" has been recording
 since 19:00 (00:42:13). Start ClassScribe to see it, or stop it first.` (in the menu, `A shows it.`),
-with exit code 1 on the command line.
+with exit code 1 on the command line. A YouTube video being recorded as it plays is the one
+exception: a class started meanwhile stops it and records (see [A class comes first](#a-class-comes-first)).
 
 At the end, the window that started the recording opens the folder and the transcript as the
 settings say; when it is gone, the last window you opened to see the recording does. With no window
@@ -641,10 +666,12 @@ ClassScribe reports what happened.
 ### Keeping the laptop awake
 
 From the start of a recording until its transcript is saved (with record only, until its files are
-closed), while a recording or a file is transcribed, and while ClassScribe uploads to Google Drive,
-it asks Windows to keep the laptop awake. `powercfg /requests`, in a terminal run as administrator,
-lists the request as `ClassScribe is recording a class`, `ClassScribe is transcribing a recording` or
-`ClassScribe is uploading to Google Drive`. Windows ends the request when ClassScribe ends, however
+closed), while a recording or a file is transcribed, while ClassScribe uploads to Google Drive, and
+for the whole of a batch of YouTube videos, from its plan to its summary, it asks Windows to keep
+the laptop awake. `powercfg /requests`, in a terminal run as administrator, lists the request as
+`ClassScribe is recording a class`, `ClassScribe is transcribing a recording`,
+`ClassScribe is uploading to Google Drive` or `ClassScribe is working through YouTube videos`; each
+video's recording holds its own request as a class does. Windows ends the request when ClassScribe ends, however
 it ends. After a class, the background recorder lives on to upload it and holds the last of these;
 the next class can start at once all the same. The screen is kept on as `Recording:KeepScreenOn`
 says:
@@ -717,7 +744,10 @@ those files stay where they are. A class that runs past midnight stays
 in the folder it started in, and a recording continued as its next part (C, `--continue`, or after
 a lost recorder) goes on in its own folder, whatever the date is now. A file transcribed on its
 own gets the same layout: a folder named after the file, and in it the date folder of the day it
-was transcribed. The same layout is used under a folder given with `--output`.
+was transcribed. The same layout is used under a folder given with `--output`. A batch of YouTube
+videos is an exception only in one way: all its videos share one date folder, the one its first
+video takes, so the day's class after it goes to `(2)` however many videos there were (see
+[Where a video's files go](#where-a-videos-files-go)).
 
 Recordings made before the date folders, flat in the folder of their name
 (`Kalam\Kalam_2026-10-14_19-30-00Z.wav`), are still listed, continued, transcribed and rebuilt
@@ -803,11 +833,20 @@ or syncs, and nothing in it holds the API key:
                                      in the queue; an upload stopped half way goes on from it, by an address
                                      Google keeps for a week, which is never logged
     drive\upload.lock                held open while an upload runs, so only one runs at a time
+    youtube\youtube.lock             held open while a batch of YouTube videos runs, so only one runs at a time
+    youtube\converting.json          the downloaded video being turned into a recording, for the clean-up after a crash
+    youtube\staging\<video ID>\      a video's read and download until it is a recording; deleted then, or after 7 days
+    youtube\yt-dlp-cache\            yt-dlp's cache: YouTube's player code and the challenges it solved
+    video-browser\                   the profile of ClassScribe's own Chrome window for videos: private once you
+                                     sign in there (see Your Premium sign-in in the video window)
 ```
 
 A run id is the start time in UTC and eight random digits, such as `20261015-230002Z-1f3a9c07`. A
 run that needs nothing more (seen, continued or forgotten) is deleted 30 days after its last update.
 The recorder also runs in this folder, so it holds nothing under OneDrive or in the repo open.
+`video-browser` is Chrome's own, made by Chrome the first time a video's window opens: ClassScribe
+never reads, lists, copies, uploads or deletes anything in it, and once you sign in to YouTube there
+it holds your Google sign-in, so keep it out of anything you copy or share.
 
 The Google Drive sign-in lives in `%APPDATA%\ClassScribe\google-drive.dat`: the Google client you
 gave ClassScribe (its id and secret) and, while you are signed in, the sign-in itself, the account's
@@ -836,6 +875,9 @@ ClassScribe drive signout                                               # end Cl
 ClassScribe drive upload "$env:USERPROFILE\ClassScribe\Mantiq\2026-10-17"   # a class, a course's folder or the recordings folder
 ClassScribe drive upload                                                # every recording that waits to go up
 ClassScribe drive free-space "$env:USERPROFILE\ClassScribe\Mantiq" --yes   # delete the audio Google Drive has, checked again first
+ClassScribe youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --yes   # record a video as it plays
+ClassScribe youtube --list "risala-links.txt" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --download --plan   # the plan of a download
+ClassScribe youtube check                                               # yt-dlp and its helpers, their versions
 ClassScribe --help                                                      # the commands; also record --help and so on
 ```
 
@@ -849,9 +891,11 @@ In short: `record "<name>" SOURCE --output "<folder>" [--mic ["<microphone>"] [-
 [--minutes <n>] [--no-open] [--continue | --new]`, `record-only` with the same options,
 `transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
 `list [--output "<folder>"]`, `devices`, `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
-`drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]` and
+`drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]`,
 `drive free-space "<path>" --yes`,
-where the parts in brackets may be left out, and SOURCE is `--device "<part of its name>"`,
+`youtube <link>... [--list "<file>"] --name "<course>" --output "<folder>" [--download] (--yes | --plan)
+[--no-transcribe] [--no-open] [--again] [--allow-unlisted]` and `youtube check`,
+where the parts in brackets may be left out, `(--yes | --plan)` means exactly one of the two, and SOURCE is `--device "<part of its name>"`,
 `--device auto`, `--app <process>` or `--in-person ["<microphone>"]`. `<command> --help` (also `-h`,
 `-?`, `/?` or `help <command>`) lists a command's options with examples.
 
@@ -879,6 +923,14 @@ refused) or the path names no recording. `drive free-space` takes the same paths
 since it asks nothing; it ends with 1 when any recording kept its audio or Drive could not be asked.
 Ctrl+C stops either with exit code 130; an upload then goes on from where it stopped the next time,
 and free space deletes nothing it has not checked. See [Google Drive](#google-drive).
+
+`youtube` needs `--name`, the course, `--output`, the recordings folder, at least one link or a
+`--list` file, and exactly one of `--yes`, which goes ahead after the plan, and `--plan`, which prints
+the plan and stops. Without `--download` each video is recorded as it plays, at most 10 videos, each
+by its own link, and `--yes` still waits for Enter before each video; with `--download` the audio is
+downloaded with yt-dlp, at most 500 videos, playlists included. `youtube check` takes nothing else. A
+mistake is named with the command's help and exit code 2, before anything starts. See
+[YouTube videos](#youtube-videos).
 
 For `record` and `record-only` the name, a source and `--output` are required, and nothing is ever
 asked: every missing piece and every value ClassScribe cannot use is named at once, followed by that
@@ -923,12 +975,20 @@ and the free `rebuild` command (see [Google Drive](#google-drive)); given its co
 | `--in-person ["<microphone>"]` | `record`, `record-only` | Records your microphone alone, for a class in the room: part of its name, such as `"OBSBOT"`, or nothing for `Recording:Microphone`, else Windows' default microphone (never a Bluetooth one). It is the third kind of source. The recording's name must come right after the word `record`, before `--in-person` or `--mic`, which would otherwise take it as the microphone's name. |
 | `--mic ["<microphone>"]` | `record`, `record-only` | Records your microphone too, beside `--device` or `--app`, as a second track mixed into one transcript; it takes a microphone's name the same way. Not with `--in-person`, where the microphone is already the source. |
 | `--mic-follows <app>` | `record`, `record-only` | With `--mic`: the app whose microphone use your microphone follows, by part of its process name, such as `chrome`; `auto` follows any app that holds the microphone; `none` records whenever V is on. Without it, the app recorded with `--app`, else `Recording:MicrophoneFollows`. Not with `--in-person`, and never ClassScribe itself. |
-| `--output "<folder>"` | `record`, `record-only`, `transcribe`, `list` | The recordings folder: the recording goes to the folder of its name inside it, and there to the date folder of the day it started (see [Where things go](#where-things-go)). Required for `record` and `record-only`. For `transcribe` it is used only for a file that is not a recording's; a recording's transcript goes beside the recording. |
+| `--output "<folder>"` | `record`, `record-only`, `transcribe`, `list`, `youtube` | The recordings folder: the recording goes to the folder of its name inside it, and there to the date folder of the day it started (see [Where things go](#where-things-go)). Required for `record`, `record-only` and `youtube`. For `transcribe` it is used only for a file that is not a recording's; a recording's transcript goes beside the recording. |
+| `--name "<course>"` | `youtube` | Required. The course the videos belong to, such as `"Risala"`: the folder they go to, as a class's name names it. |
+| `--list "<file>"` | `youtube` | A text file of links, several on a line, separated by spaces, `#` starting a comment (see [Links and a list file](#links-and-a-list-file)). It may be given beside links on the line; they are joined in order. |
+| `--download` | `youtube` | Downloads the audio with yt-dlp instead of recording each video as it plays: only for videos you uploaded or whose owner allows you to download them, never your course's (see [Downloading with yt-dlp](#downloading-with-yt-dlp)). |
+| `--yes` | `youtube` | Goes ahead after the plan is printed. Recording as they play, Enter is still asked before each video, and you play it yourself. Downloading, it takes only the videos that need no word from you. |
+| `--plan` | `youtube` | Prints the plan and stops, with exit code 0: nothing is downloaded, recorded or sent to ElevenLabs. Not with `--yes`. |
+| `--no-transcribe` | `youtube` | Only fetches the audio; nothing is sent to ElevenLabs, and the summary gives each recording's `transcribe` command. |
+| `--again` | `youtube` | Fetches videos that were fetched before again, as new recordings; transcribing them is billed again. |
+| `--allow-unlisted` | `youtube` | With `--download` only: your word, given once for the batch, that every video yt-dlp says is unlisted is one you uploaded or may download. Refused (exit code 2) while `YouTube:CourseChannels` is empty; it never overrides another refusal (see [Downloading with yt-dlp](#downloading-with-yt-dlp)). |
 | `--minutes <n>` | `record`, `record-only` | Stops by itself after that many minutes, counted from the start with pauses included, such as `90` or `1.5` (a dot, never a comma; more than 0 and at most 1440). Q twice still stops it earlier. |
 | `--continue` | `record`, `record-only` | Continues, as its next part, the recording of that name that stopped within `Recording:ContinueWithinMinutes` without a transcript; when there is none, says so and starts a new one. |
 | `--new` | `record`, `record-only` | Starts a new recording without a word about one that could be continued. Not with `--continue`. |
 | `--again` | `transcribe` | Transcribes a recording that already has a transcript or a paid answer. This is billed again. |
-| `--no-open` | `record`, `record-only`, `transcribe`, `rebuild` | Opens nothing at the end, whatever `Recording:OpenFolderWhenDone` and `Recording:OpenTranscriptWhenDone` say. |
+| `--no-open` | `record`, `record-only`, `transcribe`, `rebuild`, `youtube` | Opens nothing at the end, whatever `Recording:OpenFolderWhenDone` and `Recording:OpenTranscriptWhenDone` say. Without it, `youtube` opens the course's folder once at the end, as `Recording:OpenFolderWhenDone` says, and never a transcript. |
 | `--seconds <n>` | `mic-check` | Stops the check by itself after that many seconds, a whole number from 1 to 86400 (a day), such as `600`. Without it, Q or Ctrl+C stops it. |
 | `--log-folder "<folder>"` | `mic-check` | Puts the check's log there, instead of the `mic-check` folder under `Recording:OutputFolder`. |
 | `--client "<file>"` | `drive signin` | The client file you downloaded from Google (Google Auth platform > Clients > Download JSON). Needed for the first sign-in; ClassScribe then keeps the client, encrypted for your Windows account, and the file can be deleted. A file that is not there, or a folder, is a mistake on the command line. |
@@ -966,11 +1026,11 @@ At the end, ClassScribe hands Windows an exit code, which a script can check (in
 
 | Exit code | Meaning |
 | --- | --- |
-| 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, when `mic-check` stopped normally, when `drive upload` found everything it took on Drive, and when `drive free-space` freed the audio of every recording it took (or found none left). An upload to Google Drive after a class or a transcript never changes the exit code. |
-| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked. |
-| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. Nothing was started. |
-| 130 | Cancelled with Ctrl+C, or with Esc while `drive signin` waits for Google; Ctrl+C during `drive upload` too, which goes on from where it stopped the next time, and during `drive free-space`. |
-| none | The window was closed while the recording ran in the background; the next start reports how it ended. |
+| 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, when `mic-check` stopped normally, when `drive upload` found everything it took on Drive, and when `drive free-space` freed the audio of every recording it took (or found none left). For `youtube`: every video ended as asked (recorded with a confirmed end, or downloaded, and transcribed when asked) or was done before; `--plan` printed its plan; `youtube check` found all four tools, and yt-dlp at most 90 days old. An upload to Google Drive after a class or a transcript never changes the exit code. |
+| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked. For `youtube`: any video refused, left out, waiting for your word, not fetched, recorded but possibly cut short, not transcribed, or left recording in the background; another YouTube batch running; Chrome, yt-dlp or a helper not found; no API key while transcripts are asked; too little room for a download; `youtube check` finding a tool missing, or yt-dlp more than 90 days old. |
+| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. For `youtube`: no `--name`, `--output` or link, a word that is no link it takes, neither or both of `--yes` and `--plan`, a playlist's or `/live/` link or more than 10 videos without `--download`, more than 500 videos with it, and `--allow-unlisted` without `--download` or while `YouTube:CourseChannels` is empty. Nothing was started. (A batch whose playlists turn out to hold more than 500 videos once they are read ends with 2 as well, before anything is downloaded.) |
+| 130 | Cancelled with Ctrl+C, or with Esc while `drive signin` waits for Google; Ctrl+C during `drive upload` too, which goes on from where it stopped the next time, and during `drive free-space`. For `youtube`: Ctrl+C twice while videos are recorded as they play (no transcripts follow), Ctrl+C or Q twice during a download, and Ctrl+C during a transcript. |
+| none | The window was closed while the recording ran in the background; the next start reports how it ended. Likewise for a `youtube` batch whose window was closed: a video being recorded carries on in its recorder to its end, nothing else goes on, and the same command later picks up where it stopped. |
 
 When `record-only` ends, its last message gives the command that transcribes the recording; so does
 `record` when there is no API key. When the transcript after `record` fails, or you cancel it, the
@@ -1008,6 +1068,12 @@ says which`. C is offered while the recording can still be continued (within
 half hours, and no other recording running) and continues it with the run's own name, source and
 folder. On the command line the report prints the `record ... --continue` and `transcribe` commands
 instead, then `To forget it: start ClassScribe without a command, then press F.`, and asks nothing.
+
+A YouTube video's recording is never continued, by C or by the window (see
+[YouTube videos](#youtube-videos)): the report names it as the video (`The recording of the YouTube
+video "The creed, part 1" (Risala_2026-10-18_14-02-11Z) ended unexpectedly at about 19:47, 00:12:10
+in. Its audio is kept.`) and offers T and F, never C; the same `youtube` command records the video
+again, and transcribes what it finds whole.
 
 A transcription that was interrupted (the background process ended during the upload) is reported
 the same way, with T and F: `The transcript of "Kalam" (Kalam_2026-10-15_23-00-02Z) was not
@@ -1100,7 +1166,9 @@ order: the transcripts (`.md`, `(2).md`), ElevenLabs' answers (`.json`, a kept `
 marks, the class's audio (`.wav`, `_part2.wav`), your microphone's (`.mic.wav`), and the log last.
 Your own files in the folder, such as the class's PDFs, never go up: only files named as the
 recording's are taken. With `Drive:Upload` set to `WithoutAudio` the `.wav` files stay on the laptop
-alone. The window, the `.log` and `recorder.log` say it as it goes:
+alone. A YouTube video's recording goes up the same way, its `.source.json` with it, but
+`YouTube:DriveUpload` decides about its audio instead of `Drive:Upload`: `Everything` by default,
+or `WithoutAudio` (see [YouTube videos](#youtube-videos)). The window, the `.log` and `recorder.log` say it as it goes:
 `Google Drive: uploading Mantiq_2026-10-17_14-04-42Z (4 files, 727 MB) to ClassScribe/Mantiq/2026-10-17`,
 then `Mantiq_2026-10-17_14-04-42Z.wav: 30% (217 MB of 722 MB, 3.1 MB/s)` for each tenth of a file
 that goes in more than one piece, and `...: already on Drive` for one that is there already. Sizes
@@ -1169,7 +1237,11 @@ what was freed: `Freed 722 MB on this laptop: deleted 1 audio file of Mantiq_202
 (Mantiq_2026-10-17_14-04-42Z.wav). Their copies stay on Google Drive, in My Drive > ClassScribe >
 Mantiq > 2026-10-17; the transcripts, ElevenLabs' answers, the marks and the log stay here`. Given
 several recordings, such as a course's folder, it frees each one that passes, keeps the audio of
-each one that does not, and ends with `Freed ... on this laptop in all`.
+each one that does not, and ends with `Freed ... on this laptop in all`. A YouTube video's recording
+whose audio never went up, under `YouTube:DriveUpload` `WithoutAudio`, keeps it, which is no failure
+and leaves the exit code as it is: `Risala_2026-10-18_14-02-11Z is a YouTube video's recording; its
+audio is not on Drive (YouTube:DriveUpload), so it stays. Delete it by hand if you need the room; the
+video can be fetched again.`
 
 Deleting audio, this way or by hand, never touches Drive. A recording whose audio is gone from the
 laptop after it went up counts as done, never as waiting, and is never uploaded again: `list` and menu
@@ -1261,6 +1333,551 @@ page gives a quiet log, which is a result in itself.
 - A `SESSION` line naming a different microphone than you expected: the page and ClassScribe may not
   agree on the microphone; ClassScribe switches to the page's when they do not.
 
+### YouTube videos
+
+Menu choice Y, or the `youtube` command, takes one YouTube video or a list of them, makes each an
+ordinary recording of the course you name, and transcribes it like a class. There are two ways to
+get a video's audio:
+
+- **Record it as it plays** (R in the menu; `youtube` without `--download`). ClassScribe opens each
+  video in a Chrome window of its own, you press play there, and it records that window's sound
+  alone until the video ends. Nothing is downloaded, it works for any video you can watch, your
+  course's own videos included (from their YouTube link), and it takes as long as the videos do. It
+  needs nothing but Chrome. See [Recording as it plays](#recording-as-it-plays).
+- **Download it** (D in the menu; `youtube --download`). yt-dlp fetches the audio, which is fast,
+  but it is only for videos you uploaded or whose owner allows you to download them, and never for
+  your course's: ClassScribe refuses what it can tell is your course's, asks for your word on each
+  video that is not public, and asks for `YES` on the batch. It needs yt-dlp (step 8 of
+  [Set up once](#set-up-once)). Read [YouTube's terms and the law](#youtubes-terms-and-the-law)
+  first. See [Downloading with yt-dlp](#downloading-with-yt-dlp).
+
+Either way the batch runs in the window that started it, in three steps. First the plan: every video
+is looked at, and what will be done is shown, with the cost, the time and what is refused and why;
+nothing is fetched, recorded or sent before you confirm it. Then the fetching: each video becomes a
+recording of the course, all of one batch in one date folder, with a `.source.json` beside it that
+keeps the video's title, link and how its audio was obtained. Then the transcripts, one after
+another, unless you chose only the audio (O, `--no-transcribe`); each goes up to Google Drive as a
+class's does. A summary at the end says what came of each video, with what to do about anything
+left, and the course's folder opens once (`--no-open` opens nothing). Only one batch runs at a time,
+across ClassScribe's windows; the laptop is kept awake for the whole batch; and a class always comes
+first (see [A class comes first](#a-class-comes-first)).
+
+```powershell
+ClassScribe youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --yes
+ClassScribe youtube --list "risala-links.txt" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --download --plan
+ClassScribe youtube --list "risala-links.txt" --name "Risala" --output "$env:USERPROFILE\ClassScribe" --download --yes
+ClassScribe youtube "https://www.youtube.com/playlist?list=PL..." --name "Lectures" --output "$env:USERPROFILE\ClassScribe" --download --no-transcribe --yes
+ClassScribe youtube check
+```
+
+The first records one video as it plays and transcribes it; the second shows the plan of a download
+and stops; the third downloads and transcribes what that plan showed as ready; the fourth downloads a
+playlist's audio without transcribing it; the last checks yt-dlp and its helpers. In the menu, Y asks
+for the same things one at a time.
+
+#### Links and a list file
+
+| Link | Taken as |
+| --- | --- |
+| `https://www.youtube.com/watch?v=ID` (also with `m.` or `music.`, or without `www.`) | The video. A `t=` in it is kept when it is recorded as it plays, and its window opens there; `list=` and everything else are dropped, so a link from a playlist means that one video. |
+| `https://youtu.be/ID`, `https://www.youtube.com/shorts/ID` | The video. |
+| `https://www.youtube.com/live/ID` | The video, with `--download` (D) only, whose read tells a live stream from a finished one. |
+| `https://www.youtube.com/playlist?list=PL...` | Every video of the playlist, with `--download` (D) only. |
+| A channel's link (`/@name`, `/channel/...`, `/c/...`, `/user/...`) | Refused: a channel's uploads can be hundreds of hours. Give a playlist's link, or the videos' own. |
+| An embedded player's link (`/embed/ID`, `youtube-nocookie.com`) | Refused: it was most likely copied from a web page such as your course's, which ClassScribe never reads. Use the YouTube button on the player for the video's own link. |
+
+The `https://` may be left out. A watch link copied with that YouTube button says so in its address
+(`embeds_referring_euri`, `embeds_referring_origin` or `feature=emb_...`): recording as it plays takes
+it, as it takes any video you can watch, but a download never reads or downloads it (`copied from a
+player embedded in a web page: never downloaded`). Every link is rebuilt from the video's ID before
+it reaches Chrome, yt-dlp, a file or a transcript, so nothing you type reaches them as you typed it.
+Recording as they play takes at most 10 videos at a time, each by its own link; downloading takes at
+most 500, playlists included, once duplicates are taken out.
+
+A list file is a text file (UTF-8, with or without a byte-order mark) with one or more links on a line,
+separated by spaces; `#` at the start of a line, or after a space, starts a comment that runs to the
+end of the line, and blank lines are skipped:
+
+```text
+# Risala, the creed
+https://youtu.be/abcdefghijk    # part 1
+https://youtu.be/bcdefghijkl https://youtu.be/cdefghijklm
+https://www.youtube.com/playlist?list=PLxyz
+```
+
+Give it with `--list "<file>"`, alone or beside links on the line (they are joined in order), or drag
+it onto the window when the menu asks for links. A video given twice is taken once
+(`Line 3 of risala-links.txt lists the video abcdefghijk again; it is taken once`). A word that is no
+link the batch takes is named by where it stands, with why, such as
+`Line 4 of risala-links.txt: "..." is not a YouTube link.`: on the command line that is a mistake
+(exit code 2, and nothing starts); in the menu it is left out (`Left out: ...`) and the rest go on.
+
+#### Recording as it plays
+
+After the plan, Y in the menu (or `--yes` on the command line) starts. ClassScribe opens a video's
+window only when you ask: in the menu Y opens the first at once; before every other video, and before
+each on the command line, it asks
+`Next: 02 The creed, part 2. Enter opens it; S stops here and goes on to the transcripts.` The window
+is ClassScribe's own Chrome, with a profile of its own (`%LOCALAPPDATA%\ClassScribe\video-browser`),
+so your everyday Chrome is never in it: one window on the video's page, without tabs or an address
+bar. ClassScribe never makes it play: press play there (on a fresh profile Chrome lets a page play
+sound only after a click on it). While it plays you may pause it, skip an ad with YouTube's own
+button, or answer YouTube's "Continue watching?" question, which it may ask after about an hour without
+a click; ClassScribe never clicks or reads anything in the page. The recording starts as the window
+opens, so it begins with the moment before you press play, and its positions run from there.
+
+What is recorded is that window's sound alone: Chrome's process and everything it started, through
+the same Windows process loopback `--app chrome` uses, so your everyday Chrome and its tabs stay
+out, and a class recorded with `--app chrome` leaves out a video window left open. Ads are recorded
+and transcribed with the video, unless you are signed in there with YouTube Premium (see
+[Your Premium sign-in in the video window](#your-premium-sign-in-in-the-video-window)). The
+transcript's positions are positions in the recording, so ads and pauses shift them from the
+video's own times. Keep YouTube's player volume and Chrome's volume in Windows' volume mixer up:
+lowering them lowers the recording. Whether the speakers' own volume and mute reach the recording
+has not been checked on this laptop yet, so until it has, listen through headphones at night rather
+than turning the laptop's volume down.
+
+The run's first lines say which video it is and what to do: `Recording the YouTube video "The creed,
+part 1" (1 of 3) as it plays in ClassScribe's video window, into ...`, then `Press play in the video
+window. The recording stops when the video ends or its window is closed; Q twice stops it sooner, P
+pauses or resumes, M marks a moment. ...`. A video's recording ends in one of these ways, looked at
+once a second:
+
+| What happens | What the log says | Its end |
+| --- | --- | --- |
+| You close the video's window | `The video window was closed; stopping the recording` | Confirmed |
+| The window moves on to the next video, as YouTube's Autoplay does when one ends: one title for at least 5 seconds with sound, then another for two looks | `The window moved on to another video ("..."); the recording of "..." stops here` | Confirmed |
+| Q twice in the window that shows it | as for a class | Confirmed: your choice, even midway |
+| A class starts (see [A class comes first](#a-class-comes-first)) | `A class is starting, so this video's recording gives way to it` | May be cut short |
+| 2 minutes of silence after sound, never counted while paused with P | First `Nothing has played for 60 seconds; the recording stops at 2 minutes unless it plays again. Press P here to pause the count` (at `Recording:SilenceWarningSeconds`, at most 60, with `nothing plays` in the title), then `Nothing has played for 2 minutes; the video has most likely ended, or YouTube paused it` | May be cut short |
+| Nothing at all in the first 5 minutes | From 30 seconds `Nothing plays in ClassScribe's video window yet: press play there. If it plays, check that YouTube's player and Chrome's volume in Windows' mixer are up` (`press play in the video window` in the title); at 5 minutes `Nothing has played in ClassScribe's video window for 5 minutes; stopping` and `Nothing played in ClassScribe's video window, so nothing of "..." was kept to transcribe` | Nothing recorded |
+| `YouTube:LongestVideoHours` (4) of recording | `This video has played for 4 hours (YouTube:LongestVideoHours); stopping`; the summary gives the command that records the rest, from where it stopped | May be cut short |
+| The safety stop, `Recording:StopAfterHours`, when it is the lower of the two | as for a class | May be cut short |
+
+Leave YouTube's Autoplay on: its move to the next video is the clearest end ClassScribe can see.
+With it off, a video ends when you close its window or press Q twice, or else by the 2 minutes of
+silence. A second or two of the next video, or of its ad, may be at the end of a recording before
+the new title is seen. YouTube's "Continue watching?" question pauses a long video, which the
+2 minutes of silence then take for its end, so stay nearby, as for a class.
+
+At the stop the log says how it ended (`"The creed, part 1": the window moved on to the next video`),
+and the window is asked to close, as its close button does, never killed; the next opens on your
+Enter. A recording that **may be cut short** is kept and transcribed like any other, and the summary
+says so (`recorded (00:58:10), but ended after 2 minutes of silence, so it may be cut short; the same
+command records it again`): the same command run again records that video again, as a new recording,
+and leaves the old one as it is. A video recorded with a confirmed end is done.
+
+| Key | While a video records | Between videos |
+| --- | --- | --- |
+| Q twice within 5 s | Stops this video's recording; its end counts as confirmed. | nothing |
+| P | Pauses and resumes the recording and the count of the 2 minutes of silence; pause the video in its window too. | nothing |
+| M | A mark, as in a class. | nothing |
+| Enter | nothing | Opens the next video, once no class records. |
+| S | nothing | Stops opening videos; the transcripts of those recorded follow. |
+| Esc | Leaves the view: the video records on in the background to its end, its window open until then; no more videos open; the others are transcribed, and this one is left for the same command later. | As S. |
+| Ctrl+C twice within 5 s | Stops this video and the batch, with no transcripts (exit code 130). | Stops the batch, with no transcripts (exit code 130). |
+| Closing the window | With the published copy the video records on in its background recorder to its end, and its run closes its window; nothing else goes on, and the same command later transcribes it. Under `dotnet run` the recording ends with the window. | The batch ends. |
+
+During the transcripts that follow, Q stops after the transcript in hand (Q twice within 5 seconds
+stops at once), and one Ctrl+C cancels the upload in hand, as `transcribe` does.
+
+Things that can go wrong: Chrome not found refuses the batch before anything opens. A video window
+left open from an earlier run takes the next video in its place
+(`ClassScribe's video window from an earlier run is still open, so Chrome sent the video there. Close every ClassScribe video window, then press Enter to try again`).
+A window that does not open, or a run that fails before it records, is that video's alone, but two
+in a row stop the videos (`Two videos in a row could not be recorded, so no more windows open:
+something is wrong with Chrome. The errors above say what`). A video's recorder lost in the middle is
+never continued: `The recorder of the YouTube video "..." ended unexpectedly at 19:47:12. Its audio
+so far is kept; a video is never continued, so the same command records it again.`; its audio so far
+is transcribed as a recording that may be cut short, and the next video is offered.
+
+#### Downloading with yt-dlp
+
+A download batch first finds yt-dlp, Deno, FFmpeg and FFprobe and asks their versions, as
+`youtube check` does, then reads each playlist from its listing and each video, at most one read
+every 6 seconds (200 videos take about 20 minutes, which it says first:
+`Reading 200 videos from YouTube takes about 20 minutes; Q stops`). A video found done before is not
+read again (see [The same command again](#the-same-command-again)). Each video read gets the first of
+these verdicts that applies:
+
+| What yt-dlp's read says | The plan's verdict |
+| --- | --- |
+| Its channel, by its UC id, @handle or channel address, is in `YouTube:CourseChannels` | `your course's channel: never downloaded` |
+| It needs a sign-in: private, members only, Premium only, or restricted by age | `needs a sign-in: left out`: ClassScribe never signs in |
+| A live stream, one still to come, or one still being processed | `not finished yet: left out` |
+| No length | `length unknown: left out` |
+| Longer than 9 hours 30 minutes, which ElevenLabs would refuse in one file | `longer than 9 h 30 min: left out` |
+| `YouTube:CourseChannels` names channels, but the read names no channel to check against them | `channel unknown: needs your word` |
+| Its channel is in `YouTube:MayDownloadChannels` | `ready (YouTube:MayDownloadChannels)` |
+| Public | `ready` |
+| Unlisted, or not said to be public | `needs your word` |
+
+A video whose link came from an embedded player is never read: `copied from a player embedded in a
+web page: never downloaded`. Unlisted videos need a word of their own because course pages embed
+unlisted videos, while your own uploads and many public lectures are unlisted too. The guard has
+limits you should know: ClassScribe cannot see where a link was copied from (unless the link itself
+says so), a course may use videos on a channel that is not in `YouTube:CourseChannels`, and the word
+you give is yours, kept in the video's `.source.json`, not something ClassScribe can check.
+
+The plan, in the menu as on the command line:
+
+```text
+Read 12 videos from 2 links (1 playlist, "Risala, the creed"):
+  #   Title              Channel       Length    Availability  Verdict
+  01  The creed, part 1  Your Channel  01:02:33  public        ready
+  02  The creed, part 2  Your Channel  00:58:10  unlisted      needs your word
+  03  Live Q&A           Other         -         public        not finished yet: left out
+  04  The creed, part 4  Your Channel  01:01:12  public        already transcribed on 12 Oct: Risala_2026-10-12_14-02-11Z.md
+  ...
+Ready: 9 videos, 9 h 41 min: about $2.61 to transcribe ($0.22 an hour plus $0.05 for the glossary of 75 terms).
+Waiting for your word: 1 video, 58 min: about $0.26 to transcribe ($0.22 an hour plus $0.05 for the glossary of 75 terms).
+ElevenLabs account: 43,362 of 100,000 credits used this period; 56,638 left until 1 November.
+9 downloads: about 12 minutes, 10 to 20 seconds apart, depending on your connection; then the transcripts, a few minutes each.
+Room: about 2.9 GB on C:\ for the audio (mono, at YouTube's own rate), with 41 GB to spare.
+Google Drive: everything, the audio included (YouTube:DriveUpload), about 2.9 GB of audio; Drive has 11 GB free.
+Channels: Your Channel @yourchannel (add one to YouTube:MayDownloadChannels if it is yours, or its owner allows downloading).
+```
+
+With nothing ready the line is `Ready: 0 videos.`, and with O (`--no-transcribe`) the cost ends
+`. Nothing is sent to ElevenLabs.` The room is the ready videos' audio at each one's own rate, with
+the largest download beside it, and room kept on the recordings folder's drive for a 3-hour class
+after the batch (about 1.3 GB), so that a large batch never leaves the next class short; when that
+does not fit, the plan says `There is not room enough for the audio and its download while keeping
+room for a 3-hour class (about 1.3 GB): free some room, or download fewer videos at a time.` and
+nothing is downloaded (exit code 1). The Drive line says `; Drive has only ... free, so what does not
+fit waits in the queue until there is room.` when it would not all fit, gives no room when Drive is
+not set up or cannot be asked, and with `YouTube:DriveUpload` set to `WithoutAudio` reads
+`Google Drive: the transcripts, answers, logs and source files, without the audio (YouTube:DriveUpload).`
+
+In the menu, each video that needs your word is asked about next:
+
+```text
+02  The creed, part 2 (Your Channel, 00:58:10) is unlisted. Did you upload it, or does its owner allow you
+    to download it? It must not be one of your course's videos.
+    Y downloads it   N leaves it out (it can be recorded as it plays instead)   Esc goes back
+```
+
+Y makes it `ready (your word)`, N `left out: you said no`. Once you have answered, the ready, cost,
+time, room and Drive lines are shown again for what is now ready, and a batch that no longer fits
+is refused. Then:
+
+```text
+Download the audio of 10 videos with yt-dlp?
+Only videos you uploaded, or whose owner allows you to download them, and never your course's videos.
+YouTube's terms allow downloading only where YouTube offers it (such as YouTube Studio, for your own uploads)
+or with written permission from YouTube and the rights holder; beyond that the choice is yours.
+ClassScribe never signs in to YouTube and never gives yt-dlp your browser's cookies.
+Type YES and press Enter to go ahead; Enter alone goes back.
+```
+
+`YES` must be typed in full, in capitals, because this is where you take on the question of YouTube's
+terms. When nothing needs downloading but recordings fetched before wait for their transcripts, it
+asks `Nothing to download. Transcribe the recordings fetched before? Y starts; any other key goes
+back.` instead.
+
+On the command line nothing is asked: the same plan is printed, `--yes` stands for `YES` and takes
+only the videos that need no word, and `--plan` stops after the plan (exit code 0, even when the room
+does not fit). A video that needs your word is then left out, and the summary says how to give it:
+`needs your word: in the menu (Y > D), or add --allow-unlisted, or its channel @yourchannel to
+YouTube:MayDownloadChannels if it is yours; or record it as it plays: <command>`.
+
+**`--allow-unlisted`** gives your word once, on the command line, for every video of the batch that
+yt-dlp says is unlisted and whose channel its read names: you say each is a video you uploaded or
+whose owner allows you to download it. Use it only when you know that of every unlisted video in the
+batch. The plan shows such a video as `ready (--allow-unlisted)`, and its `.source.json` records
+`"acceptedBy": "allow-unlisted"`. Because course pages embed unlisted videos, it is refused while
+`YouTube:CourseChannels` is empty (exit code 2): `--allow-unlisted needs your course's channels: list
+them in YouTube:CourseChannels first, so that a course video is never taken for one you may download`.
+It never overrides another refusal (your course's channel, a sign-in, a live stream, a length that is
+unknown or too long, a link from an embedded player, a channel that is not known), never takes a video
+yt-dlp only fails to call public, and goes with `--download` alone. Without `YouTube:CourseChannels`
+filled in, the summary's advice for such a video says to fill it in first.
+
+**`YouTube:CourseChannels` and `YouTube:MayDownloadChannels`** are lists of channels in
+`appsettings.json`, each entry a channel's UC id (`UC` and 22 more letters, digits, `_` or `-`) or its
+@handle (`@` and 3 to 30 letters, digits, `_`, `-` or `.`):
+
+```json
+"YouTube": {
+  "CourseChannels": [ "UCxxxxxxxxxxxxxxxxxxxxxx" ],
+  "MayDownloadChannels": [ "@yourchannel" ]
+}
+```
+
+Put your course's channels in `CourseChannels`: their videos are never downloaded, and while it names
+channels, a video whose read names no channel needs your word. Prefer the UC id there, which never
+changes, while a channel may change its @handle; a channel's page shows its @handle under its name,
+and its UC id is in its address when it has no handle (`youtube.com/channel/UC...`) and under its
+About, then Share channel, then Copy channel ID. Put your own channel, and those whose owners allow
+you to download their videos, in `MayDownloadChannels`: their videos are ready under the batch's
+`YES`, unlisted ones too. A channel in both lists is refused. The plan's `Channels:` line names the
+channels of the videos that wait for your word, with their @handles.
+
+The downloads then go one at a time, after any class that records, 10 to 20 seconds apart and at
+most 60 begun in an hour, each from its read when that is less than 5 hours old (a download YouTube
+refuses with HTTP 403 is read again and tried once more), with its progress every tenth
+(`"The creed, part 1": 40% downloaded`). yt-dlp takes the best audio YouTube offers (normally AAC at
+44.1 kHz) and never keeps the video; FFmpeg makes it a mono WAV at YouTube's own rate (usually 44.1
+or 48 kHz), about 318 MB an hour at 44.1 kHz, and ClassScribe writes it into the recording as its own
+`.wav`, split as a class's is at `Recording:MaxSegmentMegabytes`. The upload to ElevenLabs is the
+usual 16 kHz copy. The audio must be within 2 seconds of the video's length, or nothing of it is kept
+(`The audio of "..." is ... long, but the video is ...: the download is incomplete, so nothing of it
+was kept. ...`). A video's recording is made only once its audio is in, so a date folder never holds a
+half-downloaded video.
+
+As the downloads begin the window says `Q stops after the video in hand; Q twice within 5 seconds, or
+Ctrl+C, stops at once.` Q once stops after the video in hand, and the transcripts of what was fetched
+still follow (a Q during the transcripts stops after the transcript in hand). Q twice, or Ctrl+C,
+stops at once with exit code 130: yt-dlp and everything it started end, and its partial download
+waits for the next try. Closing the window ends them too.
+
+When yt-dlp fails, its words are matched to what to do:
+
+| What yt-dlp met | What ClassScribe says | The batch |
+| --- | --- | --- |
+| YouTube's bot check | `YouTube asked to confirm you are not a bot. Wait a day or more before downloading again; ClassScribe never signs in or uses your browser's cookies. These videos can be recorded as they play instead.` | Stops downloading |
+| A rate limit, a captcha, HTTP 429 | `YouTube is limiting this connection for up to an hour. Run the same command later; what is done is skipped.` | Stops downloading |
+| Deno or FFmpeg missing | `yt-dlp is missing a helper (Deno or FFmpeg): ClassScribe youtube check says which.` | Stops downloading |
+| ClassScribe's options refused | `yt-dlp did not accept ClassScribe's options; it may be too old or much newer: ClassScribe youtube check.` | Stops downloading |
+| Windows would not start yt-dlp | `Windows did not start yt-dlp (...). Bitdefender may have blocked it (README, Set up once); ClassScribe youtube check says more.` | Stops downloading |
+| No audio format | `yt-dlp could not get this video's audio, most often because it is out of date: winget upgrade --source winget --id yt-dlp.yt-dlp; if winget finds nothing newer, yt-dlp --update-to nightly.` | Next video |
+| A sign-in needed | `It needs a sign-in, which ClassScribe never does. If you can watch it, record it as it plays.` | Next video |
+| Not shown here, or gone | `It is not shown in your country.`, `It is gone from YouTube, or not available.` | Next video |
+| YouTube out of reach | `YouTube could not be reached; run the same command again.` | Next video; three in a row stop downloading |
+| Anything else | `yt-dlp said: ...`, without any advice about cookies | Next video |
+
+What was downloaded before a stop is still transcribed. The summary lists what was not fetched, with
+what to do: a video the download path may not take, or could not, but which you can watch (one that
+needs your word or that you said no to, your course's, one from an embedded player, one that needs a
+sign-in, or one the bot check stopped) is given the command that records it as it plays instead
+(`...; record it as it plays instead: <command>`). It ends with `Run the same command again to fetch
+what is left; what is done is skipped.`
+
+**Keeping yt-dlp current.** YouTube changes often, and an old yt-dlp fails. Update it with
+`winget upgrade --source winget --id yt-dlp.yt-dlp`. `youtube check` and every download batch warn
+once it is more than 90 days old, the age at which yt-dlp itself warns:
+`yt-dlp 2026.08.19 is 91 days old, and YouTube changes often, so a download may fail: update it with
+winget upgrade --source winget --id yt-dlp.yt-dlp`. When a download fails for want of an audio format
+and winget finds nothing newer, `yt-dlp --update-to nightly` takes yt-dlp's newest nightly build
+(winget's record of the version then lags behind). ClassScribe never updates yt-dlp itself.
+`youtube check` prints each tool's name, version and path, what is missing with the winget command
+that installs it, and `yt-dlp and its helpers are in place.` when nothing is; it asks nothing of
+YouTube. yt-dlp is found where `YouTube:YtDlpPath` says, else in winget's links folder
+(`%LOCALAPPDATA%\Microsoft\WinGet\Links`), else on PATH as Windows holds it now, so a window opened
+before the install finds it too; Deno, and FFmpeg with FFprobe, beside yt-dlp first, then the same
+places.
+
+#### Your Premium sign-in in the video window
+
+ClassScribe's video window has a Chrome profile of its own, `%LOCALAPPDATA%\ClassScribe\video-browser`,
+which Chrome makes the first time a video's window opens, apart from your everyday Chrome and its
+sign-ins. Signed out, YouTube shows ads there, and they are recorded and transcribed with the video (a
+minute of ads costs less than half a cent; you may skip one with YouTube's own button). With YouTube
+Premium, sign in there once and the ads are gone:
+
+1. Close every ClassScribe video window.
+2. In PowerShell, open that profile in Chrome (if Chrome is elsewhere, use the path of its
+   `chrome.exe`, as `YouTube:BrowserPath` would name it):
+   ```powershell
+   & "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="$env:LOCALAPPDATA\ClassScribe\video-browser" https://www.youtube.com
+   ```
+3. Sign in to YouTube there with the account that has Premium, then close the window.
+
+You can also sign in with the Sign in button at the top of YouTube's page in a video's window. The
+sign-in holds for every video window after it. To end it, sign out in a video window, or delete the
+`video-browser` folder while no video window is open.
+
+Once you are signed in, that folder holds your Google sign-in, so keep it private, as you would a
+password. ClassScribe never reads, lists, copies, uploads or logs anything in it, and never puts it on
+Google Drive; it only names the folder to Chrome when it opens a video's window, and keeps that
+command line out of its logs. yt-dlp is never given it: downloads never sign in and never use cookies,
+from this profile or any other. Keep it out of anything you copy or share, such as a zip of
+`%LOCALAPPDATA%\ClassScribe`.
+
+#### The same command again
+
+Every video is looked for, by its ID, among the `.source.json` files under the recordings folder, so
+the same command run again, after a crash, a closed window, YouTube's bot check or ElevenLabs'
+refusal, picks up where it stopped, and nothing is fetched or billed twice unless you ask. A video is
+**done** when a recording of it holds the whole video: a download, or a recording whose end was
+confirmed. Then:
+
+- Done, with a transcript: left out, as `already transcribed on 12 Oct: Risala_2026-10-12_14-02-11Z.md`.
+- Done, without a transcript: not fetched again (`fetched before, not transcribed yet: ...`), and
+  transcribed in this batch when transcripts are asked; one whose paid answer from ElevenLabs is kept
+  gets the free `rebuild` command instead.
+- Not done (no audio, or a recording that may be cut short, transcribed or not): fetched again as a
+  new recording, the old one staying as it is, as
+  `fetched before (Risala_2026-10-18_14-02-11Z), but ended after 2 minutes of silence, so it may be cut short: fetched again`.
+- With `--again`: every video is fetched again, as new recordings; transcribing them is billed again.
+
+Each recording is looked at again just before its transcript, since the plan may be hours old: one
+transcribed meanwhile in another window is not sent again
+(`"The creed, part 1" was transcribed meanwhile (...); it is not sent again`), nor is one whose paid
+answer is kept, or one being recorded or transcribed elsewhere. Each transcript a batch makes is in
+the run files while it is made, so `transcribe` and menu choice 3 in another window refuse to send it
+too, the menu's header shows it with its upload's percent, and a window closed in the middle leaves it
+to the next start's report as an interrupted transcript.
+
+When ElevenLabs refuses the key (HTTP 401 or 403), the credits run out (402), or the account is rate
+limited (429), every transcript left would fail the same way, so the transcripts stop:
+`The transcripts stopped: ...`, then `Not transcribed: "..." (...), .... Once that is fixed, run the
+same command again: what is done is skipped, and these are transcribed`. The audio is all kept. Any
+other failure is that video's alone, and the next goes on.
+
+Only one batch runs at a time, across ClassScribe's windows (`youtube.lock`). A second is refused,
+with exit code 1: `Another ClassScribe window (process 1234) is working through YouTube videos; wait
+for it to finish, or close it`. The lock goes with the window, so a closed window frees it.
+
+#### A class comes first
+
+- While a video records, a class started anywhere (menu choice 1 or 2, `record`, or C at the start)
+  stops it and records: `Stopping the YouTube video "The creed, part 1" so that "Kalam" can record;
+  what it recorded is kept.` The video's recording may then be cut short, and the same command
+  records it again later. If the video has not stopped within 30 seconds, or cannot be asked to (a
+  recorder of an older build), the class is refused as any second recording is, with what to do:
+  `Only one recording at a time: the YouTube video "The creed, part 1" has been recording since 19:00
+  (00:12:13). A shows it.`, then `Press Q twice in the window that shows the video to stop it, then
+  start the class again.` (or, when it could not be asked, `It could not be asked to stop: press Q
+  twice ...`).
+- Before each video and each transcript, the batch waits while a class records, looking every 30
+  seconds: `YouTube: waiting while "Kalam" records; the videos go on after it`, then `YouTube: going
+  on, now that "Kalam" has stopped recording`. Nothing reaches YouTube or ElevenLabs from the batch
+  meanwhile, and the next video's window opens only on your Enter once the class has ended. Uploads
+  to Google Drive wait for a class as always.
+- A video is never taken for a class: `record "Risala"` never shows a video's run, C (at the start,
+  in the menu, or `--continue`) never continues a video, and a video's recorder that is lost is never
+  continued.
+- One date folder per batch: the batch's first video takes the day's free date folder as a class
+  does, the others join it, and the day's class after it goes to `(2)`. A downloaded video's
+  recording is made only once its audio is in, and a folder with a conversion in progress counts as
+  taken, so a class that starts during the first download keeps its own folder.
+- A download batch keeps room for a 3-hour class on the recordings folder's drive (see the plan,
+  above).
+
+#### Where a video's files go
+
+```
+%USERPROFILE%\ClassScribe\
+    Risala\
+        2026-10-17\                                  a class
+        2026-10-18\                                  a batch: its videos, in the order given
+            Risala_2026-10-18_14-02-11Z.wav          the first video's audio (downloaded: YouTube's rate, mono)
+            Risala_2026-10-18_14-02-11Z.source.json  the video's title, link, channel and how its audio was obtained
+            Risala_2026-10-18_14-02-11Z.log
+            Risala_2026-10-18_14-02-11Z.md           its transcript, headed by the video's title and link
+            Risala_2026-10-18_14-02-11Z.json
+            Risala_2026-10-18_14-03-40Z.wav          the second video
+            ...
+        2026-10-18 (2)\                              the day's class, after the batch
+```
+
+Each video is an ordinary recording of the course: `list` and menu choice 3 show it with the video's
+title and how its audio was obtained (`"The creed, part 1" (YouTube, downloaded)`, or `(YouTube,
+recorded)`), and `transcribe`, `rebuild` and Google Drive treat it as any recording. `transcribe`
+given the batch's date folder takes its newest recording only, so to transcribe one video in it, give
+that video's `.wav`. The `.source.json` of a download looks like this:
+
+```json
+{
+  "kind": "youtube",
+  "url": "https://www.youtube.com/watch?v=abcdefghijk",
+  "videoId": "abcdefghijk",
+  "title": "The creed, part 1",
+  "channel": "Your Channel",
+  "channelHandle": "@yourchannel",
+  "channelId": "UCxxxxxxxxxxxxxxxxxxxxxx",
+  "uploadDate": "2025-03-03",
+  "duration": "01:02:33",
+  "availability": "public",
+  "playlist": { "id": "PLxyz", "title": "Risala, the creed", "position": 1 },
+  "obtained": "downloaded",
+  "tool": "yt-dlp 2026.08.19",
+  "obtainedUtc": "2026-10-18T14:02:11+00:00",
+  "confirmed": "You typed YES for the batch (18 Oct 2026 14:00 UTC)",
+  "acceptedBy": "yes",
+  "ended": "Downloaded",
+  "endConfirmed": true
+}
+```
+
+`acceptedBy` is `yes` (a public video under `YES` or `--yes`), `word` (your word in the menu),
+`allow-unlisted` or `may-download-channel`. A recording made as it played has `"obtained":
+"recorded"`, Chrome's version as its `tool`, no upload date, length, availability or playlist, and in
+`ended` and `endConfirmed` how its recording ended and whether that end is confirmed.
+
+A downloaded video's transcript starts:
+
+```markdown
+# The creed, part 1
+
+Downloaded 18 October 2026, 14:02 UTC.
+
+From YouTube: [The creed, part 1](https://www.youtube.com/watch?v=abcdefghijk), by Your Channel, uploaded 3 March 2025, 01:02:33 long, number 1 in the playlist "Risala, the creed"; downloaded with yt-dlp 2026.08.19. Positions are the video's own, and each links to that moment on YouTube.
+
+[[00:00:00]](https://www.youtube.com/watch?v=abcdefghijk&t=0s) ...
+```
+
+Each `[hh:mm:ss]`, of a paragraph or a mark, links to that moment on YouTube, while
+`Transcript:IncludeTimestamps` is on. A recording made as it played says instead `Recorded ...` and
+`From YouTube: [The creed, part 1](...), by Your Channel; recorded as it played in ClassScribe's window
+(01:04:10). Positions are in the recording, so ads and pauses shift them from the video's own times.`,
+and its positions are plain. A free rebuild keeps the heading.
+
+#### What it costs, and Google Drive
+
+- **Transcripts** cost what a class's do ($0.22 an hour, plus $0.05 with the glossary). A download's
+  plan gives the cost from the videos' lengths; recording as they play, the lengths are not known
+  before the videos play, so the plan gives the most it can cost, with each video stopped at
+  `YouTube:LongestVideoHours`: `Each is recorded for as long as it plays, at most 4 hours
+  (YouTube:LongestVideoHours), ads included, so at most 12 hours for these 3: they cost at most $3.24
+  to transcribe, most likely much less ($0.27 for each hour recorded). The transcripts follow the
+  recordings.` The moment before you press play, and any ads, are billed at the same rate.
+- **The account.** When transcripts are asked, the batch checks for the key before it asks YouTube
+  anything or opens a window (without it: `No ElevenLabs API key found in ELEVENLABS_API_KEY. Set it (README, Set up once), or add
+  --no-transcribe to fetch only`, exit code 1) and the plan gives the account's credits, as
+  `ElevenLabs:ReadAccountUsage` allows. After the first transcript one line projects the rest, in the
+  account's own credits: `The first transcript used 5,200 credits for 01:02:33; the other 8 (8 h 39
+  min) would use about 43,268 at that rate; 56,638 are left this period`. Each transcript also logs
+  its own cost lines, as a class's does (see [Cost and privacy](#cost-and-privacy)).
+- **Google Drive.** A video's recording goes up as a class's does, once Drive is set up: its `.wav`
+  too while `YouTube:DriveUpload` is `Everything`, the default, or all but the audio with
+  `WithoutAudio`, which keeps the `.wav` on the laptop alone. A downloaded video goes up right after
+  its transcript; one whose transcript was not made waits in the queue, and with `--no-transcribe`
+  all of them go up in one pass at the end. A video recorded as it played goes up from its recorder
+  after its recording, and its transcript's files after the transcript. `drive free-space` leaves a video's audio that never went up where it is, and says so
+  (see [Free room on the laptop](#free-room-on-the-laptop)).
+
+#### YouTube's terms and the law
+
+Downloading a YouTube video is allowed by YouTube's terms only where YouTube itself offers it, such as
+YouTube Studio's Download for videos you uploaded, or with written permission from YouTube and the
+rights holder ([YouTube's Terms of Service](https://www.youtube.com/t/terms), Permissions and
+Restrictions; [Download your own YouTube videos](https://support.google.com/youtube/answer/56100)).
+The owner's permission alone does not meet the letter of those terms, and yt-dlp has to solve
+YouTube's player challenges to download at all, which a German court has treated as getting around a
+technical protection measure; in the United States the question has not been settled in court. So
+`--download` is for videos you uploaded or whose owner allows it, it asks you each time, and the
+choice is yours. For your own uploads, YouTube Studio's Download followed by `transcribe <file>` stays
+within the terms. Recording a video as it plays downloads nothing: you play it, as you would in your
+browser. Your course's videos are never downloaded.
+
+The law, in brief:
+
+- Germany: the Hamburg courts held that youtube-dl, yt-dlp's predecessor, gets around an effective
+  technical protection measure when it solves YouTube's signature challenges, in the music labels'
+  case against its hosting provider (Landgericht Hamburg, 2023, upheld by the Oberlandesgericht
+  Hamburg on 21 November 2024, 5 U 54/23;
+  [TorrentFreak](https://torrentfreak.com/music-labels-win-legal-battle-against-youtube-dls-hosting-provider-230404/),
+  [heise online](https://heise.de/-10179284)). That is German law, about music recordings.
+- United States: unsettled. In October 2020 the RIAA had youtube-dl taken down from GitHub under the
+  DMCA's anti-circumvention section; GitHub put it back on 16 November 2020 after the EFF argued that
+  youtube-dl gets around nothing, since YouTube serves the streams to anyone who asks
+  ([GitHub's account](https://github.blog/2020-11-16-standing-up-for-developers-youtube-dl-is-back/)).
+  That was GitHub's decision on a notice, not a court's ruling.
+
+Neither decides anything for your own uploads or for lectures whose owners allow downloading.
+
 ## Dry run before the first real class
 
 Take two minutes to check the whole path on your machine:
@@ -1278,6 +1895,13 @@ Take two minutes to check the whole path on your machine:
    waits to go up.`, and the `.log` beside the recording holds the line that names its folder,
    `My Drive > ClassScribe > Dry run > <today's date>`. Delete it in Drive afterwards if you like;
    ClassScribe never deletes anything there.
+6. Before the first batch of YouTube videos, record one short video as it plays, ideally one of
+   your own a few minutes long: press Y, paste its link, type `Dry run`, press R, then T, and Y at the
+   plan; press play in the window that opens, and let YouTube's Autoplay move on at its end, or close
+   the window. Check that the transcript is headed by the video's title and link. Before the first
+   download, run `ClassScribe youtube check`, then a download of one short video you uploaded, with
+   `--plan` first. Each reaches YouTube, and each transcript is billed, a cent or so for a few
+   minutes.
 
 A new version is tried the same way before it reaches a class, through the dry-run kit: double-click
 `Start-DryRun.cmd` in `tools\dry-run` of that version's copy of the code. It runs a copy of that
@@ -1381,9 +2005,11 @@ An environment variable that sets a value ClassScribe cannot use, such as `Recor
 set to `abc`, is different: it cannot be fixed while ClassScribe runs, so ClassScribe does not start,
 and says which variable it is (`An environment variable sets a value ClassScribe cannot use ...`).
 
-Two things only bring a warning, given once, at the first choice or command: an API key written into
-the settings (see below), and a `Recording:OutputFolder` inside OneDrive, which uploads a recording
-again and again while it grows, and can hold files ClassScribe needs to delete.
+Three things only bring a warning, given once, at the first choice or command: an API key written into
+the settings (see below); a `Recording:OutputFolder` inside OneDrive, which uploads a recording
+again and again while it grows, and can hold files ClassScribe needs to delete; and a
+`YouTube:LongestVideoHours` above `Recording:StopAfterHours`, which the safety stop then cuts short.
+None of them holds up a class.
 
 The file is JSON, which has two traps:
 
@@ -1429,6 +2055,13 @@ The ones you are most likely to change:
 | `Drive:FolderName` | `ClassScribe` | The name of the folder ClassScribe makes in My Drive at the first Google sign-in, which holds the classes as the recordings folder does: a folder per course, and in it one per class's date folder. ClassScribe finds that folder again by a mark of its own, so you may rename or move it in Drive, and a change here later changes nothing. At most 100 characters, without tabs or line breaks. |
 | `Drive:Upload` | `Everything` | What of a recording goes up: `Everything` (both tracks' audio, the transcripts, ElevenLabs' answers, the marks and the log) or `WithoutAudio` (all but the `.wav` files, which then stay on the laptop alone). The temporary `.upload.wav` never goes up. The names are taken in any letter case; a number is refused. |
 | `Drive:ChunkMegabytes` | 8 | The size of each piece sent to Google Drive, in MiB (1,048,576 bytes), from 1 to 256: a piece lost to a dropped connection costs at most this much, sent again. |
+| `YouTube:CourseChannels` | `[]` | Your course's YouTube channels, each as its UC id (best, since it never changes) or its @handle, such as `["UCxxxxxxxxxxxxxxxxxxxxxx"]`: their videos are never downloaded, and while it names any, a video whose channel is not known needs your word. `--allow-unlisted` is refused while it is empty. An entry of another shape, or a single value where the list belongs, is refused. See [Downloading with yt-dlp](#downloading-with-yt-dlp). |
+| `YouTube:MayDownloadChannels` | `[]` | The channels whose videos you may download: your own, and those whose owners allow it, each as its UC id or @handle, such as `["@yourchannel"]`. Their videos are ready under the batch's `YES`, unlisted ones too. Refused as above, and when a channel is also in `YouTube:CourseChannels`. |
+| `YouTube:DriveUpload` | `Everything` | What of a YouTube video's recording goes to Google Drive: `Everything`, as for a class, or `WithoutAudio`, which keeps its `.wav` files on the laptop alone (the video can be fetched again). The names are taken in any letter case; a number is refused. |
+| `YouTube:YtDlpPath` | empty | yt-dlp's `yt-dlp.exe`, as a full path. Empty finds it in winget's links folder, then on PATH; Deno and FFmpeg are looked for beside it first. Environment variables work, and quotes are ignored. A relative path, one that is not an `.exe`, or one that is not there is refused. |
+| `YouTube:BrowserPath` | empty | Chrome's `chrome.exe`, as a full path, for the video window. Empty finds it through Windows' App Paths, then in Program Files, Program Files (x86) and `%LOCALAPPDATA%`. Refused as `YouTube:YtDlpPath` is. |
+| `YouTube:LongestVideoHours` | 4 | The longest a video is recorded for as it plays, ads included: its recording stops there, and the plan's worst case is worked out from it. From 0.25 to 9. Above `Recording:StopAfterHours` it only brings a warning, since the safety stop then ends a video first. |
+| `YouTube:OEmbedBaseUrl` | `https://www.youtube.com/` | Where the record path reads the videos' titles: YouTube's public oEmbed address, one request per video with nothing but its link. An `https` address, or `http` to `127.0.0.1` or `localhost` only, for a local stub in a dry run, as `YouTube__OEmbedBaseUrl`. |
 | `Logging:Console:FormatterName` | `plain` | One line per message. Set to `simple` to see full stack traces. |
 
 The file has a few more that rarely need changing, checked the same way: `Recording:FlushSeconds`
@@ -1536,6 +2169,27 @@ Windows audio through COM interop.
   nothing is sent, and the log says `Nothing was sent to ElevenLabs, so nothing was charged` (see
   [A transcript again, for free](#a-transcript-again-for-free)).
 - The audio is uploaded to ElevenLabs. Keep transcripts for your own study, in line with what your teacher allows.
+- YouTube videos cost what a class costs to transcribe, and a batch's plan says what it will cost
+  before anything is spent: the sum from the videos' lengths for a download, the most it can cost for
+  videos recorded as they play, the account's credits, and after the first transcript the rest
+  projected in credits (see [What it costs, and Google Drive](#what-it-costs-and-google-drive)). A
+  video's audio goes to ElevenLabs as a class's does, and to Google Drive as `YouTube:DriveUpload`
+  says (everything, by default).
+- Recording a YouTube video as it plays, ClassScribe sends YouTube one oEmbed request per video for
+  its title (`YouTube:OEmbedBaseUrl`), carrying the video's link and nothing else, with no key and no
+  cookie. The video window is Chrome with a profile of its own; YouTube sees ordinary views from your
+  connection there, signed in with Premium if you signed in there (see
+  [Your Premium sign-in in the video window](#your-premium-sign-in-in-the-video-window)), and with ads,
+  which are recorded and transcribed, if not. ClassScribe never reads, clicks or changes anything in
+  the page or the profile, and Chrome is started with ClassScribe's environment less
+  `ELEVENLABS_API_KEY` and every `ElevenLabs__` setting.
+- Downloading, yt-dlp talks to YouTube from your connection, signed out: ClassScribe never gives it
+  cookies, a browser's data or a sign-in, from the video window's profile or any other, and starts
+  every call with `--ignore-config --no-cookies --no-cookies-from-browser --no-mark-watched`, so that no
+  configuration file of yt-dlp's can add any. It runs without a window, in a job of its own that ends
+  everything it started once the run is over or ClassScribe's window closes, with the same
+  environment less the ElevenLabs key. YouTube's bot check or rate limit may last a day
+  or more, and may well touch signed-out YouTube in your browser on the same connection too.
 - Your microphone, when recorded, is uploaded with the class, mixed into one track at the same
   price. Only what the class app was listening to is recorded from it, unless
   `Recording:MicrophoneFollows` is `none`, or you press V where the app's mute cannot be seen; muting
@@ -1592,6 +2246,17 @@ words you see.
 | `--seconds takes a whole number of seconds, such as 600`, `--seconds takes from 1 to 86400 seconds (a day)`, `--log-folder needs a folder after it, such as "D:\Classes"` | `mic-check`'s refusals; fix the value. |
 | `drive needs one of signin, signout, status, upload or free-space, such as ClassScribe drive status` | Give the word after `drive` (exit code 2). |
 | `drive free-space needs a path: a recording's file or a folder of recordings, ...`, `drive free-space deletes audio from this laptop once Google Drive has a checked copy of it; add --yes to go ahead, ...` | Give the recording's file or folder, and `--yes`, since the command asks nothing before it deletes. Nothing was deleted (exit code 2). |
+| `youtube needs --name "<course>", the course the videos belong to, such as --name "Risala"`, `youtube needs --output "<folder>", the folder the recordings go to`, `youtube needs at least one YouTube link, or --list "<file>" of links`, `youtube needs --yes to go ahead after the plan, or --plan to print the plan alone`, `--yes and --plan cannot go together` | Give what the line names. Nothing was started (exit code 2). |
+| `--list needs a text file of links after it, such as --list "risala-links.txt"`, `Nothing found at ...`, `--list cannot be read: ...`, `risala-links.txt holds no link` | Give the list file's path; it must be there, readable, and hold at least one link. |
+| `Line 4 of risala-links.txt: "..." is not a YouTube link.`, `The command line: "..." is a YouTube link that names no video or playlist.`, `... is a channel's link; a channel's uploads can be hundreds of hours, so give a playlist's link, or the videos' own.`, `... This is the link of a player embedded in a web page, most likely your course page. Use the YouTube button on the player for the video's own link.` | Fix or remove that link (see [Links and a list file](#links-and-a-list-file)). In the menu such a line is left out (`Left out: ...`) and the rest go on. |
+| `... is a playlist's link, which only --download takes; give each video's own link to record it as it plays`, `The live link of ... is taken only with --download, whose read tells a live stream from a video; ...`, `youtube records at most 10 videos at a time as they play, each for as long as it plays; these links name 14. Give fewer, or add --download` | Recording as they play takes each video's own link, at most 10 at a time. Give the videos' own links, fewer at a time, or download them with `--download` if you may. In the menu, R leaves such links out (`Left out: ... which only D takes; ...`) and refuses more than 10 (`... these are 14. Paste fewer, or download them with D.`). |
+| `youtube takes at most 500 videos at a time; these links name 612`, `This batch holds more than 500 videos; give fewer links, or a shorter playlist, at a time` | Split the batch. The second comes once the playlists have been read; nothing was downloaded (exit code 2). |
+| `--allow-unlisted is for --download: recording videos as they play needs no word about them, and downloads nothing`, `--allow-unlisted needs your course's channels: list them in YouTube:CourseChannels first, so that a course video is never taken for one you may download` | Leave the flag out when recording as they play. For a download, fill in `YouTube:CourseChannels` first (see [Downloading with yt-dlp](#downloading-with-yt-dlp)). Exit code 2. |
+| `YouTube:YtDlpPath is "..."; it must be the full path of yt-dlp.exe, ...`, `... it must name yt-dlp's .exe file, or be empty to find it.`, `YouTube:YtDlpPath is "...", which is not there; install yt-dlp (winget install --source winget --id yt-dlp.yt-dlp), or leave it empty to find it.` (likewise `YouTube:BrowserPath`, with Chrome's `chrome.exe`) | Give the full path of the `.exe`, such as `"%LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\yt-dlp.exe"`, or leave the setting empty for ClassScribe to find it. |
+| `YouTube:CourseChannels:0 is "..."; each channel is its @handle, such as @yourchannel, or its UC id, UC and 22 more letters and digits, as the channel's page shows them.` (likewise `YouTube:MayDownloadChannels`), `YouTube:CourseChannels is "...", which is not a list in square brackets, such as ["@yourchannel"].` | Write the channels as a list, each its `@handle` or its `UC...` id: `["UCxxxxxxxxxxxxxxxxxxxxxx", "@yourchannel"]`. |
+| `YouTube:MayDownloadChannels names @..., which is also in YouTube:CourseChannels; a course's channel is never downloaded, so take it out of one of them.` | A channel is your course's or one you may download from, never both. |
+| `YouTube:LongestVideoHours is 12; it must be from 0.25 to 9 (hours), such as 4.`, `YouTube:OEmbedBaseUrl is "..."; it must be an https address, such as https://www.youtube.com/, or http://127.0.0.1:<port>/ for a local stub.`, `YouTube:DriveUpload is "...", which is not Everything or WithoutAudio.` | Fix the value. |
+| `YouTube:LongestVideoHours is 6, above Recording:StopAfterHours (5), so a YouTube video's recording stops at 5 hours, at the safety stop. Make YouTube:LongestVideoHours at most 5 if that is not what you want` | A warning, given once; nothing is refused. The plan counts the shorter of the two and names it. |
 | `ElevenLabs:ApiKey is set in the settings` | Remove the key from `appsettings.json` (or an `ElevenLabs__ApiKey` variable). It is not used: ClassScribe reads the key only from `ELEVENLABS_API_KEY`. This warning comes once, at the first choice or command. |
 | `Recording:OutputFolder is inside OneDrive` | OneDrive uploads a recording again and again while it grows, and can hold files ClassScribe needs to delete. Choose a folder outside OneDrive, such as `%USERPROFILE%\ClassScribe`. This warning, too, comes once, at the first choice or command, and refuses nothing. |
 | A `WARNING` line under `Recordings and transcripts` in the menu | `The drive X:\ is not available`: plug the drive in, or change `Recording:OutputFolder`. `... is a file, so recordings cannot go there`: change `Recording:OutputFolder`. `Recording:OutputFolder uses %NAME%, which is not set`: set that variable, or write the folder out in full. |
@@ -1832,6 +2497,65 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `<file> could not be deleted (...); it stays on this laptop` | Another program holds that file open. Close it and free the recording again; the files already freed stay freed. |
 | `Google Drive could not be reached (...). Nothing more was deleted.` | Free space asks Drive about every file before it deletes anything, so nothing of a recording it could not check was deleted. Try again when the laptop is online. |
 | `The audio of ... is on Google Drive, not on this laptop: ...`, `Part of the audio of ...` | Its audio was freed, so it cannot be transcribed again as it is: download its `.wav` files from the folder named into the recording's folder first. To make its transcript again for free, run the `rebuild` command the next line gives. |
+| `... is a YouTube video's recording; its audio is not on Drive (YouTube:DriveUpload), so it stays. Delete it by hand if you need the room; the video can be fetched again.` | Its audio never went up, as `YouTube:DriveUpload` `WithoutAudio` says, so free space leaves it. This is no failure. |
+| `Google Drive's room could not be read (...); what does not fit waits in the queue` | Harmless: a YouTube batch's plan only leaves Drive's room out. |
+
+### YouTube videos
+
+See [YouTube videos](#youtube-videos) for how a batch goes. The lines of a video's own recording are
+in its `.log` too.
+
+| What you see | What to do |
+| --- | --- |
+| `Another ClassScribe window (process 1234) is working through YouTube videos; wait for it to finish, or close it` | One batch runs at a time. Wait for it, or close that window; a video it records as it plays carries on in its recorder to its end. Exit code 1. |
+| `No ElevenLabs API key found in ELEVENLABS_API_KEY. Set it (README, Set up once), or add --no-transcribe to fetch only` | Set the key (see [Set up once](#set-up-once)), or choose O in the menu, or add `--no-transcribe`. Nothing was asked of YouTube. Exit code 1. |
+| `No link was given; nothing to do.`, `No video to record; nothing to do.`, `A course's name is needed: its folder is named after it.` | Menu choice Y found nothing it could take, or the course's name was empty; paste the links again, or type the course's name. |
+| `YouTube: waiting while "Kalam" records; the videos go on after it`, then `YouTube: going on, now that "Kalam" has stopped recording` | Normal: a class comes first. Nothing reaches YouTube or ElevenLabs from the batch meanwhile. |
+| `Stopping the YouTube video "..." so that "Kalam" can record; what it recorded is kept.`, `A class is starting, so this video's recording gives way to it` (in the video's log) | Normal: a class stopped the video. Its recording may be cut short, so the same command records it again once the class is over. |
+| `Only one recording at a time: the YouTube video "..." has been recording since ...`, then `Press Q twice in the window that shows the video to stop it, then start the class again.` (or `It could not be asked to stop: press Q twice ...`) | The video did not stop within 30 seconds, or its recorder cannot be asked (one of an older build). Press Q twice in the window that shows it (A in the menu shows it), then start the class. |
+| `Only one recording at a time: "Kalam" has been recording since ...; the YouTube videos wait for it.` | A class started in the moment between the batch's look and the video's start. The batch waits for it, then asks Enter again. |
+| `Something other than ClassScribe made an event named Local\ClassScribe.Yield.<run id>, so a class cannot stop this video's recording by itself this time; Q pressed twice still stops it` | Not expected. Before a class, stop the video yourself with Q twice. |
+| `Chrome was not found (YouTube:BrowserPath, App Paths, Program Files, LOCALAPPDATA). Install it, or set YouTube:BrowserPath to its chrome.exe` | Install Chrome, or set `YouTube:BrowserPath`. Nothing was opened; exit code 1. |
+| `ClassScribe's video window from an earlier run is still open, so Chrome sent the video there. Close every ClassScribe video window, then press Enter to try again`, then `Enter tries again; ...` | A window of ClassScribe's own Chrome (not your everyday Chrome) was left open, and took the video. Close it, then press Enter. |
+| `The video window did not open: Windows did not start Chrome: ... (error N)` | Windows' own words say why: `Access is denied (error 5)` or `... virus ... (error 225)` is most often Bitdefender; look at its Notifications. That video is not recorded; the next is offered. |
+| `Two videos in a row could not be recorded, so no more windows open: something is wrong with Chrome. The errors above say what` | Read the lines above it. What was recorded is still transcribed; run the same command again once Chrome works. |
+| `The recording failed: The video window was closed before the recording began. Nothing was recorded.` | The window closed in the seconds before its recording began. The same command records the video again. |
+| `Nothing plays in ClassScribe's video window yet: press play there. If it plays, check that YouTube's player and Chrome's volume in Windows' mixer are up` (`press play in the video window` in the title) | Press play in the video's window. If it plays, raise YouTube's player volume and Chrome's in Windows' volume mixer. |
+| `Nothing has played in ClassScribe's video window for 5 minutes; stopping`, `Nothing played in ClassScribe's video window, so nothing of "..." was kept to transcribe` | Nothing was played in 5 minutes, so nothing was kept or billed. The next video is offered; the same command tries this one again. |
+| `Nothing has played for 60 seconds; the recording stops at 2 minutes unless it plays again. Press P here to pause the count` (`nothing plays` in the title) | The video ended, or is paused, perhaps by YouTube's "Continue watching?". Play it on, or press P in ClassScribe's window to hold the count while you pause it. |
+| `Nothing has played for 2 minutes; the video has most likely ended, or YouTube paused it` | The recording stopped, and may be cut short. If the video had not ended, the same command records it again. |
+| `The video window was closed; stopping the recording`, `The window moved on to another video ("..."); the recording of "..." stops here` | Normal: the video's end, confirmed. |
+| `This video has played for 4 hours (YouTube:LongestVideoHours); stopping` | The summary gives `For the rest: <command>`, which records it from where it stopped. For longer videos, raise `YouTube:LongestVideoHours` (at most 9). |
+| `"...": ...; it may be cut short, so the same command records it again` | The video's end is not confirmed (a class, the silence, the length limit, or a lost recorder). The recording is kept and transcribed; run the same command again to record it whole, or keep what you have. |
+| `Could not write the video's source file ... (...); the recording goes on` | The recording is kept, but is not known as the video's, so the same command records the video again. Check the free space and that the folder can be written. |
+| `ClassScribe's video window of "..." did not close; close it before the next one opens` | Close it yourself; otherwise the next video goes to it. |
+| `"..." records on in the background to its end; no more videos open, and the same command transcribes it later` | Esc left the video's view. Run the same command once it has ended. |
+| `The recorder of the YouTube video "..." ended unexpectedly at .... Its audio so far is kept; a video is never continued, so the same command records it again.` | Most likely Bitdefender ended the recorder (see [Set up once](#set-up-once)). Its audio so far is transcribed, as a recording that may be cut short. |
+| `The YouTube batch was stopped with Ctrl+C; what was recorded is kept, and the same command transcribes it later` | Ctrl+C was pressed twice. Exit code 130. |
+| `Stopping after the one in hand. Press Q again within 5 seconds to stop at once`, `Stopping at once` | Q, during the downloads or the transcripts. |
+| `YouTube gave no title for it (private, removed, or not embeddable); it is tried all the same` (in the plan) | The video keeps its ID as its title. A private video will not play in a window that is not signed in to an account that may see it. |
+| `yt-dlp was not found (YouTube:YtDlpPath, winget's links folder, PATH). Install it: winget install --source winget --id yt-dlp.yt-dlp`, `Deno was not found ... Install it: winget install --source winget --id DenoLand.Deno`, `FFmpeg and FFprobe were not found in one folder ... Install them: winget install --source winget --id yt-dlp.FFmpeg` | Run the winget command given, then `ClassScribe youtube check`. Exit code 1. |
+| `yt-dlp is at ..., but it did not say its version; Bitdefender may have blocked it (the README says how to allow it), or it is damaged: reinstall it with winget install --source winget --id yt-dlp.yt-dlp` (or Deno, FFmpeg, FFprobe) | Add a Bitdefender exception for that `.exe` as in step 5 of [Set up once](#set-up-once), or reinstall it. |
+| `yt-dlp 2026.08.19 is 91 days old, and YouTube changes often, so a download may fail: update it with winget upgrade --source winget --id yt-dlp.yt-dlp` | Run that command; the batch goes on meanwhile. See [Downloading with yt-dlp](#downloading-with-yt-dlp). |
+| `Windows did not start yt-dlp (...). Bitdefender may have blocked it (README, Set up once); ClassScribe youtube check says more.` | Look at Bitdefender's Notifications, add an exception for `yt-dlp.exe`, then run `youtube check`. The downloads stopped. |
+| `"..." was not downloaded: ...`, `... could not be read: ...`, `The downloads stopped: ...` | What yt-dlp met, in ClassScribe's words (see the table in [Downloading with yt-dlp](#downloading-with-yt-dlp)). What was downloaded is still transcribed; run the same command again later for the rest. |
+| `The playlist ... could not be read: ...`, `The playlist ... was not read: ...`, `Playlist ...: ... unavailable videos are hidden`, `yt-dlp's listing of the playlist ... cannot be read: ...`, `yt-dlp's information in ... cannot be read: ...` | That playlist or video is left out, with the reason; the other links go on. YouTube hides a playlist's unavailable videos from its listing. |
+| `Reading 200 videos from YouTube takes about 20 minutes; Q stops`, `YouTube refused "..."'s download with HTTP 403; reading it again and trying once more`, `YouTube could not be reached 3 times in a row` | The first two are normal. The third stopped the downloads: check the connection, then run the same command again. |
+| `There is not room enough for the audio and its download while keeping room for a 3-hour class (about 1.3 GB): free some room, or download fewer videos at a time.` | Free some room on the recordings folder's drive (or `%LOCALAPPDATA%`'s), or give fewer videos. Nothing was downloaded; exit code 1, or 0 with `--plan`. |
+| `Google Drive: everything, the audio included (YouTube:DriveUpload), ...; Drive has only ... free, so what does not fit waits in the queue until there is room.` | Make room in Google Drive, or set `YouTube:DriveUpload` to `WithoutAudio`. Nothing is refused for it. |
+| `Deleted the unfinished conversion of "..." left by an earlier batch: .... It is fetched again by the same command` | An earlier batch was cut short while it turned a download into a recording; its unfinished files were deleted, and the video is fetched again. |
+| `The unfinished conversion of "..." left by an earlier batch could not be deleted (...); the next batch tries again`, `The note of an earlier conversion, ..., cannot be read (...); it is removed` | Another program holds one of those files; close it. The video is fetched again either way. |
+| `The audio of "..." is ... long, but the video is ...: the download is incomplete, so nothing of it was kept. ...`, `yt-dlp finished "...", but did not say where its WAV is, or it is not in ...; run the same command again` | Run the same command again. If it happens again, run `youtube check` and update yt-dlp. |
+| `The transcripts stopped: ...`, then `Not transcribed: .... Once that is fixed, run the same command again: what is done is skipped, and these are transcribed` | ElevenLabs refused the key, the credits ran out, or the account is rate limited (see [Transcribing](#transcribing)). The audio is all kept; fix it and run the same command again. |
+| `The transcript of "..." failed: ...` | That video's alone; the next went on. The same command transcribes it later. |
+| `"..." was transcribed meanwhile (...); it is not sent again`, `"..." (...): ElevenLabs' answer, paid for, was kept for it meanwhile in ...; it is not sent again. To lay it out for free: ...`, `"..." (...): it is being recorded or transcribed elsewhere now, so it is not sent from here` | Nothing is billed twice: another window or command got there first. |
+| `Could not write the run file of the transcript of ... (...); until it is done, do not transcribe it in another window` | `%LOCALAPPDATA%\ClassScribe` cannot be written. The transcript goes on; free some space. |
+| `The video's source file of ... could not be read (...); its transcript is headed by the recording's name instead`, `The video's source file ... cannot be read: ...; ... is listed without its video's title` | Its `.source.json` was damaged or edited. The recording is transcribed and listed all the same; the same command may fetch the video again. |
+| `The first transcript used ... credits for ...; the other ... would use about ... at that rate; ... are left this period` | Normal: the rest of the batch's transcripts, projected in the account's own credits. |
+| `Run the same command again to fetch what is left; what is done is skipped.` (or `... to record what is left; ...`) | The summary's last line, when anything is left: the lines above it say what, and what to do first. Exit code 1. |
+| `not recorded: you stopped the videos`, `not recorded: you left the view of the video before it`, `not recorded: the videos stopped after two that could not be recorded`, `not recorded: its recording did not start`, `not recorded: its recorder ended before it recorded`, `records on in the background; run the same command again once it has ended to transcribe it` (in the summary) | Why a video was not recorded, or not yet transcribed. The same command records or transcribes it later; what is done is skipped. |
+| `needs your word: in the menu (Y > D), ...`, `channel unknown: needs your word`, `your course's channel: never downloaded`, `copied from a player embedded in a web page: never downloaded` (in the summary `..., most likely your course page: never downloaded; record it as it plays instead: <command>`), `needs a sign-in: left out`, `left out: you said no` (in the plan or the summary) | See the guard in [Downloading with yt-dlp](#downloading-with-yt-dlp). Each that you can watch is given the command that records it as it plays instead. |
+| `The recording of the YouTube video "..." (...) ended unexpectedly at about ...`, `The transcript of the YouTube video "..." (...) was not finished; ...` (the report at the start) | T transcribes what was recorded; C is never offered for a video. The same `youtube` command records the video again, or transcribes it. |
 
 ## Layout
 
@@ -1849,9 +2573,10 @@ src/ClassScribe/
     Audio/Windows/    WASAPI loopback through NAudio, the once-a-second device check, the
                       microphone listing and capture, and the reader of the apps' microphone sessions
     Desktop/          keeping the laptop awake, the computer's clocks, the window's title, taskbar and
-                      flash, starting processes, the job check, Windows' end of the session, the
-                      registry, process names and Windows' microphone usage record (Windows' own
-                      calls in Desktop/Windows/)
+                      flash, starting processes (the recorder, yt-dlp in a job of its own, and
+                      Chrome for a video), the job check, Windows' end of the session, the registry,
+                      process names, the windows of ClassScribe's own Chrome, and Windows'
+                      microphone usage record (Windows' own calls in Desktop/Windows/)
     Recorder/         the background recorder: its host, run files, lock, logs, the watch for times
                       when ClassScribe did not run, and the window it brings back by itself
     Link/             the named pipe between the recorder and the windows that show its run
@@ -1866,9 +2591,16 @@ src/ClassScribe/
                       names, what of a recording's audio is on Google Drive alone, numbered
                       transcript copies, marks, the microphone check's log, and the roaming folder
                       that holds the Google sign-in
-    Commands/         the menu, the microphone menu, Google Drive's menu, the command line (record,
-                      transcribe, rebuild, list, devices, mic-check, drive), the report at the start,
-                      the view of a recording, the microphone check, and the settings check before each
+    YouTube/          YouTube videos: the links and list files, the batch both ways share (the lock,
+                      the wait for a class, the transcripts, the source files), the download path
+                      (finding and running yt-dlp, its fixed arguments, the reads, the guard, the
+                      plan, the conversion to ClassScribe's own .wav) and the record path (finding
+                      Chrome, the titles from YouTube's oEmbed address, the video's window, how a
+                      video's recording ends)
+    Commands/         the menu, the microphone menu, Google Drive's menu, menu choice Y, the command
+                      line (record, transcribe, rebuild, list, devices, mic-check, drive, youtube), the
+                      report at the start, the view of a recording, the microphone check, and the
+                      settings check before each
 tests/ClassScribe.Tests/    NUnit and Moq
 tools/dry-run/      the dry-run kit: Start-DryRun.cmd, the stand-in for ElevenLabs, the test player
 ```
@@ -1893,12 +2625,18 @@ browser and a listener the tests play, and with Drive's folders, files and resum
 included; a few tests use the real listener on `127.0.0.1` with the test as the browser, and the
 store's tests use Windows' real data protection in a temporary folder, never `%APPDATA%\ClassScribe`.
 The recordings the upload and free-space tests use are small files in temporary folders, in the
-course and date layout and the old flat one. The dry-run kit's tests start a hidden Windows
-PowerShell 5.1 of their own to parse its scripts and try its checks on temporary folders, and run its
-stand-in for ElevenLabs on `127.0.0.1` with ClassScribe's own client; on request, one builds a
-stand-in `ClassScribe.exe` that records nothing and runs the whole dry run with it in temporary
-folders. No test ever starts ClassScribe itself, records, opens
-a device or a microphone, plays a sound, opens a browser, or sends anything to ElevenLabs or Google,
-and none reads or writes the real `%APPDATA%\ClassScribe`, `%LOCALAPPDATA%\ClassScribe` or
-`%USERPROFILE%\ClassScribe`. The suite holds 3,395 tests and takes about two minutes; a test run that
-hangs is stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).
+course and date layout and the old flat one. YouTube is played too: yt-dlp by a stand-in that writes
+the files it would and checks every argument list it is given, Chrome by a stand-in starter and
+windows whose titles change on a test clock, YouTube's oEmbed address by the same HTTP stub as
+ElevenLabs, and a batch of two videos each way runs end to end. A test run turns on a switch under
+which the real yt-dlp, Deno, FFmpeg and Chrome, Chrome's real windows and youtube.com itself are
+refused, so a test that forgot its stand-in fails rather than reaching them; the only real program
+YouTube's tool tests start is Windows' own hidden `cmd.exe`. The dry-run kit's tests start a hidden
+Windows PowerShell 5.1 of their own to parse its scripts and try its checks on temporary folders, and
+run its stand-in for ElevenLabs on `127.0.0.1` with ClassScribe's own client; on request, one builds
+a stand-in `ClassScribe.exe` that records nothing and runs the whole dry run with it in temporary
+folders. No test ever starts ClassScribe itself, records, opens a device or a microphone, plays a
+sound, opens a browser, runs yt-dlp, or sends anything to ElevenLabs, Google or YouTube, and none
+reads or writes the real `%APPDATA%\ClassScribe`, `%LOCALAPPDATA%\ClassScribe` or
+`%USERPROFILE%\ClassScribe`. The suite holds 3,900 tests and takes about three minutes; a test
+run that hangs is stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).

@@ -13,6 +13,9 @@ internal enum ProcessCreationFlags : uint
     /// <summary>None.</summary>
     None = 0,
 
+    /// <summary>CREATE_SUSPENDED: the first thread waits until it is resumed, so that the process can be put in a job before it runs.</summary>
+    Suspended = 0x00000004,
+
     /// <summary>CREATE_NEW_CONSOLE: a console window of its own.</summary>
     NewConsole = 0x00000010,
 
@@ -24,6 +27,9 @@ internal enum ProcessCreationFlags : uint
 
     /// <summary>CREATE_UNICODE_ENVIRONMENT: an environment block, if one were given, in UTF-16.</summary>
     UnicodeEnvironment = 0x00000400,
+
+    /// <summary>EXTENDED_STARTUPINFO_PRESENT: STARTUPINFOEX, with its list of attributes, such as the handles to inherit.</summary>
+    ExtendedStartupInfo = 0x00080000,
 
     /// <summary>CREATE_BREAKAWAY_FROM_JOB: outside the job of the process that starts it, where that job allows it.</summary>
     BreakawayFromJob = 0x01000000,
@@ -59,10 +65,38 @@ internal sealed record ThisProgram(string? ProcessPath, string AppFolder)
 /// <param name="WorkingFolder">The process's working folder (lpCurrentDirectory).</param>
 /// <param name="Show">
 /// How the window of a process with a console of its own is first shown (STARTF_USESHOWWINDOW with wShowWindow), or null
-/// for Windows' own choice. No other part of STARTUPINFO is given, so the process gets no standard handles from here.
-/// The environment (lpEnvironment) is always NULL: the process inherits this process's environment block as it is.
+/// for Windows' own choice. No other part of STARTUPINFO is given, so the process gets no standard handles from here,
+/// unless <see cref="Handles"/> gives them, as a tool's launch does.
 /// </param>
-internal sealed record ProcessLaunch(string Application, string CommandLine, bool InheritHandles, ProcessCreationFlags Flags, string WorkingFolder, ProcessWindowShow? Show);
+/// <remarks>
+/// A launch of the recorder or the alert window gives none of the three optional parts, and is started as it always was: the
+/// environment (lpEnvironment) NULL, so the process inherits this process's environment block as it is, and no handles. A
+/// tool's launch, such as yt-dlp's (design 3.2), gives all three: an environment block of its own, the standard handles it
+/// inherits and nothing else, and a job it runs in from its first instruction.
+/// </remarks>
+internal sealed record ProcessLaunch(string Application, string CommandLine, bool InheritHandles, ProcessCreationFlags Flags, string WorkingFolder, ProcessWindowShow? Show)
+{
+    /// <summary>The process's environment, by variable name; null to inherit this process's as it is.</summary>
+    public IReadOnlyDictionary<string, string>? Environment { get; init; }
+
+    /// <summary>The standard handles the process gets, the only handles it inherits (a handle list); null for none.</summary>
+    public StandardHandles? Handles { get; init; }
+
+    /// <summary>
+    /// The job the process runs in: it is made suspended, put in the job, and only then resumed, so that nothing it starts can
+    /// leave the job before; null for no job of its own.
+    /// </summary>
+    public SafeHandle? Job { get; init; }
+
+    /// <summary>True when the launch gives any of the optional parts, as a tool's launch and a browser's do.</summary>
+    public bool IsToolLaunch => Environment is not null || Handles is not null || Job is not null;
+}
+
+/// <summary>A tool's standard handles: the ends of the pipes it reads its input from and writes its output and errors to, each inheritable.</summary>
+/// <param name="Input">Standard input.</param>
+/// <param name="Output">Standard output.</param>
+/// <param name="Error">Standard error.</param>
+internal sealed record StandardHandles(SafeHandle Input, SafeHandle Output, SafeHandle Error);
 
 /// <summary>
 /// How the starter has a process started, behind an interface so that its tests can see the launch it asks for and hand
@@ -138,6 +172,42 @@ public sealed class ProcessStarter(string workingFolder, ILogger<ProcessStarter>
             $"{ProcessArguments.Attach} {ProcessArguments.Alert} {Checked(runId)}",
             AlertWindowFlags,
             ProcessWindowShow.MinimizedNotActive);
+
+    /// <summary>This process's environment, from which a browser's is made without the key; a test gives its own.</summary>
+    internal Func<System.Collections.IDictionary> CurrentEnvironment { get; init; } = Environment.GetEnvironmentVariables;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Outside the job first; a job that does not allow breakaway refuses that with Access Denied, and Chrome is then started
+    /// inside it, once more and no other way. In a test run Windows' own start refuses a browser outright (see
+    /// <see cref="YouTube.YouTubeGuards"/>).
+    /// </remarks>
+    public StartedProcess StartBrowser(string program, IReadOnlyList<string> arguments, string workingFolder)
+    {
+        var launch = new ProcessLaunch(program, YouTube.WindowsCommandLine.Of(program, arguments), InheritHandles: false,
+            ProcessCreationFlags.UnicodeEnvironment | ProcessCreationFlags.BreakawayFromJob, workingFolder, Show: null)
+        {
+            Environment = ChildEnvironment.WithoutTheKey(CurrentEnvironment())
+        };
+
+        var started = _api.Start(launch, out var error);
+        if (started is null && error == IProcessStarter.AccessDenied)
+        {
+            logger.LogDebug("The job ClassScribe runs in does not let Chrome out of it; starting it inside the job");
+            launch = launch with { Flags = launch.Flags & ~ProcessCreationFlags.BreakawayFromJob };
+            started = _api.Start(launch, out error);
+        }
+
+        if (started is not null)
+        {
+            // The command line names the window's profile, which may hold a Google sign-in: it is kept out of every log.
+            logger.LogDebug("Started {What} for a video's window: process {ProcessId}, {Program}, flags {Flags}", StartRefusal.Browser, started.ProcessId, program, launch.Flags);
+            return started;
+        }
+
+        logger.LogDebug("Windows did not start {What} for a video's window ({Error}): {Program}, flags {Flags}", StartRefusal.Browser, Describe(error), program, launch.Flags);
+        throw StartRefusal.For(StartRefusal.Browser, error);
+    }
 
     /// <summary>
     /// <paramref name="runId"/>, when it is a run id (<see cref="ProcessArguments.IsRunId"/>), since it goes on a command
@@ -215,7 +285,7 @@ internal delegate bool CreateProcessFunction(
 /// refuses the call.
 /// </param>
 [SupportedOSPlatform("windows")]
-internal sealed class NativeProcessCreationApi(CreateProcessFunction createProcess) : IProcessCreationApi
+internal sealed partial class NativeProcessCreationApi(CreateProcessFunction createProcess) : IProcessCreationApi
 {
     /// <summary>STARTF_USESHOWWINDOW: STARTUPINFO's wShowWindow counts.</summary>
     private const int UseShowWindow = 0x00000001;
@@ -232,6 +302,8 @@ internal sealed class NativeProcessCreationApi(CreateProcessFunction createProce
     /// <inheritdoc />
     public StartedProcess? Start(ProcessLaunch launch, out int error)
     {
+        if (launch.IsToolLaunch) return StartTool(launch, out error);
+
         var startup = new StartupInfo { Size = Marshal.SizeOf<StartupInfo>() };
         if (launch.Show is { } show)
         {

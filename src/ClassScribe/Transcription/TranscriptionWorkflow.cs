@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -47,9 +48,10 @@ public sealed class TranscriptionWorkflow(
 
     /// <summary>
     /// The line <see cref="TranscriptFormatter"/> writes under the title of a recording's transcript, such as "Recorded
-    /// 15 October 2026, 20:55 UTC.", and never in the transcript of a file transcribed on its own.
+    /// 15 October 2026, 20:55 UTC.", or for a downloaded YouTube video "Downloaded 18 October 2026, 14:02 UTC.", and never in
+    /// the transcript of a file transcribed on its own.
     /// </summary>
-    private static readonly Regex RecordedLine = new(@"^Recorded [0-9]{1,2} \p{L}+ [0-9]{4}, [0-9]{2}:[0-9]{2} UTC\b", RegexOptions.CultureInvariant);
+    private static readonly Regex RecordedLine = new(@"^(?:Recorded|Downloaded) [0-9]{1,2} \p{L}+ [0-9]{4}, [0-9]{2}:[0-9]{2} UTC\b", RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Transcribes a recording from every one of its segments on disk, in recording order, and saves the transcript under
@@ -106,7 +108,7 @@ public sealed class TranscriptionWorkflow(
 
             upload = files.Upload;
 
-            var transcript = await UploadAndSaveAsync(upload, files, files.Name, files.StartedUtc, marks.Read(files), cancellationToken);
+            var transcript = await UploadAndSaveAsync(upload, files, files.Name, files.StartedUtc, marks.Read(files), VideoOf(files), cancellationToken);
             saved = true;
             return transcript;
         }
@@ -137,7 +139,7 @@ public sealed class TranscriptionWorkflow(
             logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), files.Folder);
 
             if (TryPrepare(path, files.Upload, cancellationToken)) upload = files.Upload;
-            var transcript = await UploadAndSaveAsync(upload ?? path, files, files.Name, recordedUtc: null, [], cancellationToken);
+            var transcript = await UploadAndSaveAsync(upload ?? path, files, files.Name, recordedUtc: null, [], video: null, cancellationToken);
             saved = true;
             return transcript;
         }
@@ -159,6 +161,7 @@ public sealed class TranscriptionWorkflow(
     /// Transcript settings as they are now, and written alone as the first copy that has neither a transcript nor an
     /// answer, so nothing is overwritten. Returns the new transcript's path. A recording keeps its recording time, even
     /// once its audio is deleted, and a file transcribed on its own, which had none, gets none (see <see cref="IsRecording"/>).
+    /// A YouTube video's recording keeps its heading, the video's title and link, from its source file.
     /// </summary>
     /// <exception cref="FileNotFoundException">The recording has no saved answer, or the answer named is not there.</exception>
     /// <exception cref="TranscriptionException">The answer cannot be read.</exception>
@@ -174,7 +177,7 @@ public sealed class TranscriptionWorkflow(
             var result = ElevenLabsAnswer.Parse(await File.ReadAllTextAsync(answer, cancellationToken), HttpStatusCode.OK);
             var recordedUtc = IsRecording(files) ? files.StartedUtc : null;
             var classMarks = marks.Read(files);
-            var rebuilt = TranscriptCopies.SaveRebuilt(files, formatter.Format(result, files.Name, recordedUtc, classMarks, ClassMarks.PartsIn(classMarks)), logger);
+            var rebuilt = TranscriptCopies.SaveRebuilt(files, formatter.Format(result, files.Name, recordedUtc, classMarks, ClassMarks.PartsIn(classMarks), VideoOf(files)), logger);
             logger.LogInformation("Rebuilt from {Answer} into {Transcript}; nothing was uploaded", Path.GetFileName(answer), Path.GetFileName(rebuilt));
             return rebuilt;
         }
@@ -190,14 +193,33 @@ public sealed class TranscriptionWorkflow(
 
     /// <summary>
     /// True when the files are a recording's, whose name gives the time it started, rather than those of a file
-    /// transcribed on its own, whose name gives the time it was transcribed: the recording's audio, of either track, or
-    /// its marks are beside them, or one of its transcripts says when it was recorded, as they still do once the audio
-    /// is deleted. With none of these left the two cannot be told apart, and false claims no recording time that may be
-    /// wrong.
+    /// transcribed on its own, whose name gives the time it was transcribed: the recording's audio, of either track, its
+    /// marks or a YouTube video's source file are beside them, or one of its transcripts says when it was recorded or
+    /// downloaded, as they still do once the audio is deleted. With none of these left the two cannot be told apart, and
+    /// false claims no recording time that may be wrong.
     /// </summary>
     private static bool IsRecording(RecordingFiles files) =>
-        files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0 || File.Exists(files.Marks)
+        files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0 || File.Exists(files.Marks) || File.Exists(files.Source)
         || TranscriptCopies.Transcripts(files).Any(SaysWhenRecorded);
+
+    /// <summary>
+    /// The YouTube video <paramref name="files"/> is the recording of, from its source file, for the transcript's heading;
+    /// null for a class's recording. A source file that cannot be read is said, and the transcript is laid out as a class's.
+    /// </summary>
+    private VideoSource? VideoOf(RecordingFiles files)
+    {
+        try
+        {
+            return VideoSourceFile.Read(files.Source);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: the source only heads the transcript with the video's title and link; a paid answer
+            // must never be lost over it, so the transcript is laid out as a class's, and this says why.
+            logger.LogWarning("The video's source file of {Recording} could not be read ({Reason}); its transcript is headed by the recording's name instead", files.BaseName, ex.Message);
+            return null;
+        }
+    }
 
     /// <summary>
     /// True when the transcript at <paramref name="path"/> says when its recording was made, in the line the formatter
@@ -265,10 +287,11 @@ public sealed class TranscriptionWorkflow(
     /// <see cref="UsageReport"/>). An answer that has arrived has been paid for: one that cannot be read is kept for later
     /// rather than lost, and the error is marked as following a charged answer (see <see cref="ChargedAnswer"/>), so that
     /// whoever reports it can say a new try is charged again. No transcription ID can be read from such an answer, so the
-    /// mark carries none.
+    /// mark carries none. A YouTube video's transcript is headed by <paramref name="video"/>, its title and link.
     /// </summary>
     private async Task<TranscriptFiles> UploadAndSaveAsync(
-        string audioPath, RecordingFiles files, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks, CancellationToken cancellationToken)
+        string audioPath, RecordingFiles files, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks, VideoSource? video,
+        CancellationToken cancellationToken)
     {
         // A cancel made while the upload file was prepared must not go on to "Uploading", which would look as if it had been ignored.
         cancellationToken.ThrowIfCancellationRequested();
@@ -292,7 +315,7 @@ public sealed class TranscriptionWorkflow(
         if (string.IsNullOrWhiteSpace(result.Text))
             logger.LogWarning("ElevenLabs heard no speech in {File}: the transcript is empty", Path.GetFileName(audioPath));
 
-        return Save(files, result, title, recordedUtc, classMarks);
+        return Save(files, result, title, recordedUtc, classMarks, video);
     }
 
     /// <summary>
@@ -304,11 +327,12 @@ public sealed class TranscriptionWorkflow(
     /// error is marked as following a charged answer, with where the answer is, if anywhere, and its transcription ID
     /// (see <see cref="ChargedAnswer"/>).
     /// </summary>
-    private TranscriptFiles Save(RecordingFiles files, TranscriptionResult result, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks)
+    private TranscriptFiles Save(RecordingFiles files, TranscriptionResult result, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks,
+        VideoSource? video)
     {
         try
         {
-            return TranscriptCopies.Save(files, result.RawJson, () => formatter.Format(result, title, recordedUtc, classMarks, ClassMarks.PartsIn(classMarks)), logger);
+            return TranscriptCopies.Save(files, result.RawJson, () => formatter.Format(result, title, recordedUtc, classMarks, ClassMarks.PartsIn(classMarks), video), logger);
         }
         catch (Exception ex) when (ex.Data[TranscriptCopies.SavedAnswerKey] is string saved)
         {

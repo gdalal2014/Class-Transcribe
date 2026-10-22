@@ -6,6 +6,7 @@ using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
+using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,6 +22,12 @@ namespace ClassScribe.Commands;
 /// goes into Google Drive's queue as the run starts, and its outcome is noted at the end; the upload after the run is left
 /// to whoever ran it, once the end is shown (see <see cref="IDriveAutoUpload"/>).
 /// </summary>
+/// <remarks>
+/// A YouTube video's run (design 4.5), whose request carries the video, records the window its batch opened, in the batch's
+/// date folder once the batch has one, with the video's source file beside the recording, written at the start and again at
+/// the stop with how it ended; it fails closed when the window is gone before it records; it gives way to a class that
+/// starts, through its yield (see <see cref="IVideoYield"/>); and once its capture has stopped it asks the window to close.
+/// </remarks>
 public sealed class RecordCommand(
     IRecordingFactory recordings,
     RecordingLoop loop,
@@ -38,8 +45,16 @@ public sealed class RecordCommand(
     IOptionsSnapshot<RecordingOptions> recording,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TimeProvider time,
-    ILogger<RecordCommand> logger) : IRecordRun
+    ILogger<RecordCommand> logger,
+    VideoPlayback? video = null,
+    IVideoYield? yield = null) : IRecordRun
 {
+    /// <summary>True once a class asked this video's run to give way (see <see cref="IVideoYield"/>).</summary>
+    private volatile bool _yielded;
+
+    /// <summary>How a video's recording ended, when the run itself knows better than its cause, as when its window was gone before it began.</summary>
+    private string? _videoEnded;
+
     /// <summary>
     /// Runs the class under <paramref name="name"/> as a new recording, transcribed when <paramref name="transcribe"/> is
     /// true: from what is chosen now (menu choice 6, or the settings) into the recordings folder of the settings, opening
@@ -76,6 +91,9 @@ public sealed class RecordCommand(
     /// </summary>
     public async Task<int> RunAsync(RecordRequest request)
     {
+        // A YouTube video's run gives way to a class that starts, heard from the very start of the run (design 2.5).
+        using var yielding = ListenForTheYield(request);
+
         // 1. One recording at a time: the lock comes before any file is made, and goes the moment capture stops.
         if (bookkeeping.TryTakeLock() is not { } held) return Refuse(request);
 
@@ -92,7 +110,8 @@ public sealed class RecordCommand(
             RecorderState stopping;
             try
             {
-                // 2. The recording's files: a new recording, or the one this run continues as its next part.
+                // 2. The recording's files: a new recording, or the one this run continues as its next part; a video's in
+                // its batch's date folder once the batch has one.
                 WarnAboutTheRecordingsFolder(request);
                 (files, offset, var notRecorded) = OpenFiles(request);
                 (sofar.Files, sofar.Offset) = (files, offset);
@@ -100,10 +119,14 @@ public sealed class RecordCommand(
                 // 3. The run file, the recording's log, Google Drive's queue (once Drive is set up), the laptop kept awake, and the
                 // handlers for an end without the usual stop.
                 var run = bookkeeping.Begin(request, files);
+                if (_yielded) run?.SetEndedBy(RunEndCause.ClassStarted);
                 drive.Queue(files);
                 awake = bookkeeping.KeepAwake();
                 if (request.Transcribe && !HasKey())
                     logger.LogWarning("No ElevenLabs API key found in {Variable}. The class will still be recorded, and you can transcribe it later", ElevenLabsOptions.ApiKeyVariable);
+
+                // 3b. A YouTube video's source file, and its window, which must still be open: a video's run records nothing else.
+                if (request.Video is { } videoRequest) BeginTheVideo(videoRequest, files);
 
                 // 4. The recording, from where the recording on disk ends.
                 var started = audio = recordings.Create(request.Source);
@@ -138,6 +161,9 @@ public sealed class RecordCommand(
 
             // The next class may start while this one uploads.
             held.Dispose();
+
+            // 7b. A YouTube video's source file says how it ended, and its window is asked to close.
+            EndTheVideo(request, files);
             if (windows.Ended) return EndedByWindows(files);
 
             return await FinishAsync(request, files, offset, summary, stopping, audio.GetSnapshot().Main.Source,
@@ -194,13 +220,20 @@ public sealed class RecordCommand(
             // and the words say what to check, since there is nothing in it to transcribe.
             if (!summary.HeardAnything)
             {
-                if (!continued) return NothingRecorded(request, files, stopping, $"Nothing audible was captured from \"{source}\". {WhatToCheck}");
+                if (!continued)
+                {
+                    return NothingRecorded(request, files, stopping, request.Video is { } nothing
+                        ? $"Nothing played in ClassScribe's video window, so nothing of \"{TitleOf(nothing)}\" was kept to transcribe"
+                        : $"Nothing audible was captured from \"{source}\". {WhatToCheck}");
+                }
 
                 logger.LogWarning("Nothing audible was captured in this part; the earlier parts of {Recording} are kept", files.BaseName);
             }
 
             // 9. Record only.
-            var kept = $"The recording is in {files.Folder}. To transcribe it later, choose 3 in the menu, or run: {command}";
+            var kept = request.Video is { } recorded
+                ? $"The recording of \"{TitleOf(recorded)}\" is in {files.Folder}."
+                : $"The recording is in {files.Folder}. To transcribe it later, choose 3 in the menu, or run: {command}";
             logger.LogInformation("{Message}", kept);
             End(request, stopping, RecorderPhase.Done, new RunOutcome(OutcomeKind.Recorded, 0, kept, TranscriptPath: null, files.Folder, command));
             return 0;
@@ -424,7 +457,79 @@ public sealed class RecordCommand(
         var message = $"The recording failed: {failure.Message.TrimEnd('.')}. {kept}";
         logger.LogError("{Message}", message);
         bookkeeping.Run?.SetEndedBy(RunEndCause.Error);
+        if (sofar.Files is { } files) EndTheVideo(request, files);
         End(request, stopping: null, RecorderPhase.Failed, new RunOutcome(OutcomeKind.RecorderFailed, 1, message, TranscriptPath: null, folder, RetryCommand: null));
+    }
+
+    /// <summary>
+    /// Listens, for a YouTube video's run, for a class that starts and asks it to give way (design 2.5): the run notes that a
+    /// class stopped it, so that its end is not confirmed, and stops as Q pressed twice stops it. Nothing for a class's run,
+    /// which never gives way. A yield that comes once the run is stopping changes nothing.
+    /// </summary>
+    private IDisposable? ListenForTheYield(RecordRequest request)
+    {
+        if (request.Video is null || yield is null) return null;
+
+        return yield.Listen(request.RunId, () =>
+        {
+            if (signals.StopRequested.IsCompleted) return;
+
+            _yielded = true;
+            bookkeeping.Run?.SetEndedBy(RunEndCause.ClassStarted);
+            signals.RequestStop();
+        });
+    }
+
+    /// <summary>
+    /// Step 3b for a YouTube video's run: its source file beside the recording, saying it is being recorded, so that a recorder
+    /// lost mid-video leaves a recording that may be cut short; then its window, which must still be open, or the run fails
+    /// closed with a <see cref="VideoWindowClosedException"/> before anything is recorded.
+    /// </summary>
+    private void BeginTheVideo(VideoRequest request, RecordingFiles files)
+    {
+        WriteSource(files, request, request.Title, VideoEnds.NotFinished, confirmed: false);
+        if (video?.Begin(request) == true) return;
+
+        _videoEnded = VideoEnds.ClosedBeforeItBegan;
+        throw new VideoWindowClosedException();
+    }
+
+    /// <summary>
+    /// Step 7b for a YouTube video's run, once its capture has stopped: its source file says how it ended, from what ended the
+    /// run (see <see cref="VideoEnds"/>), with the title its window showed while it played; and the window is asked to close,
+    /// never waited for, which its batch sees to. Nothing for a class's run.
+    /// </summary>
+    private void EndTheVideo(RecordRequest request, RecordingFiles files)
+    {
+        if (request.Video is not { } videoRequest) return;
+
+        var endedBy = bookkeeping.Run?.Current.EndedBy ?? (_yielded ? RunEndCause.ClassStarted : null);
+        var (ended, confirmed) = _videoEnded is { } own ? (own, false) : VideoEnds.Of(endedBy);
+        WriteSource(files, videoRequest, TitleOf(videoRequest), ended, confirmed);
+        logger.LogInformation("\"{Title}\": {Ended}{Confirmed}", TitleOf(videoRequest), ended,
+            confirmed ? "" : "; it may be cut short, so the same command records it again");
+        video?.Close();
+    }
+
+    /// <summary>
+    /// Writes the source file of <paramref name="request"/>'s video beside <paramref name="files"/>: recorded as it played, its
+    /// title, channel and Chrome's version, and how it ended. One that cannot be written is said, and the run goes on.
+    /// </summary>
+    private void WriteSource(RecordingFiles files, VideoRequest request, string title, string ended, bool confirmed)
+    {
+        var source = new VideoSource(VideoSource.YouTubeKind, request.Url, request.VideoId, title, request.Channel, request.ChannelHandle, ChannelId: null,
+            UploadDate: null, Duration: null, Availability: null, Playlist: null, VideoSource.Recorded, request.Tool, files.StartedUtc ?? time.GetUtcNow(),
+            Confirmed: null, AcceptedBy: null, ended, confirmed);
+        try
+        {
+            VideoSourceFile.Write(files.Source, source);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: the source file names the video and how its recording ended; one that cannot be
+            // written must not cost the recording, which the same command then records again, as it finds no video there.
+            logger.LogWarning("Could not write the video's source file {Path} ({Reason}); the recording goes on", files.Source, ex.Message);
+        }
     }
 
     /// <summary>
@@ -473,10 +578,14 @@ public sealed class RecordCommand(
     /// made (see <see cref="ClassFolders.OpenToContinue"/>), when the request names one and it can still be opened, with
     /// the recording's length on disk, where this run starts, and how long ago its audio was last written;
     /// otherwise a new recording's. A recording that cannot be continued does not cost the class: the run says why and
-    /// records a new one.
+    /// records a new one. A YouTube video's, once its batch has a date folder, is a new recording there (see
+    /// <see cref="ClassFolders.CreateRecordingIn"/>).
     /// </summary>
     private (RecordingFiles Files, TimeSpan Offset, TimeSpan? NotRecorded) OpenFiles(RecordRequest request)
     {
+        // A YouTube video of a batch goes into the batch's date folder, once its first video has made it; a video is never continued.
+        if (request.Video is { Folder: { } batchFolder }) return (folders.CreateRecordingIn(batchFolder, request.Name), TimeSpan.Zero, null);
+
         if (request.ContinueBaseName is { } baseName)
         {
             try
@@ -537,10 +646,23 @@ public sealed class RecordCommand(
     /// The start lines: where the recording goes, or which recording it continues; what it records; the keys (V among them
     /// with your microphone), and what closing the window does; the lid; and, with --minutes, when it stops by itself, by
     /// the local time of day. The lines about your microphone itself, from the privacy line to the warnings, come from the
-    /// checks' first look, right after these (see <see cref="RecordingMonitor"/>).
+    /// checks' first look, right after these (see <see cref="RecordingMonitor"/>). A YouTube video's run says which video it
+    /// records, where, and that Gulzar plays it in its window, with its keys.
     /// </summary>
     private void LogTheStart(RecordRequest request, RecordingFiles files, TimeSpan offset)
     {
+        if (request.Video is { } videoRequest)
+        {
+            logger.LogInformation("Recording the YouTube video \"{Title}\" ({Position} of {Count}) as it plays in ClassScribe's video window, into {Folder}",
+                videoRequest.Title, videoRequest.Position, videoRequest.Count, files.Folder);
+            logger.LogInformation(
+                "Press play in the video window. The recording stops when the video ends or its window is closed; Q twice stops it sooner, P pauses or resumes, M marks a moment. {Closing}",
+                bookkeeping.Home == RunHome.InWindow
+                    ? "If this window is closed instead, the recording ends and the audio so far is kept"
+                    : "Closing a window that shows this recording does not stop it");
+            return;
+        }
+
         if (offset > TimeSpan.Zero)
             logger.LogInformation("Continuing \"{Name}\" as its next part ({BaseName}, {Length} recorded so far), in {Folder}", files.Name, files.BaseName, Durations.Format(offset), files.Folder);
         else
@@ -583,6 +705,9 @@ public sealed class RecordCommand(
         ClassSource.Device device => $"the output device \"{device.NamePart}\"",
         _ => "the device the class plays on"
     };
+
+    /// <summary>A YouTube video's title: as its window showed it while it played, or as its request names it.</summary>
+    private string TitleOf(VideoRequest request) => video?.PlayedTitle ?? request.Title;
 
     /// <summary>True when the run's settings hold an ElevenLabs API key, which only ELEVENLABS_API_KEY sets.</summary>
     private bool HasKey() => !string.IsNullOrWhiteSpace(elevenLabs.Value.ApiKey);

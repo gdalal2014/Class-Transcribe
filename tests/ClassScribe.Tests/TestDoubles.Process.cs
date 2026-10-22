@@ -12,7 +12,10 @@ public enum FakeLaunchKind
     Recorder,
 
     /// <summary>The alert window of a run (<see cref="IProcessStarter.StartAlertWindow"/>).</summary>
-    AlertWindow
+    AlertWindow,
+
+    /// <summary>Chrome, for a YouTube video's window (<see cref="IProcessStarter.StartBrowser"/>).</summary>
+    Browser
 }
 
 /// <summary>
@@ -47,6 +50,15 @@ public sealed class FakeLaunch
 
     /// <summary>Which process was asked for.</summary>
     public FakeLaunchKind Kind { get; }
+
+    /// <summary>The program a browser was asked to start from; null for ClassScribe's own processes.</summary>
+    public string? Program { get; init; }
+
+    /// <summary>A browser's arguments, in order; empty for ClassScribe's own processes.</summary>
+    public IReadOnlyList<string> Arguments { get; init; } = [];
+
+    /// <summary>A browser's working folder; null for ClassScribe's own processes, which run in ClassScribe's own folder.</summary>
+    public string? WorkingFolder { get; init; }
 
     /// <summary>The run it was asked for.</summary>
     public string RunId { get; }
@@ -129,6 +141,39 @@ public sealed class FakeProcessStarter(TimeProvider? time = null) : IProcessStar
 
     /// <inheritdoc />
     public StartedProcess StartAlertWindow(string runId) => Start(FakeLaunchKind.AlertWindow, runId, breakaway: false);
+
+    /// <summary>The browsers that started, in order.</summary>
+    public IReadOnlyList<FakeLaunch> Browsers => [.. Launches.Where(launch => launch.Kind == FakeLaunchKind.Browser && launch.Started)];
+
+    /// <summary>Windows' error to refuse every browser with, such as 2 (Chrome is gone); null to start them. The other starts are not touched.</summary>
+    public int? RefuseBrowsersWith { get; set; }
+
+    /// <summary>
+    /// The exit code every browser started from now on has already ended with, as a Chrome that handed its window to one already
+    /// open and ended; null to let them run until the test ends them.
+    /// </summary>
+    public int? BrowsersEndAtOnceWith { get; set; }
+
+    /// <inheritdoc />
+    public StartedProcess StartBrowser(string program, IReadOnlyList<string> arguments, string workingFolder)
+    {
+        FakeLaunch launch;
+        lock (_gate)
+        {
+            launch = RefuseBrowsersWith is { } error
+                ? new FakeLaunch(FakeLaunchKind.Browser, "", breakaway: true, error) { Program = program, Arguments = [.. arguments], WorkingFolder = workingFolder }
+                : new FakeLaunch(FakeLaunchKind.Browser, "", breakaway: true, _nextProcessId++, _time.GetUtcNow(), BrowsersEndAtOnceWith)
+                {
+                    Program = program, Arguments = [.. arguments], WorkingFolder = workingFolder
+                };
+            _launches.Add(launch);
+        }
+
+        if (RefuseBrowsersWith is { } refused) throw StartRefusal.For(StartRefusal.Browser, refused);
+
+        OnStart?.Invoke(launch);
+        return launch.Process!;
+    }
 
     /// <summary>Notes the start, then refuses it as Windows would, or starts a pretend process.</summary>
     private StartedProcess Start(FakeLaunchKind kind, string runId, bool breakaway)
@@ -249,15 +294,40 @@ internal sealed class FakeProcessCreationApi : IProcessCreationApi
     /// <summary>Windows' error to refuse every launch with from now on; 0 starts them.</summary>
     public int Refusal { get; set; }
 
+    /// <summary>Windows' error for each launch, from the launch itself, such as breakaway refused by a job; null leaves it to <see cref="Refusal"/>.</summary>
+    public Func<ProcessLaunch, int>? RefusalFor { get; set; }
+
     /// <summary>The process handed back for each launch Windows starts: process 4321, running, unless the test says otherwise.</summary>
     public StartedProcess Next { get; set; } = new(4321, new DateTimeOffset(2026, 10, 16, 23, 0, 2, TimeSpan.Zero), () => null);
+
+    /// <summary>
+    /// Plays the process as each launch Windows starts is handed back, while the launch's handles are still open: a tool's,
+    /// say, writing its lines into the standard handles it was given (see <see cref="WriteTo"/>).
+    /// </summary>
+    public Action<ProcessLaunch>? OnStart { get; set; }
+
+    /// <summary>The environment block, standard handles and job of each tool launch, as they were when Windows was given them.</summary>
+    public IReadOnlyList<(IReadOnlyDictionary<string, string>? Environment, bool HadHandles, bool HadJob)> ToolParts
+    {
+        get { lock (_gate) return [.. _launches.Select(launch => (launch.Environment, launch.Handles is not null, launch.Job is not null))]; }
+    }
 
     /// <inheritdoc />
     public StartedProcess? Start(ProcessLaunch launch, out int error)
     {
         lock (_gate) _launches.Add(launch);
-        error = Refusal;
-        return error == 0 ? Next : null;
+        error = RefusalFor?.Invoke(launch) ?? Refusal;
+        if (error != 0) return null;
+
+        OnStart?.Invoke(launch);
+        return Next;
+    }
+
+    /// <summary>Writes <paramref name="text"/> as UTF-8 into <paramref name="handle"/>, a write end of a pipe a tool's launch hands the tool, as the tool would.</summary>
+    public static void WriteTo(SafeHandle handle, string text)
+    {
+        using var stream = new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(handle.DangerousGetHandle(), ownsHandle: false), FileAccess.Write, bufferSize: 0);
+        stream.Write(System.Text.Encoding.UTF8.GetBytes(text));
     }
 }
 

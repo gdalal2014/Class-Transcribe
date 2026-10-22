@@ -582,4 +582,98 @@ public class ServiceRegistrationTests
 
         Assert.That(exitCode, Is.EqualTo(1));
     }
+
+    /// <summary>
+    /// The YouTube feature is registered in the window's role: its command, menu and batch made in a run's scope, the
+    /// settings of the YouTube section bound (everything of a video's recording to Drive by default), its folders under
+    /// ClassScribe's own folder, and the real runner of yt-dlp, which a test run refuses to run.
+    /// </summary>
+    [Test, Platform("Win")]
+    [SupportedOSPlatform("windows")]
+    public void The_YouTube_feature_is_registered_and_the_real_runner_is_refused_in_tests()
+    {
+        using var app = BuildApp(new() { ["YouTube:MayDownloadChannels:0"] = "@yourchannel" });
+        using var scope = app.Services.CreateScope();
+
+        Assert.That(scope.ServiceProvider.GetRequiredService<YouTubeCommand>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<YouTubeMenu>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<YouTube.DownloadBatch>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<YouTube.IVideoTranscriber>(), Is.InstanceOf<YouTube.ScopedVideoTranscriber>());
+        var youTube = scope.ServiceProvider.GetRequiredService<IOptionsSnapshot<YouTubeOptions>>().Value;
+        Assert.That(youTube.MayDownloadChannels, Is.EqualTo(["@yourchannel"]));
+        Assert.That(youTube.DriveUpload, Is.EqualTo(DriveUploadScope.Everything));
+        Assert.That(app.Services.GetRequiredService<YouTube.YouTubeFolders>().Root, Is.EqualTo(Path.Combine(_runtime.Folder.Root, "youtube")));
+
+        var runner = app.Services.GetRequiredService<YouTube.IToolRunner>();
+        Assert.That(runner, Is.InstanceOf<YouTube.ProcessToolRunner>());
+        Assert.That(async () => await runner.RunAsync(new YouTube.ToolCall(@"C:\Tools\yt-dlp.exe", ["--version"], _folder.Path), null, CancellationToken.None),
+            Throws.InvalidOperationException.With.Message.Contains("FakeToolRunner"));
+    }
+
+    /// <summary>A transcript of a batch is made in a scope of its own, with the workflow, the run files and the usage report of that scope.</summary>
+    [Test]
+    public void A_batchs_transcript_is_made_in_a_scope_of_its_own()
+    {
+        using var app = BuildApp([]);
+        using var first = app.Services.CreateScope();
+        using var second = app.Services.CreateScope();
+
+        var one = first.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>();
+
+        Assert.That(one, Is.SameAs(first.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>()));
+        Assert.That(one, Is.Not.SameAs(second.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>()));
+    }
+
+    /// <summary>
+    /// The record path is registered in the window's role: its batch, the window it opens, the titles' client and Chrome's
+    /// locator in a run's scope; the yield of a video's run, and Windows' windows and processes for a video's window, for the
+    /// process, the real ones refusing a test; the YouTube section's record-path settings bound with their defaults; and the
+    /// playback a run records a video's window through, one per run.
+    /// </summary>
+    [Test, Platform("Win")]
+    [SupportedOSPlatform("windows")]
+    public void The_record_path_is_registered_in_the_window()
+    {
+        using var app = BuildApp([]);
+        using var scope = app.Services.CreateScope();
+        using var other = app.Services.CreateScope();
+        var run = scope.ServiceProvider;
+
+        Assert.That(run.GetRequiredService<YouTube.VideoBatch>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<YouTube.VideoWindow>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<YouTube.OEmbedTitles>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<YouTube.VideoPlayback>(), Is.SameAs(run.GetRequiredService<YouTube.VideoPlayback>()), "one per run");
+        Assert.That(run.GetRequiredService<YouTube.VideoPlayback>(), Is.Not.SameAs(other.ServiceProvider.GetRequiredService<YouTube.VideoPlayback>()));
+        Assert.That(app.Services.GetRequiredService<IVideoYield>(), Is.InstanceOf<WindowsVideoYield>());
+        Assert.That(app.Services.GetRequiredService<IProcessFamily>(), Is.InstanceOf<ProcessFamily>());
+        Assert.That(() => app.Services.GetRequiredService<IVideoWindows>().TitlesOf(Environment.ProcessId), Throws.InvalidOperationException.With.Message.Contains("FakeVideoWindows"));
+        var youTube = run.GetRequiredService<IOptionsSnapshot<YouTubeOptions>>().Value;
+        Assert.That((youTube.BrowserPath, youTube.LongestVideoHours, youTube.OEmbedBaseUrl), Is.EqualTo(("", 4.0, "https://www.youtube.com/")));
+    }
+
+    /// <summary>
+    /// The recorder's role records a video's window: in a run's scope, the run with its playback, and the yield it listens to
+    /// for a class, for the process; what reaches Windows is a stand-in, since resolving the run constructs it.
+    /// </summary>
+    [Test, Platform("Win")]
+    [SupportedOSPlatform("windows")]
+    public void The_recorder_resolves_a_videos_run()
+    {
+        var runId = TestRuns.Id();
+        var time = new ManualTimeProvider(TestRuns.Start);
+        using var log = new RecorderLog(time);
+        using var host = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId) with { Video = YouTubeTestRuns.Video() }, new Dictionary<string, string?>()),
+            "test-key", log, _runtime.Folder, time, recorder =>
+            {
+                ReplaceWindowsWithFakes(recorder, time);
+                recorder.AddSingleton(new RoamingFolder(_folder.File("Roaming")));
+            });
+        using var scope = host.Services.CreateScope();
+        var run = scope.ServiceProvider;
+
+        Assert.That(run.GetRequiredService<IRecordRun>(), Is.InstanceOf<RecordCommand>());
+        Assert.That(run.GetRequiredService<YouTube.VideoPlayback>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<RecordingMonitor>(), Is.Not.Null);
+        Assert.That(host.Services.GetRequiredService<IVideoYield>(), Is.InstanceOf<WindowsVideoYield>());
+    }
 }

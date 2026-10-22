@@ -655,6 +655,60 @@ public class StartupReportTests
         Assert.That(Report().RecordingNow(), Is.Null);
     }
 
+    /// <summary>
+    /// A YouTube video's run is named as the video, never as its course, which a class of that name would be taken for: in the
+    /// header while it records, and while a batch in another window transcribes one, which is said to be there.
+    /// </summary>
+    [Test]
+    public void The_header_names_a_videos_run_as_the_video()
+    {
+        _runtime.Time.Advance(TestRuns.Start.AddMinutes(42).AddSeconds(13) - _runtime.Time.GetUtcNow());
+        WriteRun(WriteRecording("Risala"), change: record => record with { StartedUtc = TestRuns.Start, Request = record.Request with { Video = YouTubeTestRuns.Video() } });
+        _runtime.Processes.Start(TestRuns.ProcessId, TestRuns.ProcessStart);
+        WriteRun(WriteRecording("Risala", TestRuns.Start.AddHours(-2)), RunState.Transcribing, TestRuns.Id(2), record => record with
+        {
+            ProcessId = 5000, Home = RunHome.InWindow, Pipe = null, UploadPercent = 40,
+            Request = record.Request with { Video = YouTubeTestRuns.Video("bcdefghijkl", "The creed, part 2") }
+        });
+        _runtime.Processes.Start(5000, TestRuns.ProcessStart);
+
+        Assert.That(Report().HeaderLines(), Is.EqualTo(new[]
+        {
+            "Recording now: the YouTube video \"The creed, part 1\" since 19:00 (00:42:13). A shows it.",
+            "Being transcribed in another ClassScribe window (process 5000): the YouTube video \"The creed, part 2\" (uploading 40%)."
+        }));
+    }
+
+    /// <summary>A YouTube video's recorder lost while it recorded is reported as the video's recording, never as a class of its course.</summary>
+    [Test]
+    public async Task A_lost_videos_recording_is_reported_as_the_videos()
+    {
+        WriteRun(WriteRecording("Risala"), change: record => record with { Request = record.Request with { Video = YouTubeTestRuns.Video() } });
+
+        await Report().ShowAsync(interactive: false);
+
+        Assert.That(_ui.Screen, Does.Contain("The recording of the YouTube video \"The creed, part 1\" (Risala_2026-10-15_23-00-02Z) ended unexpectedly at about"));
+    }
+
+    /// <summary>
+    /// What came of a YouTube video's run while no window showed it is said of the video, never of a class of its course: at
+    /// the start of the line, its words begin with a capital.
+    /// </summary>
+    [Test]
+    public async Task A_videos_outcome_nobody_saw_is_said_of_the_video()
+    {
+        var files = WriteRecording("Risala");
+        WriteRun(files, RunState.Finished, change: record => record with
+        {
+            Request = record.Request with { Video = YouTubeTestRuns.Video() },
+            Outcome = new RunOutcome(OutcomeKind.Recorded, 0, "Recorded.", null, files.Folder, null)
+        });
+
+        await Report().ShowAsync(interactive: false);
+
+        Assert.That(_ui.Screen, Is.EqualTo($"The YouTube video \"The creed, part 1\" was recorded in the background: {files.Folder}."));
+    }
+
     /// <summary>On the command line, what runs in the background gets one line each, and the command carries on.</summary>
     [Test]
     public async Task On_the_command_line_what_runs_in_the_background_gets_one_line()
@@ -810,5 +864,40 @@ public class StartupReportTests
         Assert.That(_ui.KeyReads, Is.Zero);
         Assert.That(Report().HeaderLines(), Is.Empty);
         Assert.That(Report().RecordingNow(), Is.Null);
+    }
+
+    /// <summary>
+    /// A YouTube video's run that ended unexpectedly is never offered to be continued: its recording is reported with T and
+    /// F alone, whatever its files say.
+    /// </summary>
+    [Test]
+    public async Task A_videos_run_is_reported_without_C()
+    {
+        var files = WriteRecording();
+        WriteRun(files, change: record => record with { Request = record.Request with { Video = YouTubeTestRuns.Video() } });
+        _ui.Type('\r');
+
+        await Report().ShowAsync(interactive: true);
+
+        Assert.That(_ui.Screen, Does.Contain("T  transcribe what was recorded"));
+        Assert.That(_ui.Screen, Does.Not.Contain("C  continue"));
+    }
+
+    /// <summary>
+    /// A class that ended unexpectedly is still offered C when a YouTube video of its course was recorded after it: the
+    /// video is passed over, and the class is the newest recording of its name to continue.
+    /// </summary>
+    [Test]
+    public async Task A_video_recorded_after_a_class_does_not_keep_C_from_the_class()
+    {
+        var lesson = WriteRecording();
+        WriteRun(lesson);
+        var video = WriteRecording(startedUtc: TestRuns.Start.AddMinutes(48), lastWrittenUtc: LastAudio.AddMinutes(1));
+        YouTube.VideoSourceFile.Write(video.Source, VideoSourceFileTests.Downloaded());
+        _ui.Type('\r');
+
+        await Report().ShowAsync(interactive: true);
+
+        Assert.That(_ui.Screen, Does.Contain("C  continue it now as its next part"));
     }
 }

@@ -56,6 +56,18 @@ public static class CommandLine
         Command(processPath, appFolder, path is null ? "drive upload" : $"drive upload {Quote(path)}");
 
     /// <summary>
+    /// The PowerShell command that records <paramref name="links"/> as they play with this very program (the youtube command
+    /// without --download), into the course <paramref name="name"/> under <paramref name="outputRoot"/>, going ahead after the
+    /// plan (--yes): for a video the download path may not take, and for the rest of a video stopped at its longest.
+    /// </summary>
+    public static string YouTube(IEnumerable<string> links, string name, string outputRoot) =>
+        YouTube(links, name, outputRoot, Environment.ProcessPath, AppContext.BaseDirectory);
+
+    /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
+    public static string YouTube(IEnumerable<string> links, string name, string outputRoot, string? processPath, string appFolder) =>
+        Command(processPath, appFolder, $"youtube {string.Join(' ', links.Select(Quote))} --name {Quote(name)} --output {Quote(outputRoot)} --yes");
+
+    /// <summary>
     /// The PowerShell command that continues, as its next part, the recording <paramref name="request"/>'s run made, with
     /// this very program: record, or record-only for a run that was not to be transcribed, with the run's name, its source
     /// (and, from phase 3, its microphone, with the app it was chosen to follow for the run), its recordings folder,

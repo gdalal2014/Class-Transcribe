@@ -81,4 +81,17 @@ public class RegistryValuesTests
 
         Assert.That(_registry.ReadString(EnvironmentKey.ToUpperInvariant(), "temp"), Is.EqualTo(temp));
     }
+
+    /// <summary>
+    /// A value under HKEY_LOCAL_MACHINE that every Windows has reads as its text: the build number, where yt-dlp's tools are
+    /// looked for on the machine's PATH beside it. Nothing is written.
+    /// </summary>
+    [Test, Category("WindowsRegistry")]
+    public void A_local_machine_value_reads_as_its_text()
+    {
+        var build = _registry.ReadLocalMachineString(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "CurrentBuild");
+
+        Assert.That(build, Does.Match("^[0-9]+$"));
+        Assert.That(_registry.ReadLocalMachineString($@"SOFTWARE\ClassScribe.Tests\Missing-{Guid.NewGuid():N}", "Path"), Is.Null);
+    }
 }

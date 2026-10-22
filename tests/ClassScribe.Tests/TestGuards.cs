@@ -10,17 +10,22 @@ namespace ClassScribe.Tests;
 /// Nor may a test reach the real %LOCALAPPDATA%\ClassScribe, which holds the run files and logs of his real classes and the
 /// queue for Google Drive. So the switches <see cref="RoamingFolder.RefuseTheRealFolderSwitch"/> and
 /// <see cref="RuntimeFolder.RefuseTheRealFolderSwitch"/> are turned on, and a test that asks for either real folder fails at
-/// once, naming what to register instead.
+/// once, naming what to register instead. Nor may a test run the real yt-dlp, Deno or FFmpeg, which would reach YouTube
+/// from his connection: <see cref="YouTube.YouTubeGuards.RefuseTheRealThingsSwitch"/> is turned on too.
 /// </summary>
 [SetUpFixture]
 public sealed class TestGuards
 {
-    /// <summary>Turns on the switches that keep every test out of the real %APPDATA%\ClassScribe and %LOCALAPPDATA%\ClassScribe.</summary>
+    /// <summary>
+    /// Turns on the switches that keep every test out of the real %APPDATA%\ClassScribe and %LOCALAPPDATA%\ClassScribe, and
+    /// away from the real tools of the YouTube feature.
+    /// </summary>
     [OneTimeSetUp]
     public void KeepOutOfTheRealFolders()
     {
         AppContext.SetSwitch(RoamingFolder.RefuseTheRealFolderSwitch, true);
         AppContext.SetSwitch(RuntimeFolder.RefuseTheRealFolderSwitch, true);
+        AppContext.SetSwitch(YouTube.YouTubeGuards.RefuseTheRealThingsSwitch, true);
     }
 }
 

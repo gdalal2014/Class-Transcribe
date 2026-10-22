@@ -200,4 +200,70 @@ public class StopSignalTests
         Assert.Throws<ArgumentException>(() => StopSignal.Listen(runId, () => { }, _log));
         Assert.Throws<ArgumentException>(() => StopSignal.TrySet(runId, _log));
     }
+
+    /// <summary>
+    /// The yield event of a video's run (design 2.5) is named after the run in this session too, beside its stop event: a
+    /// class asks a video's recording to give way through it.
+    /// </summary>
+    [Test]
+    public void The_yield_event_is_named_after_the_run_beside_its_stop_event()
+    {
+        Assert.That(StopSignal.YieldNameFor(_runId), Is.EqualTo($@"Local\ClassScribe.Yield.{_runId}"));
+        Assert.Throws<ArgumentException>(() => StopSignal.YieldNameFor("not-a-run"));
+    }
+
+    /// <summary>A yield asked for reaches the video's run listening for it, and says why, at Information.</summary>
+    [Test]
+    public void A_yield_asked_for_reaches_the_run_listening_for_it()
+    {
+        using var heard = new ManualResetEventSlim();
+        using var signal = StopSignal.ListenForYield(_runId, heard.Set, _log);
+
+        Assert.That(StopSignal.TrySetYield(_runId, _log), Is.True);
+        Assert.That(heard.Wait(TimeSpan.FromSeconds(5)), Is.True);
+        Assert.That(_log.Messages, Has.Some.EqualTo("A class is starting, so this video's recording gives way to it"));
+        Assert.That(_log.Problems, Is.Empty);
+    }
+
+    /// <summary>The yield and the stop are two events: either set leaves the other's listener unheard.</summary>
+    [Test]
+    public async Task The_yield_and_the_stop_are_two_events()
+    {
+        var stops = 0;
+        var yields = 0;
+        using var stop = StopSignal.Listen(_runId, () => Interlocked.Increment(ref stops), _log);
+        using var yielded = StopSignal.ListenForYield(_runId, () => Interlocked.Increment(ref yields), _log);
+
+        StopSignal.TrySetYield(_runId, _log);
+        await Wait.UntilAsync(() => Volatile.Read(ref yields) == 1);
+        await Task.Delay(100);
+        Assert.That(Volatile.Read(ref stops), Is.Zero);
+
+        StopSignal.TrySet(_runId, _log);
+        await Wait.UntilAsync(() => Volatile.Read(ref stops) == 1);
+        Assert.That(Volatile.Read(ref yields), Is.EqualTo(1));
+    }
+
+    /// <summary>A yield asked of a run nobody listens for reaches nobody: a class's run, or a video's that has ended.</summary>
+    [Test]
+    public void A_yield_asked_of_a_run_nobody_listens_for_reaches_nobody()
+    {
+        Assert.That(StopSignal.TrySetYield(_runId, _log), Is.False);
+    }
+
+    /// <summary>The real yield of the app goes through the same events: what it listens for, it hears when it is asked.</summary>
+    [Test]
+    public void The_apps_yield_listens_and_asks_through_the_events()
+    {
+        var yield = new WindowsVideoYield(new RecordingLogger<WindowsVideoYield>());
+        using var heard = new ManualResetEventSlim();
+
+        using (yield.Listen(_runId, heard.Set))
+        {
+            Assert.That(yield.Ask(_runId), Is.True);
+            Assert.That(heard.Wait(TimeSpan.FromSeconds(5)), Is.True);
+        }
+
+        Assert.That(yield.Ask(RunIds.New(DateTimeOffset.UtcNow)), Is.False, "no run listens for a fresh id");
+    }
 }

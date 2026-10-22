@@ -68,6 +68,7 @@ public partial class RecorderHostTests
         _runFileExistedWhenThePipeWasMade = null;
         _google = null;
         _store = null;
+        _videoWindows = new FakeVideoWindows();
     }
 
     /// <summary>Closes the windows and deletes the folders; a file left open fails the deletion, which is the point.</summary>
@@ -106,6 +107,8 @@ public partial class RecorderHostTests
             services.Replace(ServiceDescriptor.Transient<IElevenLabsAccount>(_ => _account));
             services.Replace(ServiceDescriptor.Singleton(Mocks.AudioPreparer().Object));
             services.Replace(ServiceDescriptor.Singleton(_desktop.Object));
+            services.Replace(ServiceDescriptor.Singleton<IVideoWindows>(_videoWindows));
+            services.Replace(ServiceDescriptor.Singleton<IProcessFamily>(new ProcessFamily(new FakeProcessTree().Add(Environment.ProcessId, 0, "testhost.exe", ThisProcessStarted))));
             services.Replace(ServiceDescriptor.Singleton(provider => _server = new RecorderServer(
                 provider.GetRequiredService<RecorderLog>(), provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<ILogger<RecorderServer>>())
             {

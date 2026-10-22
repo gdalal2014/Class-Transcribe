@@ -1200,6 +1200,9 @@ public sealed class GoogleWorld : IDisposable
     /// <summary>The Drive settings, as the file would give them.</summary>
     public TestOptions<DriveOptions> Options { get; } = TestOptions.Create(new DriveOptions());
 
+    /// <summary>The YouTube settings, as the file would give them: what of a video's recording goes up among them.</summary>
+    public TestOptions<YouTubeOptions> YouTube { get; } = TestOptions.Create(new YouTubeOptions());
+
     /// <summary>The access tokens of this process.</summary>
     public GoogleTokenCache Cache { get; } = new();
 
@@ -1302,7 +1305,7 @@ public sealed class GoogleWorld : IDisposable
     private RecorderLog? _recorderLog;
 
     /// <summary>The upload of one recording.</summary>
-    public RecordingUpload RecordingUpload() => new(Drive(), Folders(), Resumable(), Retry(), Manifests(), Runtime.Journal, RecorderLog, Options, Time, Log<RecordingUpload>());
+    public RecordingUpload RecordingUpload() => new(Drive(), Folders(), Resumable(), Retry(), Manifests(), Runtime.Journal, RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
 
     /// <summary>The upload lock, in the temporary ClassScribe folder.</summary>
     public DriveUploadLock Lock() => new(Runtime.Folder, Log<DriveUploadLock>());

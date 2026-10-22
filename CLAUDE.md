@@ -16,22 +16,74 @@ is saved (record-only: once its files are closed), from the recorder or the wind
 a tree that mirrors the laptop's (`My Drive > ClassScribe > Mantiq > 2026-10-17`); what could not go
 up waits in a queue for the next class or `drive upload` / menu choice 9 > U; each file is checked
 against Drive's MD5; and it frees room on the laptop by deleting audio Drive has (`drive free-space`,
-9 > L), never touching Drive. `README.md` is the user guide. The full background, design decisions
+9 > L), never touching Drive. It also takes YouTube videos (`youtube`, menu choice Y), a batch at a
+time in the window, each made an ordinary recording of a course, all of a batch in one date folder,
+with a `<base>.source.json`, then transcribed: by default recorded as it plays, attended, in a Chrome
+window of ClassScribe's own (`--user-data-dir=<RuntimeFolder>\video-browser`, an `--app` window,
+recorded through process loopback on its browser process, one run per video through the starter);
+or, with `--download` (D), downloaded with yt-dlp, for videos Gulzar may download and never his
+course's. `README.md` is the user guide. The full background, design decisions
 and history are in `docs/HANDOFF.md` (kept out of git); read it before larger changes. It has not
 been brought up to date with the review fix round, with increment 1 (settings read before each run,
 rebuild and the transcribe guards, the growing upload limit, the arrival watch, keep-awake, the
 device check's COM fix), with increment 2 (the process split, the command line, the alerts, continue
 and the report at the start), with increment 3 (the microphone, the QPC timeline, the microphone
-check), with the cost line and the Bluetooth warning, with the course and date folders, or with
-Google Drive (sign-in, uploads, the queue, free space) yet, section 6.4 above all, so where it
+check), with the cost line and the Bluetooth warning, with the course and date folders, with
+Google Drive (sign-in, uploads, the queue, free space), or with YouTube videos yet, section 6.4 above all, so where it
 disagrees with the code or with this file, the code wins. Google Drive's design is `drive.md`
 (Claude's design notes of 17 October 2026, outside the repo); its section 2.4 tree
-(`ClassScribe > <recording name>`) was replaced by the course > date mirror above.
+(`ClassScribe > <recording name>`) was replaced by the course > date mirror above. YouTube's design is
+`youtube.md` (Claude's design notes of 18 October 2026, outside the repo), built in two slices
+(`youtube-download`, then `youtube-record`) with Gulzar's answers to its section 10, which override
+it where they differ: the download path built as designed (1 A); attended playback (2 A); a course
+video's link may be recorded as it plays, never downloaded, with no course-channel refusal on the
+record path (3 B); one date folder per batch (4 A); a download keeps YouTube's own sample rate, mono
+(5 B, about 318 MB an hour at 44.1 kHz; the upload copy is 16 kHz as always); `YouTube:DriveUpload`
+`Everything` by default (6 B); `--allow-unlisted`, with the safeguard below (7 B); a download's
+positions link to YouTube (8 A); his YouTube Premium sign-in lives in the video window's profile,
+which is a secret (9 B); winget's stable yt-dlp, warned at 90 days, `--update-to nightly` as the
+advice after a format error (10 A).
 
 ## Ground rules
 
-- Never add anything that downloads from the course website or gets around its protection.
-  ClassScribe only records audio the user is already playing. Keep it that way.
+- ClassScribe records only audio the user is playing: a class on its page, or a YouTube video he plays
+  in ClassScribe's own Chrome window (`youtube` without `--download`), which ClassScribe opens when he
+  asks and never plays by itself (no autoplay switch, no next video without his key). Never add
+  anything that downloads from the course website, takes links or media out of its pages, or gets
+  around its protection. The course's own videos, unlisted YouTube videos shown on the course page
+  included, are only ever recorded as they play (from their YouTube link in ClassScribe's window, or
+  on the course page with `record --app chrome`), never downloaded. The one download is
+  `youtube --download`: yt-dlp on YouTube links Gulzar gives it, only for videos he uploaded or whose
+  owner allows him to download them, as his informed choice (YouTube's terms allow downloading only
+  where YouTube offers it, or with written permission from YouTube and the rights holders; the README
+  says so). It is chosen each time and confirmed for each batch (`YES`, or `--yes` after the plan), and
+  for each video that is not public: his word in the menu, its channel in `YouTube:MayDownloadChannels`,
+  or `--allow-unlisted`, which takes only videos yt-dlp says are unlisted, of a channel its read names,
+  is refused (exit 2) while `YouTube:CourseChannels` is empty, never overrides another refusal of the
+  guard, and is kept in the video's `.source.json` as `"acceptedBy": "allow-unlisted"`. It never signs
+  in and never gives yt-dlp cookies, a browser's data or credentials, for any profile (no `--cookies`
+  or `--cookies-from-browser`; `YtDlpArguments.ProblemWith` refuses them and every other option of
+  `Forbidden`, and `FakeToolRunner` checks every list a test builds); and it refuses embedded players'
+  links, watch links copied from an embedded player's YouTube button, links that are not YouTube's,
+  and the channels in `YouTube:CourseChannels` (while that names any, a video whose read names no
+  channel needs his word). Keep it that way.
+- The video window's profile, `<RuntimeFolder>\video-browser`, holds Gulzar's YouTube Premium sign-in
+  (Google session cookies) once he signs in there: a secret. ClassScribe never reads, lists, copies,
+  uploads, deletes or logs anything in it, and never makes it (Chrome does, on first use); it only
+  names it to Chrome as `--user-data-dir`, keeps that command line out of every log (the browser's
+  start logs the program and flags alone), and runs Chrome in `<RuntimeFolder>\youtube`, never in the
+  profile; yt-dlp is never given it (`YtDlpArguments.ProblemWith` refuses any argument that names
+  it); nothing of it goes to Google Drive or a `.log`; and no test ever makes a real one.
+- A real video window plays YouTube on this laptop, and a real download reaches YouTube from his
+  connection (and its transcript is billed): ask before either. Tests never start Chrome, yt-dlp,
+  Deno or FFmpeg, never touch a real window, and never reach YouTube: `TestGuards` turns on
+  `YouTubeGuards.RefuseTheRealThingsSwitch`, under which `ProcessToolRunner` made by DI refuses every
+  tool (naming `FakeToolRunner`), `NativeProcessCreationApi`'s tool and browser path refuses any
+  program but Windows' own `cmd.exe` (which `ProcessToolRunnerTests` start), `ChromeWindows` refuses
+  `TitlesOf` and `Close` (naming `FakeVideoWindows`), and `YouTubeHostGuard` on the oEmbed client
+  refuses YouTube's hosts (naming `StubHttpHandler` at a stub address). Manual dry runs can point
+  `YouTube__OEmbedBaseUrl` and `ElevenLabs__BaseUrl` at a local stub and `YouTube:YtDlpPath` at a
+  stand-in; Chrome cannot be stubbed, so a record path's dry run plays a real page.
 - The ElevenLabs API key lives only in the `ELEVENLABS_API_KEY` environment variable (user
   scope). Never print, log, write to a file or commit it, and never put it in `appsettings.json`
   or tests. To check it, print only whether it is set:
@@ -84,7 +136,9 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   `%LOCALAPPDATA%\ClassScribe` holds the run files and logs of real classes now, and
   `%USERPROFILE%\ClassScribe` Gulzar's real class with his PDFs and notes beside it, so list both
   folders' files (names, sizes and times) before and after a full run and compare the lists, rather
-  than expecting them empty; a test that wrote there is a bug.
+  than expecting them empty; a test that wrote there is a bug. Leave the inside of `video-browser` out
+  of the listing once it exists (it holds his Google sign-in), and check that no `youtube` or
+  `video-browser` folder appeared there during the run.
 
 ## Conventions
 
@@ -100,10 +154,18 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   the keep-alive connect callback, and `RemoveAllLoggers()` so Microsoft.Extensions.Http never logs
   their requests. Every call returns `HttpResponseMessage`; the bearer is passed per call as
   `[Header("Authorization")]` ("Bearer " + token, as the ElevenLabs key is), so `DriveClient` can
-  renew a refused token (401) once and repeat the call.
+  renew a refused token (401) once and repeat the call. YouTube's is `IYouTubeOEmbedApi` (`YouTubeJson`,
+  the record path's titles, `GET /oembed?url=<watch link>&format=json`), registered in
+  `YouTube/YouTubeServices.cs` with the base address from `YouTube:OEmbedBaseUrl` read when the client
+  is made, `HttpClient.Timeout` off (`OEmbedTitles` gives each read 10 s of its own and starts them at
+  least a second apart), a `SocketsHttpHandler` with `UseCookies = false`, `YouTubeHostGuard`, and
+  `RemoveAllLoggers()`; `OEmbedTitles.RefitSettings()` lets a failed connection come through as its own
+  `HttpRequestException`. It returns `HttpResponseMessage`, so a video YouTube does not answer for is
+  no title, never thrown. yt-dlp is a program, not an HTTP API: it runs through `IToolRunner`.
 - No `ArgumentNullException` guards on DI-injected parameters.
 - Registration: each area registers its services in its own `<Area>Services.cs` (`SettingsServices`,
-  `StorageServices`, `AudioServices`, `TranscriptionServices`, `DriveServices`, `DesktopServices`, `CommandServices`,
+  `StorageServices`, `AudioServices`, `TranscriptionServices`, `DriveServices`, `YouTube/YouTubeServices`
+  (`AddYouTube`, after `AddDrive`), `DesktopServices`, `CommandServices`,
   and last `Commands/WindowServices.cs`, the window's side of a run in the background, which
   replaces the stand-in `NoStartupReport`), called from `ServiceCollectionExtensions.AddClassScribe`;
   `AppHost` adds the settings reload (`SettingsServices.AddSettingsReload`), since it builds the
@@ -124,6 +186,16 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   enums by name, names each class source by `kind`, and passes over unknown fields; a field added to
   `RunRecord`, `RecorderState` or `RunOutcome`, which also travel on the link, needs a default, or
   older windows cannot read it, and anything else needs a new `LinkProtocol.Version`.
+  `RecordRequest.Video` (`VideoRequest`: link, ID, title, channel, how obtained, the batch's folder,
+  the browser's process id and start time, position, count, batch id, and the defaulted
+  `ChannelHandle`, `Tool`, `StartSeconds`) is last, defaults to null and is written only when set
+  (`[JsonIgnore(WhenWritingNull)]`), so a class's run and request files are byte for byte as before;
+  a run with it is a video's (`RunView.IsVideo`) and never a class. Its end causes are new
+  `RunEndCause` strings (`VideoClosed`, `VideoEnded`, `ClassStarted`, `VideoSilent`, `NothingPlayed`,
+  `VideoLimit`), and its class source is `ClassSource.App("chrome")`, so no new source kind or stored
+  enum value reaches a run file. `StartOrigin.VideoBatch` (never stored) is a batch's start of one of
+  its videos: a new recording without a question, its run shown as the batch's own, another run
+  explained, never shown.
 - The link (`Link/`): one named pipe per run, `ClassScribe-<run id>` (`LinkProtocol.PipeNameFor`),
   `CurrentUserOnly`, the first instance, up to 4 windows, lines of UTF-8 JSON of at most 64 KB; the
   server never logs, waits or raises events inside its `RecorderLog.Written` handler, and drops a
@@ -137,7 +209,10 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   (`ClassFolders`, `TranscriptFormatter`, `SourceChoice`, the Refit client's `ConfigureHttpClient`);
   per-run services, scoped or transient (the commands, `TranscriptionWorkflow`, `ElevenLabsClient`,
   `RecordingSession`, `TrackSetFactory`, `MicrophoneAdvice`, `MicrophoneMenu`, `RecordingMonitor`,
-  `ElevenLabsAccount`), take `IOptionsSnapshot<T>`, read once in the run's scope. Never `IOptions<T>`
+  `ElevenLabsAccount`, and for YouTube `YouTubeCommand`, `YouTubeMenu`, `YouTubeBatch`, `DownloadBatch`,
+  `VideoBatch`, `DownloadedAudio` and `RecordingUpload`), take `IOptionsSnapshot<T>`, read once in the
+  run's scope; YouTube's singletons (`ToolLocator`, `BrowserLocator`, the oEmbed client's
+  `ConfigureHttpClient`) read `IOptionsMonitor<YouTubeOptions>.CurrentValue`. Never `IOptions<T>`
   for ClassScribe's sections: it keeps the first value for the life of the process, so an edit
   would never reach that part (`No_part_keeps_the_settings_it_read_first_for_the_whole_session`
   fails on one).
@@ -169,7 +244,28 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   leaves out advice whose registry value cannot be read, and the readers (`WasapiMicrophoneSessions`,
   `MicrophoneUsageRecord`, `WasapiMicrophoneProvider`) answer a failed read with a listing that says
   so, four times a second. `TrackSet.Flush`'s catch is not one: it keeps the first failure, flushes
-  the other track and rethrows it as it was.
+  the other track and rethrows it as it was. YouTube's, all phrased: `YouTubeLock.TryTake` (a lock held
+  for a moment is tried again; held after every try is the answer) and `ReadHolder`; `ToolLocator`'s
+  PATH read and `BrowserLocator`'s App Paths read (a registry that cannot be read is passed over);
+  `YtDlpCheck.VersionOfAsync` (a tool that will not start is a problem said in words); `DownloadBatch`
+  (a playlist's listing or a video's information that cannot be read leaves it out; a video whose audio
+  cannot be made a recording is that video's alone; a yt-dlp Windows will not start is a failure that
+  stops the downloads; a staging folder that cannot be deleted waits for the prune);
+  `DownloadedAudio.CleanUp`'s two and `ReadNote` (housekeeping never holds up a batch); `VideoIndex.Read`'s
+  two (a folder or source file that cannot be read means that video is fetched again); `BatchTranscripts`
+  (ElevenLabs' 401, 403, 402 or 429 stops the transcripts, any other failure is that recording's);
+  `BatchKeys.Dispose`; `TranscriptionRuns.Begin` (a run file that cannot be written is warned about);
+  `OEmbedTitles.ReadAsync`'s two (its own limit, a failed connection) and `Parse` (an answer in another
+  shape): only those, so a forgotten stub fails a test through `YouTubeHostGuard` rather than becoming a
+  missing title; `VideoWindow.OpenAsync` (a window that will not open is that video's); `VideoBatch`'s
+  `RunAsync` (Ctrl+C becomes exit 130), `RecordAsync` (a run in this window that failed is that video's,
+  its outcome read from its run file) and `ReadSource`; `WindowsVideoYield.Listen` (an event of that
+  name planted by something else: Q twice still stops the video); `RecordCommand.WriteSource` (a source
+  file that cannot be written must not cost the recording); `ClassFolders.VideoOf` and
+  `TranscriptionWorkflow.VideoOf` (a source file that cannot be read leaves the recording described,
+  and its paid answer laid out, as a class's); `DriveRoom.ReadAsync` (Drive's room only adds a line to
+  the plan); and `CommandLineTree.YouTubeProblems` (a `--list` file that cannot be read is a mistake of
+  the command line, said with the others).
 - Windows audio objects: the device check (`WasapiLoopbackCaptureProvider`'s two listings, once a
   second for the whole class) goes through ClassScribe's own declarations in
   `Audio/Windows/CoreAudioInterop.cs` and releases every COM object it receives in a `finally` block
@@ -276,6 +372,20 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   `RecorderSoakTests` is the accelerated soak of design 5.5 through the real `TrackSetFactory`, watch
   and gate on `ManualTimeProvider`: twelve simulated minutes run with the suite, and the four-hour
   case is `Explicit` (it writes about a gigabyte of audio to a temporary folder and takes minutes).
+  YouTube's fakes: `TestDoubles.YouTube.cs` (`YouTubeTestRuns`, `FakeFileProbe` with `Versions`,
+  `FakeVideo`, `FakeToolRunner`, which plays yt-dlp per call, writes the files it would (the info JSON,
+  the staged WAV, `done.txt`) and checks every argument list with `YtDlpArguments.ProblemWith`,
+  `InstantPace`, `FakeVideoTranscriber`, `FakeDriveRoom` and `YouTubeWorld` for the download path),
+  `TestDoubles.VideoWindows.cs` (`FakeVideoWindows` with `FakeCloseAnswer`, `FakeVideoBrowsers`, which
+  wires `FakeProcessStarter`'s browsers to `FakeProcessLiveness` and the windows, and `FakeVideoYield`)
+  and `TestDoubles.VideoBatch.cs` (`PlayedVideoRun`, `VideoWorld` for the record path).
+  `FakeProcessStarter` gains `StartBrowser`, `Browsers`, `RefuseBrowsersWith`, `BrowsersEndAtOnceWith`
+  and `FakeLaunch.Program`, `Arguments` and `WorkingFolder`; `FakeProcessCreationApi` gains `OnStart`,
+  `ToolParts`, `RefusalFor` and `WriteTo`; `FakeRegistryValues` gains `SetLocalMachine`;
+  `FakeRecording.Track` takes `heardSound`; `GoogleWorld` has the YouTube options. A test of the
+  YouTube feature gives a `TestRuntime` (every YouTube folder derives from `RuntimeFolder`), the fakes
+  above, `StubHttpHandler` for oEmbed at a stub address, and never the real `ToolLocator`'s or
+  `BrowserLocator`'s folders (their `LocalAppData`, `ProgramFiles` and the like are given).
 - Keep `README.md` in step when behaviour changes, including its troubleshooting rows when a log
   message is added or changed. The lines the README quotes for the cost and the Bluetooth warning are
   worded in `TranscriptionCost.Describe`, `UsageReport` (`RefusedAdvice` is a public const),
@@ -290,7 +400,23 @@ disagrees with the code or with this file, the code wins. Google Drive's design 
   `TranscribeCommand.SayAudioIsOnDrive` and `GoogleTokens`/`GoogleSignIn`'s constants; reword them
   with the README's Google Drive rows. The examples there use today's class as it will be after
   Gulzar moves it: `Mantiq\2026-10-17\Mantiq_2026-10-17_14-04-42Z.*`, 4 files, 727 MB in
-  `DriveCommand.Size`'s units (1 MB is 1,048,576 bytes; its `.wav` alone is 722 MB).
+  `DriveCommand.Size`'s units (1 MB is 1,048,576 bytes; its `.wav` alone is 722 MB). The YouTube lines
+  the README quotes (its section YouTube videos and the troubleshooting table of that name) are worded
+  in `YouTubeLinks` (`EmbeddedPlayer`, `EmbeddedPlayerAdvice`, the link refusals), `LinkList`,
+  `CommandLineTree.YouTubeProblems`, `YouTubeCommand` (`AllowUnlistedNeedsDownload`,
+  `AllowUnlistedNeedsCourseChannels`), `YouTubeMenu`, `DownloadGuard` (the verdicts, `ChannelUnknown`),
+  `BatchVideo` (`FromEmbeddedPlayerWords`, `FromEmbeddedPlayerSaid`), `DownloadPlan` (the plan's lines,
+  `CostOf` beside `TranscriptionCost.Describe`, the room and its refusal), `DownloadBatch` (the questions,
+  the YES text, the Drive line, `NotStartedWords`, the summary), `YtDlpErrors`, `ToolSearch.Missing`,
+  `YtDlpCheck`, `DownloadedAudio`, `VideoIndex` (the done-before words), `YouTubeBatch` (`KeysLine`, the
+  lock and key refusals), `BatchKeys`, `ClassWait`, `BatchTranscripts` (the stop, the meanwhile lines,
+  the projection), `UsageReport.Describe`, `VideoPlan` and `VideoBatch` (the record path's plan, prompts
+  and summary), `VideoWindow.HandedOff`, `BrowserLocator.NotFound`, `OEmbedTitles.NoTitle`,
+  `VideoEndWatch` (the rules' lines, `PressPlay`), `VideoEnds`, `RecordCommand` (a video's start and end
+  lines), `RecordStarter` (the yield, `Explain`, a lost video recorder), `StopSignal` (the yield's
+  lines), `StartupReport` (a video named as the video), `LocalAudioFreer` (a video's audio kept),
+  `SettingsCheck` (the YouTube refusals and the `LongestVideoHours` warning), `StayAwake.VideosReason`
+  and `TranscriptFormatter.SourceLine`; reword them with those README rows.
 
 ## Working with Gulzar
 
@@ -392,6 +518,9 @@ dotnet run --project src/ClassScribe -- drive signin --client "<file>" # a real 
 dotnet run --project src/ClassScribe -- drive signout                  # revoke, forget the token, keep the client
 dotnet run --project src/ClassScribe -- drive upload "<file or folder>" # a real upload to Google: Gulzar's to make; no path: the queue
 dotnet run --project src/ClassScribe -- drive free-space "<file or folder>" --yes   # deletes local .wav once Drive has them, checked
+dotnet run --project src/ClassScribe -- youtube check                  # yt-dlp, Deno, FFmpeg, FFprobe: paths, versions, age; local only
+dotnet run --project src/ClassScribe -- youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "<folder>" --yes   # records as it plays; Enter before each video; a real Chrome window and YouTube (ask first)
+dotnet run --project src/ClassScribe -- youtube --list "<file>" --name "Risala" --output "<folder>" --download --plan     # reads each video with yt-dlp, prints the plan (reaches YouTube: ask first)
 dotnet run --project src/ClassScribe -- record --help                  # help per command; --help, -h, -?, /?, help <command>
 dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"
 ```
@@ -418,7 +547,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   them into the codes below. Its lines go to `%LOCALAPPDATA%\ClassScribe\recorder.log`
   (`recorder.old.log` at 1 MB) until the recording's folder is known, then into `<base>.log`. Once
   Google Drive is set up, the recorder lives on after the end has gone to the windows, for the upload
-  of its class and of the queue (step 8, below), while the next class may already record.
+  of its class and of the queue (step 8, below), while the next class may already record. A YouTube
+  video recorded as it plays is a recorder's run like a class's (under `dotnet run`, in the window, as
+  a class is); its Chrome window is started by the batch's window, never by the hidden recorder.
 - `record` and `record-only` need the name, a source (`--device "<part>"`, `--device auto`,
   `--app <process>` or `--in-person ["<microphone>"]`) and `--output`; `--mic ["<microphone>"]`
   adds the microphone beside `--device` or `--app`, and `--mic-follows <app>|auto|none` names the
@@ -433,7 +564,16 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   menu asks C, N or Esc (`ContinueQuestion`), and only a recording of the same `RecordingMode` is
   offered. `transcribe <path> --output` is passed on as a full path for a file that is not a
   recording's. `list`, `devices` and `mic-check [--seconds <1..86400>] [--log-folder "<folder>"]`
-  work; `attach` is hidden. Commands printed for later (`CommandLine`) name the program by its full
+  work; `attach` is hidden. `youtube <link>... [--list "<file>"] --name "<course>" --output "<folder>"
+  [--download] (--yes | --plan) [--no-transcribe] [--no-open] [--again] [--allow-unlisted]` and
+  `youtube check`: `CommandLineTree.YouTubeProblems` names every mistake at once with exit 2 (no
+  `--name`, a name nothing is left of, no `--output`, no link and no `--list`, a list file that is not
+  there, cannot be read or holds no link, each word that is no link it takes, by its line, neither or
+  both of `--yes` and `--plan`; without `--download` a playlist's or `/live/` link, more than
+  `VideoBatch.MostVideos` (10) videos and `--allow-unlisted`; with it more than
+  `DownloadBatch.MostVideos` (500)), and `YouTubeCommand.RunAsync` refuses `--allow-unlisted` while
+  `YouTube:CourseChannels` is empty (exit 2), since the parser cannot see the settings.
+  `CommandLine.YouTube` prints the record-path command the summaries give. Commands printed for later (`CommandLine`) name the program by its full
   path, keep the microphone options (`--mic`, `--in-person`, `--mic-follows` through
   `FollowRule.Word`) and escape PowerShell's `$`, backtick and double quotes.
 - One recording at a time: `%LOCALAPPDATA%\ClassScribe\recording.lock` (`RecordingLock`,
@@ -443,7 +583,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   30 days) are the C5 marker and the next start's report (`StartupReport`: C through
   `ICommandRunner.RecordAsync` with `StartOrigin.StartupReport`, T, O and F carried out by the
   report itself). `StopSignal` is the per-run event `Local\ClassScribe.Stop.<run id>`, the one stop
-  that needs no pipe. A recorder lost while a window shows it is continued by the starter
+  that needs no pipe; a video's run also listens on its yield event, `Local\ClassScribe.Yield.<run id>`
+  (`StopSignal.ListenForYield`, `TrySetYield`, behind `IVideoYield`/`WindowsVideoYield`), by which a
+  class that starts makes it give way (see the YouTube bullets below). A recorder lost while a window shows it is continued by the starter
   (`RecordStarter`: a new recorder, then in the window after a second loss within 10 minutes;
   declined from an alert window, `StartOrigin.AutoContinueFromAlert`).
 
@@ -484,8 +626,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `MicrophoneUsageRecordTests` read the real sessions and the real usage record (no entry for the
   test exe); `AudioClient2SlotTests` activates the default output device's audio client, never
   initialised, to pin ClassScribe's `IAudioClient2` slot. `WindowsRegistry` (`RegistryValuesTests`)
-  reads values every profile has and creates nothing; `ProcessNamesTests` is `WindowsProcess`. The
-  dry-run kit's tests: `DryRunScriptTests` (`WindowsProcess`) start a hidden Windows PowerShell 5.1 of
+  reads values every profile has, and the machine's `SOFTWARE\Microsoft\Windows NT\CurrentVersion`
+  `CurrentBuild` under HKEY_LOCAL_MACHINE, and creates nothing; `ProcessNamesTests` is `WindowsProcess`.
+  YouTube's `WindowsProcess` tests: `ProcessToolRunnerTests` start Windows' own hidden `cmd.exe`
+  through the real tool path (created suspended, put in a kill-on-close job, resumed, its output read
+  through the two pipes; a cancel ends it at once; a process the job will not take never runs), the
+  only real program the YouTube tests start; `YouTubeLockTests` hold a real `youtube.lock` in a
+  temporary folder; `StopSignalTests` and `RecorderHostTests.Video.cs` use real yield events named
+  after fresh run ids. The dry-run kit's tests: `DryRunScriptTests` (`WindowsProcess`) start a hidden Windows PowerShell 5.1 of
   the test's own (`WindowsPowerShell` in `TestDoubles.DryRun.cs`, from a script file, since
   `-EncodedCommand` copies every Write-Host line to the error stream as CLIXML) to parse the kit's
   scripts and run its functions over temporary folders, and check that `tools\` is ASCII;
@@ -498,7 +646,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   named ClassScribe runs for a few seconds).
   `EndToEndTests` also covers in person from the command line, the class with the microphone
   following chrome through a cycle of listening and not (mixed by the real preparer), and
-  `mic-check --seconds 1`. Nothing is played or recorded. The suite had 887 tests at the end of
+  `mic-check --seconds 1`, a download batch of two videos over `FakeToolRunner`, `StubHttpHandler` and
+  `GoogleWorld`, and a batch of two videos recorded as they play through the real `RecorderHost`
+  (the window's settings point `YouTube:OEmbedBaseUrl` at the stub; the recorder gets
+  `FakeVideoWindows` and a `VideoPlayback` over the test's processes). Nothing is played or recorded. The suite had 887 tests at the end of
   increment 1, 2,134 at the end of increment 2, 2,822 at the end of increment 3, 2,893 after the
   cost line and the Bluetooth warning, with the review's fixes, 3,046 after the Google Drive
   sign-in, 3,111 after the course and date folders, 3,270 after the uploads and free-space,
@@ -507,11 +658,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   again, a grown log whose copy is gone or trashed, a manifest that cannot be written, the recordings
   folder with a kept answer at its top, choice 4 on a freed class, the queue counted without a class
   being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests), 3,370 after a false
-  start stopped taking its date folder, 3,387 after the dry-run kit (step 0a), and 3,395 after the
-  review's fixes to the kit (the refusal while a run waits for its report, the prune by heartbeat, the
-  run files and log lines made by the app's own writers, the windows left open named, the stand-in
-  tied to the script; its 25 tests take about 10 seconds, and its 3 Explicit `DryRunKit` tests about
-  half a minute); 3,395 is the count now, all passing, in about two minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
+  start stopped taking its date folder. From there two branches grew apart: the dry-run kit (step 0a)
+  reached 3,387, and 3,395 after the review's fixes to it (the refusal while a run waits for its
+  report, the prune by heartbeat, the run files and log lines made by the app's own writers, the
+  windows left open named, the stand-in tied to the script; its 25 tests take about 10 seconds, and
+  its 3 Explicit `DryRunKit` tests about half a minute); YouTube reached 3,670 after its slice 1 (the
+  download path), 3,819 after slice 2 (recording as it plays), and 3,875 after the review's repairs
+  to them. With both merged into `develop` (step 0) the count is 3,900, all passing, in about
+  three minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
   `DriveQueueReportTests`,
@@ -545,9 +699,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   store in plain text) run with the suite; none reaches Google or opens a browser.
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
-  aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about two
-  minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October, 2 min
-  17 s for 3,395 later that day, plus the build). `[CancelAfter]` cannot
+  aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
+  three minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
+  2 min 17 s for 3,395 later that day, 3 min 55 s for YouTube's 3,875 on 18 October, 3 min 7 s for
+  3,900 with both merged on 22 October, plus the build). `[CancelAfter]` cannot
   interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -621,8 +776,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   Bluetooth then carries the class past Windows' loopback, which is how a class recorded silence for
   8 minutes.
 - Keep-awake: `IPowerRequests.Hold(StayAwake.RecordingReason, ...)` from the start of capture until
-  the transcript is saved (`record-only`: until the files are closed), and
-  `StayAwake.TranscribingReason` while `transcribe` prepares and uploads. `StayAwake.Needs` asks for
+  the transcript is saved (`record-only`: until the files are closed),
+  `StayAwake.TranscribingReason` while `transcribe` prepares and uploads, and
+  `StayAwake.VideosReason` ("ClassScribe is working through YouTube videos") held by a YouTube batch's
+  window from the plan to the summary (`YouTubeBatch.KeepAwake`; each video's run holds its own
+  recording request as a class's does). `StayAwake.Needs` asks for
   the system and execution requests always, and the display as `Recording:KeepScreenOn` says
   (`OnBattery` by default), read again every 30 s with the power source. A refused request is logged
   once with advice, never thrown. `FreezeWatch` (the loop's ticks plus a 1-second timer of its own)
@@ -648,7 +806,16 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   during the sign-in's wait included, and Ctrl+C during `drive upload`, which leaves it to go on
   where it stopped, or `drive free-space`; nothing reads Esc during those two, although
   `CommandLineTree`'s help for `drive upload` says "Esc or Ctrl+C stops it"). An upload after a run
-  or a transcript never changes the exit code. A window closed during a background recording gives
+  or a transcript never changes the exit code. `youtube`: 0 when every video ended as asked (recorded
+  with a confirmed end or downloaded, and transcribed when asked) or was done before, for `--plan` (a
+  download's even when its room does not fit), and after Esc or Enter alone went back in the menu; 1
+  when anything was refused, left out, waits for a word, failed, may be cut short, was left recording
+  in the background, or not transcribed, when another batch holds `youtube.lock`, when Chrome or a tool
+  is missing, when transcripts are asked without a key, or when a download's room does not fit; 2 for
+  the command line's mistakes, a batch found to hold more than 500 videos once its playlists are read,
+  and `--allow-unlisted` while `YouTube:CourseChannels` is empty; 130 for Ctrl+C twice on the record
+  path (no transcripts), Q twice or Ctrl+C on the download path, and a cancelled transcript.
+  `youtube check`: 0 when all four tools are found and yt-dlp is at most 90 days old, else 1. A window closed during a background recording gives
   none; the run file in `%LOCALAPPDATA%\ClassScribe\runs` keeps the outcome for the
   next start's report (`StartupReport`). A microphone track that could not be started is left out
   of the run and the class goes on alone, with a warning at the end and exit 0.
@@ -704,7 +871,17 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   and menu choice 3 say `class + microphone`), and continues a recording only with the tracks it
   was made with. The microphone check's logs go to `<root>\mic-check\mic-check_<local stamp>.log`
   (`MicCheckLog`: no `Z`, so `RecordingFiles.TryParse` never takes one for a recording, and the
-  folder lists no recordings).
+  folder lists no recordings). A YouTube video's recording adds `<base>.source.json`
+  (`RecordingFiles.Source`, `VideoSource`, written atomically by `VideoSourceFile`, unknown fields
+  passed over): `TryParse` takes it, so Drive sends it with the recording and the readers see it; it is
+  never an answer or a transcript copy; `IsClass` counts it as a trace only, so a video whose fetching
+  failed never holds a date folder; `LocalAudioFreer` never deletes it; `ClassFolders.IsVideo` (a
+  recording with one) keeps `FindContinuable`, the continue question and the report's C away from
+  videos; `RecordedClass.Video` gives `list` and menu choice 3 their `"<title>" (YouTube, downloaded)`
+  note. A batch's videos share one date folder: its first recording takes the day's free one through
+  `CreateRecording`, every later one goes in with `ClassFolders.CreateRecordingIn(folder, name)` (base
+  names still unique per course), and `IsFree` counts a folder with a `<segment>.wav.partial` (a
+  conversion in progress) as taken, so a class that starts meanwhile takes its own.
 - Transcription: `ElevenLabsAnswer` is the only reader of ElevenLabs' answers, for the client and for
   rebuild. `UploadTimeLimit` gives each try 10 minutes plus the upload at
   `ElevenLabs:SlowestUploadMbps` plus a quarter of the audio, rounded to the minute, never below
@@ -718,7 +895,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `Your microphone stayed silent; only the class is sent.`; a recording with only `.mic.wav` files is
   sent on its own. `TranscriptionWorkflow.RebuildAsync` lays the newest saved answer (never an
   `.unread.json` unless it is named) out again with the current marks and `Transcript` settings, as
-  the next free copy, with no key and no request.
+  the next free copy, with no key and no request. A recording with a source file is a YouTube video's:
+  `TranscribeRecordingAsync` and `RebuildAsync` alike hand `TranscriptFormatter.Format` its `VideoSource`
+  (`TranscriptionWorkflow.VideoOf`), which heads the transcript with the video's title (escaped by
+  `MarkdownText.Escape`), `Downloaded` or `Recorded` and the date, and `SourceLine` (the link, the
+  channel, and for a download the upload date, length, playlist and yt-dlp version; for a recording
+  its length and that ads and pauses shift the positions); in a download's transcript every
+  `[hh:mm:ss]` is `[[hh:mm:ss]](<watch link>&t=Ns)` while `Transcript:IncludeTimestamps` is on.
+  `RecordedLine` takes `Recorded` or `Downloaded`, and `IsRecording` counts a source file.
 - What a transcript cost: right after `Transcript received`, `ElevenLabsClient` logs the estimate
   (`TranscriptionCost`: the answer's `audio_duration_secs`, or else the upload WAV's length from
   `UploadTimeLimit.AudioLength`, at `ElevenLabs:PricePerHourUsd` plus `ElevenLabs:KeytermsPricePerHourUsd`
@@ -736,7 +920,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   limit of its own, the key never logged; 401 and 403 are a refusal said once at Information with the
   User permission named, everything else is unavailable, and nothing is ever thrown but the caller's
   own cancel). `ElevenLabs:ReadAccountUsage` false asks nothing; the estimate still comes. `rebuild`
-  logs `RebuildCommand.NothingCharged`. In tests, `StubHttpHandler` answers the subscription path only
+  logs `RebuildCommand.NothingCharged`. A YouTube batch reads the account once for its plan
+  (`UsageReport.Describe`, one line, never thrown), and after its first transcript projects the rest
+  from `UsageReport.Charged` (`UsageCharge`) in the account's own credits (`BatchTranscripts.Project`);
+  dollars are still never turned into credits. In tests, `StubHttpHandler` answers the subscription path only
   from `EnqueueFor(StubHttpHandler.SubscriptionPath, ...)` (a subscription request never takes an
   upload's answer, so the read beside an upload cannot steal it), and `FakeElevenLabsAccount` stands in
   for the reader where the client is mocked.
@@ -752,7 +939,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ElevenLabs__BaseUrl` work; one that fails the check stops the start, since it cannot be fixed
   while ClassScribe runs. Warnings (a key in the settings, an output folder inside OneDrive) are
   given once per process. `SettingsReloader.Snapshot` gives the Recording, ElevenLabs (never the
-  key), Transcript, Drive (no secret is ever a setting) and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
+  key), Transcript, Drive (no secret is ever a setting), YouTube and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
   the recorder in the request file, and `RunJournal.WriteRequest` leaves the key out should it ever
   be in it. A recording that is running keeps the settings it started with. The microphone's
   settings are `Recording:Mode`, `Recording:Microphone`, `Recording:MicrophoneProcessing` (`Raw` or
@@ -767,7 +954,20 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   http only to a loopback address, for a stub), `Drive:Upload` (`Everything` or `WithoutAudio`, by
   name), `Drive:ChunkMegabytes` (8; from 1 to 256 MiB) and `Drive:Enabled` (true: each class goes
   into the queue as its run starts and up after it, and a transcript made later sends its new files;
-  false: nothing is queued or sent by itself, only 9 and `drive upload` upload).
+  false: nothing is queued or sent by itself, only 9 and `drive upload` upload). The YouTube section
+  (`YouTubeOptions`, `SettingsCheck.CheckYouTube`): `YouTube:YtDlpPath` and `YouTube:BrowserPath`
+  (empty finds the program; else a full path to an `.exe` that is there, environment variables
+  expanded, quotes ignored: `CheckExe`), `YouTube:MayDownloadChannels` and `YouTube:CourseChannels`
+  (lists of UC ids or @handles, `YouTubeOptions.IsChannel`; an entry in both is refused, and a scalar
+  where a list belongs is refused by `Expected`), `YouTube:DriveUpload` (`Everything`, the default, or
+  `WithoutAudio`, by name; `RecordingUpload.SendsAudio` reads it for a recording with a source file in
+  place of `Drive:Upload`), `YouTube:LongestVideoHours` (4; from 0.25 to 9; above
+  `Recording:StopAfterHours` it is a warning from `FindWarnings`, never a refusal, since a refused file
+  would hold up every class over a setting of the videos', and the plan then names the safety stop)
+  and `YouTube:OEmbedBaseUrl` (`https://www.youtube.com/`; https, or http only to a loopback address:
+  `CheckLocalOrHttpsAddress`, which Drive's addresses use too). The profile folder, the silence that
+  ends a video (2 minutes), the pause between videos (his Enter) and separate Deno and FFmpeg paths are
+  fixed parts of the design, not settings.
 - Google Drive sign-in (slice 1 of design `drive.md`; `GoogleSignIn`, window only, never a recorder):
   menu choice 9 (`DriveMenu`: the state from the store alone; S, and while signed in I and O) and
   `drive signin [--client "<file>"]`, `drive signout`, `drive status` (`DriveCommand`, through
@@ -955,6 +1155,154 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   must keep reading pretty-printed answers. His run file `20261017-140441Z-af758de8.json` in
   `%LOCALAPPDATA%\ClassScribe\runs` still names the old `Mantiq_10_17_2026` folder; it looks finished,
   but if the start-up report ever names it, that is why.
+- YouTube, what both paths share (design `youtube.md` section 2; `src/ClassScribe/YouTube`): `youtube`
+  and menu choice Y (`YouTubeMenu`: links pasted or a dragged list file, the course with Enter taking
+  `YouTubeMenuMemory.LastCourse`, R or D, T or O, Esc back at every step; R leaves out playlist and
+  `/live/` links and refuses more than 10), through `ICommandRunner.YouTubeAsync`, `YouTubeMenuAsync`
+  and `YouTubeCheckAsync`, each in a scope of its own; `YouTubeCommand` sends the batch to `VideoBatch`
+  or, with `--download`, to `DownloadBatch` (whose cancel is thrown, after `signals.RequestStop()`, so
+  one Ctrl+C stops it). Links: `YouTubeLinks.Read` (watch with `www.`, `m.`, `music.` or none, `youtu.be`,
+  `/shorts/`, `/live/` (`YouTubeLinkKind.Live`), `/playlist?list=`; channels and embedded players
+  refused; `t=` kept as `StartSeconds`; `FromEmbeddedPlayer` from `embeds_referring_euri`,
+  `embeds_referring_origin` or `feature=emb_...`), every link rebuilt from its ID (`Url`, `UrlAtStart`);
+  `LinkList` (UTF-8 list files, `#` comments, duplicates by ID taken once, the embedded mark carried
+  over). `YouTubeBatch`: `TakeLock` (`YouTubeLock`, `<RuntimeFolder>\youtube\youtube.lock`, opened
+  `FileShare.Read` with the holder's process id written in it so a refusal names the window, tried three
+  more times 100 ms apart; never `recording.lock`, and no class waits for it), `HasKey` (checked right
+  after the lock, before anything is asked of YouTube or a window opens), `KeepAwake`,
+  `AccountLineAsync`, `WatchKeys` (`BatchKeys`: Q once stops after the one in hand, Q again within
+  `SecondPressWithin` (5 s) at once; `NextStep` forgets a Q of the fetching before the transcripts),
+  `ClassWait` (before each video and each transcript, while the run journal lists a run that records
+  and is not a video's, polling every 30 s, said once each way; it returns whether it waited) and
+  `OpenCourse` (the course folder once, `Recording:OpenFolderWhenDone`, `--no-open`). `VideoIndex`
+  reads every `.source.json` under the recordings folder once per batch and judges each video by ID
+  (`PastKind`): a recording that holds the whole video (`PastVideo.IsWhole`: a download, or a confirmed
+  end) with a transcript is left out; without one it is transcribed in this batch (a kept paid answer
+  gets the `rebuild` command); anything else (no audio, or may be cut short, transcribed or not) is
+  fetched again as a new recording; `--again` fetches all. `BatchTranscripts` transcribes each in a
+  scope of its own (`ScopedVideoTranscriber`, `VideoTranscriptRun`: `TranscriptionRuns.Begin` writes an
+  in-window `Transcribing` run record carrying the video's request, its heartbeat from
+  `TranscriptionProgress`, its outcome and `Seen`, so `transcribe`, choice 3, Drive's `BusyIn`, the
+  header and the start-up report see it; the recording's `.log`; `UsageReport`; then Drive's
+  `UploadAsync`), looks at each recording again first (`Meanwhile`: transcribed, a kept answer, being
+  written, or a live run's: not sent), stops all at ElevenLabs' 401, 403, 402 or 429, and projects the
+  rest after the first. Every YouTube folder derives from `RuntimeFolder` (`YouTubeFolders`: `youtube\`
+  with the lock, `converting.json`, `staging\<ID>\`, `yt-dlp-cache\`; and `video-browser\`, named only
+  so that nothing else goes in it and yt-dlp is never given it), so `RuntimeFolder`'s switch keeps
+  tests out of the real ones.
+- YouTube, the download path (slice 1, `DownloadBatch`): the lock, the key, `DownloadedAudio.CleanUp`
+  (the files `converting.json` names, with a line, and staging folders untouched for 7 days),
+  `YtDlpCheck` (`ToolLocator`: `YouTube:YtDlpPath`, winget's links folder, then PATH from the registry,
+  the user's before the machine's; Deno and FFmpeg with FFprobe beside yt-dlp first; then each
+  tool's `--version` or `-version`, and a warning past `OldAfter`, 90 days, by yt-dlp's version, which
+  is its release date; ClassScribe never updates it), the reads (`YtDlpArguments.ReadPlaylist`, a flat
+  `-J` listing; `ReadVideo`, an info JSON into `staging\<ID>\`, read by `YtDlpRead`; never for a video
+  done before or a link from an embedded player; paced by `BatchPace`: reads 6 s apart, downloads one
+  at a time 10 to 20 s apart at random and at most 60 begun an hour; the first failure that stops the
+  fetching stops the reads too), `DownloadGuard.Judge` (the first that applies: a course channel by UC
+  id, `/channel/` address or @handle; a sign-in by availability or `age_limit`; `is_live`,
+  `is_upcoming`, `post_live`; no length; over 9.5 h; `ChannelUnknown` while `CourseChannels` names any
+  and the read names no channel; `MayDownloadChannels`; public; else a word, or `ready (--allow-unlisted)`
+  for one `AllowUnlistedTakes`: unlisted, of a known channel), the plan (`DownloadPlan.Lines`,
+  `ReadyLines` with `Waiting for your word`, `FetchLines`; `PlanRoom` with `ClassReserve`, room for a
+  class of `KeptForAClass` = `RecordingMonitor.SpaceWarningBelow` (3 h) by `RecordingMonitor.RoomFor`,
+  checked on the recordings drive and `RuntimeFolder`'s; the Drive line from `IDriveRoom`), the
+  confirmation (`ConfirmAsync`: in the menu a word per video, then the lines again and a room check for
+  what is then ready, then `YES` typed in full; `--yes`; `--plan` returns 0 before), the downloads
+  (`FetchAsync`: after `ClassWait`; `YtDlpArguments.Download`, from the info file while it is under
+  `ReadKeptFor` (5 h), else after a fresh read; a 403 reads again once; `-f ba[ext=m4a]/ba[acodec^=mp4a]/ba/b
+  -x --audio-format wav --postprocessor-args "ExtractAudio+ffmpeg_o:-ac 1"`, so YouTube's own rate, mono;
+  the WAV taken only from `done.txt`; the recording made only now, the batch's first by
+  `CreateRecording` and the rest by `CreateRecordingIn`; its `.log` from `RecorderLog.KeepFromNow`;
+  the source file written `Downloading` then `Downloaded`; `DownloadedAudio.Convert`: `converting.json`,
+  NAudio's reader, mono 16-bit at the source's rate through `WavSegmentWriter` into `.partial` parts
+  split at `Recording:MaxSegmentMegabytes`, within `LengthTolerance` (2 s) of the video or nothing kept
+  (`IncompleteAudioException`), then renamed; the staging deleted), `YtDlpErrors.Classify` (bot check,
+  rate limit, setup, exit code 2 and Windows refusing to start yt-dlp stop the fetching; format, sign-in,
+  region, gone and network go on, three network failures in a row stop; any sentence naming cookies is
+  dropped), the transcripts, Drive (a transcribed video's recording goes up in its transcript's scope;
+  the rest is queued, and with `--no-transcribe` one pass runs), and `Summarize` (a video that can be
+  watched but may not be or was not downloaded gets `CommandLine.YouTube`, the record path's command).
+  Tools run through `IToolRunner` (`ProcessToolRunner` on `IProcessCreationApi`, never
+  `System.Diagnostics.Process`): `ProcessLaunch` gains `Environment` (`ChildEnvironment.WithoutTheKey`,
+  no `ELEVENLABS_API_KEY` or `ElevenLabs__` variable, plus `PYTHONIOENCODING=utf-8`), `Handles` (the
+  three pipe ends, the only handles inherited, through `STARTUPINFOEX` and a handle list) and `Job`
+  (`ToolJob`, kill-on-close, one per tool run: created suspended, assigned, resumed; a cancel
+  terminates the job; a closed window ends it); `WindowsCommandLine` quotes each argument;
+  `YtDlpArguments` builds every list (the fixed set first: `--ignore-config --no-cookies
+  --no-cookies-from-browser --no-mark-watched --no-colors --sleep-requests 1 --js-runtimes deno:<path>
+  --ffmpeg-location <folder> --cache-dir <cache>`; the link last, rebuilt from its ID;
+  `--load-info-json` only inside a video's staging folder) and checks it with `ProblemWith` before
+  yt-dlp ever sees it.
+- YouTube, recording as it plays (slice 2, `VideoBatch`, attended): the lock, `DownloadedAudio.CleanUp`,
+  the key, `BrowserLocator.Find` (`YouTube:BrowserPath` alone when set; else App Paths under HKLM then
+  HKCU; else Program Files, Program Files (x86), `%LOCALAPPDATA%`), the titles (`OEmbedTitles`), the
+  index, the plan (`VideoPlan`: the worst case at the shorter of `YouTube:LongestVideoHours` and
+  `Recording:StopAfterHours`, named), Y in the menu (which opens the first at once), then per video:
+  `ClassWait`; the `Next: ... Enter opens it; S stops ...` prompt (Enter, S or Esc, Ctrl+C twice, never
+  a window without his key; `--yes` asks it before the first too); `ClassWait` again after Enter;
+  `VideoWindow.OpenAsync` (`IProcessStarter.StartBrowser` with `VideoWindow.Arguments`:
+  `--user-data-dir=<RuntimeFolder>\video-browser --no-first-run --no-default-browser-check
+  --app=<link at its start>`, never an autoplay switch, working folder `<RuntimeFolder>\youtube`; the
+  hand-off check: the started process must not have exited within 3 s, or Chrome handed the video to a
+  window left open, `HandedOff`, and Enter tries again); `RecordAsync` (a `RecordRequest` with
+  `VideoRequest`, `RecordingMode.Class`, `ClassSource.App("chrome")`, `Transcribe` false, `Continue`
+  `New`, through `ICommandRunner.RecordAsync` with `StartOrigin.VideoBatch`, shown here as the run's
+  owner; its run found in the journal by batch id and position, since the starter may give a new run
+  id; a start refused because a class records is waited for and asked again); `VideoWindow.CloseAsync`
+  (`WM_CLOSE` through `IVideoWindows`, never a kill, 15 s); two windows or runs in a row that failed
+  stop the videos (a run that played nothing does not count); Esc in a video's view leaves it recording
+  in the background (`RecordedVideo.Left`) and opens no more. Then the transcripts (after
+  `signals.RequestStop()`, so one Ctrl+C cancels an upload) and the summary (`For the rest:` after
+  `VideoLimit` or `SafetyStop`, from `StartSeconds` plus the length). The run: `RecordCommand` with the
+  scoped `VideoPlayback` and `IVideoYield` listens for the yield from its very start (heard before the
+  run file exists, it still ends as `ClassStarted`); `OpenFiles` puts it in `Video.Folder` with
+  `CreateRecordingIn`; step 3b writes the source file (`VideoEnds.NotFinished`) and fails closed with
+  `VideoWindowClosedException` when `VideoPlayback.Begin` finds the window gone; step 7b writes the
+  source file's end (`VideoEnds.Of(EndedBy)`: closed, moved on and Q confirmed, the rest not) and
+  posts the close, never waiting. `CaptureChooser` given a video window (`ChooseVideo`) records
+  `process:<browser pid>`, its tree included, from before play, with the loudest session of
+  `VideoPlayback.Tree()` (`IProcessFamily` over `IProcessTree`, by pid and start time) as its level,
+  and nothing once the window is gone, never another Chrome by name; a class's `--app chrome` leaves
+  out `VideoPlayback.VideoWindowsProcesses()` (live video windows from the run files, read every
+  10 s). `RecordingMonitor` hands a video's run to `VideoEndWatch` before the safety stop (1 window
+  gone, `VideoClosed`; 2 another title for two looks after one stood 5 s with sound, `VideoEnded`; 3
+  two minutes of silence after sound, from the last sound, freeze and pause, never while paused,
+  `VideoSilent`, warned at the shorter of `Recording:SilenceWarningSeconds` and 60 s in place of the
+  usual warning; 4 nothing heard in 5 minutes, `NothingPlayed`, with `PressPlay` as a Notice from 30
+  s; 5 `YouTube:LongestVideoHours` of recording or running, `VideoLimit`), from `RecordingStatus.HeardSound`
+  and `TrackSnapshot.HeardSound`, and skips the Bluetooth watch for it. `VideoPlayback.PlayedTitle` (the
+  window's title once it stood 5 s with sound) names the source file and the transcript over
+  oEmbed's; `VideoTitles.Plain` takes control characters out of every word from YouTube, and `Clean`
+  takes `(N) ` and ` - YouTube` off a window's title.
+- A class comes first (design 2.5): `RecordStarter.RunAsync`, given a start without a video while a
+  video's run records, from any origin, runs `YieldAsync`: it asks through `IVideoYield` (a run still
+  `Starting` is asked again at each look until it listens; one that records and does not listen is
+  explained at once), says `Stopping the YouTube video "..." so that "..." can record; what it recorded
+  is kept.` once asked, waits up to `YieldPatience` (30 s) polling the journal every `YieldPoll`
+  (250 ms), then starts the class as it would have; otherwise `Explain` and the Q-twice advice.
+  `Winner` never shows a video's run, nor any run to a video's start; `DecideAsync` gives a video `New`
+  without a question; `AfterLoss` never continues a video (its audio is kept, the run marked seen);
+  `AttachCommand.ContinuationOf` is null for one; `StartupReport.CanContinue` is false for one;
+  `ClassFolders.FindContinuable` passes over recordings with a source file; `RecordStarter.Named` and
+  `NamedFirst` name a video's run as `the YouTube video "<title>"` in `Explain`, the menu header and the
+  report at the start. The batch waits for a class before each video and transcript (`ClassWait`), and
+  a download batch keeps room for a 3-hour class.
+- Still to be checked with Gulzar, each asked first, since each reaches YouTube and each transcript is
+  billed (design 7.4): `winget install --source winget --id yt-dlp.yt-dlp` in a new terminal, then
+  `youtube check`, and whether Bitdefender flags yt-dlp.exe; a first download of one short video he
+  uploaded (that `ExtractAudio+ffmpeg_o:-ac 1` reaches FFmpeg and the `.wav` keeps 44.1 or 48 kHz, how
+  a stale info JSON fails after about 6 hours, the transcript's heading and links, Drive with the
+  audio); a first recording of one short public video, ideally his own (the launch not handed to his
+  everyday Chrome, the hand-off check with a window left open, the title read and cleaned, the first
+  second recorded with the capture on the root (if a child's stream is missed, build the fallback:
+  target the playing session inside `VideoPlayback.Tree()`), the end by Autoplay and by closing the
+  window, `WM_CLOSE` closing it cleanly, the level with the speakers turned down and muted, the Premium
+  sign-in in `video-browser`); a class started from the menu while a video records (the yield); a
+  batch of three from a list file each way; then a publish to `%LOCALAPPDATA%\Programs\ClassScribe`
+  with a renewed Bitdefender exception (Bitdefender may notice ClassScribe starting Chrome). Left for
+  later, only if use calls for it: the media-controls probe for paused against ended, titled date
+  folders, and automated playback (Gulzar chose attended).
 - The microphone check (`MicCheckCommand`, menu choice 8 and `mic-check`, resolved through
   `IMicCheckRun` in a scope of its own): MicWatch inside ClassScribe. Every 250 ms it reads
   `IMicrophoneSessions.ReadAll()` and `IMicrophoneUsageRecord.Read()`, hands them to the pure
@@ -971,25 +1319,35 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   read, the key from the environment, the plain log format, scopes and registrations validated),
   `App` (the command line, with the gate before each command), `ServiceCollectionExtensions` (calls
   each area's `<Area>Services.cs`), `Durations`, `PlainConsoleFormatter`.
-- `src/ClassScribe/Settings`: the options classes, `ApiKeyFromEnvironment`, `SettingsCheck` (types,
-  enums, ranges and paths, the Logging section, the warnings), and the reload: `SettingsFile`,
-  `CheckedSettingsSource`, `SettingsReloader` and `SettingsServices`.
+- `src/ClassScribe/Settings`: the options classes (`YouTubeOptions` among them, with `IsChannel` and
+  `Expanded`), `ApiKeyFromEnvironment`, `SettingsCheck` (types, enums, ranges and paths, lists, the
+  Logging section, the warnings), and the reload: `SettingsFile`, `CheckedSettingsSource`,
+  `SettingsReloader` and `SettingsServices`.
 - `src/ClassScribe/Desktop`: keeping the laptop awake (`IPowerRequests`, `IPowerSource` and
   `StayAwake`, all in `IPowerRequests.cs`), the computer's clocks (`ISystemTimes`), the window's
   title, taskbar and flash (`IWindowSignals`, `TitleText`, `WindowStatusSink`), starting processes
   (`IProcessStarter`), the job check (`IJobInspector`), Windows' end of the session
   (`ISessionEvents`), the registry read only (`IRegistryValues`, HKEY_CURRENT_USER, for the
   microphone advice), the program behind a process id (`IProcessNames`, a limited query) and
-  ClassScribe's own processes (`IOwnProcesses`, by pid and by `OwnProcesses.ProgramName`);
+  ClassScribe's own processes (`IOwnProcesses`, by pid and by `OwnProcesses.ProgramName`); for YouTube,
+  `IRegistryValues.ReadLocalMachineString` (the machine's PATH, Chrome's App Paths), `IFileProbe` (a
+  file there, a program's version), `ChildEnvironment.WithoutTheKey`, `IProcessStarter.StartBrowser`,
+  `IVideoWindows` (a process's Chrome windows: titles and `WM_CLOSE`) and `IProcessFamily`
+  (`ProcessFamily`, a process's tree by pid and start time over `IProcessTree`);
   `Desktop/Windows` holds the Windows calls, `MicrophoneUsageRecord` (the ConsentStore key: which
-  apps used the microphone and when) among them. `DesktopServices` registers them, the usage record,
-  the process names, the own processes and `FreezeWatch`.
+  apps used the microphone and when) among them, `ChromeWindows` (`EnumWindows` by process, class
+  `Chrome_WidgetWin_1`, `GetWindowTextW`, `WM_CLOSE`; refused in tests) and `ToolProcesses.cs` (the
+  tool and browser start on `NativeProcessCreationApi`: environment block, handle list, suspended
+  start into `ToolJob`; any program but `cmd.exe` refused in tests). `DesktopServices` registers them,
+  the usage record, the process names, the own processes, `IProcessFamily`, `IVideoWindows` and
+  `FreezeWatch`.
 - `src/ClassScribe/Recorder`: the separate recorder: `RecorderHost.cs` (`RecorderStart` and
   `RecorderHost`: the recorder process from the request to the end, with `IsRecorderStart` for
   `Program`), `RuntimeFolder` (`%LOCALAPPDATA%\ClassScribe`), `RecordingLock`, `RunJournal` with
   `RunView` and `RunHandle` (run and request files, `MarkSeen`, `MarkSeenIfOver`, prune),
-  `RunRecord.cs` (run file, request file, `RunEndCause`), `RecorderJson`, `ProcessLiveness`,
-  `StopSignal`, `RecorderLog.cs` (`LogEntry` and `RecorderLog`: the ring of 20,000 lines, `Written`,
+  `RunRecord.cs` (run file, request file, `RunEndCause`, the video causes among them), `RecorderJson`,
+  `ProcessLiveness`, `StopSignal` (with the yield event: `YieldPrefix`, `ListenForYield`, `TrySetYield`,
+  `YieldNameFor`, and `IVideoYield` with `WindowsVideoYield`), `RecorderLog.cs` (`LogEntry` and `RecorderLog`: the ring of 20,000 lines, `Written`,
   the files) and `RecorderLogProvider`, `LinkConsoleUi` (the windows' keys as the recorder's
   console), `LinkStatusSink` (states to the windows and the alerts, repeated once a second),
   `RecorderResultShower`, `UnattendedAlerts` (the minimized window brought back by itself; a window
@@ -1054,7 +1412,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   percent and waiting; `RecordCommand` shows it as UPLOADING 40% and writes it into the run file's
   heartbeat, which the menu header and `list` read), and what a transcript cost: `TranscriptionCost`
   (the estimate), `ElevenLabsAccount.cs` (`IElevenLabsAccount`, `AccountReading`, the reader of
-  `GET /v1/user/subscription`) and `UsageReport` (scoped: the read before the upload and the line after).
+  `GET /v1/user/subscription`) and `UsageReport` (scoped: the read before the upload and the line after;
+  `Describe` for a YouTube plan, `Charged` and `UsageCharge` for its projection), and `MarkdownText`
+  (a video's title escaped for the transcript).
 - `src/ClassScribe/Drive`: Google Drive (design `drive.md`, slices 1 to 3): `DriveOptions` (with `DriveUploadScope`),
   `IGoogleOAuthApi.cs` and `IDriveApi.cs` (the Refit interfaces, `DriveApiSettings`), `GoogleJson.cs`
   (`GoogleOAuthJson`, `DriveJson`, `DriveStoreJson` and their records, which print no token),
@@ -1072,9 +1432,31 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `LocalAudioFreer` (`FreedAudio`), `DriveCopies` (the `IAudioOnDrive` of `Storage`),
   `DriveAutoUpload.cs` (`IDriveAutoUpload`, `DriveAutoUpload`: the queue at a run's start and the
   upload after it, and after a transcript made later), `DriveQueueReport.cs` (`DriveWaiting`,
-  `DriveQueueReport`: the menu's header line and the report's), and `DriveServices` (`AddDrive`,
-  called from `AddClassScribe` after the transcription).
-- `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`: course and date folders, the old flat layout read too), recording file names (both
+  `DriveQueueReport`: the menu's header line and the report's), `DriveRoom.cs` (`IDriveRoom`,
+  `DriveRoom`, `DriveSpace`: Drive's room from the about call, for a YouTube plan; null when not set up,
+  signed out, `Drive:Enabled` off or Drive out of reach), and `DriveServices` (`AddDrive`, called from
+  `AddClassScribe` after the transcription).
+- `src/ClassScribe/YouTube` (registered by `YouTubeServices.AddYouTube`): shared parts `YouTubeLink.cs`
+  (`YouTubeLink`, `YouTubeLinkKind`, `LinkReading`, `YouTubeLinks`), `LinkList.cs` (`LinkWord`,
+  `LinkListReading`, `LinkList`), `VideoSource.cs` (`VideoPlaylist`, `VideoSource`, `YouTubeJson`,
+  `VideoSourceFile`), `YouTubeFolders`, `YouTubeGuards`, `YouTubeLock`, `YouTubeRequest.cs`
+  (`YouTubeRequest`, `BatchConfirmation`), `YouTubeBatch.cs` (`YouTubeBatch`, `BatchKeys`),
+  `BatchPace.cs` (`IBatchPace`, `BatchPace`, `ClassWait`), `VideoIndex.cs` (`PastVideo`, `PastKind`,
+  `PastVerdict`, `VideoIndex`), `VideoTranscripts.cs` (`VideoToTranscribe`, `IVideoTranscriber`,
+  `ScopedVideoTranscriber`, `VideoTranscriptRun`, `TranscriptOutcome`, `BatchTranscripts`) and
+  `TranscriptionRuns.cs` (`TranscriptionRuns`, `TranscriptionRun`); the download path `ToolLocator.cs`
+  (`ToolPaths`, `ToolSearch`, `ToolLocator`), `IToolRunner.cs` (`ToolCall`, `ToolLine`, `ToolResult`,
+  `IToolRunner`, `WindowsCommandLine`), `ProcessToolRunner`, `YtDlpArguments`, `YtDlpRead.cs`
+  (`YtDlpInfo`, `YtDlpPlaylist`, `YtDlpRead` and their JSON context), `YtDlpErrors.cs`
+  (`DownloadFailureKind`, `DownloadFailure`, `YtDlpErrors`), `YtDlpCheck.cs` (`ToolCheck`, `YtDlpCheck`),
+  `DownloadGuard.cs` (`GuardVerdictKind`, `GuardVerdict`, `DownloadGuard`), `DownloadPlan.cs`
+  (`BatchVideo`, `PlanRoom`, `DownloadPlan`), `DownloadedAudio.cs` (`IncompleteAudioException`,
+  `ConversionNote`, `DownloadedAudio`) and `DownloadBatch`; the record path `BrowserLocator`,
+  `OEmbedTitles.cs` (`IYouTubeOEmbedApi`, `OEmbedAnswer`, `VideoTitle`, `OEmbedTitles`,
+  `YouTubeHostGuard`), `VideoWindow.cs` (`OpenedWindow`, `WindowOpening`, `VideoTitles`,
+  `VideoWindow`), `VideoPlayback`, `VideoEnds.cs` (`VideoEnds`, `VideoWindowClosedException`) and
+  `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`).
+- `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`: course and date folders, the old flat layout read too; `CreateRecordingIn` and `IsVideo` for YouTube), recording file names (both
   tracks), numbered transcript copies (`TranscriptCopies`, never overwritten), marks, the
   microphone check's log file (`MicCheckLog`: the header, the cost line, flushed per line), and
   `RoamingFolder` (`%APPDATA%\ClassScribe`, where `google-drive.dat` is kept; tests give a temporary one),
@@ -1093,7 +1475,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (`StartupReport`), `transcribe`, `rebuild`, `list` and `devices` (output devices, apps with sound,
   then the microphones with which apps hold them, from `Lazy<IMicrophoneProvider>` and
   `Lazy<IMicrophoneSessions>`), `MicrophoneMenu.cs` (menu choice 7: W, I or N, the microphone, the
-  follow question), `MicCheckCommand.cs` (the microphone check's loop), Google Drive's commands
+  follow question), `MicCheckCommand.cs` (the microphone check's loop), `YouTubeCommand.cs`
+  (`YouTubeCommand`, `YouTubeMenu` for menu choice Y, `YouTubeMenuMemory`), `VideoEndWatch.cs`
+  (internal: how a video's recording ends by itself, for `RecordingMonitor`), Google Drive's commands
   (`DriveMenu`, menu choice 9; `DriveCommand`, `drive signin`, `signout` and `status`;
   `DriveUploadCommand`, `drive upload` and `drive free-space`, and what a path names), the gate
   (`RunGate`), the console and desktop abstractions, the name prompt, the close prompt and the exit
@@ -1165,5 +1549,19 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `TranscribeCommandTests`, `RebuildCommandTests`, `RecordCommandTests` (continue in either layout,
   a class past midnight), `ContinueQuestionTests`, `StartupReportTests` and `EndToEndTests`; a test
   that looks for a new recording's folder finds the one date folder rather than working out today's
-  date, so a run across midnight passes. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
+  date, so a run across midnight passes. YouTube's tests (fakes in `TestDoubles.YouTube.cs`,
+  `TestDoubles.VideoWindows.cs` and `TestDoubles.VideoBatch.cs`): `YouTubeLinkTests`,
+  `LinkListFileTests`, `YouTubeCommandLineTests`, `YouTubeMenuTests`, `YouTubeMenuRecordTests`,
+  `YouTubeSettingsCheckTests`, `YouTubeLockTests`, `ClassFoldersVideoTests`, `VideoSourceFileTests`,
+  `VideoTranscriptFormatterTests`, `VideoTranscriptionWorkflowTests`, `VideoTranscriptRunTests`,
+  `TranscriptionRunsTests`, `VideoRunRecordTests`, `VideoDriveTests`, `DriveRoomTests`,
+  `ListCommandVideoTests` (in `ListCommandTests.cs`), `BatchKeysTests`, `BatchPaceTests`,
+  `ToolLocatorTests`, `YtDlpCheckTests`, `YtDlpArgumentsTests`, `YtDlpReadTests`, `YtDlpErrorsTests`,
+  `DownloadGuardTests`, `DownloadPlanTests`, `DownloadedAudioTests`, `DownloadBatchTests`,
+  `ProcessToolRunnerTests`, `BrowserLocatorTests`, `BrowserStartTests`, `OEmbedTitlesTests`,
+  `VideoWindowTests`, `ChromeWindowsGuardTests`, `VideoPlaybackTests`, `VideoRecordingMonitorTests`,
+  `VideoBatchTests`, `VideoContinuationTests`, the partials `RecordCommandTests.Video.cs`,
+  `RecordStarterTests.Video.cs` and `RecorderHostTests.Video.cs`, and additions to `StopSignalTests`,
+  `StartupReportTests`, `ContinueQuestionTests`, `RecordingFilesTests`, `RegistryValuesTests`,
+  `ServiceRegistrationTests` and `EndToEndTests`. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
   guard. The test project sees ClassScribe's internals (`InternalsVisibleTo` in `CoreAudioInterop.cs`).

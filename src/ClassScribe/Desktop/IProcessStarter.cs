@@ -20,7 +20,8 @@ public sealed record StartedProcess(int ProcessId, DateTimeOffset StartedUtc, Fu
 /// Starts the copies of ClassScribe that a run needs: the recorder, with no window, which records a class whatever happens
 /// to the window that started it; and the alert window, which the recorder opens, minimized and without taking the focus,
 /// when something needs Gulzar while no window shows the recording. Each is this very program, from the same path,
-/// started with a plain argument.
+/// started with a plain argument. It also starts the one program that is not ClassScribe and shows a window: Chrome, for a
+/// YouTube video's window on the record path.
 /// </summary>
 public interface IProcessStarter
 {
@@ -49,6 +50,17 @@ public interface IProcessStarter
     /// <see cref="StartRecorder"/> does.
     /// </summary>
     StartedProcess StartAlertWindow(string runId);
+
+    /// <summary>
+    /// Starts Chrome, <paramref name="program"/>, for a YouTube video's window (design 4.1): <c>"&lt;chrome&gt;"</c> and
+    /// <paramref name="arguments"/>, each quoted as Windows reads it back; a normal window; inheriting no handle; with this
+    /// process's environment without ELEVENLABS_API_KEY or any ElevenLabs__ setting, so the key never reaches it; in
+    /// <paramref name="workingFolder"/>, the YouTube feature's own folder, never the window's profile folder, which may hold a
+    /// Google sign-in and which ClassScribe never touches; and outside the job ClassScribe runs in where the job
+    /// allows it, so that the video plays on when ClassScribe's window is closed, as its recorder records on. Throws a
+    /// <see cref="Win32Exception"/> carrying Windows' error when Windows does not start it.
+    /// </summary>
+    StartedProcess StartBrowser(string program, IReadOnlyList<string> arguments, string workingFolder);
 }
 
 /// <summary>
@@ -87,6 +99,9 @@ internal static class StartRefusal
 
     /// <summary>What the alert window is called in the message.</summary>
     public const string AlertWindow = "the alert window";
+
+    /// <summary>What Chrome, started for a YouTube video's window, is called in the message.</summary>
+    public const string Browser = "Chrome";
 
     /// <summary>
     /// The exception for <paramref name="what"/> refused with Windows' <paramref name="error"/>, which it carries as its

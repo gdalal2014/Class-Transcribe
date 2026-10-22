@@ -12,7 +12,7 @@ namespace ClassScribe.Storage;
 /// .md of that name, with (2), (3) and so on for later transcripts of the same recording, and ElevenLabs'
 /// answer the .json beside it. An answer that was paid for but did not become a transcript is the
 /// .unread.json of that name, or a .json left without its .md (see <see cref="FindKeptAnswers"/>). The
-/// marks, the log and the upload copy complete the set.
+/// marks, the log and the upload copy complete the set, with a YouTube video's source file for a video's recording.
 /// </summary>
 /// <param name="Folder">The folder holding the recording's files.</param>
 /// <param name="BaseName">The name and time stamp every file name starts with.</param>
@@ -53,6 +53,12 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     public string Upload => Path.Combine(Folder, $"{BaseName}.upload.wav");
 
     /// <summary>
+    /// A YouTube video's source file: the video's title and link and how its audio was obtained (see
+    /// <see cref="YouTube.VideoSource"/>). Only a video's recording has one; it is never an answer or a transcript.
+    /// </summary>
+    public string Source => Path.Combine(Folder, $"{BaseName}.source.json");
+
+    /// <summary>
     /// True when the recording has been transcribed at least once: any copy of its transcript is there, not only
     /// the first, which may have been deleted while a later one was kept.
     /// </summary>
@@ -73,7 +79,7 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
 
     /// <summary>
     /// The recording any of its files belongs to, by the file's name: a segment of either track, the marks, the log, the
-    /// upload copy, or any copy of its transcript or of ElevenLabs' answer, an answer kept as unread included. Null for
+    /// upload copy, a video's source file, or any copy of its transcript or of ElevenLabs' answer, an answer kept as unread included. Null for
     /// any other file, such as one without a time stamp in its name. Whether the recording's audio is still there is for
     /// the caller to look at (see <see cref="FindSegments"/>).
     /// </summary>
@@ -166,10 +172,11 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
 
     /// <summary>
     /// The name of any file of a recording: the base name with its time stamp, then a segment of either track (.wav,
-    /// _partN.wav, .mic.wav, _partN.mic.wav), the upload copy (.upload.wav), the marks (.marks.txt), the log (.log), or a
-    /// copy of the transcript or of the answer (.md, .json, .unread.json, each with " (N)" before it from the second copy).
+    /// _partN.wav, .mic.wav, _partN.mic.wav), the upload copy (.upload.wav), the marks (.marks.txt), the log (.log), a
+    /// video's source file (.source.json), or a copy of the transcript or of the answer (.md, .json, .unread.json, each with
+    /// " (N)" before it from the second copy).
     /// </summary>
-    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|\.source\.json|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FileOfARecording();
 
     /// <summary>The time stamp at the end of a base name.</summary>

@@ -880,6 +880,9 @@ public sealed class FakeConsoleUi : IConsoleUi
     /// <summary>How many reads of a key have begun.</summary>
     public int KeyReads => Volatile.Read(ref _keyReads);
 
+    /// <summary>Runs as each read of a key begins, with how many have begun, this one included, such as to start a class at that moment.</summary>
+    public Action<int>? BeforeKeyRead { get; set; }
+
     /// <summary>Everything shown so far, as one text.</summary>
     public string Screen => string.Join(Environment.NewLine, _output);
 
@@ -924,7 +927,8 @@ public sealed class FakeConsoleUi : IConsoleUi
     /// <inheritdoc />
     public async Task<ConsoleKeyInfo?> ReadKeyAsync(CancellationToken cancellationToken)
     {
-        Interlocked.Increment(ref _keyReads);
+        var reads = Interlocked.Increment(ref _keyReads);
+        BeforeKeyRead?.Invoke(reads);
         if (KeysClosed) return null;
 
         if (Interlocked.Exchange(ref _readHold, null) is { } hold)

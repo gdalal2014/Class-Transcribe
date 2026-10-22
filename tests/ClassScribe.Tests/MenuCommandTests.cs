@@ -1109,6 +1109,20 @@ public class MenuCommandTests
         Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back afterwards");
     }
 
+    /// <summary>Y, after 9 since the digits are all taken, hands YouTube videos to the runner, in a scope of its own; the menu comes back afterwards.</summary>
+    [Test]
+    public async Task Y_hands_YouTube_videos_to_the_runner()
+    {
+        _ui.Type('y', 'q');
+
+        Assert.That(await RunMenuAsync(), Is.EqualTo(0));
+
+        Assert.That(_ui.Screen, Does.Contain("  Y  YouTube: record videos as they play, or download them, then transcribe"));
+        _commands.Verify(c => c.YouTubeMenuAsync(), Times.Once);
+        _commands.VerifyNoOtherCalls();
+        Assert.That(MenusShown(), Is.EqualTo(2), "the menu came back afterwards");
+    }
+
     /// <summary>9 reads the settings first, as every choice does: with settings that cannot be used, Google Drive is not shown.</summary>
     [Test]
     public async Task Nine_waits_for_settings_that_can_be_used()

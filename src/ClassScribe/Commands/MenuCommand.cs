@@ -38,6 +38,9 @@ public sealed class MenuCommand(
     /// <summary>The key that shows the recording in progress, as the menu returns it.</summary>
     private const char ShowKey = 'A';
 
+    /// <summary>The key of the YouTube videos, after 9, the digits being all taken.</summary>
+    private const char YouTubeKey = 'Y';
+
     /// <summary>
     /// The console log is written on a background thread. Waiting this long before showing the menu
     /// again lets the last lines of a choice appear above the menu rather than below it.
@@ -173,6 +176,9 @@ public sealed class MenuCommand(
                 case '9':
                     await commands.DriveMenuAsync();
                     break;
+                case YouTubeKey:
+                    await commands.YouTubeMenuAsync();
+                    break;
             }
         }
         catch (OperationCanceledException)
@@ -226,6 +232,7 @@ public sealed class MenuCommand(
         ui.WriteLine("  7  Microphone: none, with the class, or in person");
         ui.WriteLine("  8  Check the microphone: watch what apps do with it (opens nothing)");
         ui.WriteLine("  9  Google Drive: upload, free room on this laptop, sign in");
+        ui.WriteLine($"  {YouTubeKey}  YouTube: record videos as they play, or download them, then transcribe");
         if (report.RecordingNow() is { Home: RunHome.Separate }) ui.WriteLine($"  {ShowKey}  Show the recording in progress");
         ui.WriteLine("  Q  Quit");
         ui.WriteLine();
@@ -317,8 +324,8 @@ public sealed class MenuCommand(
     private sealed record SourceEntry(string Line, string Name, string Setting, Action Pick);
 
     /// <summary>
-    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 9, or A, which comes back as
-    /// <see cref="ShowKey"/>. Returns null for Q, for Ctrl+C, or when nobody can type.
+    /// Waits for one of the menu's keys, ignoring any other: a digit from 1 to 9, A, which comes back as
+    /// <see cref="ShowKey"/>, or Y, as <see cref="YouTubeKey"/>. Returns null for Q, for Ctrl+C, or when nobody can type.
     /// </summary>
     private async Task<char?> ReadChoiceAsync()
     {
@@ -328,6 +335,7 @@ public sealed class MenuCommand(
             if (key is not { } pressed || IsQuit(pressed)) return null;
             if (pressed.KeyChar is >= '1' and <= '9') return pressed.KeyChar;
             if (pressed.Key == ConsoleKey.A && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return ShowKey;
+            if (pressed.Key == ConsoleKey.Y && !pressed.Modifiers.HasFlag(ConsoleModifiers.Control)) return YouTubeKey;
         }
     }
 

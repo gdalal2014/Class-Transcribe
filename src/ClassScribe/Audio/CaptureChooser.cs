@@ -1,4 +1,5 @@
 using ClassScribe.Commands;
+using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,7 +13,18 @@ namespace ClassScribe.Audio;
 /// the recording away. Those moments are timed on the steady clock, so Windows setting its time of day does not shorten
 /// them. Each look also notes how loud its pick plays (<see cref="RecordedLevel"/>).
 /// </summary>
-public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogger<CaptureChooser> logger)
+/// <remarks>
+/// A YouTube video's run (design 4.3), whose <paramref name="video"/> follows the window the batch opened, records that
+/// window's browser process and everything it started, through process loopback, from before the video plays, so that its
+/// first second is not lost; its level is the loudest session in that tree. It fails closed: with the window gone it picks
+/// nothing, never another Chrome by name, which could be Gulzar's everyday one. An ordinary recording of an app leaves out
+/// every process of a live video window of ClassScribe's, so that a class never records a video window left open.
+/// </remarks>
+/// <param name="time">The clock the moments are timed on.</param>
+/// <param name="source">What the run's request names to record.</param>
+/// <param name="logger">Where the chooser says what it found.</param>
+/// <param name="video">The run's video window; null, as for the tests that need none, when no video window is known of.</param>
+public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogger<CaptureChooser> logger, VideoPlayback? video = null)
 {
     /// <summary>A device or app playing at or above this level (out of 1) counts as having sound. It is the recorder's own threshold, about -50 dB.</summary>
     public const float SoundLevel = 100f / short.MaxValue;
@@ -57,12 +69,14 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
     public float? RecordedLevel { get; private set; }
 
     /// <summary>What the recording is waiting for while nothing can be recorded, in words for the log.</summary>
-    public string WaitingFor => source switch
-    {
-        ClassSource.App app => $"\"{app.ProcessName}\" to play sound",
-        ClassSource.Device device => $"the output device \"{device.NamePart}\" to connect",
-        _ => "an output device"
-    };
+    public string WaitingFor => video is { IsVideo: true }
+        ? VideoPlayback.WindowName
+        : source switch
+        {
+            ClassSource.App app => $"\"{app.ProcessName}\" to play sound",
+            ClassSource.Device device => $"the output device \"{device.NamePart}\" to connect",
+            _ => "an output device"
+        };
 
     /// <summary>
     /// One look: picks what to record from what the provider lists, or returns null when there is nothing to record yet,
@@ -74,6 +88,8 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
     {
         // A look that fails leaves no level behind: what it would have read is not known.
         RecordedLevel = null;
+        if (video is { IsVideo: true } window) return ChooseVideo(provider, window);
+
         if (IsApp)
         {
             var app = ChooseApp(provider.GetPlayingApps(), recordedId);
@@ -139,6 +155,11 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
         if (source is not ClassSource.App { ProcessName: var name }) return null;
 
         var matching = apps.Where(app => Matches(app.Name, name)).ToList();
+
+        // A video window of ClassScribe's, left open, is never a class's: its processes are left out.
+        if (matching.Count > 0 && video?.VideoWindowsProcesses() is { Count: > 0 } videoWindows)
+            matching.RemoveAll(app => videoWindows.Contains(app.ProcessId));
+
         if (matching.Count > 0)
         {
             _closedSaid = false;
@@ -151,6 +172,20 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
 
         return matching.FirstOrDefault(app => CaptureTarget.ForApp(app).Id == recordedId)
             ?? matching.OrderByDescending(app => app.Level).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// A YouTube video's pick (see the remarks): the window's browser process, whose tree process loopback records, from
+    /// before the video plays; how loud the loudest session of that tree plays, or no level while none plays. Nothing once the
+    /// window is gone: the run then stops (design 4.4, rule 1), and never records another Chrome.
+    /// </summary>
+    private CaptureTarget? ChooseVideo(ILoopbackCaptureProvider provider, VideoPlayback window)
+    {
+        var tree = window.Tree();
+        if (tree.Count == 0 || window.RootProcessId is not { } root) return null;
+
+        RecordedLevel = provider.GetPlayingApps().Where(app => tree.Contains(app.ProcessId)).Select(app => (float?)app.Level).Max();
+        return new CaptureTarget($"process:{root}", VideoPlayback.WindowName, root);
     }
 
     /// <summary>True when the name is the one chosen, or contains it, in any case.</summary>

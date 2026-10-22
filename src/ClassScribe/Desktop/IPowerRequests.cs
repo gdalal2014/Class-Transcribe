@@ -83,6 +83,12 @@ public static class StayAwake
     public const string UploadingReason = "ClassScribe is uploading to Google Drive";
 
     /// <summary>
+    /// The reason Windows shows, in powercfg /requests, for the request a window holds while it works through a batch of
+    /// YouTube videos, from the plan to the summary, so that the laptop does not sleep between videos or during the reads.
+    /// </summary>
+    public const string VideosReason = "ClassScribe is working through YouTube videos";
+
+    /// <summary>
     /// The laptop awake and ClassScribe running, always; the screen as <paramref name="screen"/> says: with
     /// <see cref="KeepScreenOn.OnBattery"/> while <paramref name="power"/> says the laptop runs on battery, which is
     /// read only for that setting.

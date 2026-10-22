@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
 using ClassScribe.Transcription;
+using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -32,8 +33,12 @@ namespace ClassScribe.Storage;
 /// <see cref="IAudioOnDrive"/>): its transcripts can be read and rebuilt, and transcribing it again needs the audio back.
 /// Null while its audio is on this laptop.
 /// </param>
+/// <param name="Video">
+/// The YouTube video it is the recording of, from its source file (see <see cref="RecordingFiles.Source"/>); null for a
+/// class's recording, and for a video's whose source file cannot be read.
+/// </param>
 public sealed record RecordedClass(RecordingFiles Files, DateTime LastRecordedUtc, TimeSpan Length, bool HasTranscript, string? KeptAnswer, bool BeingWritten,
-    int Parts = 1, bool HasMicrophone = false, AudioOnDrive? OnDrive = null);
+    int Parts = 1, bool HasMicrophone = false, AudioOnDrive? OnDrive = null, VideoSource? Video = null);
 
 /// <summary>
 /// A recording that a new run of the same name may continue as its next part, because it stopped recently with neither a
@@ -145,6 +150,37 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     }
 
     /// <summary>
+    /// The files for a recording named <paramref name="name"/> starting now in <paramref name="folder"/>, which a batch of
+    /// YouTube videos shares (design 2.4): the batch's first video takes its date folder as a class does (see
+    /// <see cref="CreateRecording"/>), and every later one goes into that same folder, made if it is gone, so that a batch of
+    /// thirty videos never pushes the day's class to a thirty-first date folder. A recording started within the same second
+    /// as another of the course takes the next second, as there; the course is the date folder's parent, or the folder itself
+    /// when it is no date folder.
+    /// </summary>
+    public RecordingFiles CreateRecordingIn(string folder, string name)
+    {
+        var safe = SafeName(name);
+        if (safe.Length == 0) throw new ArgumentException("A name is needed.", nameof(name));
+
+        var full = Directory.CreateDirectory(folder).FullName;
+        var trimmed = Path.TrimEndingDirectorySeparator(full);
+        var course = IsDateFolderName(Path.GetFileName(trimmed)) && Path.GetDirectoryName(trimmed) is { } parent ? parent : trimmed;
+        var started = time.GetUtcNow();
+        var files = RecordingFiles.ForNew(trimmed, safe, started);
+        while (CourseHasBaseName(course, files.BaseName))
+            files = RecordingFiles.ForNew(trimmed, safe, started = started.AddSeconds(1));
+
+        return files;
+    }
+
+    /// <summary>
+    /// True when <paramref name="files"/> is a YouTube video's recording: it has a source file (see
+    /// <see cref="RecordingFiles.Source"/>). The class machinery passes such a recording over: it is never offered to be
+    /// continued, and never shown as a class.
+    /// </summary>
+    public static bool IsVideo(RecordingFiles files) => File.Exists(files.Source);
+
+    /// <summary>
     /// The files for the transcript of <paramref name="sourcePath"/>, laid out as a recording's (see
     /// <see cref="CreateRecording"/>): a folder named after the file, under <paramref name="root"/>, the recordings folder
     /// given for the run (transcribe --output), or under the root when that is null, the date folder of the transcription
@@ -204,7 +240,8 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// The recording a new run of <paramref name="name"/> may continue as its next part, or null when there is none. Only
     /// the newest recording of the name, in any letter case, under <paramref name="root"/> (the recordings folder given for
     /// the run, or the root when that is null) is ever offered, in either layout: in the date folders of the name's folder,
-    /// or flat in it. It is offered only when all of this holds: it has no transcript; no
+    /// or flat in it. A YouTube video's recording (see <see cref="IsVideo"/>) is passed over: it is never a class to
+    /// continue, however recent. It is offered only when all of this holds: it has no transcript; no
     /// answer ElevenLabs was paid for is kept for it (see <see cref="KeptAnswerOf(RecordingFiles)"/>), beside it, in the
     /// root or in the recordings folder given for the run; it has the same tracks as a run of <paramref name="mode"/>,
     /// which the microphone's .mic.wav files tell; it is not being written, on either track; it has no upload copy, which
@@ -222,8 +259,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         if (within <= TimeSpan.Zero || safe.Length == 0) return null;
         if (FolderOf(RootOf(root), safe) is not { } course) return null;
 
+        // A YouTube video's recording shares the course's name and folders, but is never a class to continue.
         var newest = NewestFirst(RecordingsUnder(course))
-            .FirstOrDefault(files => string.Equals(files.Name, safe, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(files => string.Equals(files.Name, safe, StringComparison.OrdinalIgnoreCase) && !IsVideo(files));
         if (newest is null) return null;
 
         var main = newest.FindSegments();
@@ -528,8 +566,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
     /// <summary>
     /// True when a new recording may go into the date folder <paramref name="folder"/>: it is not there yet, or it is a
-    /// folder that holds no class (see <see cref="IsClass"/>), such as one with only a false start's log and marks. A
-    /// file of that name is not free, and nor is a folder that cannot be looked into, which is said.
+    /// folder that holds no class (see <see cref="IsClass"/>), such as one with only a false start's log and marks, and no
+    /// YouTube video's audio being written into it (see <see cref="IsAudioBeingConverted"/>). A file of that name is not free,
+    /// and nor is a folder that cannot be looked into, which is said.
     /// </summary>
     private bool IsFree(string folder)
     {
@@ -538,7 +577,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
         try
         {
-            return !Directory.EnumerateFiles(folder).Any(IsClass);
+            return !Directory.EnumerateFiles(folder).Any(file => IsClass(file) || IsAudioBeingConverted(file));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -553,7 +592,8 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// True when <paramref name="file"/> shows that a class was recorded: a file of a recording (see
     /// <see cref="RecordingFiles.TryParse"/>) that is its audio on either track, a transcript or an answer from ElevenLabs,
     /// or a log or marks of a recording whose audio is on Google Drive alone (see <see cref="IAudioOnDrive"/>). A log and
-    /// marks alone, as a start that recorded nothing leaves, and an upload copy show no class.
+    /// marks alone, as a start that recorded nothing leaves, an upload copy, and a YouTube video's source file, which a video
+    /// whose fetching failed leaves, show no class.
     /// </summary>
     private bool IsClass(string file)
     {
@@ -562,9 +602,18 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         var kind = Path.GetFileName(file)[files.BaseName.Length..];
         var trace = kind.Equals(".log", StringComparison.OrdinalIgnoreCase)
             || kind.Equals(".marks.txt", StringComparison.OrdinalIgnoreCase)
-            || kind.Equals(".upload.wav", StringComparison.OrdinalIgnoreCase);
+            || kind.Equals(".upload.wav", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals(".source.json", StringComparison.OrdinalIgnoreCase);
         return !trace || _onDrive.Find(files) is not null;
     }
+
+    /// <summary>
+    /// True when <paramref name="file"/> is an unfinished part of a downloaded YouTube video's audio, &lt;segment&gt;.wav.partial,
+    /// which its batch writes before it renames it to its segment's name: the date folder is taken by that video, so that a
+    /// class starting meanwhile takes its own. One a crash left is deleted by the next YouTube batch.
+    /// </summary>
+    private static bool IsAudioBeingConverted(string file) =>
+        file.EndsWith(".wav.partial", StringComparison.OrdinalIgnoreCase) && RecordingFiles.TryParseSegment(file[..^".partial".Length]) is not null;
 
     /// <summary>
     /// True when a file of the recording <paramref name="baseName"/> is in <paramref name="course"/> or in any of its date
@@ -793,7 +842,8 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// tracks, whether it has a transcript, the newest answer paid for but kept without one, beside it or, when its own
     /// folder would not take it, in the recordings folder <paramref name="root"/>, whether it is being recorded now, the
     /// parts it was made in, and whether it has the microphone's track. A recording whose audio is all on Google Drive
-    /// alone takes its length from what was measured when the audio went up, and counts as last written at its end.
+    /// alone takes its length from what was measured when the audio went up, and counts as last written at its end. A YouTube
+    /// video's recording carries its source (see <see cref="VideoOf"/>).
     /// </summary>
     private RecordedClass Describe(RecordingFiles files, string root)
     {
@@ -803,11 +853,31 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         {
             var ended = (files.StartedUtc ?? DateTimeOffset.UnixEpoch) + onDrive.Length;
             return new RecordedClass(files, ended.UtcDateTime, onDrive.Length, files.HasTranscript, KeptAnswerOf(files, root), BeingWritten: false,
-                ClassMarks.PartsOf(files), onDrive.HasMicrophone, onDrive);
+                ClassMarks.PartsOf(files), onDrive.HasMicrophone, onDrive, VideoOf(files));
         }
 
         return new RecordedClass(files, LastWritten(main.Concat(microphone)).UtcDateTime, LongestTrack(main, microphone), files.HasTranscript,
-            KeptAnswerOf(files, root), IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone), ClassMarks.PartsOf(files), microphone.Count > 0);
+            KeptAnswerOf(files, root), IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone), ClassMarks.PartsOf(files), microphone.Count > 0,
+            Video: VideoOf(files));
+    }
+
+    /// <summary>
+    /// The YouTube video <paramref name="files"/> is the recording of, from its source file; null for a class's recording. A
+    /// source file that is not one leaves the recording described without it, with a warning that names the file.
+    /// </summary>
+    private VideoSource? VideoOf(RecordingFiles files)
+    {
+        try
+        {
+            return VideoSourceFile.Read(files.Source);
+        }
+        catch (InvalidDataException ex)
+        {
+            // Deliberately not rethrown: the source only adds the video's title to the recording's line; a file that is not
+            // one must not hide the recording, and this says which file it is.
+            logger.LogWarning("{Problem}; {Recording} is listed without its video's title", ex.Message, files.BaseName);
+            return null;
+        }
     }
 
     /// <summary>A reference to an environment variable, such as %USERPROFILE%.</summary>

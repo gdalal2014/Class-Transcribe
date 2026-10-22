@@ -1235,6 +1235,28 @@ public class RecordingSessionTests
         Assert.That(afterSound.Captured.TotalSeconds, Is.EqualTo(6 / 16000.0).Within(0.000001));
     }
 
+    /// <summary>
+    /// The status says whether sound has reached the files yet, which a YouTube video's run reads to tell a window that has
+    /// played nothing from one that played and went quiet: not for silence, nor for sound while paused; yes once sound was written.
+    /// </summary>
+    [Test]
+    public void Status_says_whether_sound_has_reached_the_files()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
+        using var session = CreateSession();
+
+        session.Start(_files);
+        capture.Deliver(TestAudio.Shorts(0, 0, 0));
+        var silent = session.GetStatus().HeardSound;
+        session.Pause();
+        capture.Deliver(TestAudio.Shorts(0, 5000, 0));
+        var whilePaused = session.GetStatus().HeardSound;
+        session.Resume();
+        capture.Deliver(TestAudio.Shorts(0, 5000, 0));
+
+        Assert.That((silent, whilePaused, session.GetStatus().HeardSound), Is.EqualTo((false, false, true)));
+    }
+
     /// <summary>Setting the computer's clock forward does not make the recording look silent.</summary>
     [Test]
     public void Setting_the_clock_forward_does_not_look_like_silence()

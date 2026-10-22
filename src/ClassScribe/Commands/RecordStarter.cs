@@ -24,9 +24,25 @@ namespace ClassScribe.Commands;
 /// and never records in that window: where the run would record there, the loss is left for the next start to report, with
 /// C. Returns the exit code: the run's, 0 after Esc, 1 when nothing was started or the run was lost.
 /// </summary>
+/// <remarks>
+/// <para>A class always comes first (design 2.5). A start of a class, from any origin, that finds a YouTube video's run
+/// recording asks that run to give way through its yield (see <see cref="IVideoYield"/>), says so, and waits up to
+/// <see cref="YieldPatience"/> on the steady clock, looking at the run files every <see cref="YieldPoll"/>, for it to stop
+/// recording; then the class starts as it would have. A video that has not stopped by then is explained as any other
+/// recording is, with the keys that stop it. A video's run is never shown to a class's start, never offered to be
+/// continued, and never continued once its recorder is lost.</para>
+/// <para>A YouTube batch's start of one of its videos (<see cref="StartOrigin.VideoBatch"/>) asks nothing: it is a new
+/// recording, shown here as its owner; a recording running already is explained, never shown, and the batch waits.</para>
+/// </remarks>
 public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher, IRunViewer viewer, ContinueQuestion question, SettingsReloader settings,
-    IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger) : IRecordStarter
+    IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null) : IRecordStarter
 {
+    /// <summary>How long a class waits for a YouTube video's run it asked to give way.</summary>
+    public static readonly TimeSpan YieldPatience = TimeSpan.FromSeconds(30);
+
+    /// <summary>How often the run files are looked at while a video's run gives way.</summary>
+    public static readonly TimeSpan YieldPoll = TimeSpan.FromMilliseconds(250);
+
     /// <summary>Within how long a second loss of the recorder continues the recording in this window instead of in a new recorder.</summary>
     public static readonly TimeSpan LossWindow = TimeSpan.FromMinutes(10);
 
@@ -60,7 +76,13 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
     /// </summary>
     public async Task<int> RunAsync(RecordRequest request, StartOrigin origin)
     {
-        if (journal.List().FirstOrDefault(run => run.IsRecordingNow) is { } live) return await DriveAsync(OneAtATime(live.Record, request, origin), origin);
+        if (journal.List().FirstOrDefault(run => run.IsRecordingNow) is { } live)
+        {
+            // A class comes first: a YouTube video's recording gives way to it, and the class then starts as it would have.
+            if (request.Video is not null || !live.IsVideo) return await DriveAsync(OneAtATime(live.Record, request, origin), origin);
+            if (!await YieldAsync(live.Record, request, origin)) return NotDone;
+            if (journal.List().FirstOrDefault(run => run.IsRecordingNow) is { } another) return await DriveAsync(OneAtATime(another.Record, request, origin), origin);
+        }
 
         if (await DecideAsync(request, origin) is not { } decided)
         {
@@ -79,6 +101,8 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
     /// </summary>
     private async Task<RecordRequest?> DecideAsync(RecordRequest request, StartOrigin origin)
     {
+        // A YouTube video is a new recording, without a question: a video is never continued, nor continues a class.
+        if (request.Video is not null || origin == StartOrigin.VideoBatch) return request with { Continue = ContinueChoice.New, ContinueBaseName = null };
         if (request.ContinueBaseName is not null) return request with { Continue = ContinueChoice.Continue };
 
         var mode = request.Source.Mode;
@@ -100,10 +124,15 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
     private Step OneAtATime(RunRecord live, RecordRequest request, StartOrigin origin) =>
         origin is StartOrigin.CommandLine or StartOrigin.AutoContinue or StartOrigin.AutoContinueFromAlert ? Winner(live, request, origin) : Explain(live, origin);
 
-    /// <summary>Shows <paramref name="live"/>, a recording in the background of the same name as <paramref name="request"/>'s, or explains it.</summary>
+    /// <summary>
+    /// Shows <paramref name="live"/>, a recording in the background of the same name as <paramref name="request"/>'s, or
+    /// explains it. A YouTube video's run is never shown to another start, nor another run to a video's start: a video shares
+    /// its course's name, but is never the class of that name.
+    /// </summary>
     private Step Winner(RunRecord live, RecordRequest request, StartOrigin origin)
     {
-        if (live.Home != RunHome.Separate || !string.Equals(live.Request.Name, request.Name, StringComparison.OrdinalIgnoreCase)) return Explain(live, origin);
+        if (live.Home != RunHome.Separate || live.Request.Video is not null || request.Video is not null
+            || !string.Equals(live.Request.Name, request.Name, StringComparison.OrdinalIgnoreCase)) return Explain(live, origin);
 
         ui.WriteLine($"\"{live.Request.Name}\" is being recorded already, since {Since(live)}; showing it.");
         return new Step.Show(live, origin == StartOrigin.AutoContinueFromAlert ? ViewMode.Alert : ViewMode.Viewer);
@@ -124,16 +153,73 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
         journal.MarkSeen(runId);
     }
 
-    /// <summary>Explains that only one recording runs at a time, with how to see <paramref name="live"/>: A in the menu, a new start otherwise.</summary>
+    /// <summary>
+    /// Explains that only one recording runs at a time, with how to see <paramref name="live"/>: A in the menu, a new start
+    /// otherwise; to a YouTube batch, that its videos wait for it. A video's run is named as the video it records.
+    /// </summary>
     private Step.Done Explain(RunRecord live, StartOrigin origin)
     {
+        var name = Named(live);
         ui.WriteLine(live.Home == RunHome.InWindow
-            ? $"Only one recording at a time: \"{live.Request.Name}\" is being recorded in another ClassScribe window (process {live.ProcessId}), which shows it; closing that window ends the recording."
-            : origin is StartOrigin.Menu or StartOrigin.StartupReport
-                ? $"Only one recording at a time: \"{live.Request.Name}\" has been recording since {Since(live)}. A shows it."
-                : $"Only one recording at a time: \"{live.Request.Name}\" has been recording since {Since(live)}. Start ClassScribe to see it, or stop it first.");
+            ? $"Only one recording at a time: {name} is being recorded in another ClassScribe window (process {live.ProcessId}), which shows it; closing that window ends the recording."
+            : origin switch
+            {
+                StartOrigin.Menu or StartOrigin.StartupReport => $"Only one recording at a time: {name} has been recording since {Since(live)}. A shows it.",
+                StartOrigin.VideoBatch => $"Only one recording at a time: {name} has been recording since {Since(live)}; the YouTube videos wait for it.",
+                _ => $"Only one recording at a time: {name} has been recording since {Since(live)}. Start ClassScribe to see it, or stop it first."
+            });
         logger.LogDebug("Nothing was started: run {RunId} records \"{Name}\"", live.RunId, live.Request.Name);
         return new Step.Done(NotDone);
+    }
+
+    /// <summary>A run as the words name it: "Kalam" in quotes, or the YouTube video "The creed, part 1" for a video's.</summary>
+    internal static string Named(RunRecord run) =>
+        run.Request.Video is { } video ? $"the YouTube video \"{video.Title}\"" : $"\"{run.Request.Name}\"";
+
+    /// <summary>A run as the words name it at the start of a sentence: "Kalam" in quotes, or The YouTube video "The creed, part 1".</summary>
+    internal static string NamedFirst(RunRecord run) => Named(run) is var named && named.StartsWith("the ", StringComparison.Ordinal) ? "T" + named[1..] : named;
+
+    /// <summary>
+    /// Asks <paramref name="video"/>, a YouTube video's run that records, to give way to <paramref name="request"/>'s class
+    /// (design 2.5), and waits up to <see cref="YieldPatience"/> on the steady clock, looking at its run file every
+    /// <see cref="YieldPoll"/>, for it to stop recording. A run still starting listens for its yield only once its run has
+    /// begun, so while it says it is starting, it is asked again at each look. That the video is stopping is said once it has
+    /// been asked. True once it has stopped; otherwise, as when nothing listens for its yield, it is explained as any recording
+    /// is, with whether it could be asked and the keys that stop it, and false.
+    /// </summary>
+    private async Task<bool> YieldAsync(RunRecord video, RecordRequest request, StartOrigin origin)
+    {
+        var since = time.GetTimestamp();
+        var asked = false;
+        while (time.GetElapsedTime(since) < YieldPatience)
+        {
+            var now = journal.Find(video.RunId);
+            if (now is not { IsRecordingNow: true })
+            {
+                logger.LogDebug("Run {RunId} of the YouTube video gave way to \"{Name}\"", video.RunId, request.Name);
+                return true;
+            }
+
+            if (!asked && yield?.Ask(video.RunId) == true)
+            {
+                asked = true;
+                ui.WriteLine($"Stopping the YouTube video \"{video.Request.Video!.Title}\" so that \"{request.Name}\" can record; what it recorded is kept.");
+            }
+            else if (!asked && now.Record.State != RunState.Starting)
+            {
+                // A run that records and does not listen, as one of an older build, will not hear a later ask either.
+                break;
+            }
+
+            await Task.Delay(YieldPoll, time);
+        }
+
+        if (!asked) logger.LogDebug("Run {RunId} of the YouTube video does not listen for a class, so it could not be asked to give way", video.RunId);
+        Explain(video, origin);
+        ui.WriteLine(asked
+            ? "Press Q twice in the window that shows the video to stop it, then start the class again."
+            : "It could not be asked to stop: press Q twice in the window that shows the video to stop it, then start the class again.");
+        return false;
     }
 
     /// <summary>Takes the run from <paramref name="first"/> through launches, views and continues until it is done, and returns its exit code.</summary>
@@ -266,7 +352,8 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
     /// <summary>
     /// The view lost the recorder of <paramref name="shown"/>; its run file says what happened. A recorder that still runs
     /// lost only its link, and carries on. One that never recorded counts as a recorder that did not start. One lost while
-    /// recording is continued as the same recording's next part; one lost while stopping or transcribing leaves complete
+    /// recording is continued as the same recording's next part, but a YouTube video's, which is never continued: its audio
+    /// so far is kept, and the same command records the video again; one lost while stopping or transcribing leaves complete
     /// audio to transcribe; one whose run ended gives its outcome.
     /// </summary>
     private Step AfterLoss(RunRecord shown, StartOrigin origin, Attempts attempts)
@@ -282,6 +369,11 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
         var name = lost.Request.Name;
         switch (lost.State)
         {
+            case RunState.Recording when lost.BaseName is not null && lost.Request.Video is { } video:
+                MarkSeen(lost.RunId, origin);
+                ui.WriteLine($"The recorder of the YouTube video \"{video.Title}\" ended unexpectedly at {LocalTime.Of(time.GetUtcNow(), time, seconds: true)}. Its audio so far is kept; a video is never continued, so the same command records it again.");
+                return new Step.Done(NotDone);
+
             case RunState.Recording when lost.BaseName is not null:
                 return Continue(lost, origin, attempts);
 

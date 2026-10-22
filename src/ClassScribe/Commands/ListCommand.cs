@@ -68,10 +68,13 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
     /// date folder of a later class of its day ("in 2026-10-17 (2)"), which tells it from the day's first class and says
     /// where to find it; the parts it was made in when there were more than one ("2 parts"); "class + microphone" when
     /// your microphone was recorded with the class; and "audio on Drive" when its audio is on Google Drive alone, freed
-    /// from this laptop once checked there.
+    /// from this laptop once checked there. A YouTube video's recording is first named by the video's title and how its
+    /// audio was obtained ("The creed, part 1" (YouTube, downloaded)), so that a batch's videos in one date folder are told
+    /// apart.
     /// </summary>
     internal static IEnumerable<string> NotesOf(RecordedClass recorded)
     {
+        if (recorded.Video is { } video) yield return $"\"{video.Title}\" (YouTube, {video.Obtained})";
         if (ClassFolders.LaterClassOfItsDay(recorded.Files.Folder) is { } dateFolder) yield return $"in {dateFolder}";
         if (recorded.Parts > 1) yield return $"{recorded.Parts} parts";
         if (recorded.HasMicrophone) yield return "class + microphone";

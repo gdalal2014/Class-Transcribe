@@ -19,7 +19,7 @@ namespace ClassScribe.Tests;
 /// and recordings are real files in temporary folders. The clock reads local time in US Eastern time.
 /// </summary>
 [TestFixture]
-public class RecordStarterTests
+public partial class RecordStarterTests
 {
     /// <summary>Now: 23:42:15 UTC, 19:42:15 in Eastern time, 42 minutes and 13 seconds after the tests' class started.</summary>
     private static readonly DateTimeOffset Now = TestRuns.Start.AddMinutes(42).AddSeconds(13);
@@ -44,6 +44,7 @@ public class RecordStarterTests
     private List<FakeDriveAutoUpload> _drives = null!;
     private ServiceProvider _services = null!;
     private RecordingLogger<RecordStarter> _log = null!;
+    private FakeVideoYield _videoYield = null!;
 
     /// <summary>Makes the folders, the settings, the pretend processes and views, and a run in this window in a scope of its own, with the clock at <see cref="Now"/>.</summary>
     [SetUp]
@@ -67,6 +68,7 @@ public class RecordStarterTests
             .AddScoped<IDriveAutoUpload>(_ => NewDrive())
             .BuildServiceProvider(validateScopes: true);
         _log = new RecordingLogger<RecordStarter>();
+        _videoYield = new FakeVideoYield();
     }
 
     /// <summary>Deletes the temporary folders.</summary>
@@ -86,7 +88,8 @@ public class RecordStarterTests
         var launcher = new RecorderLauncher(_starter, _jobs, folder ?? _runtime.Folder, _runtime.Journal, _options, clock, new RecordingLogger<RecorderLauncher>());
         var question = new ContinueQuestion(new ClassFolders(_options, clock, new RecordingLogger<ClassFolders>()), _runtime.Journal, _ui, _options, clock,
             new RecordingLogger<ContinueQuestion>());
-        return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Reloader, _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log);
+        return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Reloader, _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log,
+            _videoYield);
     }
 
     /// <summary>A request to record "Kalam" into the recordings folder and transcribe it, with neither --continue nor --new.</summary>

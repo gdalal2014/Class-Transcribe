@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -74,6 +75,7 @@ public sealed partial class RecordingUpload(
     RunJournal journal,
     RecorderLog log,
     IOptionsSnapshot<DriveOptions> options,
+    IOptionsSnapshot<YouTubeOptions> youTube,
     TimeProvider time,
     ILogger<RecordingUpload> logger)
 {
@@ -225,14 +227,22 @@ public sealed partial class RecordingUpload(
     }
 
     /// <summary>
+    /// True when the audio of <paramref name="files"/> goes up: for a class's recording as Drive:Upload says, for a YouTube
+    /// video's (see <see cref="ClassFolders.IsVideo"/>) as YouTube:DriveUpload says, everything by default.
+    /// </summary>
+    public bool SendsAudio(RecordingFiles files) =>
+        (ClassFolders.IsVideo(files) ? youTube.Value.DriveUpload : options.Value.Upload) == DriveUploadScope.Everything;
+
+    /// <summary>
     /// The files of <paramref name="files"/> that go up, in the order they go: every file of the recording but the upload
-    /// copy, and with Drive:Upload WithoutAudio none of its .wav files. Files in its folder that are not its own are left out.
+    /// copy, a video's source file included, and none of its .wav files when its audio does not go up (see
+    /// <see cref="SendsAudio"/>). Files in its folder that are not its own are left out.
     /// </summary>
     public IReadOnlyList<string> FilesToUpload(RecordingFiles files)
     {
         if (!Directory.Exists(files.Folder)) return [];
 
-        var withoutAudio = options.Value.Upload == DriveUploadScope.WithoutAudio;
+        var withoutAudio = !SendsAudio(files);
         return
         [
             .. Directory.EnumerateFiles(files.Folder, $"{files.BaseName}*")
