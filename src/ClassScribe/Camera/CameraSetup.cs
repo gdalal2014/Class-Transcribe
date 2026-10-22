@@ -52,7 +52,7 @@ public sealed record CameraSetupLine(CameraSetupState State, string Text)
 /// The camera's set-up lines (camera-first step 11, point 3), which camera-check shows and setup-check will reuse: Windows'
 /// version against 10.0.19041, Windows' camera privacy switches (the device's, the user's, and the one for desktop apps),
 /// an H.264 encoder present, the security program and, for Bitdefender, its Webcam Protection step, each webcam's
-/// microphone (by the container it shares with its camera), and whether the wake of a sleeping webcam is on. Nothing is
+/// microphone (by the container it shares with its camera), and whether a webcam is kept awake (Recording:WakeCameraMicrophone). Nothing is
 /// opened to read them: Windows' lists, its registry and its Security Center only.
 /// </summary>
 /// <param name="system">What Windows says: its version, its encoders, its security programs.</param>
@@ -97,8 +97,8 @@ public sealed class CameraSetupFacts(ICameraSystem system, ICameraUsageRecord us
         }
 
         lines.Add(wakeOn
-            ? new(CameraSetupState.Note, "Recording:WakeCameraMicrophone is on: a webcam whose microphone sends only silence will be woken by opening its picture, shared, once that is built (after the camera probe)")
-            : new(CameraSetupState.Off, "Recording:WakeCameraMicrophone is off: a webcam that sleeps by itself, such as the OBSBOT with Device Auto Sleep on, is not woken; turn off its Device Auto Sleep in OBSBOT Center"));
+            ? new(CameraSetupState.Note, "Recording:WakeCameraMicrophone is on: while a webcam's microphone is recorded, ClassScribe keeps the webcam's picture open, shared, so that it cannot fall asleep; its light stays on")
+            : new(CameraSetupState.Off, "Recording:WakeCameraMicrophone is off: a webcam that sleeps by itself, such as the OBSBOT with Device Auto Sleep on, is not kept awake; turn off its Device Auto Sleep in OBSBOT Center, or turn the setting on"));
         return lines;
     }
 

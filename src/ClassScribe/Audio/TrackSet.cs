@@ -20,7 +20,11 @@ public sealed record MicrophoneOpened(Microphone Microphone, MicrophoneProcessin
 /// listing. The provider belongs to the app and is not disposed here.
 /// </summary>
 /// <param name="inner">The app's provider.</param>
-public sealed class MicrophoneProviderTap(IMicrophoneProvider inner) : IMicrophoneProvider
+/// <param name="beforeOpen">
+/// Called before each capture is opened, with its microphone, on the thread that opens it: the webcam hold waits there for
+/// the held camera's first frame (see <see cref="Camera.WebcamHold.BeforeOpen"/>); null for nothing to wait for.
+/// </param>
+public sealed class MicrophoneProviderTap(IMicrophoneProvider inner, Action<Microphone>? beforeOpen = null) : IMicrophoneProvider
 {
     private readonly Lock _gate = new();
     private MicrophoneOpened? _last;
@@ -44,9 +48,13 @@ public sealed class MicrophoneProviderTap(IMicrophoneProvider inner) : IMicropho
     /// <inheritdoc />
     public IReadOnlyList<Microphone> GetMicrophones() => inner.GetMicrophones();
 
-    /// <summary>Opens the capture through the app's provider, and notes which microphone it is of and what processing it got.</summary>
+    /// <summary>
+    /// Opens the capture through the app's provider, after whatever must come first (a webcam's picture held, see the
+    /// class), and notes which microphone it is of and what processing it got.
+    /// </summary>
     public IAudioCapture CreateCapture(Microphone microphone, MicrophoneProcessing processing)
     {
+        beforeOpen?.Invoke(microphone);
         var capture = inner.CreateCapture(microphone, processing);
         var used = processing;
         if (OperatingSystem.IsWindows() && capture is WasapiAudioCapture wasapi && wasapi.Processing is { } reported) used = reported;
@@ -79,8 +87,12 @@ public sealed class MicrophoneProviderTap(IMicrophoneProvider inner) : IMicropho
 /// <param name="Gate">The gate that decides which packets are written; it follows no app in person, and counts the time on and off with V.</param>
 /// <param name="Watch">The watch that looks at the class app's microphone sessions and hands its looks to the gate; null when no app is followed.</param>
 /// <param name="Follows">The app the track follows, as the recording was built to follow it; null in person.</param>
+/// <param name="Webcam">
+/// The webcam the picked microphone belongs to, which the hold keeps awake with Recording:WakeCameraMicrophone on (see
+/// <see cref="Camera.WebcamHold"/>); null when no camera list is at hand, as for the tests that need none.
+/// </param>
 public sealed record MicrophoneTrack(RecordingSession Session, MicrophoneSource Source, MicrophoneProviderTap Tap, MicrophoneGate Gate,
-    ClassMicrophoneWatch? Watch, FollowRule? Follows);
+    ClassMicrophoneWatch? Watch, FollowRule? Follows, Camera.WebcamHold? Webcam = null);
 
 /// <summary>
 /// A recording of the class and your microphone together, or of your microphone alone in person, as the record command
@@ -154,6 +166,12 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
 
     /// <summary>Whether the microphone recorded now is muted in Windows, read from Windows when asked; null while none is recorded, or when Windows cannot say.</summary>
     public bool? MutedInWindows => Microphone is { } recorded ? microphone!.Tap.IsMuted(recorded.Id) : null;
+
+    /// <summary>
+    /// The webcam the picked microphone belongs to, and its hold; null for a microphone of no webcam, when the recording
+    /// has no camera list, and once the microphone's track was left out.
+    /// </summary>
+    public Camera.WebcamState? Webcam => MicrophoneLeftOut ? null : microphone?.Webcam?.State;
 
     /// <summary>The watch on the class app's microphone sessions; null when no app is followed. For the tests.</summary>
     internal ClassMicrophoneWatch? Watch => microphone?.Watch;
@@ -299,6 +317,9 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
             var (main, second) = StopTracks(end);
             freezes.Frozen -= OnFrozen;
 
+            // The webcam's picture is held until the microphone has stopped, and let go before anything is uploaded.
+            microphone?.Webcam?.Stop();
+
             var length = second is null || second.Duration <= main.Duration ? main.Duration : second.Duration;
             var summary = new RecordingSummary(length, main.SegmentPaths, second?.SegmentPaths ?? [], main.HeardSound || second is { HeardSound: true });
             lock (_gate) _summary = summary;
@@ -431,6 +452,8 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
                     watch.Looked -= OnLooked;
                     watch.Dispose();
                 }
+
+                track.Webcam?.Dispose();
             }
 
             foreach (var session in Sessions)
@@ -507,6 +530,7 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
         if (track.Watch is { } watch) watch.Looked -= OnLooked;
         StopWatch();
         track.Tap.Forget();
+        track.Webcam?.Stop();
     }
 
     /// <summary>Stops the watch's thread, if it runs.</summary>
@@ -530,7 +554,12 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
     /// </summary>
     private void OnMicrophonePicked(object? sender, MicrophonePick pick)
     {
-        if (pick.Chosen is { } chosen) FollowWithTheWatch(chosen.Id);
+        if (pick.Chosen is not { } chosen) return;
+
+        FollowWithTheWatch(chosen.Id);
+
+        // The webcam's hold follows the pick too, before the capture opens, so that the camera is awake when it does.
+        microphone?.Webcam?.Follow(chosen);
     }
 
     /// <summary>

@@ -170,22 +170,6 @@ public sealed class FakeCameraProcess : ICameraProcess
     }
 }
 
-/// <summary>Starts <see cref="FakeCameraProcess"/>es in place of real camera processes, and keeps each with its job id.</summary>
-public sealed class FakeCameraProcessStarter : ICameraProcessStarter
-{
-    /// <summary>The processes started, with their job ids, in order.</summary>
-    public List<(string JobId, FakeCameraProcess Process)> Started { get; } = [];
-
-    /// <inheritdoc />
-    public ICameraProcess Start(string jobId)
-    {
-        if (!Commands.RunIds.IsWellFormed(jobId)) throw new ArgumentException($"\"{jobId}\" is not a job id.", nameof(jobId));
-
-        var process = new FakeCameraProcess(7001 + Started.Count);
-        Started.Add((jobId, process));
-        return process;
-    }
-}
 
 /// <summary>
 /// A camera capture as a test plays it, in place of WinRT's MediaCapture (see <see cref="ICameraCapture"/>): it opens
@@ -412,4 +396,107 @@ public sealed class CameraLinesSeen
 
     /// <summary>The words of the log lines so far, in order.</summary>
     public IReadOnlyList<string> Logs => [.. Of<CameraLog>().Select(log => log.Text)];
+}
+
+/// <summary>
+/// Starts <see cref="FakeCameraProcess"/>es in place of real camera processes, and keeps each with its job id; with
+/// <see cref="PlayEach"/>, each is played by a <see cref="PlayedCameraProcess"/> as a camera process would answer its
+/// starter. A start can be made to fail, as Windows' would. Safe to use from any thread.
+/// </summary>
+public sealed class FakeCameraProcessStarter : ICameraProcessStarter
+{
+    private readonly Lock _gate = new();
+    private readonly List<(string JobId, FakeCameraProcess Process)> _started = [];
+    private readonly List<PlayedCameraProcess> _played = [];
+
+    /// <summary>True to play each process started: it reads its job, and ends at its starter's stop.</summary>
+    public bool PlayEach { get; init; }
+
+    /// <summary>When set, each start throws this, as Windows not starting the process would.</summary>
+    public Exception? StartFailure { get; set; }
+
+    /// <summary>The processes started, with their job ids, in order.</summary>
+    public IReadOnlyList<(string JobId, FakeCameraProcess Process)> Started
+    {
+        get { lock (_gate) return [.. _started]; }
+    }
+
+    /// <summary>The processes played, in order, with <see cref="PlayEach"/>.</summary>
+    public IReadOnlyList<PlayedCameraProcess> Played
+    {
+        get { lock (_gate) return [.. _played]; }
+    }
+
+    /// <inheritdoc />
+    public ICameraProcess Start(string jobId)
+    {
+        if (!Commands.RunIds.IsWellFormed(jobId)) throw new ArgumentException($"\"{jobId}\" is not a job id.", nameof(jobId));
+        if (StartFailure is { } failure) throw failure;
+
+        lock (_gate)
+        {
+            var process = new FakeCameraProcess(7001 + _started.Count);
+            _started.Add((jobId, process));
+            if (PlayEach) _played.Add(new PlayedCameraProcess(process));
+            return process;
+        }
+    }
+}
+
+/// <summary>
+/// A camera process played by the test, as its starter sees it: it reads its job, sends the lines the test asks for
+/// (status, problems), and ends at its starter's stop, as a hold job does once it has let the camera go.
+/// </summary>
+public sealed class PlayedCameraProcess
+{
+    private volatile CameraJob? _job;
+    private volatile bool _stopReceived;
+
+    /// <summary>Starts playing <paramref name="process"/> on the thread pool.</summary>
+    public PlayedCameraProcess(FakeCameraProcess process)
+    {
+        Process = process;
+        Playing = Task.Run(PlayAsync);
+    }
+
+    /// <summary>The process played.</summary>
+    public FakeCameraProcess Process { get; }
+
+    /// <summary>The playing, which ends with the process.</summary>
+    public Task Playing { get; }
+
+    /// <summary>The job the starter sent; null until it came.</summary>
+    public CameraJob? Job => _job;
+
+    /// <summary>True once the starter's stop came.</summary>
+    public bool StopReceived => _stopReceived;
+
+    /// <summary>Sends a status line: <paramref name="frames"/> so far, the last <paramref name="sinceLastFrame"/> seconds ago.</summary>
+    public ValueTask StatusAsync(long frames, double sinceLastFrame = 0) =>
+        Process.ProcessEnd.SendAsync(CameraProtocol.Status, new CameraStatus(frames, 0, sinceLastFrame, false), CameraJson.Default.CameraStatus, CancellationToken.None);
+
+    /// <summary>Sends a problem line.</summary>
+    public ValueTask ProblemAsync(CameraProblemKind kind, string words) =>
+        Process.ProcessEnd.SendAsync(CameraProtocol.Problem, new CameraProblem(kind, words), CameraJson.Default.CameraProblem, CancellationToken.None);
+
+    /// <summary>Reads the job, then the starter's lines until its stop, which ends the process with 0.</summary>
+    private async Task PlayAsync()
+    {
+        try
+        {
+            _job = await Process.ReadJobAsync();
+            while (await Process.ProcessEnd.ReceiveAsync(CancellationToken.None) is { } line)
+            {
+                if (line.Type != CameraProtocol.Stop) continue;
+
+                _stopReceived = true;
+                Process.Exit(CameraProtocol.DoneExitCode);
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+            // The process was ended or let go: nothing more to play.
+        }
+    }
 }

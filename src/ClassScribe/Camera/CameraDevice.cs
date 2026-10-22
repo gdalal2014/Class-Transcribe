@@ -131,9 +131,22 @@ public static class Cameras
     /// which the laptop's own array and camera share. Null for a microphone of no camera.
     /// </summary>
     public static CameraDevice? CameraOf(Microphone microphone, IReadOnlyList<CameraDevice> cameras) =>
-        microphone.ContainerId is { } container && container != ThisComputer && container != Guid.Empty
-            ? cameras.FirstOrDefault(camera => !camera.IsBuiltIn && camera.ContainerId == container)
-            : null;
+        MayBeOfACamera(microphone) ? cameras.FirstOrDefault(camera => !camera.IsBuiltIn && camera.ContainerId == microphone.ContainerId) : null;
+
+    /// <summary>
+    /// The webcam <paramref name="microphone"/> belongs to (camera-first 3.4): as <see cref="CameraOf"/>, but only a camera
+    /// that is neither built in nor virtual, such as the OBSBOT on USB; a phone's camera through Phone Link is not a webcam.
+    /// Null for a microphone of no webcam: the hold and the webcam zeros rules are for a webcam's microphone alone.
+    /// </summary>
+    public static CameraDevice? WebcamOf(Microphone microphone, IReadOnlyList<CameraDevice> cameras) =>
+        CameraOf(microphone, [.. cameras.Where(camera => camera.Place != CameraPlace.Virtual)]);
+
+    /// <summary>
+    /// True when <paramref name="microphone"/> could belong to a camera at all: it names a container that is not the
+    /// computer's own. Only such a microphone needs the cameras listed.
+    /// </summary>
+    public static bool MayBeOfACamera(Microphone microphone) =>
+        microphone.ContainerId is { } container && container != ThisComputer && container != Guid.Empty;
 
     /// <summary>The microphone that belongs to <paramref name="camera"/>, by the same rule as <see cref="CameraOf"/>; null when it has none.</summary>
     public static Microphone? MicrophoneOf(CameraDevice camera, IReadOnlyList<Microphone> microphones) =>

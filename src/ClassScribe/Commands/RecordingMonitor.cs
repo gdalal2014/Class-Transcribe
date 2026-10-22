@@ -79,6 +79,13 @@ public interface IMicrophoneRecording
     /// from Windows when asked; null while none is recorded, or when Windows cannot say.
     /// </summary>
     bool? MutedInWindows { get; }
+
+    /// <summary>
+    /// The webcam the microphone belongs to (camera-first 3.4), and whether its picture is held with its frames arriving;
+    /// null for a microphone of no webcam, and for a recording that cannot say. The webcam zeros rules take the place of
+    /// the warning about only silence for such a microphone.
+    /// </summary>
+    Camera.WebcamState? Webcam => null;
 }
 
 /// <summary>The words for the app the microphone track follows, as the run's lines, status line and summary use them.</summary>

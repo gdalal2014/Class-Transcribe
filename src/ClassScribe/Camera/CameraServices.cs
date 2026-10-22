@@ -19,11 +19,15 @@ public static class CameraServices
         services.AddSingleton<ICameraSystem, WindowsCameraSystem>();
         services.AddSingleton<CameraSetupFacts>();
 
+        // Each recording's webcam hold (camera-first 3.4): which webcam the microphone belongs to, and with
+        // Recording:WakeCameraMicrophone on its picture held open, shared, in a camera process.
+        services.AddSingleton<WebcamHolds>();
+
         // The seam the camera process fills in slice 7; until then no run records a camera's picture.
         services.AddSingleton<ICameraRecorder, CameraRecorderNotBuilt>();
 
         // The start of a camera process (--camera-process <job id>), in a kill-on-close job, from ClassScribe's own folder;
-        // nothing starts one in this build, and a test run refuses the real start (DeviceGuards).
+        // the webcam hold and the camera check start one, and a test run refuses the real start (DeviceGuards).
         services.AddSingleton<ICameraProcessStarter>(provider => OperatingSystem.IsWindows()
             ? new CameraProcessStarter(provider.GetRequiredService<Recorder.RuntimeFolder>(), provider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>())
             : throw new PlatformNotSupportedException("Starting a camera process needs Windows."));

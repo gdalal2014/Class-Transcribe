@@ -33,6 +33,11 @@ namespace ClassScribe.Audio;
 /// The run's YouTube video window, which a video's run records and a class's leaves out (see <see cref="CaptureChooser"/>); null
 /// when none is known of, as for the tests that need none.
 /// </param>
+/// <param name="webcams">
+/// Makes each recording's webcam hold: which webcam the microphone belongs to, and with Recording:WakeCameraMicrophone on,
+/// its picture held open, shared, while the microphone records (see <see cref="Camera.WebcamHold"/>); null for none, as for
+/// the tests that need none.
+/// </param>
 public sealed class TrackSetFactory(
     ILoopbackCaptureProvider loopback,
     IMicrophoneProvider microphones,
@@ -45,7 +50,8 @@ public sealed class TrackSetFactory(
     IOptionsSnapshot<TranscriptOptions> transcript,
     TimeProvider time,
     ILoggerFactory loggers,
-    YouTube.VideoPlayback? video = null) : IRecordingFactory
+    YouTube.VideoPlayback? video = null,
+    Camera.WebcamHolds? webcams = null) : IRecordingFactory
 {
     /// <summary>A recording, not started yet, of what <paramref name="source"/> names, on a recording clock of its own.</summary>
     public IRecording Create(SourcePlan source) => Create(source, new RecordingClock(time));
@@ -95,7 +101,8 @@ public sealed class TrackSetFactory(
     /// </summary>
     private MicrophoneTrack MicrophoneTrack(SourcePlan source, Track track, FollowRule? follows, RecordingOptions settings, RecordingClock clock)
     {
-        var tap = new MicrophoneProviderTap(microphones);
+        var hold = webcams?.Create(settings.WakeCameraMicrophone);
+        var tap = new MicrophoneProviderTap(microphones, hold is null ? null : hold.BeforeOpen);
         var chooser = new MicrophoneChooser(source.Microphone?.NamePart ?? settings.Microphone, time, loggers.CreateLogger<MicrophoneChooser>());
         var microphoneSource = new MicrophoneSource(tap, chooser, settings.MicrophoneProcessing);
         var session = new RecordingSession(microphoneSource, new TrackSpec(track, TrackPlacement.ClockAligned), clock, options, time, loggers.CreateLogger<RecordingSession>());
@@ -105,7 +112,7 @@ public sealed class TrackSetFactory(
         var watch = rule is FollowRule.None
             ? null
             : new ClassMicrophoneWatch(sessions, usage, names, rule, own, time, loggers.CreateLogger<ClassMicrophoneWatch>());
-        return new MicrophoneTrack(session, microphoneSource, tap, gate, watch, follows);
+        return new MicrophoneTrack(session, microphoneSource, tap, gate, watch, follows, hold);
     }
 
     /// <summary>

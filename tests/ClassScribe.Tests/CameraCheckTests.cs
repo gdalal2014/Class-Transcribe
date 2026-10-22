@@ -167,7 +167,7 @@ public class CameraCheckTests
             "OK       An H.264 video encoder is installed, which a lesson's video needs",
             "NOTE     Bitdefender Antivirus watches the camera: when its Webcam Protection asks about ClassScribe, allow it (Bitdefender: Privacy > Video & Audio Protection > Webcam Protection)",
             $"NOTE     The camera \"OBSBOT Meet Flip StreamCamera\" has its own microphone: \"{ObsbotMicrophone.Name}\"",
-            "OFF      Recording:WakeCameraMicrophone is off: a webcam that sleeps by itself, such as the OBSBOT with Device Auto Sleep on, is not woken; turn off its Device Auto Sleep in OBSBOT Center"
+            "OFF      Recording:WakeCameraMicrophone is off: a webcam that sleeps by itself, such as the OBSBOT with Device Auto Sleep on, is not kept awake; turn off its Device Auto Sleep in OBSBOT Center, or turn the setting on"
         }));
     }
 
