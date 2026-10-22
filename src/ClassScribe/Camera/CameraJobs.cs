@@ -160,7 +160,8 @@ public sealed class CameraHoldJob(LineChannel channel, CameraJob job, ICameraCap
         }
         catch (TimeoutException)
         {
-            // The camera's thread is stuck inside Windows: the job cannot go on, and says which call never returned.
+            // Deliberately not rethrown: the camera's thread is stuck inside Windows, so the job cannot go on; it says so to
+            // its starter, which starts another camera process, and ends with 1.
             await SendAsync(CameraProtocol.Failed, new CameraFailed($"A call on the camera's route did not return within {callLimit.TotalSeconds:0} seconds"),
                 CameraJson.Default.CameraFailed);
             return CameraProtocol.FailedExitCode;
@@ -317,6 +318,8 @@ public sealed class CameraCheckJob(LineChannel channel, CameraJob job, ICameraCa
         }
         catch (TimeoutException)
         {
+            // Deliberately not rethrown: the camera's thread is stuck inside Windows; the check's answer is the call that
+            // never returned, which goes to the starter.
             await SendCallsAsync(log, events);
             return await FailAsync($"{log.InProgress ?? "A call on the camera's route"} did not return within {callLimit.TotalSeconds:0} seconds");
         }
@@ -339,6 +342,8 @@ public sealed class CameraCheckJob(LineChannel channel, CameraJob job, ICameraCa
         }
         catch (TimeoutException)
         {
+            // Deliberately not rethrown: letting the camera go hung inside Windows; the check says which call, and the
+            // process ends next, which lets the camera go.
             await SendCallsAsync(log, events);
             return await FailAsync($"{log.InProgress ?? "Letting the camera go"} did not return within {callLimit.TotalSeconds:0} seconds");
         }

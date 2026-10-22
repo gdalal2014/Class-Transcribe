@@ -53,6 +53,9 @@ public sealed class TrackSetFactory(
     YouTube.VideoPlayback? video = null,
     Camera.WebcamHolds? webcams = null) : IRecordingFactory
 {
+    /// <summary>What makes each recording's webcam hold; null when none was given. For the tests of the registration.</summary>
+    internal Camera.WebcamHolds? Webcams => webcams;
+
     /// <summary>A recording, not started yet, of what <paramref name="source"/> names, on a recording clock of its own.</summary>
     public IRecording Create(SourcePlan source) => Create(source, new RecordingClock(time));
 

@@ -428,6 +428,7 @@ public class ServiceRegistrationTests
         Assert.That(provider.GetRequiredService<Lazy<IMicrophoneSessions>>().Value, Is.SameAs(provider.GetRequiredService<IMicrophoneSessions>()), "one reader, however it is reached");
         Assert.That(provider.GetRequiredService<IOwnProcesses>(), Is.InstanceOf<OwnProcesses>());
         Assert.That(run.GetRequiredService<IRecordingFactory>(), Is.InstanceOf<TrackSetFactory>());
+        Assert.That(((TrackSetFactory)run.GetRequiredService<IRecordingFactory>()).Webcams, Is.Not.Null, "the webcam hold reaches the window's recordings");
         Assert.That(run.GetRequiredService<MicrophoneMenu>(), Is.Not.Null);
         Assert.That(run.GetRequiredService<IMicCheckRun>(), Is.InstanceOf<MicCheckCommand>());
         if (OperatingSystem.IsWindows())
@@ -470,6 +471,7 @@ public class ServiceRegistrationTests
         Assert.That(run.GetRequiredService<IDriveAutoUpload>(), Is.InstanceOf<DriveAutoUpload>(), "the recorder uploads after its class");
         Assert.That(factory, Is.InstanceOf<TrackSetFactory>());
         Assert.That(recording, Is.InstanceOf<TrackSet>());
+        Assert.That(((TrackSetFactory)factory).Webcams, Is.Not.Null, "the webcam hold reaches the recorder's recordings");
         Assert.That(((FakeMicrophoneProvider)host.Services.GetRequiredService<IMicrophoneProvider>()).Opened, Is.Empty, "nothing is opened before the recording starts");
     }
 
