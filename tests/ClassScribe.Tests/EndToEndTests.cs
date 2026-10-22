@@ -102,6 +102,15 @@ public class EndToEndTests
     private FakeVideoBrowsers _videoBrowsers = null!;
     private FakeProcessTree _videoProcesses = null!;
 
+    /// <summary>The cameras the recorder's camera processes open, played by the test.</summary>
+    private FakeCameraCaptureFactory _cameraCaptures = null!;
+
+    /// <summary>The pieces the recorder's camera processes write, played by the test.</summary>
+    private FakePieceWriterFactory _pieceWriters = null!;
+
+    /// <summary>The recorder's starts of camera processes: each runs the real camera host, in this process, over the fakes.</summary>
+    private FakeCameraProcessStarter _cameraStarts = null!;
+
     /// <summary>
     /// The folders, the window's console, window and desktop, the recorder's device and microphone, with chrome's
     /// microphone session on the array, Vantage off and ducking set to Do nothing, the stub for ElevenLabs, and the
@@ -153,6 +162,15 @@ public class EndToEndTests
         // Chrome, for a YouTube video's window, is played on top: alive for the run files, with a window of its own.
         _videoBrowsers = new FakeVideoBrowsers(_starts, _runtime.Processes);
         _videoProcesses = new FakeProcessTree();
+
+        // A lesson's camera process is the real camera host, run in this process over the test's camera and piece writer.
+        _cameraCaptures = new FakeCameraCaptureFactory();
+        _pieceWriters = new FakePieceWriterFactory();
+        _cameraStarts = new FakeCameraProcessStarter
+        {
+            Run = async (process, jobId) =>
+                process.Exited(await new Camera.CameraHost { Captures = _cameraCaptures, Writers = _pieceWriters }.RunAsync(jobId, process.ProcessStream, process.ProcessStream))
+        };
     }
 
     /// <summary>Stops the pumps, waits for every recorder to end, closes the connections and deletes the folders; a file left open fails the deletion, which is the point.</summary>
@@ -250,6 +268,8 @@ public class EndToEndTests
             if (!_mixForUpload) services.Replace(ServiceDescriptor.Singleton(Mocks.AudioPreparer().Object));
             services.Replace(ServiceDescriptor.Singleton(_recorderDesktop.Object));
             services.Replace(ServiceDescriptor.Singleton<IVideoWindows>(_videoBrowsers.Windows));
+            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraProvider>(new FakeCameraProvider()));
+            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraProcessStarter>(_cameraStarts));
             services.Replace(ServiceDescriptor.Scoped(provider => new YouTube.VideoPlayback(_runtime.Processes, _videoBrowsers.Windows, new ProcessFamily(_videoProcesses),
                 provider.GetRequiredService<RunJournal>(), TimeProvider.System, provider.GetRequiredService<ILogger<YouTube.VideoPlayback>>())));
             services.Replace(ServiceDescriptor.Singleton(provider => _server = new RecorderServer(
@@ -469,6 +489,59 @@ public class EndToEndTests
         Assert.That(File.ReadAllText(Path.Combine(folder, $"{b}.log")), Does.Contain(lastLine));
         Assert.That(_google.Destructive, Is.Empty);
         Assert.That(TheRun().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+    }
+
+    /// <summary>
+    /// A lesson with the camera from the command line (slice 7): record-only in person with --camera records the microphone
+    /// in the background, and beside it the camera's picture, through the real camera track and the real camera process's
+    /// record job over the test's camera and piece writer: the start names the camera, its size and its encoder; each frame
+    /// is written into the lesson's one piece in its folder; at Q twice the sound is finished, then the piece; and the
+    /// request kept the camera with the picture's size the window resolved.
+    /// </summary>
+    [Test]
+    public async Task A_lesson_with_the_camera_records_its_picture_beside_the_sound()
+    {
+        var microphone = MicrophoneCapture();
+        using var app = BuildWindow(extra: services => services
+            .Replace(ServiceDescriptor.Singleton<Camera.ICameraProvider>(new FakeCameraProvider()))
+            .Replace(ServiceDescriptor.Singleton<Camera.ICameraSystem>(new FakeCameraSystem()))
+            .Replace(ServiceDescriptor.Singleton<Camera.ICameraUsageRecord>(new FakeCameraUsageRecord()))
+            .Replace(ServiceDescriptor.Singleton<IRegistryValues>(_registry)));
+        var command = Task.Run(() => app.Services.GetRequiredService<App>().RunAsync(["record-only", "Kalam", "--in-person", "--camera", "OBSBOT", "--output", _recordings.Path, "--no-open"]));
+
+        await UntilShownAsync(RecordStarter.InTheBackground);
+        await Wait.UntilAsync(() => microphone.Started, StepSeconds);
+        Pump(microphone);
+        microphone.Deliver(Tone(), Now);
+        await Wait.UntilAsync(() => _cameraCaptures.Last is { Streaming: true }, StepSeconds);
+        for (var frame = 0; frame < 30; frame++)
+        {
+            _cameraCaptures.Last!.Deliver(Now, 120);
+            await Task.Delay(33);
+        }
+
+        await UntilShownAsync($"Camera: \"{LaptopCameras.Obsbot.Name}\" (USB), 1280x720 at 30 frames a second, 5 Mbit/s, hardware encoder (Fake H.264 Encoder)");
+        await Task.Delay(700);
+        _ui.Type('q', 'q');
+
+        Assert.That(await command.WaitAsync(EndPatience), Is.EqualTo(0));
+        Assert.That(await _recorders.Single().WaitAsync(EndPatience), Is.EqualTo(0));
+        var run = TheRun();
+        var folder = KalamFolder();
+        var writer = _pieceWriters.Made.Single();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(Directory.GetFiles(folder, "*.cam.mp4"), Is.EqualTo(new[] { writer.Path }));
+            Assert.That(writer.Samples.Count(sample => !sample.Black), Is.GreaterThan(15), "the frames written into the piece");
+            Assert.That(writer.FinishedAt, Is.Not.Null);
+            Assert.That(run.Request.Source.Camera, Is.EqualTo(new CameraChoice("OBSBOT", "720p")));
+            Assert.That((run.State, run.Outcome?.Kind), Is.EqualTo((RunState.Finished, OutcomeKind.Recorded)));
+            Assert.That(Shown("and the camera \"OBSBOT\" at 720p"), Is.GreaterThanOrEqualTo(1));
+            Assert.That(Shown("The camera's piece"), Is.GreaterThanOrEqualTo(1));
+            Assert.That(_cameraCaptures.Made.Select(made => made.CameraId), Has.All.EqualTo(LaptopCameras.Obsbot.Id));
+            Assert.That(_cameraCaptures.Last!.Disposed, Is.True);
+            Assert.That(microphone.Disposed, Is.True);
+        }
     }
 
     /// <summary>
