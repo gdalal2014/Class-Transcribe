@@ -496,7 +496,7 @@ dotnet test --filter TestCategory=WindowsAudio                         # real de
 dotnet test --filter TestCategory=WindowsPower                         # a real power request, let go at once
 dotnet test --filter TestCategory=AudioDevice                          # Explicit tests on real devices
 dotnet test --filter TestCategory=WindowsProcess                       # real processes, pipes, windows, all of the test's own
-dotnet test --filter TestCategory=WindowsRegistry                      # reads two HKCU values every profile has; creates nothing
+dotnet test --filter TestCategory=WindowsRegistry                      # reads two HKCU values every profile has and one HKLM value; creates nothing
 dotnet test --filter "FullyQualifiedName~Four_simulated_hours"         # the Explicit four-hour soak; run it before any path moves onto the clock
 dotnet test --filter TestCategory=DryRunKit                            # Explicit: the whole dry run with a stand-in ClassScribe.exe, in temporary folders
 dotnet build --no-incremental --disable-build-servers                  # when other builds run at the same time; must report 0 warnings

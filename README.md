@@ -2611,12 +2611,13 @@ clock, the power requests and the HTTP transport are small hand-written stand-in
 and the `TestDoubles.*.cs` beside it), because the tests drive those step by step: deliver this
 audio, press P, fail now, switch device, sleep, let chrome go of the microphone. A few tests (the
 `WindowsAudio`, `WindowsPower` and `WindowsRegistry` categories) read Windows' real device list,
-microphone list, level meters, the apps' microphone sessions, the microphone usage record, two
+microphone list, level meters, the apps' microphone sessions, the microphone usage record, three
 registry values, the power source and the clocks, and make one power request that is let go at
 once; nothing is played or recorded, no microphone is opened, and the computer's settings are never
 changed. The `WindowsProcess` tests reach Windows for the background recorder: they start at most a
-hidden `cmd.exe` that ends at once, open named pipes and stop events named after fresh run ids,
-make hidden windows of the test's own, and read the test process's own job; the end-to-end tests
+hidden `cmd.exe` that ends at once or, for the dry-run kit, a hidden Windows PowerShell 5.1, open
+named pipes and stop events named after fresh run ids, make hidden windows of the test's own, and
+read the test process's own job; the end-to-end tests
 run the window and the recorder in one process over temporary folders, with simulated devices and
 microphones and a stub standing in for ElevenLabs, in person, with the class and the microphone,
 and for the microphone check. A simulated class of twelve minutes with the microphone runs with the
