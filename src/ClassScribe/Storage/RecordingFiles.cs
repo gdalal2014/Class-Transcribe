@@ -14,6 +14,11 @@ namespace ClassScribe.Storage;
 /// .unread.json of that name, or a .json left without its .md (see <see cref="FindKeptAnswers"/>). The
 /// marks, the log and the upload copy complete the set, with a YouTube video's source file for a video's recording.
 /// </summary>
+/// <remarks>
+/// A lesson recorded with the camera also has the camera's pieces (see <see cref="CameraPiece"/>): fragmented, video-only
+/// MP4 files, one for each camera process that recorded it. They count as a sign of a class, are held while written, and
+/// never go to Google Drive themselves.
+/// </remarks>
 /// <param name="Folder">The folder holding the recording's files.</param>
 /// <param name="BaseName">The name and time stamp every file name starts with.</param>
 public sealed partial record RecordingFiles(string Folder, string BaseName)
@@ -156,8 +161,63 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
             .ToList();
     }
 
+    /// <summary>
+    /// The camera's piece that begins at <paramref name="start"/> on the run's clock (teach-video 6.6): <c>&lt;base&gt;.cam.mp4</c>
+    /// at position 0, else <c>&lt;base&gt;.cam@hh-mm-ss.fff.mp4</c>, the name holding where on the clock the piece's time 0 is,
+    /// to the millisecond, so that nothing depends on a note that could fail to be written. A start below a millisecond
+    /// counts as 0.
+    /// </summary>
+    public string CameraPiece(TimeSpan start)
+    {
+        var milliseconds = (long)Math.Round(start.TotalMilliseconds, MidpointRounding.AwayFromZero);
+        if (milliseconds <= 0) return Path.Combine(Folder, $"{BaseName}.cam.mp4");
+
+        var at = TimeSpan.FromMilliseconds(milliseconds);
+        return Path.Combine(Folder, string.Create(CultureInfo.InvariantCulture, $"{BaseName}.cam@{(long)at.TotalHours:00}-{at.Minutes:00}-{at.Seconds:00}.{at.Milliseconds:000}.mp4"));
+    }
+
+    /// <summary>
+    /// The camera's pieces of the recording that exist, each with where on the clock it begins, in that order: the pieces
+    /// of a lesson recorded with the camera, one for each camera process that recorded it. Empty when there are none, or the
+    /// folder is not there.
+    /// </summary>
+    public IReadOnlyList<CameraPieceFile> FindCameraPieces()
+    {
+        if (!Directory.Exists(Folder)) return [];
+
+        var prefix = BaseName.Length;
+        return Directory.EnumerateFiles(Folder, $"{BaseName}.cam*.mp4")
+            .Select(file => (Path: file, Name: Path.GetFileName(file)))
+            .Where(file => file.Name.Length > prefix && string.Equals(file.Name[..prefix], BaseName, StringComparison.OrdinalIgnoreCase))
+            .Select(file => (file.Path, Start: PieceStart(file.Name[prefix..])))
+            .Where(file => file.Start is not null)
+            .Select(file => new CameraPieceFile(file.Path, file.Start!.Value))
+            .OrderBy(piece => piece.Start)
+            .ToList();
+    }
+
+    /// <summary>True when <paramref name="path"/> names a camera's piece of a recording: <c>&lt;base&gt;.cam.mp4</c> or <c>&lt;base&gt;.cam@hh-mm-ss.fff.mp4</c>.</summary>
+    public static bool IsCameraPiece(string path) =>
+        TryParse(path) is { } files && PieceStart(Path.GetFileName(path)[files.BaseName.Length..]) is not null;
+
+    /// <summary>Where a piece begins, from what its name has after the base name (<c>.cam.mp4</c> or <c>.cam@hh-mm-ss.fff.mp4</c>); null when that is no piece's.</summary>
+    private static TimeSpan? PieceStart(string ending)
+    {
+        var match = PieceEnding().Match(ending);
+        if (!match.Success) return null;
+        if (!match.Groups["hours"].Success) return TimeSpan.Zero;
+
+        // One part of the position, read from its group.
+        int Part(string name) => int.Parse(match.Groups[name].Value, CultureInfo.InvariantCulture);
+        return new TimeSpan(0, Part("hours"), Part("minutes"), Part("seconds"), Part("milliseconds"));
+    }
+
     /// <summary>What a segment file's name ends in on <paramref name="track"/>: .wav on the main track, .mic.wav on the microphone's.</summary>
     private static string Extension(Track track) => track == Track.Microphone ? ".mic.wav" : ".wav";
+
+    /// <summary>What a camera's piece's name has after the base name: .cam.mp4, or .cam@ with the position, such as .cam@01-02-03.456.mp4.</summary>
+    [GeneratedRegex(@"^\.cam(?:@(?<hours>[0-9]{2})-(?<minutes>[0-5][0-9])-(?<seconds>[0-5][0-9])\.(?<milliseconds>[0-9]{3}))?\.mp4$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PieceEnding();
 
     /// <summary>The recording whose base name <paramref name="fileName"/> gives the file at <paramref name="path"/>, or null when it gives none.</summary>
     private static RecordingFiles? Parse(Regex fileName, string path)
@@ -173,10 +233,10 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     /// <summary>
     /// The name of any file of a recording: the base name with its time stamp, then a segment of either track (.wav,
     /// _partN.wav, .mic.wav, _partN.mic.wav), the upload copy (.upload.wav), the marks (.marks.txt), the log (.log), a
-    /// video's source file (.source.json), or a copy of the transcript or of the answer (.md, .json, .unread.json, each with
-    /// " (N)" before it from the second copy).
+    /// video's source file (.source.json), a copy of the transcript or of the answer (.md, .json, .unread.json, each with
+    /// " (N)" before it from the second copy), or a camera's piece (.cam.mp4, .cam@hh-mm-ss.fff.mp4).
     /// </summary>
-    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|\.source\.json|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|\.source\.json|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json)|\.cam(?:@[0-9]{2}-[0-5][0-9]-[0-5][0-9]\.[0-9]{3})?\.mp4)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FileOfARecording();
 
     /// <summary>The time stamp at the end of a base name.</summary>

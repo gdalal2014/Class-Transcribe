@@ -244,7 +244,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// continue, however recent. It is offered only when all of this holds: it has no transcript; no
     /// answer ElevenLabs was paid for is kept for it (see <see cref="KeptAnswerOf(RecordingFiles)"/>), beside it, in the
     /// root or in the recordings folder given for the run; it has the same tracks as a run of <paramref name="mode"/>,
-    /// which the microphone's .mic.wav files tell; it is not being written, on either track; it has no upload copy, which
+    /// which the microphone's .mic.wav files tell, and the camera's pieces when <paramref name="camera"/> (a lesson with
+    /// the camera is offered only to a run with one, and a recording without pieces only to a run without; teach-video
+    /// 6.8); it is not being written, on either track nor its newest piece; it has no upload copy, which
     /// is there while a recorder or a window transcribes it, after a transcription that was cut off, and after a failed one
     /// whose copy Recording:KeepUploadFile kept; its audio was last written no more than <paramref name="within"/> ago (zero
     /// never offers one); and it is shorter than <see cref="TranscriptionWorkflow.LongestRecording"/>, so that continued it
@@ -253,7 +255,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// person, both a single main track, nor show a recorder in the moment between the end of its capture and the making of
     /// its upload copy: the run files can, for the caller to check.
     /// </summary>
-    public ContinueCandidate? FindContinuable(string name, RecordingMode mode, TimeSpan within, string? root = null)
+    public ContinueCandidate? FindContinuable(string name, RecordingMode mode, TimeSpan within, string? root = null, bool camera = false)
     {
         var safe = SafeName(name);
         if (within <= TimeSpan.Zero || safe.Length == 0) return null;
@@ -266,6 +268,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
         var main = newest.FindSegments();
         var microphone = newest.FindSegments(Track.Microphone);
+        var pieces = newest.FindCameraPieces().Select(piece => piece.Path).ToList();
         var stopped = LastWritten(main.Concat(microphone));
         var length = LongestTrack(main, microphone);
 
@@ -275,7 +278,8 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         var unfit = newest.HasTranscript ? "it has a transcript"
             : kept is not null ? $"ElevenLabs' answer to it, which has been paid for, is kept in {kept}"
             : microphone.Count > 0 != (mode == RecordingMode.ClassAndMicrophone) ? "its tracks are not those of this run"
-            : IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone) ? "it is being recorded now"
+            : pieces.Count > 0 != camera ? camera ? "it was recorded without the camera, and this run records the camera" : "it was recorded with the camera, and this run records no camera"
+            : IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone) || IsNewestHeldForWriting(pieces) ? "it is being recorded now"
             : File.Exists(newest.Upload) ? "its upload copy is there: it is being transcribed, or a transcription of it was cut off"
             : time.GetUtcNow() - stopped > within ? $"it stopped more than {Durations.Format(within)} ago"
             : length >= TranscriptionWorkflow.LongestRecording ? $"it is {Durations.Format(length)} long already"
@@ -486,13 +490,14 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
     /// <summary>
     /// True while the recording is being recorded, in this window or another: a recorder still writes the newest
-    /// segment of one of its tracks. The recorder holds that file open for writing and lets others read it, so the file
-    /// then opens for reading only when others may go on writing to it. A file that does not open for reading at all is
-    /// held by another program, such as a scanner, not by a recorder: that does not count, and transcribing the recording
-    /// reports the real reason.
+    /// segment of one of its tracks, or a camera process its newest piece. Each holds that file open for writing and lets
+    /// others read it, so the file then opens for reading only when others may go on writing to it. A file that does not
+    /// open for reading at all is held by another program, such as a scanner, not by a recorder: that does not count, and
+    /// transcribing the recording reports the real reason.
     /// </summary>
     public static bool IsBeingWritten(RecordingFiles files) =>
-        IsNewestHeldForWriting(files.FindSegments()) || IsNewestHeldForWriting(files.FindSegments(Track.Microphone));
+        IsNewestHeldForWriting(files.FindSegments()) || IsNewestHeldForWriting(files.FindSegments(Track.Microphone))
+        || IsNewestHeldForWriting([.. files.FindCameraPieces().Select(piece => piece.Path)]);
 
     /// <summary>
     /// The length of a segment, worked out from its size the way the preparer reads it: to the end of the

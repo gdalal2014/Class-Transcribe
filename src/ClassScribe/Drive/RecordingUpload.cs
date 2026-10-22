@@ -235,8 +235,10 @@ public sealed partial class RecordingUpload(
 
     /// <summary>
     /// The files of <paramref name="files"/> that go up, in the order they go: every file of the recording but the upload
-    /// copy, a video's source file included, and none of its .wav files when its audio does not go up (see
-    /// <see cref="SendsAudio"/>). Files in its folder that are not its own are left out.
+    /// copy and the camera's pieces, a video's source file included, and none of its .wav files when its audio does not go
+    /// up (see <see cref="SendsAudio"/>). The camera's pieces never go to Drive themselves (camera-first step 12): each is a
+    /// video file of up to gigabytes, read whole by an upload, and only the lesson's finished video may go. Files in its
+    /// folder that are not its own are left out.
     /// </summary>
     public IReadOnlyList<string> FilesToUpload(RecordingFiles files)
     {
@@ -248,6 +250,7 @@ public sealed partial class RecordingUpload(
             .. Directory.EnumerateFiles(files.Folder, $"{files.BaseName}*")
                 .Where(path => string.Equals(RecordingFiles.TryParse(path)?.BaseName, files.BaseName, StringComparison.OrdinalIgnoreCase))
                 .Where(path => !string.Equals(Path.GetFileName(path), Path.GetFileName(files.Upload), StringComparison.OrdinalIgnoreCase))
+                .Where(path => !RecordingFiles.IsCameraPiece(path))
                 .Where(path => !withoutAudio || !IsAudio(path))
                 .OrderBy(path => OrderOf(Path.GetFileName(path), files.BaseName))
                 .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)

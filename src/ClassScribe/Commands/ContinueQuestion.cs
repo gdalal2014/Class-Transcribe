@@ -25,13 +25,14 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
     TimeProvider time, ILogger<ContinueQuestion> logger)
 {
     /// <summary>
-    /// The menu's question, for a run of <paramref name="name"/> recording what <paramref name="mode"/> names into
-    /// <paramref name="root"/>: when there is a recording to continue, it is described and C, N or Esc is read, any other
-    /// key passed over; Ctrl+C goes back as Esc does. With none, nothing is asked and a new recording starts.
+    /// The menu's question, for a run of <paramref name="name"/> recording what <paramref name="mode"/> names, with the camera
+    /// when <paramref name="camera"/>, into <paramref name="root"/>: when there is a recording to continue, it is described
+    /// and C, N or Esc is read, any other key passed over; Ctrl+C goes back as Esc does. With none, nothing is asked and a new
+    /// recording starts.
     /// </summary>
-    public async Task<ContinueAnswer> AskAsync(string name, RecordingMode mode, string root)
+    public async Task<ContinueAnswer> AskAsync(string name, RecordingMode mode, string root, bool camera = false)
     {
-        if (Find(name, mode, root) is not { } candidate) return NewRecording;
+        if (Find(name, mode, root, camera) is not { } candidate) return NewRecording;
 
         ui.WriteLine($"{candidate.Files.BaseName} stopped {Ago(candidate.StoppedUtc)} ({Durations.Format(candidate.Length)} recorded{InParts(candidate)}, no transcript yet). "
                      + "C continues it as its next part, N starts a new recording, Esc goes back.");
@@ -52,13 +53,14 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
     /// <summary>
     /// The command line's answer, for <paramref name="choice"/>, which never asks: --continue (<see cref="ContinueChoice.Continue"/>)
     /// continues the recording, or says there is none and starts a new one; --new starts a new one without a word; neither
-    /// (<see cref="ContinueChoice.Ask"/>) starts a new one, with a line saying how to continue the other one instead.
+    /// (<see cref="ContinueChoice.Ask"/>) starts a new one, with a line saying how to continue the other one instead. With
+    /// <paramref name="camera"/>, only a lesson recorded with the camera is continued.
     /// </summary>
-    public ContinueAnswer Resolve(string name, RecordingMode mode, string root, ContinueChoice choice)
+    public ContinueAnswer Resolve(string name, RecordingMode mode, string root, ContinueChoice choice, bool camera = false)
     {
         if (choice == ContinueChoice.New) return NewRecording;
 
-        var candidate = Find(name, mode, root);
+        var candidate = Find(name, mode, root, camera);
         if (choice == ContinueChoice.Continue)
         {
             if (candidate is not null) return Continuing(candidate);
@@ -78,12 +80,12 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
     }
 
     /// <summary>
-    /// The recording a new run of <paramref name="name"/> may continue, recording what <paramref name="mode"/> names under
-    /// <paramref name="root"/>, within Recording:ContinueWithinMinutes; null when there is none (see
-    /// <see cref="FindContinuable"/>).
+    /// The recording a new run of <paramref name="name"/> may continue, recording what <paramref name="mode"/> names, with the
+    /// camera when <paramref name="camera"/>, under <paramref name="root"/>, within Recording:ContinueWithinMinutes; null when
+    /// there is none (see <see cref="FindContinuable"/>).
     /// </summary>
-    public ContinueCandidate? Find(string name, RecordingMode mode, string root) =>
-        FindContinuable(folders, journal, name, mode, Within(), root, logger, ifUnreadable: "a new recording starts");
+    public ContinueCandidate? Find(string name, RecordingMode mode, string root, bool camera = false) =>
+        FindContinuable(folders, journal, name, mode, Within(), root, logger, ifUnreadable: "a new recording starts", camera);
 
     /// <summary>
     /// The recording a new run of <paramref name="name"/> may continue: the one <see cref="ClassFolders.FindContinuable"/>
@@ -93,15 +95,16 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
     /// single track on disk. Null when there is none. A recording that cannot be looked at now never keeps a class from
     /// being recorded, nor a report from being made: the failure is logged to <paramref name="logger"/> as a warning that
     /// ends with <paramref name="ifUnreadable"/>, what the caller does instead, such as "a new recording starts", and
-    /// there is none to continue.
+    /// there is none to continue. A run with the camera (<paramref name="camera"/>) continues only a lesson recorded with
+    /// it, and a run without only a recording without it, by the files and by the run files alike.
     /// </summary>
     internal static ContinueCandidate? FindContinuable(ClassFolders folders, RunJournal journal, string name, RecordingMode mode, TimeSpan within, string root,
-        ILogger logger, string ifUnreadable)
+        ILogger logger, string ifUnreadable, bool camera = false)
     {
         ContinueCandidate? candidate;
         try
         {
-            candidate = folders.FindContinuable(name, mode, within, root);
+            candidate = folders.FindContinuable(name, mode, within, root, camera);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -126,6 +129,13 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
             {
                 logger.LogDebug("{Recording} is not offered to be continued: it was recorded as {Mode}, and this run records {This}", candidate.Files.BaseName,
                     run.Record.Request.Source.Mode, mode);
+                return null;
+            }
+
+            if (run.Record.Request.Source.Camera is not null != camera)
+            {
+                logger.LogDebug("{Recording} is not offered to be continued: it was recorded {With} the camera, and this run records {This}", candidate.Files.BaseName,
+                    camera ? "without" : "with", camera ? "the camera" : "no camera");
                 return null;
             }
         }
