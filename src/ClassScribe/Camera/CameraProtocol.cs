@@ -215,4 +215,5 @@ public sealed record CameraLog(string Level, string Text);
 [JsonSerializable(typeof(CameraMade))]
 [JsonSerializable(typeof(CameraFailed))]
 [JsonSerializable(typeof(CameraLog))]
+[JsonSerializable(typeof(Audio.Timeline.ClockState))]
 public sealed partial class CameraJson : JsonSerializerContext;
