@@ -174,10 +174,11 @@ public sealed class RecordingOptions
     public string CameraResolution { get; init; } = Camera.CameraSize.DefaultText;
 
     /// <summary>
-    /// When on, and the microphone being recorded belongs to a webcam and sends only exact zeros, ClassScribe opens that
-    /// webcam's picture, shared and never exclusively, keeps none of it, and so wakes a webcam that sleeps by itself (the
-    /// OBSBOT's Device Auto Sleep); the camera's light then comes on. Off by default (camera-first 3.4). In this build the
-    /// setting is checked and shown by camera-check only: the wake itself comes once the camera probe has chosen how.
+    /// When on, and the microphone being recorded belongs to a webcam (by the container it shares with a camera that is
+    /// neither built in nor virtual), ClassScribe keeps that webcam's picture open, shared and never exclusively, from
+    /// before the microphone opens until the recording ends, keeping none of it, so that a webcam that sleeps by itself
+    /// (the OBSBOT's Device Auto Sleep) cannot fall asleep and silence its microphone; the camera's light stays on while
+    /// recording. Off by default (camera-first 3.4). The hold is <see cref="Camera.WebcamHold"/>.
     /// </summary>
     public bool WakeCameraMicrophone { get; init; }
 }

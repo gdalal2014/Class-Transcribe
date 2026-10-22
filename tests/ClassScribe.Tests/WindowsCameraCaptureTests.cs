@@ -8,8 +8,9 @@ namespace ClassScribe.Tests;
 /// The real MediaCapture behind ClassScribe's capture, never initialised (category WindowsCamera, run with the suite; the
 /// probe fix's rule 6): a MediaCapture that is made and never initialised touches no device, so no light comes on and no
 /// security program is asked. These tests measure that Windows still refuses before InitializeAsync exactly what the fake
-/// refuses, so that a change in Windows shows, and that the real open refuses in a test run before anything is asked of
-/// Windows. InitializeAsync is never called.
+/// refuses, so that a change in Windows shows, that the real open refuses in a test run before anything is asked of
+/// Windows, and that a camera Windows does not list is an error rather than another camera. InitializeAsync is never
+/// called.
 /// </summary>
 [TestFixture, Platform("Win"), Category("WindowsCamera")]
 public class WindowsCameraCaptureTests
@@ -46,6 +47,22 @@ public class WindowsCameraCaptureTests
         var refused = Assert.Throws<InvalidOperationException>(capture.InitializeShared);
 
         Assert.That(refused!.Message, Does.Contain("MediaCapture.InitializeAsync").And.Contain("FakeCameraCapture"));
+    }
+
+    /// <summary>
+    /// A camera Windows does not list is an error, never Windows' default camera in its place (the probe fix's rule 3):
+    /// finding the source group of a camera id no device has throws, naming the camera, though this computer lists other
+    /// cameras whose groups a fallback would take. Listing the source groups opens nothing, and InitializeAsync is never
+    /// called.
+    /// </summary>
+    [Test]
+    public void A_camera_Windows_does_not_list_is_an_error_never_the_default_camera()
+    {
+        using var capture = new WindowsCameraCapture(@"\\?\no such camera", "OBSBOT");
+
+        var refused = Assert.Throws<InvalidOperationException>(capture.FindSourceGroup);
+
+        Assert.That(refused!.Message, Is.EqualTo("Windows no longer lists the camera \"OBSBOT\"; is it unplugged? Windows' default camera is never opened in its place"));
     }
 
     /// <summary>The fake's refusal is the same exception type and code Windows gives, so the route's tests stand for Windows.</summary>

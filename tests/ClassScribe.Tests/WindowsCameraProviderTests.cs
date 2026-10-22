@@ -71,3 +71,79 @@ public class WindowsCameraProviderTests
         Assert.That(async () => await provider.GetCamerasAsync(new CancellationToken(canceled: true)), Throws.InstanceOf<OperationCanceledException>());
     }
 }
+
+/// <summary>
+/// What the camera list answers when Windows' read fails, over a stand-in for Windows' lists: whatever Windows raises,
+/// as the types WinRT maps its HRESULTs to, is a list that says why, as the microphone readers answer a failed read, since
+/// the webcam hold lists the cameras inside the microphone's pick; only the caller's own cancel goes on. Nothing is read
+/// from Windows.
+/// </summary>
+[TestFixture]
+public class WindowsCameraProviderFailureTests
+{
+    /// <summary>
+    /// A read that throws any of the types WinRT hands an HRESULT over as (file not found, cancelled by Windows with no
+    /// cancel asked for, an object already disposed, a member not implemented, and the COM error it always caught) is a
+    /// list with no camera and a problem naming Windows' words and the code.
+    /// </summary>
+    [Test]
+    public async Task Whatever_Windows_raises_is_a_list_that_says_why()
+    {
+        Exception[] raised =
+        [
+            new FileNotFoundException("The system cannot find the file specified.") { HResult = unchecked((int)0x80070002) },
+            new OperationCanceledException("The operation was canceled by the user.") { HResult = unchecked((int)0x800704C7) },
+            new ObjectDisposedException("MediaFrameSourceGroup"),
+            new NotImplementedException("Not implemented"),
+            new System.Runtime.InteropServices.COMException("The device is not ready.", unchecked((int)0x80070015))
+        ];
+
+        foreach (var exception in raised)
+        {
+            var provider = new WindowsCameraProvider(NullLogger<WindowsCameraProvider>.Instance, _ => throw exception);
+
+            var list = await provider.GetCamerasAsync(CancellationToken.None);
+
+            Assert.That(list.Cameras, Is.Empty, exception.GetType().Name);
+            Assert.That(list.Problem, Is.EqualTo($"Windows did not list the cameras: {exception.Message.Trim()} (0x{exception.HResult:X8})"), exception.GetType().Name);
+        }
+    }
+
+    /// <summary>A read that fails asynchronously, inside the task Windows' list hands back, is answered the same way.</summary>
+    [Test]
+    public async Task A_read_that_fails_later_is_a_list_that_says_why()
+    {
+        var provider = new WindowsCameraProvider(NullLogger<WindowsCameraProvider>.Instance,
+            _ => Task.FromException<IReadOnlyList<CameraDevice>>(new FileNotFoundException("The system cannot find the file specified.") { HResult = unchecked((int)0x80070002) }));
+
+        var list = await provider.GetCamerasAsync(CancellationToken.None);
+
+        Assert.That(list.Problem, Is.EqualTo("Windows did not list the cameras: The system cannot find the file specified. (0x80070002)"));
+    }
+
+    /// <summary>The caller's own cancel goes on as a cancel: it is the one thing the list throws.</summary>
+    [Test]
+    public void The_callers_own_cancel_goes_on()
+    {
+        using var cancel = new CancellationTokenSource();
+        var provider = new WindowsCameraProvider(NullLogger<WindowsCameraProvider>.Instance, token =>
+        {
+            cancel.Cancel();
+            token.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<CameraDevice>>([]);
+        });
+
+        Assert.That(async () => await provider.GetCamerasAsync(cancel.Token), Throws.InstanceOf<OperationCanceledException>());
+    }
+
+    /// <summary>A read that works is the list, as Windows gave it.</summary>
+    [Test]
+    public async Task A_read_that_works_is_the_list()
+    {
+        var provider = new WindowsCameraProvider(NullLogger<WindowsCameraProvider>.Instance, _ => Task.FromResult(LaptopCameras.All));
+
+        var list = await provider.GetCamerasAsync(CancellationToken.None);
+
+        Assert.That(list, Is.EqualTo(new CameraList(LaptopCameras.All)));
+    }
+}

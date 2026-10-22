@@ -81,22 +81,36 @@ public sealed class FakeCameraUsageRecord : ICameraUsageRecord
     public Audio.Microphones.UsageRecordListing Read() => Listing;
 }
 
-/// <summary>The cameras a test connects, listed as a provider lists them; listing never opens anything, here as in the real provider.</summary>
+/// <summary>
+/// The cameras a test connects, listed as a provider lists them; listing never opens anything, here as in the real provider.
+/// A test can also make the listing throw what gets past a real provider's promise, or never answer, as a listing that
+/// hangs inside Windows would.
+/// </summary>
 public sealed class FakeCameraProvider : ICameraProvider
 {
+    private int _listings;
+
     /// <summary>The cameras connected now; the laptop's three unless a test says otherwise.</summary>
     public IReadOnlyList<CameraDevice> Connected { get; set; } = LaptopCameras.All;
 
     /// <summary>Why the list cannot be read, as a real provider says it; null while it can.</summary>
     public string? Problem { get; set; }
 
+    /// <summary>When set, each listing throws this, as a failure of Windows' camera API the provider did not catch would.</summary>
+    public Exception? Failure { get; set; }
+
+    /// <summary>True for listings that never answer, as one that hangs inside Windows.</summary>
+    public bool Hangs { get; set; }
+
     /// <summary>How many times the cameras were listed.</summary>
-    public int Listings { get; private set; }
+    public int Listings => Volatile.Read(ref _listings);
 
     /// <inheritdoc />
     public Task<CameraList> GetCamerasAsync(CancellationToken cancellationToken)
     {
-        Listings++;
+        Interlocked.Increment(ref _listings);
+        if (Failure is { } failure) throw failure;
+        if (Hangs) return new TaskCompletionSource<CameraList>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
         return Task.FromResult(Problem is null ? new CameraList(Connected) : new CameraList([], Problem));
     }
 }
@@ -205,6 +219,12 @@ public sealed class FakeCameraCapture : ICameraCapture
     /// <summary>The steps that fail, by the member's name (such as nameof(InitializeShared)), with what they throw.</summary>
     public Dictionary<string, Exception> Failures { get; } = [];
 
+    /// <summary>
+    /// The steps that get stuck, by the member's name, each until its gate is set: a call that does not return, as one
+    /// waiting on a security program's prompt inside Windows would. Set them before the capture is handed out.
+    /// </summary>
+    public Dictionary<string, ManualResetEventSlim> Stuck { get; } = [];
+
     /// <summary>How many frames the reader hands over as soon as it has started, as a camera that streams at once; none unless a test says.</summary>
     public int FramesOnStart { get; set; }
 
@@ -304,7 +324,10 @@ public sealed class FakeCameraCapture : ICameraCapture
     /// <summary>Reports <paramref name="words"/> as MediaCapture.Failed would.</summary>
     public void RaiseFailed(string words) => _onEvent?.Invoke(words);
 
-    /// <summary>Notes the call; refuses it as Windows does when it needs InitializeAsync first; throws the failure a test set for it.</summary>
+    /// <summary>
+    /// Notes the call; refuses it as Windows does when it needs InitializeAsync first; gets stuck until its gate is set when a
+    /// test made it stuck; throws the failure a test set for it.
+    /// </summary>
     private void Step(string name, bool needsInitialization = false)
     {
         lock (_gate)
@@ -317,6 +340,7 @@ public sealed class FakeCameraCapture : ICameraCapture
             }
         }
 
+        if (Stuck.TryGetValue(name, out var stuck)) stuck.Wait();
         if (Failures.TryGetValue(name, out var failure)) throw failure;
     }
 }
@@ -405,13 +429,22 @@ public sealed class CameraLinesSeen
 /// <summary>
 /// Starts <see cref="FakeCameraProcess"/>es in place of real camera processes, and keeps each with its job id; with
 /// <see cref="PlayEach"/>, each is played by a <see cref="PlayedCameraProcess"/> as a camera process would answer its
-/// starter. A start can be made to fail, as Windows' would. Safe to use from any thread.
+/// starter. A start can be made to fail, as Windows' would, or be held, as one Windows is slow to make. Safe to use from any
+/// thread.
 /// </summary>
 public sealed class FakeCameraProcessStarter : ICameraProcessStarter
 {
     private readonly Lock _gate = new();
     private readonly List<(string JobId, FakeCameraProcess Process)> _started = [];
     private readonly List<PlayedCameraProcess> _played = [];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, ManualResetEventSlim> _held = new();
+    private int _entered;
+
+    /// <summary>How many starts have been asked for so far, held and failed ones included.</summary>
+    public int StartsEntered => Volatile.Read(ref _entered);
+
+    /// <summary>Holds the start numbered <paramref name="number"/> (0 for the first asked for) until <paramref name="gate"/> is set, as a start Windows is slow to make.</summary>
+    public void HoldStart(int number, ManualResetEventSlim gate) => _held[number] = gate;
 
     /// <summary>True to play each process started: it reads its job, and ends at its starter's stop.</summary>
     public bool PlayEach { get; init; }
@@ -438,6 +471,8 @@ public sealed class FakeCameraProcessStarter : ICameraProcessStarter
     public ICameraProcess Start(string jobId)
     {
         if (!Commands.RunIds.IsWellFormed(jobId)) throw new ArgumentException($"\"{jobId}\" is not a job id.", nameof(jobId));
+        var number = Interlocked.Increment(ref _entered) - 1;
+        if (_held.TryRemove(number, out var held)) held.Wait();
         if (StartFailure is { } failure) throw failure;
 
         lock (_gate)

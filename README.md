@@ -1364,8 +1364,11 @@ recorded, beside the class or in person.
   stays on while recording. The microphone opens once the first frame has come, or after 5 seconds; its
   track is on the recording's clock, so the class's track never waits. While the held picture's frames
   arrive, the later zeros rule is off: the camera cannot be asleep. When the recording follows the class
-  app to another microphone, the hold follows, or lets go for a microphone of no webcam. Run
-  `camera-check` and type Y once first (see [Checking the cameras](#checking-the-cameras)).
+  app to another microphone, the hold follows, or lets go for a microphone of no webcam. Nothing the
+  camera does can keep the microphone from recording: when Windows does not list the cameras within 5
+  seconds, or a camera process cannot start, the microphone is recorded all the same and the hold tries
+  again by itself. Run `camera-check` and type Y once first (see
+  [Checking the cameras](#checking-the-cameras)).
 
 ### Checking what your class page does with your microphone
 
@@ -2444,6 +2447,10 @@ words you see.
 | `The camera "..." has sent no picture yet; its microphone records meanwhile` | The held camera sent no frame within 5 seconds, so the microphone was opened without waiting longer. Look at its light; the camera is opened again by itself. |
 | `The camera "..." stopped sending its picture. Is its lens folded? Folded, its microphone is off. ClassScribe opens it again every 5 seconds`, with `(camera's picture stopped)` in the title, then `The camera "..." is open again` | The held picture stopped for 3 seconds: a folded lens, the camera unplugged, or another app holding it alone. Unfold or plug it in; ClassScribe opens it again by itself. In person it is an Alert in red. |
 | `The camera "..." could not be opened: ... Without its picture open the camera may fall asleep, and its microphone then sends only silence. Turn off Device Auto Sleep in OBSBOT Center, or record another microphone. ClassScribe tries again every 5 seconds`, with `(camera not opened)` in the title | The words after `opened:` say why: Windows' camera privacy settings or a security program (allow ClassScribe in Bitdefender's Webcam Protection, then `camera-check` with Y), another app holding it alone, the camera not connected, or the call that failed with its code. The microphone is recorded all the same. |
+| `The camera process holding "..." failed: A call on the camera's route did not return within 30 seconds` | A call to open the camera got stuck inside Windows, often while a security program's prompt (Bitdefender's Webcam Protection) waits for an answer. ClassScribe starts another camera process by itself, and the microphone records meanwhile. If it repeats, run `camera-check`, type Y and answer the prompt. |
+| `Camera process: Letting the camera go did not return within 30 seconds` | At the end of the hold, letting the camera go got stuck inside Windows. The camera process ends right after, and Windows lets the camera go with it. Nothing to do unless it repeats; then unplug the camera and plug it in again after the class. |
+| `Could not tell whether the microphone "..." belongs to a webcam, so no camera's picture is held for it yet; the microphone is recorded all the same, and each look asks again: ...` | With `Recording:WakeCameraMicrophone` on, Windows did not list the cameras (within 5 seconds, or with the error after the colon). The microphone is recorded; ClassScribe asks again at the microphone's next look (every 10 seconds) and holds the picture once the list comes. Meanwhile look at the camera's light: off, wake the camera. |
+| `The camera's hold could not look at its camera process; it tries again in 5 seconds, and the microphone is recorded all the same` | Not expected: something failed while starting or watching the camera process. The microphone is recorded, and the hold tries again by itself. |
 | `The camera "..." opened, shared, and sent its picture: ... frames in 5 seconds.` (`camera-check`) | The camera opens as a lesson and the hold will open it. |
 | `The camera "..." could not be opened: ...`, `The camera "..." opened but sent no picture in 5 seconds; is its lens folded, or is it asleep?`, `Windows did not start ClassScribe's camera process: ...`, `The camera process did not finish within 75 seconds, so it was ended` (`camera-check`, exit 1) | The numbered calls above the line show which one failed, with its code and Windows' words. Allow ClassScribe if a security program asked, unfold the lens or wake the camera, then run the check again. |
 | `No sound from the microphone "..." for 60 seconds. Check that it is not muted in Windows (the microphone key) and that Windows lets desktop apps use it ...` | In person, a minute without anything audible. Check the microphone, its mute and the privacy switch. |

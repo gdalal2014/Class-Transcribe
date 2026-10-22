@@ -7,7 +7,8 @@ namespace ClassScribe.Tests;
 /// <see cref="FakeCameraCaptureFactory"/> and its time on the manual clock: the hold keeps a webcam's picture open, shared,
 /// with nothing converted and every frame released unread, tells its starter of the first frame and once a second, says a
 /// refusal once and tries again every 5 seconds, opens the camera again when its picture stops, and lets it go at the stop;
-/// the check opens the camera at the picture's size and reports every call. Nothing is opened.
+/// the check opens the camera at the picture's size and reports every call. A call that does not return is given up at the
+/// call's limit: the hold says so and ends with 1, the check names the call. Nothing is opened.
 /// </summary>
 [TestFixture]
 public class CameraJobTests
@@ -212,16 +213,103 @@ public class CameraJobTests
         Assert.That(_captures.Last!.Disposed, Is.True);
     }
 
+    /// <summary>
+    /// A hold whose call on the camera's route does not return (InitializeAsync waiting inside Windows, as behind a security
+    /// program's prompt) is given up at the call's limit: it tells its starter that a call did not return, which makes the
+    /// starter start another camera process, and ends with 1, without the camera opened.
+    /// </summary>
+    [Test]
+    public async Task A_hold_whose_call_does_not_return_says_so_and_ends_with_1()
+    {
+        using var stuck = new ManualResetEventSlim();
+        _captures.Prepare = (capture, _) => capture.Stuck[nameof(ICameraCapture.InitializeShared)] = stuck;
+        await using var process = new FakeCameraProcess();
+        try
+        {
+            var (host, seen) = await StartAsync(process, Hold(), callLimit: TimeSpan.FromSeconds(2));
+
+            var moved = await _time.AdvanceUntilAsync(() => host.IsCompleted, Step, atMost: TimeSpan.FromSeconds(5));
+            await seen.Reading;
+
+            Assert.That(await host, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(moved, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(2)), "given up at the call's limit, not before");
+            Assert.That(seen.Of<CameraFailed>().Single().Why, Is.EqualTo("A call on the camera's route did not return within 2 seconds"));
+            Assert.That(seen.Of<CameraOpened>(), Is.Empty);
+        }
+        finally
+        {
+            stuck.Set();
+        }
+    }
+
+    /// <summary>A check whose open does not return names the call that never returned, and ends with 1.</summary>
+    [Test]
+    public async Task A_check_whose_open_does_not_return_names_the_call_and_ends_with_1()
+    {
+        using var stuck = new ManualResetEventSlim();
+        _captures.Prepare = (capture, _) => capture.Stuck[nameof(ICameraCapture.InitializeShared)] = stuck;
+        await using var process = new FakeCameraProcess();
+        try
+        {
+            var (host, seen) = await StartAsync(process, Check(), callLimit: TimeSpan.FromSeconds(2));
+
+            await _time.AdvanceUntilAsync(() => host.IsCompleted, Step, atMost: TimeSpan.FromSeconds(5));
+            await seen.Reading;
+
+            Assert.That(await host, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(seen.Of<CameraFailed>().Single().Why, Is.EqualTo("MediaCapture.InitializeAsync (SharedReadOnly, video only) did not return within 2 seconds"));
+            Assert.That(seen.Of<CameraOpened>(), Is.Empty);
+        }
+        finally
+        {
+            stuck.Set();
+        }
+    }
+
+    /// <summary>A check whose camera opened but whose letting go does not return names that call, and ends with 1.</summary>
+    [Test]
+    public async Task A_check_whose_letting_go_does_not_return_names_the_call_and_ends_with_1()
+    {
+        using var stuck = new ManualResetEventSlim();
+        _captures.Prepare = (capture, _) =>
+        {
+            capture.FramesOnStart = 30;
+            capture.Stuck[nameof(ICameraCapture.StopReader)] = stuck;
+        };
+        await using var process = new FakeCameraProcess();
+        try
+        {
+            var (host, seen) = await StartAsync(process, Check(), callLimit: TimeSpan.FromSeconds(2));
+
+            await _time.AdvanceUntilAsync(() => host.IsCompleted, Step, atMost: TimeSpan.FromSeconds(10));
+            await seen.Reading;
+
+            Assert.That(await host, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(seen.Of<CameraOpened>(), Has.Count.EqualTo(1), "the camera had opened");
+            Assert.That(seen.Of<CameraFailed>().Single().Why, Is.EqualTo("MediaFrameReader.StopAsync (letting go) did not return within 2 seconds"));
+        }
+        finally
+        {
+            stuck.Set();
+        }
+    }
+
     /// <summary>A hold job for the OBSBOT.</summary>
     private static CameraJob Hold() => new(CameraProtocol.Version, CameraJobKind.Hold, LaptopCameras.Obsbot.Id, LaptopCameras.Obsbot.Name);
 
     /// <summary>A check job for the Integrated Camera at <paramref name="resolution"/>.</summary>
     private static CameraJob Check(string resolution = "720p") => new(CameraProtocol.Version, CameraJobKind.Check, LaptopCameras.Integrated.Id, LaptopCameras.Integrated.Name, resolution);
 
-    /// <summary>Starts the real host over <paramref name="process"/>'s own end, on the manual clock, sends <paramref name="job"/> and reads every line it sends.</summary>
-    private async Task<(Task<int> Host, CameraLinesSeen Seen)> StartAsync(FakeCameraProcess process, CameraJob job)
+    /// <summary>
+    /// Starts the real host over <paramref name="process"/>'s own end, on the manual clock, with the probe's 30 seconds a
+    /// call unless <paramref name="callLimit"/> gives another, sends <paramref name="job"/> and reads every line it sends.
+    /// </summary>
+    private async Task<(Task<int> Host, CameraLinesSeen Seen)> StartAsync(FakeCameraProcess process, CameraJob job, TimeSpan? callLimit = null)
     {
-        var host = Task.Run(() => new CameraHost { Time = _time, Captures = _captures }.RunAsync(JobId, process.ProcessStream, process.ProcessStream));
+        var camera = callLimit is { } limit
+            ? new CameraHost { Time = _time, Captures = _captures, CallLimit = limit }
+            : new CameraHost { Time = _time, Captures = _captures };
+        var host =Task.Run(() => camera.RunAsync(JobId, process.ProcessStream, process.ProcessStream));
         var seen = new CameraLinesSeen(process.Channel);
         await CameraLines.SendJobAsync(process.Channel, job, CancellationToken.None);
         return (host, seen);

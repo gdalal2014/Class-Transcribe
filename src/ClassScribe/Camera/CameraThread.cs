@@ -45,7 +45,8 @@ public sealed class CameraThread : IDisposable
             }
             catch (Exception ex)
             {
-                // Not swallowed: handed to the waiting caller as it was, through the task, which throws it there.
+                // Deliberately not rethrown: this runs on the camera's own thread, where an exception would end the camera
+                // process; it is handed to the waiting caller as it was, through the task, which throws it there.
                 done.SetException(ex);
             }
         });

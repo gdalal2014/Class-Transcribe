@@ -83,9 +83,10 @@ public interface IMicrophoneRecording
     /// <summary>
     /// The webcam the microphone belongs to (camera-first 3.4), and whether its picture is held with its frames arriving;
     /// null for a microphone of no webcam, and for a recording that cannot say. The webcam zeros rules take the place of
-    /// the warning about only silence for such a microphone.
+    /// the warning about only silence for such a microphone. It has no default body, so that every recording with the
+    /// microphone must say, and one that stopped saying would not build rather than fall silent in a class.
     /// </summary>
-    Camera.WebcamState? Webcam => null;
+    Camera.WebcamState? Webcam { get; }
 }
 
 /// <summary>The words for the app the microphone track follows, as the run's lines, status line and summary use them.</summary>

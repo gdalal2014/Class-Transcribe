@@ -46,10 +46,10 @@ public class CameraCheckTests
     /// <summary>The OBSBOT's microphone, in its camera's container.</summary>
     private static Microphone ObsbotMicrophone => LaptopMicrophones.Obsbot with { ContainerId = LaptopCameras.ObsbotContainer };
 
-    /// <summary>The check over the fakes.</summary>
-    private CameraCheckCommand Command() =>
+    /// <summary>The check over the fakes, on the computer's clock unless <paramref name="time"/> gives another.</summary>
+    private CameraCheckCommand Command(TimeProvider? time = null) =>
         new(_cameras, _microphones, _usage, new CameraSetupFacts(_system, _usage, _registry), _choice ??= new Audio.SourceChoice(_recording), _recording, _ui, _starter,
-            TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<CameraCheckCommand>.Instance);
+            time ?? TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<CameraCheckCommand>.Instance);
 
     /// <summary>What is chosen for the session, made with the settings on first use.</summary>
     private Audio.SourceChoice? _choice;
@@ -322,6 +322,29 @@ public class CameraCheckTests
 
         Assert.That(exitCode, Is.EqualTo(1));
         Assert.That(_ui.Screen, Does.EndWith("Windows did not start ClassScribe's camera process: Access is denied."));
+    }
+
+    /// <summary>
+    /// A camera process that never finishes (a call stuck inside Windows, as behind a security program's prompt) is given
+    /// the check's 75 seconds in all, then ended, which lets the camera go; the check says so and ends with 1.
+    /// </summary>
+    [Test]
+    public async Task A_camera_process_that_never_finishes_is_ended_after_75_seconds()
+    {
+        var time = new ManualTimeProvider(TestRuns.Start);
+        _starter = new FakeCameraProcessStarter();   // a process that reads its job and never answers
+        _ui.TypeLine("Y");
+
+        var checking = Command(time).RunAsync(new CameraCheckRequest());
+        await Wait.UntilAsync(() => _starter.Started.Count == 1);
+        var moved = await time.AdvanceUntilAsync(() => checking.IsCompleted, TimeSpan.FromSeconds(1), atMost: CameraCheckCommand.CheckLimit + TimeSpan.FromSeconds(5));
+        var exitCode = await checking;
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(moved, Is.GreaterThanOrEqualTo(CameraCheckCommand.CheckLimit), "given its 75 seconds in all");
+        Assert.That(_starter.Started.Single().Process.Killed, Is.True, "the process ended, which lets the camera go");
+        Assert.That(_ui.Screen, Does.Contain("The camera process did not finish within 75 seconds, so it was ended."));
+        Assert.That(_ui.Screen, Does.EndWith(CameraCheckCommand.TryAgain));
     }
 
     /// <summary>With no camera to choose there is nothing to open, and nothing is asked.</summary>

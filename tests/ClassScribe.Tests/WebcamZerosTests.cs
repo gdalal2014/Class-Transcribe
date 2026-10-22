@@ -66,6 +66,37 @@ public partial class RecordingSessionTests
         Assert.That(after.RawZerosFor, Is.EqualTo(TimeSpan.FromSeconds(3)));
     }
 
+    /// <summary>
+    /// Each capture counts afresh: after a capture that carried sound is replaced (a reopen, as V off and on, a stall or a
+    /// move to another microphone does), the new capture has carried no sound since it opened, its zeros count from its
+    /// own open, and it is numbered 2, so that a camera that fell asleep meanwhile gets the start rule again.
+    /// </summary>
+    [Test]
+    public async Task Each_capture_counts_its_device_depth_zeros_afresh()
+    {
+        var first = _provider.Enqueue(new FakeAudioCapture(Float48KStereo) { DeliversContinuously = true });
+        var second = _provider.Enqueue(new FakeAudioCapture(Float48KStereo) { DeliversContinuously = true });
+        using var session = CreateSession();
+
+        session.Start(_files);
+        first.Deliver(TestAudio.Floats(0.25f, 0.25f));
+        var heard = session.GetStatus();
+        session.Reopen("no audio has arrived for 5 seconds");
+        await TickAsync();
+        await Wait.UntilAsync(() => second.Started);
+        second.Deliver(TestAudio.Floats(0f, -0f));
+        _time.Advance(TimeSpan.FromSeconds(4));
+        second.Deliver(TestAudio.Floats(0f, 0f));
+        var afresh = session.GetStatus();
+        session.Stop();
+
+        Assert.That(heard.RawSoundSinceOpened, Is.True);
+        Assert.That(heard.CaptureNumber, Is.EqualTo(1));
+        Assert.That(afresh.CaptureNumber, Is.EqualTo(2));
+        Assert.That(afresh.RawSoundSinceOpened, Is.False, "the first capture's sound is not the second's");
+        Assert.That(afresh.RawZerosFor, Is.EqualTo(TimeSpan.FromSeconds(4)), "counted from the second capture's own open");
+    }
+
     /// <summary>A packet Windows flags as silent is Windows' silence, not the device's: it is said, and counts as neither sound nor the device's zeros.</summary>
     [Test]
     public void A_packet_Windows_flags_silent_counts_as_neither()
@@ -269,6 +300,55 @@ public partial class RecordingMonitorTests
         Assert.That(back.Attention.Level, Is.EqualTo(AttentionLevel.None));
     }
 
+    /// <summary>In person the hold's problem is an Alert, its short words in capitals, since the whole recording is the webcam's microphone.</summary>
+    [Test]
+    public void In_person_the_holds_problem_is_an_Alert()
+    {
+        var stopped = WebcamHold.Stopped(LaptopCameras.Obsbot.Name);
+        var recording = new FakeMicrophoneRecording(RecordingMode.Microphone, Obsbot())
+        {
+            Webcam = ObsbotWebcam with { Holding = true, Problem = stopped, ProblemShort = WebcamHold.StoppedShort }
+        };
+        Begin(new RecordingOptions { StatusIntervalSeconds = 3600, SilenceWarningSeconds = 3600 }, InPerson(), recording);
+        Look(InPersonTracks(Webcam(TimeSpan.Zero, sound: true)));
+
+        var problem = Tick(InPersonTracks(Webcam(TimeSpan.Zero, sound: true)));
+
+        Assert.That(problem.Attention, Is.EqualTo(new Attention(AttentionLevel.Alert, "CAMERA'S PICTURE STOPPED", stopped, 1)));
+    }
+
+    /// <summary>
+    /// While the microphone is not to be heard the webcam rules say nothing, as the warning every microphone has says
+    /// nothing then: with the recording paused, with the track switched off by V, and with the class app followed and not
+    /// listening, so that the gate drops the microphone's packets; at 60 seconds of zeros since the open and at 2 minutes
+    /// after sound alike.
+    /// </summary>
+    [TestCase("paused")]
+    [TestCase("switched off")]
+    [TestCase("not listened to")]
+    public void The_webcam_rules_say_nothing_while_the_microphone_is_not_heard(string why)
+    {
+        var recording = why == "not listened to" ? BeginWithWebcamFollowingChrome() : BeginWithWebcam();
+
+        // A look with the webcam's zeros so far, as the reason has it: paused, switched off, or chrome not listening.
+        MonitorTick At(TimeSpan zeros, bool sound)
+        {
+            if (why == "not listened to") Feed(recording.Gate!, at => Looks.NotListening(at));
+            return Tick(WithTracks(microphone: Webcam(zeros, sound) with { Off = why == "switched off" }, paused: why == "paused"));
+        }
+
+        MonitorTick[] ticks =
+        [
+            At(TimeSpan.FromSeconds(60), sound: false),
+            At(TimeSpan.FromSeconds(90), sound: false),
+            At(RecordingSession.WebcamZerosAfterSound, sound: true),
+            At(TimeSpan.FromMinutes(3), sound: true)
+        ];
+
+        Assert.That(Warnings(ticks).Where(line => line.Contains("exact zeros", StringComparison.Ordinal)), Is.Empty);
+        Assert.That(ticks.Select(tick => tick.Attention.Short), Has.None.EqualTo("only zeros from the webcam's microphone"));
+    }
+
     /// <summary>
     /// Finding 4 replayed: twelve awake minutes of the OBSBOT with speech and quiet, its noise reduction sending exact zeros
     /// in silence (seconds 1 to 4 after the open, and runs up to 18.7 seconds, 77 seconds in all), give no line about zeros
@@ -301,6 +381,20 @@ public partial class RecordingMonitorTests
         var recording = BeginWithMicrophone(ClassAppMute.Unknown, rule: new FollowRule.None());
         recording.Microphone = Obsbot();
         recording.Webcam = ObsbotWebcam;
+        Look(WithTracks(microphone: Webcam(TimeSpan.FromSeconds(1))));
+        return recording;
+    }
+
+    /// <summary>
+    /// Begins with the class and the OBSBOT's microphone following chrome, whose mute Windows can see, with no hold; chrome
+    /// is not listening at the first look, so the gate drops the microphone's packets.
+    /// </summary>
+    private FakeMicrophoneRecording BeginWithWebcamFollowingChrome()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Visible);
+        recording.Microphone = Obsbot();
+        recording.Webcam = ObsbotWebcam;
+        Feed(recording.Gate!, at => Looks.NotListening(at));
         Look(WithTracks(microphone: Webcam(TimeSpan.FromSeconds(1))));
         return recording;
     }

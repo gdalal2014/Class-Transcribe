@@ -322,8 +322,8 @@ public sealed class MenuCommand(
 
     /// <summary>
     /// Choice 8: W watches what apps do with the microphone (the microphone check, until it is stopped in this window); C
-    /// checks the cameras (the camera check, which opens the chosen camera, shared, only after a typed Y). Esc, Q or Ctrl+C go back; other keys are
-    /// ignored. Neither opens a device.
+    /// checks the cameras (the camera check, which opens the chosen camera, shared, only after a typed Y). Esc, Q or Ctrl+C
+    /// go back; other keys are ignored. W opens nothing; C opens a camera only after a typed Y and Enter.
     /// </summary>
     private async Task CheckAsync()
     {
