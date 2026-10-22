@@ -14,8 +14,8 @@ namespace ClassScribe.Camera;
 /// (P), <see cref="Stop"/> and <see cref="Cancel"/>. From it: <see cref="Opened"/>, <see cref="Status"/> once a second,
 /// <see cref="Problem"/>, <see cref="Piece"/>, <see cref="Progress"/>, <see cref="Made"/> or <see cref="Failed"/>, and
 /// <see cref="Log"/> lines, which the starter writes into its own log under the category Camera. Its exit codes are
-/// internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. In this build it takes no job: it opens no camera,
-/// answers each job with <see cref="Failed"/>, and ends with 4.
+/// internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. It takes the hold and the check jobs, opening the camera
+/// only shared; a record or finish job is answered with <see cref="Failed"/>, and ends with 4.
 /// </summary>
 public static class CameraProtocol
 {
@@ -107,11 +107,11 @@ public enum CameraJobKind
     /// <summary>Make a lesson's video from its pieces and its sound (slice 8).</summary>
     Finish,
 
-    /// <summary>The camera check: open the camera for a few seconds, as a run would, and save one picture (after the probe).</summary>
+    /// <summary>The camera check: open the camera, shared, for a few seconds, as a lesson would, and report each call and the frames that came.</summary>
     Check,
 
-    /// <summary>Wake a webcam whose microphone sends only zeros, shared, keeping none of its picture (after the probe).</summary>
-    Wake
+    /// <summary>Hold a webcam's picture open, shared, while its microphone is recorded, keeping none of it, so that the camera cannot fall asleep (camera-first 3.4).</summary>
+    Hold
 }
 
 /// <summary>A camera process's job: the first line it reads. Each kind uses the fields it needs; the rest stay null.</summary>
@@ -119,7 +119,7 @@ public enum CameraJobKind
 /// <param name="Kind">What to do.</param>
 /// <param name="CameraId">The camera, pinned by Windows' id; null for a finish job.</param>
 /// <param name="CameraName">The camera's name, for the lines it writes.</param>
-/// <param name="Resolution">The picture's size as <see cref="CameraSize.Text"/> writes it, such as 720p, resolved by the window; null for a wake job.</param>
+/// <param name="Resolution">The picture's size as <see cref="CameraSize.Text"/> writes it, such as 720p, resolved by the window; null for a hold job.</param>
 /// <param name="OffsetMilliseconds">How far the camera's picture is moved against the sound (Recording:CameraOffsets), resolved by the window.</param>
 /// <param name="Folder">The recording's folder, for a record or finish job.</param>
 /// <param name="BaseName">The recording's base name, such as Tajwid 4_2026-10-19_14-00-02Z, for a record or finish job.</param>

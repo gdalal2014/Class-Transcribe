@@ -69,7 +69,7 @@ public class CameraHostTests
     {
         Assert.That(await NotTakenAsync(channel => channel.SendAsync(CameraProtocol.Stop, new CameraStop(12.5), CameraJson.Default.CameraStop, CancellationToken.None)),
             Is.EqualTo("The first line was \"stop\", not a job"));
-        Assert.That(await NotTakenAsync(channel => CameraLines.SendJobAsync(channel, new CameraJob(CameraProtocol.Version + 1, CameraJobKind.Wake), CancellationToken.None)),
+        Assert.That(await NotTakenAsync(channel => CameraLines.SendJobAsync(channel, new CameraJob(CameraProtocol.Version + 1, CameraJobKind.Hold), CancellationToken.None)),
             Is.EqualTo($"The job speaks version {CameraProtocol.Version + 1} of the camera's lines; this camera process speaks version {CameraProtocol.Version}"));
         Assert.That(await NotTakenAsync(channel => channel.SendAsync(CameraProtocol.Job, new CameraLog("x", "y"), CameraJson.Default.CameraLog, CancellationToken.None)),
             Does.StartWith("The job could not be read"));

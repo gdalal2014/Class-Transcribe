@@ -369,3 +369,47 @@ public sealed class FakeCameraCaptureFactory : ICameraCaptureFactory
         return capture;
     }
 }
+
+/// <summary>
+/// Reads every line a camera process sends, as its starter would, typed by <see cref="CameraLines.Read"/>, into a list a
+/// test can look at while the process runs; until the process's end of the lines closes.
+/// </summary>
+public sealed class CameraLinesSeen
+{
+    private readonly Lock _gate = new();
+    private readonly List<object> _lines = [];
+
+    /// <summary>Starts reading <paramref name="channel"/>, the starter's end, on the thread pool.</summary>
+    public CameraLinesSeen(Link.LineChannel channel) => Reading = Task.Run(async () =>
+    {
+        try
+        {
+            while (await channel.ReceiveAsync(CancellationToken.None) is { } line)
+            {
+                if (CameraLines.Read(line) is { } read)
+                {
+                    lock (_gate) _lines.Add(read);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+            // The process's end closed: nothing more to read.
+        }
+    });
+
+    /// <summary>The reading, which ends when the process's end of the lines closes.</summary>
+    public Task Reading { get; }
+
+    /// <summary>Every line so far, in order.</summary>
+    public IReadOnlyList<object> All
+    {
+        get { lock (_gate) return [.. _lines]; }
+    }
+
+    /// <summary>The lines of type <typeparamref name="T"/> so far, in order.</summary>
+    public IReadOnlyList<T> Of<T>() => [.. All.OfType<T>()];
+
+    /// <summary>The words of the log lines so far, in order.</summary>
+    public IReadOnlyList<string> Logs => [.. Of<CameraLog>().Select(log => log.Text)];
+}
