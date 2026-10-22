@@ -80,6 +80,24 @@ public static class PcmConverter
         return peak;
     }
 
+    /// <summary>
+    /// True when any sample of any channel in <paramref name="source"/>, in the device's own format, is other than exactly
+    /// zero, before any conversion: for 32-bit float a value other than 0 (a negative zero is zero), for whole numbers any
+    /// bit set. Windows' faint residue in a quiet room, which rounds to zero in 16 bits, counts here (camera-first 3.4).
+    /// </summary>
+    public static bool AnyNonZero(ReadOnlySpan<byte> source, AudioFormat format)
+    {
+        if (format is { IsFloat: true, BitsPerSample: 32 })
+        {
+            for (var i = 0; i + 3 < source.Length; i += 4)
+                if (BinaryPrimitives.ReadSingleLittleEndian(source.Slice(i, 4)) != 0f) return true;
+
+            return false;
+        }
+
+        return source.IndexOfAnyExcept((byte)0) >= 0;
+    }
+
     /// <summary>Fills in each channel's share of the mono mix, from the speaker the channel feeds. Channels whose speaker is not known keep a share of zero.</summary>
     private static void MixWeights(AudioFormat format, Span<float> weights)
     {

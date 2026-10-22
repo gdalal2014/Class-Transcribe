@@ -23,6 +23,7 @@ public sealed class FakeMicrophoneRecording : IRecording, IMicrophoneRecording
     private string? _why;
     private MicrophoneProcessing? _processing;
     private bool? _mutedInWindows;
+    private Camera.WebcamState? _webcam;
 
     /// <summary>
     /// A recording of the class and your microphone, or of what <paramref name="mode"/> names, recording
@@ -86,6 +87,13 @@ public sealed class FakeMicrophoneRecording : IRecording, IMicrophoneRecording
     {
         get { lock (_gate) return _mutedInWindows; }
         set { lock (_gate) _mutedInWindows = value; }
+    }
+
+    /// <summary>The webcam the microphone belongs to and its hold, as the test sets it: null, as a microphone of no webcam, unless set.</summary>
+    public Camera.WebcamState? Webcam
+    {
+        get { lock (_gate) return _webcam; }
+        set { lock (_gate) _webcam = value; }
     }
 
     /// <inheritdoc />

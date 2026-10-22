@@ -32,8 +32,16 @@ public sealed record TimelineNote(TimeSpan Position, string Text);
 /// <param name="WriteFailing">True while writing the track's files fails, as on a full disk.</param>
 /// <param name="OnlyZeros">True when the track has received nothing but exact zeros for a while, as from a microphone muted in Windows.</param>
 /// <param name="HeardSound">True once audible sound has reached the track's files in this run; sound heard only while paused does not count.</param>
+/// <param name="RawZerosFor">
+/// How long the track's capture has handed over only exact zeros at the device's own depth, since it opened or since its last
+/// other sample (see <see cref="RecordingStatus.RawZerosFor"/>); null while it captures nothing, and before its first packet.
+/// </param>
+/// <param name="RawSoundSinceOpened">True once the track's capture has handed over a sample other than zero, at the device's own depth, since it opened.</param>
+/// <param name="WindowsSilent">True when Windows flagged the capture's last packet as silent: Windows' silence, not the device's.</param>
+/// <param name="CaptureNumber">How many captures the track has opened so far: a new number is a new capture.</param>
 public sealed record TrackSnapshot(string Source, string? WaitingFor, TimeSpan Written, TimeSpan SinceLastSound, TimeSpan? SinceLastPacket,
-    bool DeliversContinuously, float? RecordedLevel, bool SoundWhilePaused, bool Capturing, bool Off, bool WriteFailing, bool OnlyZeros, bool HeardSound = false);
+    bool DeliversContinuously, float? RecordedLevel, bool SoundWhilePaused, bool Capturing, bool Off, bool WriteFailing, bool OnlyZeros, bool HeardSound = false,
+    TimeSpan? RawZerosFor = null, bool RawSoundSinceOpened = false, bool WindowsSilent = false, int CaptureNumber = 0);
 
 /// <summary>A running recording as the checks made once a second see it.</summary>
 /// <param name="Position">Where the recording is now: what a mark set now gets (see <see cref="IRecording.Position"/>).</param>

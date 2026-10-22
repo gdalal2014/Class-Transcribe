@@ -14,7 +14,7 @@ namespace ClassScribe.Tests;
 
 /// <summary>The recording session, driven by a fake capture device, and what its arrival watch takes from Windows' capture of an app.</summary>
 [TestFixture]
-public class RecordingSessionTests
+public partial class RecordingSessionTests
 {
     private static readonly AudioFormat Float48KStereo = new(48000, 2, 32, true);
     private static readonly AudioFormat Float44KStereo = new(44100, 2, 32, true);

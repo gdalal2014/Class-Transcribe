@@ -17,7 +17,7 @@ namespace ClassScribe.Tests;
 /// hand at each look, the clock is moved by hand, and the free space is set by the test.
 /// </summary>
 [TestFixture]
-public class RecordingMonitorTests
+public partial class RecordingMonitorTests
 {
     /// <summary>The folder the tests' recording goes to; only its drive's free space is read, from the test's stand-in.</summary>
     private const string Folder = @"D:\Classes\Kalam";

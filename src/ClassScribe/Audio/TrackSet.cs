@@ -628,7 +628,11 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
         Off: status.Off,
         WriteFailing: status.WriteFailing,
         OnlyZeros: status.OnlyZeros,
-        HeardSound: status.HeardSound);
+        HeardSound: status.HeardSound,
+        RawZerosFor: status.RawZerosFor,
+        RawSoundSinceOpened: status.RawSoundSinceOpened,
+        WindowsSilent: status.WindowsSilent,
+        CaptureNumber: status.CaptureNumber);
 
     /// <summary>A count with its noun: 1 part, 3 parts, 0 corrections.</summary>
     private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
