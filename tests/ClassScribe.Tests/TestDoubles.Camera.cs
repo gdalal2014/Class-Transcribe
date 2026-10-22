@@ -186,3 +186,186 @@ public sealed class FakeCameraProcessStarter : ICameraProcessStarter
         return process;
     }
 }
+
+/// <summary>
+/// A camera capture as a test plays it, in place of WinRT's MediaCapture (see <see cref="ICameraCapture"/>): it opens
+/// nothing, notes each call in order, and refuses what Windows refuses before InitializeAsync has completed (the
+/// exclusive-control event, FrameSources and the frame reader), with the same exception type and code Windows gave on 21
+/// October: a COMException of 0xC00D36B6 MF_E_NOT_INITIALIZED (ROOT-CAUSE.md beside the camera probe). A test can make any
+/// step fail, set the reader's start status, and hand over frames.
+/// </summary>
+public sealed class FakeCameraCapture : ICameraCapture
+{
+    /// <summary>Windows' words for MF_E_NOT_INITIALIZED, as finding 7 gave them.</summary>
+    public const string NotInitializedWords = "This object needs to be initialized before the requested operation can be carried out.";
+
+    private readonly Lock _gate = new();
+    private readonly List<string> _calls = [];
+    private readonly List<string> _tooEarly = [];
+    private Action? _onFrame;
+    private Action<string>? _onEvent;
+    private bool _initialized;
+
+    /// <summary>The calls, by the member's name, in the order they came.</summary>
+    public IReadOnlyList<string> Calls
+    {
+        get { lock (_gate) return [.. _calls]; }
+    }
+
+    /// <summary>The calls that needed an initialised MediaCapture and came before InitializeAsync.</summary>
+    public IReadOnlyList<string> TooEarly
+    {
+        get { lock (_gate) return [.. _tooEarly]; }
+    }
+
+    /// <summary>The steps that fail, by the member's name (such as nameof(InitializeShared)), with what they throw.</summary>
+    public Dictionary<string, Exception> Failures { get; } = [];
+
+    /// <summary>What StartReader answers: Success unless a test says otherwise.</summary>
+    public string StartStatus { get; set; } = CameraRoute.Success;
+
+    /// <summary>The colour source's format as the camera runs it.</summary>
+    public string Format { get; set; } = "MJPG 1920x1080 at 30 frames a second";
+
+    /// <summary>The size the reader was asked to convert to; null for none, or before it was made.</summary>
+    public CameraSize? ConvertedTo { get; private set; }
+
+    /// <summary>True once the camera was let go.</summary>
+    public bool Disposed { get; private set; }
+
+    /// <summary>True once frames have been started and not stopped.</summary>
+    public bool Streaming { get; private set; }
+
+    /// <inheritdoc />
+    public void AddFailed(Action<string> onFailed)
+    {
+        Step(nameof(AddFailed));
+        _onEvent = onFailed;
+    }
+
+    /// <inheritdoc />
+    public void FindSourceGroup() => Step(nameof(FindSourceGroup));
+
+    /// <inheritdoc />
+    public void InitializeShared()
+    {
+        Step(nameof(InitializeShared));
+        lock (_gate) _initialized = true;
+    }
+
+    /// <inheritdoc />
+    public void AddStreamStateChanged(Action<string> onEvent) => Step(nameof(AddStreamStateChanged));
+
+    /// <inheritdoc />
+    public void AddExclusiveControlChanged(Action<string> onEvent) => Step(nameof(AddExclusiveControlChanged), needsInitialization: true);
+
+    /// <inheritdoc />
+    public string FindColourSource()
+    {
+        Step(nameof(FindColourSource), needsInitialization: true);
+        return Format;
+    }
+
+    /// <inheritdoc />
+    public string CreateReader(CameraSize? convertTo)
+    {
+        Step(nameof(CreateReader), needsInitialization: true);
+        ConvertedTo = convertTo;
+        return convertTo is { } size ? $"NV12 {size.Width}x{size.Height}" : "the camera's own format, nothing converted";
+    }
+
+    /// <inheritdoc />
+    public void UseRealtime() => Step(nameof(UseRealtime));
+
+    /// <inheritdoc />
+    public void AddFrameArrived(Action onFrame)
+    {
+        Step(nameof(AddFrameArrived));
+        _onFrame = onFrame;
+    }
+
+    /// <inheritdoc />
+    public string StartReader()
+    {
+        Step(nameof(StartReader));
+        Streaming = StartStatus == CameraRoute.Success;
+        return StartStatus;
+    }
+
+    /// <inheritdoc />
+    public void StopReader()
+    {
+        Step(nameof(StopReader));
+        Streaming = false;
+    }
+
+    /// <summary>Notes the camera let go; a failure set for it is thrown after it is noted.</summary>
+    public void Dispose()
+    {
+        Disposed = true;
+        Streaming = false;
+        Step(nameof(Dispose));
+    }
+
+    /// <summary>Hands over <paramref name="count"/> frames, as the reader's thread would, while streaming.</summary>
+    public void Frames(int count = 1)
+    {
+        for (var i = 0; i < count && Streaming; i++) _onFrame?.Invoke();
+    }
+
+    /// <summary>Reports <paramref name="words"/> as MediaCapture.Failed would.</summary>
+    public void RaiseFailed(string words) => _onEvent?.Invoke(words);
+
+    /// <summary>Notes the call; refuses it as Windows does when it needs InitializeAsync first; throws the failure a test set for it.</summary>
+    private void Step(string name, bool needsInitialization = false)
+    {
+        lock (_gate)
+        {
+            _calls.Add(name);
+            if (needsInitialization && !_initialized)
+            {
+                _tooEarly.Add(name);
+                throw new System.Runtime.InteropServices.COMException(NotInitializedWords, CameraHresults.NotInitialized);
+            }
+        }
+
+        if (Failures.TryGetValue(name, out var failure)) throw failure;
+    }
+}
+
+/// <summary>Makes <see cref="FakeCameraCapture"/>s, one a call, keeping each with the camera it was made for; or fails to make one.</summary>
+public sealed class FakeCameraCaptureFactory : ICameraCaptureFactory
+{
+    private readonly Lock _gate = new();
+    private readonly List<(string CameraId, string CameraName, FakeCameraCapture Capture)> _made = [];
+
+    /// <summary>Sets up each capture before it is handed out, as a test wants it: failing a step, or answering another start status.</summary>
+    public Action<FakeCameraCapture, int>? Prepare { get; set; }
+
+    /// <summary>The captures made, in order, with their cameras.</summary>
+    public IReadOnlyList<(string CameraId, string CameraName, FakeCameraCapture Capture)> Made
+    {
+        get { lock (_gate) return [.. _made]; }
+    }
+
+    /// <summary>The last capture made; null before the first.</summary>
+    public FakeCameraCapture? Last
+    {
+        get { lock (_gate) return _made.Count == 0 ? null : _made[^1].Capture; }
+    }
+
+    /// <inheritdoc />
+    public ICameraCapture Create(string cameraId, string cameraName)
+    {
+        var capture = new FakeCameraCapture();
+        int index;
+        lock (_gate)
+        {
+            index = _made.Count;
+            _made.Add((cameraId, cameraName, capture));
+        }
+
+        Prepare?.Invoke(capture, index);
+        return capture;
+    }
+}
