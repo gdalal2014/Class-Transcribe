@@ -1587,7 +1587,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   within `SendLimit` (5 s), else the process is killed as stuck, which breaks its pipe, and the send fails as an
   `IOException` (a synchronous pipe's write cannot be cancelled); letting a process go waits at most `DisposeWait` (5 s),
   and `StartedCameraProcess.DisposeAsync` waits for its standard error 5 s at most. A process that ends by itself, or
-  does not start, is started again `RestartAfter` (2 s) later, with the software encoder after an `Encoder` problem; the
+  does not start, is started again `RestartAfter` (2 s) later (`ReadAsync` holds `_nextStart` at its maximum while the
+  ended process is let go, so no look starts one early), with the software encoder after an `Encoder` problem; the
   `MostFailures`th (3) within `FailuresWithin` (10 min) gives the picture up (`GivenUpText`). Its `State`
   (`CameraTrackState`) carries the frames, the rate, capturing, dark and a `CameraConcern` in the run's words with the
   camera's name (lost, no picture as Bitdefender's block, frames that cannot be written, refused, in use, encoder or disk,

@@ -596,7 +596,14 @@ public sealed class CameraTrack : ICameraTrack
         lock (_gate)
         {
             ended = !_stopping && !_givenUp && ReferenceEquals(_process, process);
-            if (ended) _process = null;
+            if (ended)
+            {
+                // No look starts another until Failed below says when (RestartAfter from now) or gives the picture up: the
+                // process is let go first, which may take DisposeWait, and a look meanwhile must not start one at once.
+                _process = null;
+                _nextStart = long.MaxValue;
+            }
+
             _capturing = false;
         }
 

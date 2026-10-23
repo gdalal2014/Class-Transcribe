@@ -301,6 +301,25 @@ public sealed class CameraTrackTests
         Assert.That(_track!.State.Concern!.Alert, Is.True);
     }
 
+    /// <summary>
+    /// A camera process that ended by itself is never started again before <see cref="CameraTrack.RestartAfter"/>, even while
+    /// letting the old one go takes its time: the track's looks meanwhile start nothing, so the restart comes after the let-go
+    /// gave up and two seconds more, never at the next look.
+    /// </summary>
+    [Test]
+    public async Task A_camera_process_that_ends_is_not_started_again_while_it_is_let_go()
+    {
+        var first = await StartAsync();
+        first.Process.DisposeHangs = true;
+
+        first.Process.Exit(1);
+        await WaitAsync(() => first.Process.DisposeEntered);
+        var moved = await _time.AdvanceUntilAsync(() => _starter.Played.Count == 2 && _starter.Played[1].Job is not null, Step);
+
+        Assert.That(moved, Is.GreaterThanOrEqualTo(CameraTrack.DisposeWait + CameraTrack.RestartAfter));
+        Assert.That(_track!.State.Concern?.Short, Is.EqualTo("CAMERA RESTARTING"));
+    }
+
     /// <summary>After the camera process said its encoder failed, the next one asks for Windows' software encoder.</summary>
     [Test]
     public async Task After_an_encoder_failure_the_next_process_uses_the_software_encoder()
