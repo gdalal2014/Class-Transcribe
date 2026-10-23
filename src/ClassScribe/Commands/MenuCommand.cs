@@ -18,9 +18,10 @@ namespace ClassScribe.Commands;
 /// The menu reaches every command through the runner (<see cref="ICommandRunner"/>), which runs each in a scope of its
 /// own, the microphone menu of choice 7, the microphone check of choice 8 and Google Drive's menu of choice 9 among them,
 /// and the runs only through the report, so that it is made before the services of the background recorder are registered.
-/// <paramref name="classes"/>, the saved classes, are named in the header when one cannot be used and offered by choices 1
-/// and 2 (C lists them); <paramref name="writer"/> saves choice 6's pick as the default with S. Without them, as in tests
-/// that do not need them, there are neither.
+/// <paramref name="classes"/>, the saved classes, are named in the header when one cannot be used, or names a glossary that
+/// is not there (looked for through <paramref name="glossaries"/>), and offered by choices 1 and 2 (C lists them);
+/// <paramref name="writer"/> saves choice 6's pick as the default with S. Without them, as in tests that do not need them,
+/// there are neither.
 /// </summary>
 public sealed class MenuCommand(
     ICommandRunner commands,
@@ -37,7 +38,8 @@ public sealed class MenuCommand(
     TimeProvider time,
     ILogger<MenuCommand> logger,
     SavedClasses? classes = null,
-    SettingsWriter? writer = null)
+    SettingsWriter? writer = null,
+    Transcription.IGlossaryFiles? glossaries = null)
 {
     /// <summary>The key of the saved classes, menu C.</summary>
     private const char ClassesKey = 'C';
@@ -246,6 +248,10 @@ public sealed class MenuCommand(
         if (settings.Places.DescribeMissing() is { } missing) ui.WriteLine($"ERROR  {missing}");
         if (DefaultChanges.HeaderLine(gate.OlderDefaults.Count) is { } older) ui.WriteLine(older);
         foreach (var unusable in classes?.All().Where(entry => !entry.Usable) ?? []) ui.WriteLine($"WARNING  {unusable.CannotBeUsed}");
+        if (classes is not null && glossaries is not null)
+        {
+            foreach (var glossary in Transcription.GlossaryChoice.MissingGlossaries(classes.All(), glossaries)) ui.WriteLine($"WARNING  {glossary}");
+        }
         _staleCopyShown = settings.DescribeStaleCopy();
         if (_staleCopyShown is { } stale) ui.WriteLine($"WARNING  {stale}.");
         if (gate.Problems is [_, ..] settingsProblems)

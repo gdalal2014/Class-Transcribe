@@ -21,6 +21,11 @@
     <Compile Include="..\..\tools\dry-run\ElevenLabsStub.cs" Link="DryRunKit\ElevenLabsStub.cs" />
   </ItemGroup>
 
+  <!-- The example glossary, for its own tests (GlossaryFilesTests): the app ships no glossary, and no project under src copies one. -->
+  <ItemGroup>
+    <None Include="..\..\examples\glossary\keyterms-islamic-sciences.txt" Link="Examples\keyterms-islamic-sciences.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="Moq" Version="4.20.72" />

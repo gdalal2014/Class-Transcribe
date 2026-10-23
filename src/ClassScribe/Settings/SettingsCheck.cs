@@ -125,7 +125,7 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
 
         var keytermsFile = Name(elevenLabsSection, nameof(ElevenLabsOptions.KeytermsFile));
         if (elevenLabs.KeytermsFile is null)
-            problems.Add($"{keytermsFile} is null; write a file name, such as keyterms.txt, or \"\" to send no glossary.");
+            problems.Add($"{keytermsFile} is null; write a glossary file, such as %APPDATA%\\ClassScribe\\keyterms-islamic-sciences.txt, or \"\" to send no glossary.");
         else
             CheckPath(problems, keytermsFile, elevenLabs.KeytermsFile);
 

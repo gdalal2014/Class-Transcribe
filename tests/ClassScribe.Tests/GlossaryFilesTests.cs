@@ -103,11 +103,14 @@ public class GlossaryFilesTests
         Assert.Throws<IOException>(() => Files().Read(path));
     }
 
-    /// <summary>Every term of the shipped glossary is valid, so none is skipped with a warning.</summary>
+    /// <summary>The example glossary in the repository, examples\glossary, as the test project alone copies it to its output.</summary>
+    private static string Example => Path.Combine(AppContext.BaseDirectory, "Examples", "keyterms-islamic-sciences.txt");
+
+    /// <summary>Every term of the example glossary, Gulzar's, is valid, so none is skipped with a warning.</summary>
     [Test]
-    public void The_shipped_glossary_is_entirely_valid()
+    public void The_example_glossary_is_entirely_valid()
     {
-        var read = Files().Read(Path.Combine(AppContext.BaseDirectory, "keyterms.txt"))!;
+        var read = Files().Read(Example)!;
         var listed = read.Lines.Select(line => line.Trim()).Count(line => line.Length > 0 && !line.StartsWith('#'));
 
         var terms = KeytermRules.Read(read.Lines, KeytermLimits.ElevenLabs);
@@ -117,11 +120,11 @@ public class GlossaryFilesTests
         Assert.That(terms.Skipped, Is.Empty);
     }
 
-    /// <summary>The shipped glossary is UTF-8 without a byte order mark, in composed (NFC) form, as ElevenLabs gets it.</summary>
+    /// <summary>The example glossary is UTF-8 without a byte order mark, in composed (NFC) form, as ElevenLabs gets it.</summary>
     [Test]
-    public void The_shipped_glossary_is_utf8_without_a_byte_order_mark_and_composed()
+    public void The_example_glossary_is_utf8_without_a_byte_order_mark_and_composed()
     {
-        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "keyterms.txt"));
+        var bytes = File.ReadAllBytes(Example);
         var text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(bytes);
 
         Assert.That(bytes.AsSpan().StartsWith(Encoding.UTF8.Preamble), Is.False);

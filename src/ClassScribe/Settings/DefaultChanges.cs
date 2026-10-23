@@ -22,11 +22,14 @@ public static class DefaultChanges
 {
     /// <summary>
     /// Every default changed, oldest first. The first: Recording:MicrophoneFollows went from chrome, which fits one laptop
-    /// only, to auto (N9).
+    /// only, to auto (N9). The second: ElevenLabs:KeytermsFile went from keyterms.txt, the glossary shipped beside the
+    /// program, to empty, no glossary, since none is shipped now (architecture 8.2, item 2); a glossary of one's own is named
+    /// by its own path, such as %APPDATA%\ClassScribe\keyterms-islamic-sciences.txt, which is never an old default.
     /// </summary>
     public static IReadOnlyList<DefaultChange> Rows { get; } =
     [
-        new("Recording:MicrophoneFollows", "chrome", FollowRule.AnyWord, Version: "")
+        new("Recording:MicrophoneFollows", "chrome", FollowRule.AnyWord, Version: ""),
+        new("ElevenLabs:KeytermsFile", "keyterms.txt", "", Version: "")
     ];
 
     /// <summary>
@@ -50,9 +53,15 @@ public static class DefaultChanges
         return held;
     }
 
-    /// <summary>What settings list says after such a setting's value: the newer default, and since which version when the row has one.</summary>
-    public static string Describe(DefaultChange change) =>
-        change.Version.Length == 0 ? $"newer default: {change.NewDefault}" : $"newer default: {change.NewDefault} (since {change.Version})";
+    /// <summary>
+    /// What settings list says after such a setting's value: the newer default, an empty one written as "", and since which
+    /// version when the row has one.
+    /// </summary>
+    public static string Describe(DefaultChange change)
+    {
+        var newer = change.NewDefault.Length == 0 ? "\"\"" : change.NewDefault;
+        return change.Version.Length == 0 ? $"newer default: {newer}" : $"newer default: {newer} (since {change.Version})";
+    }
 
     /// <summary>The menu header's line for <paramref name="count"/> settings that hold an older default; null for none.</summary>
     public static string? HeaderLine(int count) => count switch

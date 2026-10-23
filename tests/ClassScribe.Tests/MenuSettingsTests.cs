@@ -73,7 +73,7 @@ public class MenuSettingsTests
         var folders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _recordings.Path }), TimeProvider.System, NullLogger<ClassFolders>.Instance);
         var menu = new MenuCommand(_commands.Object, report.Object, _ui, new RunGate(_files.Reloader, _files.SettingsFile, NullLogger<RunGate>.Instance), _files.SettingsFile,
             TestOptions.Create(new ElevenLabsOptions { ApiKey = "test-key" }), folders, _devices, _choice, new RecordingNamePrompt(_ui), Mock.Of<IDesktop>(), TimeProvider.System,
-            NullLogger<MenuCommand>.Instance, new SavedClasses(_files.Configuration), _files.Writer);
+            NullLogger<MenuCommand>.Instance, new SavedClasses(_files.Configuration), _files.Writer, new Transcription.GlossaryFiles(_files.Places));
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
 
@@ -89,6 +89,36 @@ public class MenuSettingsTests
         Assert.That(lines, Has.Member("  C  Saved classes: start, add, change or remove one"));
         Assert.That(lines, Has.Member("  S  Settings: recordings folder, camera picture size, the settings file"));
         Assert.That(lines, Has.Member("WARNING  The saved class \"Broken\" cannot be used: App and Device are both set; a class records one app or one output device."));
+    }
+
+    /// <summary>
+    /// The header names a saved class whose own glossary is not there (architecture 8.2, item 4): it can still be used, and
+    /// its transcripts are made without its terms until the file is there. A class whose glossary is there, or that has none,
+    /// is not named.
+    /// </summary>
+    [Test]
+    public async Task The_header_names_a_class_whose_glossary_is_not_there()
+    {
+        _files.WriteUser("""
+            {
+              "Classes": {
+                "Mantiq": { "Course": "Mantiq", "App": "chrome", "KeytermsFile": "mantiq.txt" },
+                "Fiqh": { "Course": "Fiqh", "App": "chrome", "KeytermsFile": "fiqh.txt" },
+                "Kalam": { "Course": "Kalam", "App": "chrome", "KeytermsFile": "none" }
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_files.User.Path, "fiqh.txt"), "fiqh");
+        _files.Reloader.TryReload();
+        _ui.Type('q');
+
+        await RunMenuAsync();
+
+        var warnings = _ui.Screen.Split(Environment.NewLine).Where(line => line.StartsWith("WARNING  The saved class", StringComparison.Ordinal)).ToList();
+        Assert.That(warnings, Is.EqualTo(new[]
+        {
+            $"WARNING  The saved class \"Mantiq\" names the glossary {Path.Combine(_files.User.Path, "mantiq.txt")}, which is not there; its transcripts are made without its terms until it is."
+        }));
     }
 
     /// <summary>C runs the saved classes' menu; S the settings' menu, without the gate, so that a file it refuses can be fixed there.</summary>
