@@ -8,6 +8,7 @@ using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using ClassScribe.YouTube;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -349,6 +350,9 @@ public sealed class YouTubeWorld : IDisposable
     /// <summary>The ElevenLabs settings, with a dummy key.</summary>
     public TestOptions<ElevenLabsOptions> ElevenLabs { get; }
 
+    /// <summary>The saved classes, by setting name, such as Classes:Risala:KeytermsFile; none unless a test adds them.</summary>
+    public Dictionary<string, string?> Classes { get; } = [];
+
     /// <summary>The YouTube settings, the course's channel listed.</summary>
     public TestOptions<YouTubeOptions> YouTube { get; } = TestOptions.Create(new YouTubeOptions { CourseChannels = ["UCcoursecoursecoursecour"] });
 
@@ -376,7 +380,8 @@ public sealed class YouTubeWorld : IDisposable
         var locator = new ToolLocator(new FakeRegistryValues(), Files, YouTube, Log<ToolLocator>()) { LocalAppData = @"C:\Users\gdala\AppData\Local" };
         return new DownloadBatch(batch, new YtDlpCheck(locator, Tools, Folders, Time, Log<YtDlpCheck>()), Folders, Tools, Pace,
             new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), ClassFolders, RecorderLog, DriveRoom, Drive, FreeSpace,
-            TestGlossaries.Choice(ElevenLabs), Ui, YouTube, ElevenLabs, Time, Log<DownloadBatch>());
+            TestGlossaries.Choice(ElevenLabs, classes: new SavedClasses(new ConfigurationBuilder().AddInMemoryCollection(Classes).Build())), Ui, YouTube, ElevenLabs, Time,
+            Log<DownloadBatch>());
     }
 
     /// <summary>A request for <paramref name="links"/>, downloaded into the course Risala, going ahead with --yes unless told otherwise.</summary>

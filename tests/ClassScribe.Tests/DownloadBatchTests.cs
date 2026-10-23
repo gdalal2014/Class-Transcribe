@@ -97,6 +97,24 @@ public class DownloadBatchTests
         Assert.That(_world.Screen, Has.Some.EqualTo("Ready: 2 videos, 1 min: less than a cent to transcribe ($0.22 an hour)."));
     }
 
+    /// <summary>
+    /// The plan's price counts the glossary a recording of the course would be sent with, as the one resolver decides it
+    /// (architecture 8.2, item 5): here a saved class of the course Risala names its own, of three terms.
+    /// </summary>
+    [Test]
+    public async Task The_plans_price_counts_the_glossary_of_the_course()
+    {
+        var glossary = _world.Recordings.File("risala.txt");
+        File.WriteAllLines(glossary, ["tawḥīd", "ʿaqīda", "kalām"]);
+        _world.Classes["Classes:Risala:Course"] = "Risala";
+        _world.Classes["Classes:Risala:App"] = "chrome";
+        _world.Classes["Classes:Risala:KeytermsFile"] = glossary;
+
+        Assert.That(await _world.RunAsync(_world.Request([Link(First), Link(Second)], BatchConfirmation.PlanOnly)), Is.EqualTo(0));
+
+        Assert.That(_world.Screen, Has.Some.EqualTo("Ready: 2 videos, 1 min: less than a cent to transcribe ($0.22 an hour plus $0.05 for the glossary of 3 terms)."));
+    }
+
     /// <summary>A course's channel is never downloaded, --allow-unlisted or not; the plan says so, and the exit code is 1.</summary>
     [Test]
     public async Task A_courses_channel_is_never_downloaded()
