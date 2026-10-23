@@ -166,8 +166,8 @@ public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, S
             Write(written, fields);
             document.Classes(create: true)![name] = written;
             return SettingsEdit.Changed(
-                $"Saved the class \"{name}\" in {places.UserFile}: {Describe(name, fields)}.",
-                $"From PowerShell: {CommandLine.RecordClass(name)}") with { ClassName = name };
+                [$"Saved the class \"{name}\" in {places.UserFile}: {Describe(name, fields)}.", .. GlossaryNotThere(fields),
+                    $"From PowerShell: {CommandLine.RecordClass(name)}"]) with { ClassName = name };
         }).ExitCode;
     }
 
@@ -187,6 +187,7 @@ public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, S
 
             Write(found.Fields, fields);
             var lines = new List<string> { $"Changed the class \"{found.Key}\" in {places.UserFile}: {Describe(found.Key, fields)}." };
+            if (choices.Keyterms is not null) lines.AddRange(GlossaryNotThere(fields));
             if (fields.GetValueOrDefault(ClassFields.Course) is { } newCourse && oldCourse is not null && !newCourse.Equals(oldCourse, StringComparison.Ordinal))
                 lines.AddRange(CourseChanged(found.Key, oldCourse, newCourse, fields.GetValueOrDefault(ClassFields.OutputFolder)));
             return SettingsEdit.Changed([.. lines]) with { ClassName = found.Key };
@@ -267,16 +268,53 @@ public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, S
         }
     }
 
-    /// <summary>A class as class list --json and class show --json write it: name, usable, problems, fields, what it records and its command.</summary>
-    private static JsonObject ToJson(SavedClassEntry entry, IReadOnlyDictionary<string, string?> fields) => new()
+    /// <summary>
+    /// A class as class list --json and class show --json write it: name, usable, problems, fields, what it records, its
+    /// command, and its own glossary as a full path ("" for none, null for ElevenLabs:KeytermsFile).
+    /// </summary>
+    private JsonObject ToJson(SavedClassEntry entry, IReadOnlyDictionary<string, string?> fields) => new()
     {
         ["name"] = entry.Name,
         ["usable"] = entry.Usable,
         ["problems"] = new JsonArray([.. entry.Problems.Select(problem => (JsonNode?)problem)]),
         ["fields"] = new JsonObject(fields.Select(field => KeyValuePair.Create(field.Key, (JsonNode?)field.Value))),
         ["records"] = entry.Class?.Describe(),
-        ["command"] = entry.Class is { } usable ? CommandLine.RecordClass(usable.Name) : null
+        ["command"] = entry.Class is { } usable ? CommandLine.RecordClass(usable.Name) : null,
+        ["glossary"] = entry.Class?.KeytermsFile is { } glossary ? GlossaryPath(glossary, places.Folder) : null
     };
+
+    /// <summary>
+    /// The file a class's glossary value names, as a full path, a relative one taken from <paramref name="folder"/>; "" for
+    /// none, or for a value no path can hold.
+    /// </summary>
+    private static string GlossaryPath(string glossary, string folder)
+    {
+        if (SavedClass.MeansNoGlossary(glossary)) return "";
+
+        try
+        {
+            return SettingsPlaces.ResolveFile(glossary, folder);
+        }
+        catch (ArgumentException)
+        {
+            // Deliberately not rethrown: a value no path can hold names no file; it is said as none here, and the run's start
+            // and the menu's header say what is wrong with it.
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// The line that says the class's own glossary, in <paramref name="fields"/>, is not there yet: saved all the same, since
+    /// the file may come later, and a glossary never stops a recording. A relative one is taken from the user's folder, where
+    /// the writer saves the class. Nothing for none, for the setting's, and for a file that is there.
+    /// </summary>
+    private IEnumerable<string> GlossaryNotThere(Dictionary<string, string?> fields)
+    {
+        if (fields.GetValueOrDefault(ClassFields.KeytermsFile) is not { } glossary || GlossaryPath(glossary, places.UserFolder ?? places.Folder) is not { Length: > 0 } path
+            || File.Exists(path)) yield break;
+
+        yield return $"The glossary {path} is not there yet: the class's transcripts are made without its terms until it is.";
+    }
 
     /// <summary>A class's known fields, as text by name in any case: what the options are laid on.</summary>
     private static Dictionary<string, string?> Known(JsonObject fields)

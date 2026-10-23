@@ -127,29 +127,20 @@ public class KeytermLoaderTests
     }
 
     /// <summary>
-    /// With the user's own settings read, a relative glossary name is taken from the user's folder first and beside the
-    /// program second, and when it is in neither place the warning names both, and says where to put the file.
+    /// With the user's own settings read, a relative glossary name is taken from the user's folder alone, never beside the
+    /// program, where an older build's keyterms.txt may be left over.
     /// </summary>
     [Test]
-    public void With_the_users_settings_read_the_glossary_is_looked_for_in_the_users_folder_first()
+    public void With_the_users_settings_read_the_glossary_is_looked_for_in_the_users_folder_alone()
     {
         using var program = new TempFolder();
         File.WriteAllText(_folder.File("appsettings.json"), "{}");
+        File.WriteAllLines(program.File("keyterms.txt"), ["shipped"], Encoding.UTF8);
         var loader = new KeytermLoader(new SettingsPlaces(program.Path, _folder.Path), _log);
 
-        Assert.That(loader.ResolvePath("keyterms.txt"), Is.EqualTo(program.File("keyterms.txt")), "not in the user's folder, so beside the program");
-        Assert.That(loader.Load(loader.ResolvePath("keyterms.txt")), Is.Empty);
-        Assert.That(_log.Problems, Is.EqualTo(new[]
-        {
-            $"No glossary at {_folder.File("keyterms.txt")} or beside ClassScribe.exe, so the transcript is made without its terms. Put keyterms.txt in the first folder, or set ElevenLabs:KeytermsFile to where it is"
-        }));
-
-        File.WriteAllLines(program.File("keyterms.txt"), ["shipped"], Encoding.UTF8);
-        Assert.That(loader.Load(loader.ResolvePath("keyterms.txt")), Is.EqualTo(new[] { "shipped" }), "the shipped glossary, second");
-
-        File.WriteAllLines(_folder.File("keyterms.txt"), ["kalām"], Encoding.UTF8);
         Assert.That(loader.ResolvePath("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
-        Assert.That(loader.Load(loader.ResolvePath("keyterms.txt")), Is.EqualTo(new[] { "kalām" }), "the user's own, first");
+        Assert.That(loader.Load(loader.ResolvePath("keyterms.txt")), Is.Empty, "the copy beside the program is never taken");
+        Assert.That(_log.Problems.Single(), Does.StartWith($"No glossary at {_folder.File("keyterms.txt")}, so"));
     }
 
     /// <summary>A glossary named by a path of its own that is not there is warned about as before, by that path alone, whichever settings file was read.</summary>
@@ -164,7 +155,7 @@ public class KeytermLoaderTests
         Assert.That(loader.Load(loader.ResolvePath(elsewhere)), Is.Empty);
 
         Assert.That(_log.Problems, Has.Count.EqualTo(1));
-        Assert.That(_log.Problems[0], Does.StartWith($"No glossary at {elsewhere}, so").And.Not.Contain("or beside"));
+        Assert.That(_log.Problems[0], Does.StartWith($"No glossary at {elsewhere}, so").And.Not.Contain("beside"));
     }
 
     /// <summary>Every term in the glossary that ships with the app is valid, so none is skipped with a warning.</summary>

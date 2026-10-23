@@ -10,7 +10,7 @@ namespace ClassScribe.Transcription;
 
 /// <summary>
 /// The glossary's files on this computer (see <see cref="IGlossaryFiles"/>): a value that names a glossary resolved through
-/// the settings' places (see <see cref="SettingsPlaces.ResolveFile"/>), the glossary read whole with the SHA-256 of its bytes,
+/// the settings' places (see <see cref="SettingsPlaces.ResolveFile(string)"/>), the glossary read whole with the SHA-256 of its bytes,
 /// and a recording's glossary record read and written through <see cref="GlossaryJson"/>, whole, so that a reader finds the
 /// whole old record or the whole new one. Nothing here is logged: what a read or a failure means is said by whoever asked.
 /// </summary>

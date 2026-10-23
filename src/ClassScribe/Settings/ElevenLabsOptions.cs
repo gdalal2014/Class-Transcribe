@@ -36,7 +36,7 @@ public sealed class ElevenLabsOptions
     /// <summary>
     /// Glossary file, one term per line. Environment variables such as %USERPROFILE% are expanded, quotes around
     /// the path are ignored, and a relative path is taken from the folder the settings were read from, then next to
-    /// the executable (see <see cref="SettingsPlaces.ResolveFile"/>). An empty value turns the glossary off.
+    /// the executable (see <see cref="SettingsPlaces.ResolveFile(string)"/>). An empty value turns the glossary off.
     /// </summary>
     public string KeytermsFile { get; init; } = "keyterms.txt";
 

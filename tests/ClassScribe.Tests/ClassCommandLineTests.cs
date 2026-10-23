@@ -64,14 +64,37 @@ public class ClassCommandLineTests
         Assert.That(_asked[6], Is.EqualTo(new ClassRequest.Remove("Mantiq (Chrome)")));
     }
 
+    /// <summary>
+    /// --keyterms gives a class its own glossary, as written (quotes and spaces around it taken off, a relative path left
+    /// relative, for the settings folder), whether or not it is there yet; none for no glossary; --clear keyterms empties it.
+    /// </summary>
+    [Test]
+    public async Task Keyterms_gives_a_class_its_own_glossary_and_clear_keyterms_empties_it()
+    {
+        Assert.That(await _line.RunAsync("class", "add", "Mantiq", "--app", "chrome", "--keyterms", " \"mantiq.txt\" "), Is.EqualTo(0));
+        Assert.That(await _line.RunAsync("class", "set", "Mantiq", "--KEYTERMS", "none"), Is.EqualTo(0));
+        Assert.That(await _line.RunAsync("class", "set", "Mantiq", "--keyterms", @"%APPDATA%\ClassScribe\mantiq.txt"), Is.EqualTo(0));
+        Assert.That(await _line.RunAsync("class", "set", "Mantiq", "--clear", "keyterms"), Is.EqualTo(0));
+
+        Assert.That(((ClassRequest.Add)_asked[0]).Choices.Keyterms, Is.EqualTo("mantiq.txt"));
+        Assert.That(((ClassRequest.Set)_asked[1]).Choices.Keyterms, Is.EqualTo("none"));
+        Assert.That(((ClassRequest.Set)_asked[2]).Choices.Keyterms, Is.EqualTo(@"%APPDATA%\ClassScribe\mantiq.txt"));
+        Assert.That((((ClassRequest.Set)_asked[3]).Choices.Keyterms, ((ClassRequest.Set)_asked[3]).Choices.Clear), Is.EqualTo(((string?)null, new[] { "keyterms" }))
+            .Using<(string?, IReadOnlyList<string>)>((a, b) => a.Item1 == b.Item1 && a.Item2.SequenceEqual(b.Item2)));
+    }
+
     /// <summary>The mixes record refuses, and set without anything to change, are refused before anything runs, with the help, exit 2.</summary>
     [TestCase(new[] { "class", "add", "Mantiq", "--app", "chrome", "--device", "auto" }, "class add takes one source; you gave --device and --app")]
     [TestCase(new[] { "class", "add", "Mantiq", "--in-person", "--mic" }, "--mic adds the microphone to --device or --app; with --in-person the microphone is already the source")]
     [TestCase(new[] { "class", "add", "Mantiq", "--in-person", "--mic-follows", "zoom" }, "--mic-follows cannot go with --in-person: in person there is no class app")]
     [TestCase(new[] { "class", "add", "Mantiq", "--record-only", "--transcribe" }, "--record-only and --transcribe cannot go together")]
     [TestCase(new[] { "class", "add", "Mantiq", "--resolution", "999p" }, "--resolution takes 480p, 720p or 1080p, or a width and a height such as 1024x576: the width from 320 to 1920 and the height from 240 to 1080, both even, in a shape from 4:3 to 16:9; \"999p\" is not one")]
-    [TestCase(new[] { "class", "set", "Mantiq", "--clear", "layout" }, "--clear takes output, microphone, follows, camera or resolution, not \"layout\"")]
+    [TestCase(new[] { "class", "set", "Mantiq", "--clear", "layout" }, "--clear takes output, microphone, follows, camera, resolution or keyterms, not \"layout\"")]
     [TestCase(new[] { "class", "set", "Mantiq", "--clear", "output", "--output", "D:\\Classes" }, "--clear output and --output cannot go together")]
+    [TestCase(new[] { "class", "set", "Mantiq", "--clear", "keyterms", "--keyterms", "mantiq.txt" }, "--clear keyterms and --keyterms cannot go together")]
+    [TestCase(new[] { "class", "set", "Mantiq", "--keyterms" }, "--keyterms needs a glossary file after it, or none, such as --keyterms \"%APPDATA%\\ClassScribe\\mantiq.txt\"")]
+    [TestCase(new[] { "class", "add", "Mantiq", "--keyterms", "--app", "chrome" }, "--keyterms needs a glossary file after it, or none, such as --keyterms \"%APPDATA%\\ClassScribe\\mantiq.txt\"; it took the option --app instead")]
+    [TestCase(new[] { "class", "set", "Mantiq", "--keyterms", "terms|old.txt" }, "--keyterms takes a file; \"terms|old.txt\" has a character Windows does not allow in a path: < > \" | ? *")]
     [TestCase(new[] { "class", "set", "Mantiq" }, "class set needs something to change, such as ClassScribe class set \"Mantiq\" --app zoom --mic-follows zoom")]
     [TestCase(new[] { "class" }, "class needs one of list, show, add, set, rename or remove, such as ClassScribe class list")]
     public async Task Mistakes_are_named_before_anything_runs(string[] args, string mistake)

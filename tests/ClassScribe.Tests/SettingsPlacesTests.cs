@@ -209,20 +209,36 @@ public class SettingsPlacesTests
     }
 
     /// <summary>
-    /// A relative glossary name is taken from the settings folder read when the file is there, and from the program's folder
-    /// otherwise: the user's own glossary first, the shipped one second.
+    /// A relative glossary name is taken from the settings folder read and from nowhere else (architecture 8.2, item 3): with
+    /// the user's file read, from the user's folder, whether the file is there or not, and never from beside the program,
+    /// where an older build's keyterms.txt may be left over.
     /// </summary>
     [Test]
-    public void A_relative_file_is_taken_from_the_settings_folder_first_then_beside_the_program()
+    public void A_relative_file_is_taken_from_the_settings_folder_alone()
     {
         WriteUserSettings();
+        File.WriteAllText(_program.File("keyterms.txt"), "left over beside the program");
         var places = new SettingsPlaces(_program.Path, _user.Path);
 
-        Assert.That(places.ResolveFile("keyterms.txt"), Is.EqualTo(_program.File("keyterms.txt")), "not in the user's folder, so beside the program, whether it is there or not");
+        Assert.That(places.ResolveFile("keyterms.txt"), Is.EqualTo(_user.File("keyterms.txt")), "not in the user's folder, and still never beside the program");
+        Assert.That(places.ResolveFile(Path.Combine("terms", "more.txt")), Is.EqualTo(_user.File(Path.Combine("terms", "more.txt"))));
 
         File.WriteAllText(_user.File("keyterms.txt"), "kalām");
         Assert.That(places.ResolveFile("keyterms.txt"), Is.EqualTo(_user.File("keyterms.txt")));
-        Assert.That(places.ResolveFile(Path.Combine("terms", "more.txt")), Is.EqualTo(_program.File(Path.Combine("terms", "more.txt"))));
+    }
+
+    /// <summary>
+    /// While the user's file is missing, the defaults beside the program are read, so a relative name is taken from there:
+    /// the folder of the settings in force, as the reloader reads them.
+    /// </summary>
+    [Test]
+    public void While_the_users_file_is_missing_a_relative_file_is_taken_from_the_folder_read()
+    {
+        var places = new SettingsPlaces(_program.Path, _user.Path, stateFolder: _user.Path);
+        places.MarkUserFileMade();
+
+        Assert.That(places.Origin, Is.EqualTo(SettingsOrigin.Missing));
+        Assert.That(places.ResolveFile("keyterms.txt"), Is.EqualTo(_program.File("keyterms.txt")));
     }
 
     /// <summary>When the file beside the program is read, a relative name is taken from there, as before: a glossary in a user folder without a settings file is not looked at.</summary>

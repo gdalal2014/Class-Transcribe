@@ -74,6 +74,43 @@ public class SavedClassesTests
             Is.EqualTo("Course is 81 characters long; it may be at most 80."));
     }
 
+    /// <summary>
+    /// A class may name its own glossary (architecture 8.2, item 4), in any mode: a file, read trimmed as written, which its
+    /// words name by the file's name; or none, which its words say. Without the field the class takes ElevenLabs:KeytermsFile,
+    /// and its words are as before.
+    /// </summary>
+    [Test]
+    public void A_class_may_name_its_own_glossary()
+    {
+        var own = Check(("Course", "Mantiq"), ("App", "chrome"), ("KeytermsFile", @"  %APPDATA%\ClassScribe\mantiq.txt  "));
+        var none = Check(("Course", "Kalam"), ("Mode", "Microphone"), ("KeytermsFile", "NONE"), ("Transcribe", "false"));
+        var setting = Check(("Course", "Fiqh"), ("Device", "auto"));
+
+        Assert.That(own.Class!.KeytermsFile, Is.EqualTo(@"%APPDATA%\ClassScribe\mantiq.txt"));
+        Assert.That(own.Class.Describe(), Is.EqualTo("chrome, glossary mantiq.txt"));
+        Assert.That(none.Class!.KeytermsFile, Is.EqualTo("NONE"));
+        Assert.That(none.Class.Describe(), Is.EqualTo("in person, your microphone (Windows' default), no glossary, recorded only"));
+        Assert.That(setting.Class!.KeytermsFile, Is.Null);
+        Assert.That(setting.Class.Describe(), Is.EqualTo("the device the class plays on"));
+        Assert.That(ClassFields.All, Has.Member(ClassFields.KeytermsFile));
+        Assert.That(ClassFields.KeytermsFile, Is.EqualTo("KeytermsFile"));
+    }
+
+    /// <summary>
+    /// A glossary never makes a class unusable, since a glossary must never stop a recording: neither a file that is not there
+    /// nor a value no path can hold; the run's start and the menu's header say what is wrong with it instead.
+    /// </summary>
+    [TestCase(@"C:\nowhere\mantiq.txt")]
+    [TestCase("a\tb.txt")]
+    [TestCase("mantiq|terms.txt")]
+    public void A_glossary_never_makes_a_class_unusable(string glossary)
+    {
+        var entry = Check(("Course", "Mantiq"), ("App", "chrome"), ("KeytermsFile", glossary));
+
+        Assert.That(entry.Usable, Is.True);
+        Assert.That(entry.Class!.KeytermsFile, Is.EqualTo(glossary));
+    }
+
     /// <summary>A field this build does not know, such as a later build's MicrophoneSpeaker, passes the check (amendment 3).</summary>
     [Test]
     public void A_field_of_a_later_build_passes()

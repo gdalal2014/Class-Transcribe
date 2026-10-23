@@ -128,6 +128,9 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// <summary>What --app says without a value.</summary>
     private const string AppNeedsValue = "--app needs an app's process name after it, such as chrome";
 
+    /// <summary>What --keyterms says without a value.</summary>
+    private const string KeytermsNeedsValue = "--keyterms needs a glossary file after it, or none, such as --keyterms \"%APPDATA%\\ClassScribe\\mantiq.txt\"";
+
     /// <summary>What --mic-follows says without a value, or with one that names no app, or ClassScribe itself.</summary>
     private const string FollowsNeedsValue = $"--mic-follows needs part of an app's name, such as chrome, or {FollowRule.AnyWord} or {FollowRule.NoneWord}";
 

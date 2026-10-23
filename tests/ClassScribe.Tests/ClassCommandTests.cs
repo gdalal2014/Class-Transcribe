@@ -96,6 +96,39 @@ public class ClassCommandTests
     }
 
     /// <summary>
+    /// class add and class set --keyterms save the class's own glossary as given, or none; a glossary that is not there is
+    /// said, and saved all the same, since the file may come later; --clear keyterms empties the field, so that the class
+    /// takes ElevenLabs:KeytermsFile again. class show --json gives the glossary as a full path, "" for none, null for the
+    /// setting's.
+    /// </summary>
+    [Test]
+    public void A_class_names_its_own_glossary_and_clear_keyterms_empties_it()
+    {
+        Assert.That(Run(new ClassRequest.Add("Mantiq", Mantiq with { Keyterms = "mantiq.txt" })), Is.EqualTo(0));
+
+        var missing = Path.Combine(_files.User.Path, "mantiq.txt");
+        Assert.That(_files.UserValue("Classes:Mantiq:KeytermsFile")!.GetValue<string>(), Is.EqualTo("mantiq.txt"));
+        Assert.That(_files.Log.Messages, Has.Some.EndsWith(": chrome, with your microphone (Microphone Array, following chrome), glossary mantiq.txt."));
+        Assert.That(_files.Log.Messages, Has.Member($"The glossary {missing} is not there yet: the class's transcripts are made without its terms until it is."));
+        Assert.That(Run(new ClassRequest.Show("Mantiq", true)), Is.EqualTo(0));
+        Assert.That(JsonNode.Parse(_out.ToString())!["glossary"]!.GetValue<string>(), Is.EqualTo(missing));
+
+        File.WriteAllText(missing, "kalām");
+        _out.GetStringBuilder().Clear();
+        Assert.That(Run(new ClassRequest.Set("Mantiq", new ClassChoices { Keyterms = "none" })), Is.EqualTo(0));
+        Assert.That(_files.UserValue("Classes:Mantiq:KeytermsFile")!.GetValue<string>(), Is.EqualTo("none"));
+        Assert.That(Run(new ClassRequest.Show("Mantiq", true)), Is.EqualTo(0));
+        Assert.That(JsonNode.Parse(_out.ToString())!["glossary"]!.GetValue<string>(), Is.Empty);
+
+        _out.GetStringBuilder().Clear();
+        Assert.That(Run(new ClassRequest.Set("Mantiq", new ClassChoices { Clear = ["keyterms"] })), Is.EqualTo(0));
+        Assert.That(_files.UserValue("Classes:Mantiq:KeytermsFile"), Is.Null);
+        Assert.That(Run(new ClassRequest.Show("Mantiq", true)), Is.EqualTo(0));
+        Assert.That(JsonNode.Parse(_out.ToString())!["glossary"], Is.Null);
+        Assert.That(_files.Log.Messages.Count(message => message.Contains("is not there yet", StringComparison.Ordinal)), Is.EqualTo(1), "only the missing file is said");
+    }
+
+    /// <summary>
     /// A class that exists already, in any letter case, is refused with exit 2, since names that differ only in case are one
     /// name to the settings; so is a name that cannot be a folder's, and a mix the class cannot take.
     /// </summary>

@@ -562,11 +562,12 @@ public class TranscriptionWorkflowTests
     }
 
     /// <summary>
-    /// A relative ElevenLabs:KeytermsFile, keyterms.txt as shipped, is taken from the folder the settings were read from
-    /// first, the user's own glossary, and from the program's folder second, the shipped one.
+    /// A relative ElevenLabs:KeytermsFile is taken from the folder the settings are read from, the user's own, and never from
+    /// the program's folder, where an older build's keyterms.txt may be left over: until the user's own glossary is there,
+    /// nothing is sent.
     /// </summary>
     [Test]
-    public async Task A_relative_glossary_name_is_taken_from_the_users_folder_first_then_beside_the_program()
+    public async Task A_relative_glossary_name_is_taken_from_the_users_folder_alone()
     {
         using var program = new TempFolder();
         using var user = new TempFolder();
@@ -580,7 +581,7 @@ public class TranscriptionWorkflowTests
         File.WriteAllLines(user.File("keyterms.txt"), ["kalām"]);
         await CreateWorkflow(keytermsFile: "keyterms.txt", places: places).TranscribeRecordingAsync(_files, CancellationToken.None);
 
-        Assert.That(sent, Is.EqualTo(new[] { new[] { "shipped" }, new[] { "kalām" } }));
+        Assert.That(sent, Is.EqualTo(new[] { Array.Empty<string>(), new[] { "kalām" } }));
     }
 
     /// <summary>
