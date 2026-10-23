@@ -127,9 +127,8 @@ public partial class RecordStarterTests
     }
 
     /// <summary>
-    /// A run with a camera is refused before anything records in this build: the starter without a camera start says why,
-    /// starts no recorder and records nothing in this window, exit 1 (camera-first step 11: no class starts with a
-    /// half-built camera).
+    /// A run with a camera is refused before anything records by a starter without a camera start: it says why, starts no
+    /// recorder and records nothing in this window, exit 1 (camera-first step 11: no class starts with a half-built camera).
     /// </summary>
     [Test]
     public async Task A_run_with_a_camera_is_refused_before_anything_records()

@@ -60,7 +60,7 @@ public enum CommandKind
 /// ClassScribe record-only "&lt;name&gt;" ...          the same options
 ///     SOURCE is --device "&lt;part of its name&gt;", --device auto, --app &lt;process&gt; or --in-person ["&lt;microphone&gt;"]
 ///     --mic adds your microphone to --device or --app; --in-person records it alone; --camera, only with --in-person,
-///     records a lesson's picture too (refused before anything records until the camera's recording is built);
+///     records a lesson's picture too, beside the sound (refused before anything records only by a camera set-up problem);
 ///     without --output, Recording:OutputFolder, or the saved class's own folder
 /// ClassScribe settings path | list [--json] | get &lt;setting&gt; [--json] | set &lt;setting&gt; &lt;value&gt;... | reset (&lt;setting&gt; | --all) | open | fill
 /// ClassScribe class list [--json] | show "&lt;name&gt;" [--json] | add "&lt;name&gt;" ... | set "&lt;name&gt;" ... | rename "&lt;name&gt;" "&lt;new&gt;" | remove "&lt;name&gt;"
@@ -605,7 +605,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             {
                 HelpName = "camera",
                 Arity = ArgumentArity.ZeroOrOne,
-                Description = "With --in-person: record a lesson's picture too, from the camera whose name holds this part, such as \"OBSBOT\", or nothing for a USB camera, else the built-in front camera. This build cannot record the picture yet, so such a recording is refused before anything records."
+                Description = "With --in-person: record a lesson's picture too, from the camera whose name holds this part, such as \"OBSBOT\", or nothing for a USB camera, else the built-in front camera. The picture is recorded beside the sound, on the same clock; only a set-up problem that keeps the camera from use (Windows older than 10 version 2004, its privacy switches, no H.264 encoder) refuses such a recording, before anything records."
             },
             new Option<string>("--resolution")
             {
@@ -1180,7 +1180,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         Without --output the recording goes to the saved class's own folder, else Recording:OutputFolder.
         Options beside --class replace the class's own in groups: a source replaces its whole source and the app its microphone follows, --mic its microphone, a name its course.
         --mic adds your microphone to --device or --app, as a second track mixed into one transcript; --in-person records it alone. Either takes part of a microphone's name, or nothing for Recording:Microphone.
-        --camera, with --in-person, asks for a lesson's picture too; this build cannot record it yet and refuses such a recording before anything records. ClassScribe camera-check shows the cameras.
+        --camera, with --in-person, records a lesson's picture too, beside the sound; only a set-up problem that keeps the camera from use refuses such a recording, before anything records. ClassScribe camera-check shows the cameras and those problems.
         While recording, Q twice or Ctrl+C twice stops, P pauses or resumes, M marks a moment, and V switches your microphone off and on; Esc leaves the view of a recording in the background, which carries on.
         """;
 

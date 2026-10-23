@@ -978,7 +978,7 @@ runs in the window, and closing the window ends it.
 
 In short: `record "<name>" SOURCE [--output "<folder>"] [--mic ["<microphone>"] [--mic-follows <app>|auto|none]]
 [--camera ["<camera>"] [--resolution <size>]] [--minutes <n>] [--no-open] [--continue | --new]` (`--camera` only
-with `--in-person`, and refused before anything records in this build), or `record --class "<saved class>" ["<name>"]`
+with `--in-person`; refused before anything records only when a camera set-up line refuses the camera), or `record --class "<saved class>" ["<name>"]`
 with any of those options over the class's own, `record-only` with the same options,
 `transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
 `list [--output "<folder>"]`, `devices`, `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
