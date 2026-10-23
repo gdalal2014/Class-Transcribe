@@ -761,7 +761,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   recording that drops refused settings, menus C and S, the folder warnings), and 4,245 at its head
   (the review's fixes and the soak's check by its stamps). Merged into `develop` on 22 October, with
   `Recording:CameraOffsets` made a map of the catalog, the count is 4,538, all passing. From there the lesson's video
-  (step 13, slice 8) grew on `feature/lesson-video` to 4,651, all passing, in about four minutes. The uploads by
+  (step 13, slice 8) grew on `feature/lesson-video` to 4,651, all passing, in about four minutes, and its review's fixes
+  (free-space and a video still to be made, a remade video as a revision, the rename guard, pieces in no video kept, the
+  wording once a transcript is saved, the camera's restart race) to 4,667, all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
