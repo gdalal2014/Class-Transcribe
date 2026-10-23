@@ -269,7 +269,7 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
             {
                 return new RunReport(record, files,
                 [
-                    LessonRuns.MakesItsVideoOnly(record)
+                    LessonRuns.OnlyItsVideoLeft(record)
                         ? $"The lesson video of {RecordStarter.Named(record)} ({record.BaseName}) was not finished; its sound and its camera pieces are kept."
                         : $"The transcript of {RecordStarter.Named(record)} ({record.BaseName}) was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again."
                 ], CanContinue: false, canTranscribe, videoNotMade);

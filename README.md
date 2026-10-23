@@ -1216,9 +1216,9 @@ drive, waits for a start that finds the drive.
 A lesson recorded with the camera whose video is still to be made (its pieces are there and its `.mp4`
 is not, or a piece is newer than it), and whose process is gone, gets **V** beside the others: `V  make
 the lesson's video now, free`. T is offered for a lesson only when it was to be transcribed and has no
-transcript, and C only when it ended while recording; a record-only lesson whose video's making was cut
-off is said as `The lesson video of "Tajwid" (...) was not finished; its sound and its camera pieces
-are kept.` After an end nobody saw, a lesson without its video is said once, with V: `The lesson video
+transcript, and C only when it ended while recording; a lesson whose video's making was cut off when
+that was all it had left to do (record-only, or its transcript saved already) is said as `The lesson
+video of "Tajwid" (...) was not finished; its sound and its camera pieces are kept.` After an end nobody saw, a lesson without its video is said once, with V: `The lesson video
 of "Tajwid" was not made; its sound and its camera pieces are kept.` On the command line the report
 prints `To make its lesson video, free: ... finish-video "..."`. A lesson is dealt with once it has its
 transcript (when it was to have one) and its video.

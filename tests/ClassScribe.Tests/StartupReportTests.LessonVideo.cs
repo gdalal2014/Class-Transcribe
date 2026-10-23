@@ -59,7 +59,10 @@ public partial class StartupReportTests
         Assert.That(Run().Seen, Is.True);
     }
 
-    /// <summary>A lesson to be transcribed, with its transcript but not its video, offers V alone beside F.</summary>
+    /// <summary>
+    /// A lesson to be transcribed, with its transcript but not its video, offers V alone beside F, and is said to have had its
+    /// video cut off, not its transcript, which is there.
+    /// </summary>
     [Test]
     public async Task A_transcribed_lesson_without_its_video_offers_V_alone()
     {
@@ -71,6 +74,8 @@ public partial class StartupReportTests
 
         await Report().ShowAsync(interactive: true);
 
+        Assert.That(_ui.Screen, Does.StartWith($"The lesson video of \"Kalam\" ({files.BaseName}) was not finished; its sound and its camera pieces are kept."));
+        Assert.That(_ui.Screen, Does.Not.Contain("The transcript of").And.Not.Contain("ElevenLabs may bill it again"));
         Assert.That(_ui.Screen, Does.Contain("V  make the lesson's video now, free").And.Not.Contain("T  transcribe"));
         Assert.That(Run().Seen, Is.False, "Enter leaves it for the next start");
     }

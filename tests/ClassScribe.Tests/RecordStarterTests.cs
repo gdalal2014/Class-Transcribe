@@ -664,6 +664,46 @@ public partial class RecordStarterTests
         Assert.That(_runtime.Journal.Find(RunId)!.Record.Seen, Is.True);
     }
 
+    /// <summary>This build's camera start over the fakes, ready: this laptop's cameras, set up as the camera needs, and a camera recorder that records.</summary>
+    private CameraStart ReadyCamera() =>
+        new(new FakeCameraProvider(), new FakeCameraRecorder(), new Camera.CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
+            new SourceChoice(_options), _ui, NullLogger<CameraStart>.Instance);
+
+    /// <summary>
+    /// A lesson's recorder lost while it made the lesson's video, record-only or with its transcript saved already, is said to
+    /// have had its video cut off, with the command that makes it, free, never its transcript; one lost before its transcript
+    /// was saved is said as a transcript cut off. Neither is continued; exit code 1.
+    /// </summary>
+    [TestCase(false, false, true)]
+    [TestCase(true, true, true)]
+    [TestCase(true, false, false)]
+    public async Task A_lesson_s_recorder_lost_while_its_video_was_made_says_so(bool transcribe, bool transcriptSaved, bool video)
+    {
+        _camera = ReadyCamera();
+        _viewer.Then((run, _) =>
+        {
+            _recorder.Transcribing(run.RunId);
+            if (transcriptSaved)
+            {
+                var saved = _recorder.Runs.Single().Files!;
+                Directory.CreateDirectory(saved.Folder);
+                File.WriteAllText(saved.Transcript(), "the transcript");
+            }
+
+            _recorder.Lose(run.RunId);
+            return new ViewResult(ViewEnd.RecorderLost, null, null);
+        });
+        var lesson = Request() with { Transcribe = transcribe, Source = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice(null), new CameraChoice("OBSBOT")) };
+
+        var exitCode = await RunAsync(lesson);
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(_starter.Recorders, Has.Count.EqualTo(1));
+        Assert.That(_ui.Screen.Contains("The lesson video of \"Kalam\" was not finished; its sound and its camera pieces are kept. To make it, free, run: ", StringComparison.Ordinal),
+            Is.EqualTo(video));
+        Assert.That(_ui.Screen.Contains("The transcript of \"Kalam\" was not finished", StringComparison.Ordinal), Is.EqualTo(!video));
+    }
+
     /// <summary>
     /// A recorder lost while it stopped the recording is not continued, since the stop was asked for: its audio is kept, the
     /// command to transcribe it ends the line, the run is not reported again, and the exit code is 1.

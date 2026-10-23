@@ -453,6 +453,33 @@ public class AttachCommandTests
     }
 
     /// <summary>
+    /// A lesson to be transcribed whose transcript was saved, found in Transcribing with its process gone, was having its video
+    /// made: it is reported so, with the command that makes the video, never as a transcript cut off.
+    /// </summary>
+    [Test]
+    public async Task A_transcribed_lesson_whose_video_s_making_was_cut_off_is_reported_with_finish_video()
+    {
+        using var folder = new TempFolder();
+        File.WriteAllText(Path.Combine(folder.Path, $"{BaseName}.md"), "the transcript");
+        var record = TestRuns.Record(TestRuns.Id(8), RunState.Transcribing, processId: 1008) with { BaseName = BaseName, Folder = folder.Path };
+        record = record with
+        {
+            Request = record.Request with
+            {
+                Transcribe = true,
+                Source = new SourcePlan(Audio.RecordingMode.Microphone, Class: null, new MicrophoneChoice(null), new CameraChoice("OBSBOT", "720p"))
+            }
+        };
+        _runtime.Journal.Begin(record).Dispose();
+
+        var exitCode = await Command().RunAsync(record.RunId, alert: false);
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(Shown("The lesson video of \"Kalam\" was not finished; its sound and its camera pieces are kept. To make it, free, run:"), Is.True);
+        Assert.That(Shown("The transcript of"), Is.False);
+    }
+
+    /// <summary>
     /// A recorder lost while the view showed it recording is continued at once as the next part of the same recording: the
     /// same name, source, folder and choice to transcribe and to open, a new run id, and the start marked as a window
     /// continuing by itself, which the starter takes over. The command exits as that run does.

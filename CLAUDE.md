@@ -1677,7 +1677,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `None`, `Made`, `NotMade` when a piece is newer than the video or there is none), refusing a lesson being recorded or
   made, one without pieces, and one whose sound is on Drive only (`SoundOnDriveOnly`), with keep-awake
   (`StayAwake.LessonVideoReason`), then Drive's upload of that recording. The start-up report offers V after an outcome
-  whose video was not made (`LessonRuns`, `StartupAction.MakeVideo`, T only when the recording can be transcribed); menu
+  whose video was not made (`LessonRuns`, `StartupAction.MakeVideo`, T only when the recording can be transcribed); a
+  lesson in Transcribing with only its video left (`LessonRuns.OnlyItsVideoLeft`: record-only, or its transcript saved) is
+  worded as its video cut off in the report, the starter's lost recorder, attach and the window-busy lines; menu
   choice 3 notes `lesson video` or `lesson video not made yet` (as `list` does) and takes V before a number. Drive:
   `Drive:LessonVideos` (false) sends `<base>.mp4` last, streamed as `video/mp4` with a line of its size and time, never
   the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`); the pass also waits while a class is
