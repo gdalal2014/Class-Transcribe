@@ -23,7 +23,10 @@ public sealed record FreedAudio(RecordingFiles Files, IReadOnlyList<string> Dele
 /// recorded or transcribed. Nothing on Drive is touched: the copies there stay as they are. The manifest notes what was freed,
 /// so the recording counts as done and safe on Drive, never as waiting. A lesson's camera pieces go too once its finished
 /// video's copy on Drive is checked the same way (amendment 47: they are kept for Drive only while the video goes there),
-/// never the finished video itself. One per run.
+/// only those the video holds (none newer than it), and never the finished video itself. A lesson whose video is still to
+/// be made (see <see cref="ClassFolders.LessonVideoStateOf"/>), as a continued lesson's whose newest part has a piece newer
+/// than its video, keeps everything while its sound is here: making the video needs both (see <see cref="VideoStillToMake"/>).
+/// One per run.
 /// </summary>
 public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, TimeProvider time, ILogger<LocalAudioFreer> logger)
 {
@@ -31,14 +34,26 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     private const int SharingViolation = unchecked((int)0x80070020);
 
     /// <summary>
+    /// Why nothing of the lesson <paramref name="files"/> is freed while its video is still to be made (a camera's piece
+    /// without a video, or newer than it, see <see cref="ClassFolders.LessonVideoStateOf"/>): making it needs both its sound and
+    /// its pieces. Names the command that makes it, free.
+    /// </summary>
+    public static string VideoStillToMake(RecordingFiles files) =>
+        $"The lesson video of {files.BaseName} is still to be made, so none of its audio or camera pieces were deleted: making it needs them. Make it first, free: " +
+        CommandLine.FinishVideo(files.FindSegments().FirstOrDefault() ?? files.FindSegments(Track.Microphone).FirstOrDefault() ?? files.Folder);
+
+    /// <summary>
     /// Deletes the audio of <paramref name="files"/> from this laptop once every file of it is checked against its copy on
     /// Drive, then a lesson's camera pieces once its video's copy is (see <see cref="FreePiecesAsync"/>), and says what it
-    /// freed, or why it freed nothing. A failure to reach Drive is thrown, with nothing more deleted.
+    /// freed, or why it freed nothing. A lesson whose video is still to be made, with its sound here, is refused whole. A
+    /// failure to reach Drive is thrown, with nothing more deleted.
     /// </summary>
     public async Task<FreedAudio> FreeAsync(RecordingFiles files, CancellationToken cancellationToken)
     {
         if (uploads.Busy(files) is { } busy) return Refuse(files, $"{files.BaseName} {busy}, so none of its audio was deleted.");
         if (UploadCopyInUse(files)) return Refuse(files, $"{files.BaseName} is being transcribed now, so none of its audio was deleted.");
+        if (ClassFolders.LessonVideoStateOf(files) == LessonVideoState.NotMade && (files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0))
+            return Refuse(files, VideoStillToMake(files));
 
         var manifest = manifests.Read(files);
         var freed = await FreeAudioAsync(files, manifest, cancellationToken);
@@ -126,12 +141,13 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     /// A lesson's camera pieces after its audio: deleted once its finished video, <see cref="RecordingFiles.LessonVideo"/>,
     /// is on Drive, checked when it went up and checked again now as each .wav is (its MD5 worked out afresh, Drive's copy
     /// outside the trash with the same size and MD5); otherwise they stay, the only other copy of the picture, which is said
-    /// when the video's copy fails the check. Never the finished video. What it deletes is added to <paramref name="freed"/>.
+    /// when the video's copy fails the check. Only the pieces the video holds go, those not newer than it: a newer one, whose
+    /// picture is in no video yet, stays, named. Never the finished video. What it deletes is added to <paramref name="freed"/>.
     /// </summary>
     private async Task<FreedAudio> FreePiecesAsync(RecordingFiles files, FreedAudio freed, CancellationToken cancellationToken)
     {
-        var pieces = files.FindCameraPieces().Select(piece => piece.Path).ToList();
-        if (pieces.Count == 0) return freed;
+        var all = files.FindCameraPieces().Select(piece => piece.Path).ToList();
+        if (all.Count == 0) return freed;
 
         var video = Path.GetFileName(files.LessonVideo);
         var manifest = manifests.Read(files);
@@ -146,6 +162,15 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
             var kept = $"The camera's pieces of {files.BaseName} stay: {problem}";
             logger.LogWarning("{Problem}", kept);
             return freed with { Problem = freed.Problem ?? kept };
+        }
+
+        var madeUtc = File.GetLastWriteTimeUtc(files.LessonVideo);
+        var pieces = all.Where(piece => File.GetLastWriteTimeUtc(piece) <= madeUtc).ToList();
+        foreach (var piece in all.Except(pieces))
+        {
+            var newer = $"{Path.GetFileName(piece)} is newer than the lesson video of {files.BaseName}, which does not hold it, so it stays on this laptop";
+            logger.LogWarning("{Problem}", newer);
+            freed = freed with { Problem = freed.Problem ?? newer };
         }
 
         List<string> deleted = [];

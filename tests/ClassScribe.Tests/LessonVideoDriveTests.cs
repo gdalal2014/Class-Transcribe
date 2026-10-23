@@ -203,6 +203,58 @@ public sealed class LessonVideoDriveTests
         Assert.That(File.Exists(_lesson.Segment(1)), Is.False, "the audio is freed as before");
     }
 
+    /// <summary>
+    /// A continued lesson whose video went to Drive before its next part was recorded: the newest piece is newer than the
+    /// video, so its picture is in no video yet. Free-space deletes nothing of the lesson, neither a piece nor its sound,
+    /// which making the video needs, and says so with the command that makes it.
+    /// </summary>
+    [Test]
+    public async Task Free_space_keeps_a_lesson_whose_video_is_still_to_be_made()
+    {
+        LessonVideos(on: true);
+        await UploadAsync();
+        var part2 = _lesson.CameraPiece(TimeSpan.FromMinutes(40));
+        File.WriteAllBytes(part2, Bytes(200_000, 4));
+        File.SetLastWriteTimeUtc(part2, File.GetLastWriteTimeUtc(_lesson.LessonVideo).AddMinutes(5));
+        Assert.That(ClassFolders.LessonVideoStateOf(_lesson), Is.EqualTo(LessonVideoState.NotMade), "part 2's picture is in no video");
+
+        var freed = await _world.Freer().FreeAsync(_lesson, CancellationToken.None);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(freed.Deleted, Is.Empty);
+            Assert.That(freed.Bytes, Is.Zero);
+            Assert.That(_lesson.FindCameraPieces(), Has.Count.EqualTo(3));
+            Assert.That(File.Exists(_lesson.Segment(1)), Is.True, "the sound stays to make the video with");
+            Assert.That(freed.Problem, Is.EqualTo(LocalAudioFreer.VideoStillToMake(_lesson)));
+            Assert.That(freed.Problem, Does.Contain(CommandLine.FinishVideo(_lesson.Segment(1))));
+        }
+    }
+
+    /// <summary>
+    /// Only the pieces the video on Drive holds are freed, those not newer than it; a newer one stays, said by name, as when the
+    /// sound has gone already and the video cannot be made again here.
+    /// </summary>
+    [Test]
+    public async Task Free_space_deletes_only_the_pieces_its_video_holds()
+    {
+        LessonVideos(on: true);
+        await UploadAsync();
+        File.Delete(_lesson.Segment(1));
+        var part2 = _lesson.CameraPiece(TimeSpan.FromMinutes(40));
+        File.WriteAllBytes(part2, Bytes(200_000, 4));
+        File.SetLastWriteTimeUtc(part2, File.GetLastWriteTimeUtc(_lesson.LessonVideo).AddMinutes(5));
+
+        var freed = await _world.Freer().FreeAsync(_lesson, CancellationToken.None);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(File.Exists(part2), Is.True, "its picture is in no video");
+            Assert.That(freed.Deleted, Is.EquivalentTo(new[] { Path.GetFileName(_lesson.CameraPiece(TimeSpan.Zero)), Path.GetFileName(_lesson.CameraPiece(TimeSpan.FromMinutes(20))) }));
+            Assert.That(freed.Problem, Is.EqualTo($"{Path.GetFileName(part2)} is newer than the lesson video of {_lesson.BaseName}, which does not hold it, so it stays on this laptop"));
+        }
+    }
+
     /// <summary>A video whose copy on Drive no longer matches keeps the pieces, and says why; the audio is freed as before.</summary>
     [Test]
     public async Task A_video_that_differs_from_its_copy_keeps_the_pieces()

@@ -1400,7 +1400,12 @@ with the same size and MD5), the pieces are deleted with the audio: `Freed the c
 ... (4.6 GB): its lesson video is on Google Drive, checked, in My Drive > ...; the video stays here too`.
 The finished video itself is never deleted. A video whose copy on Drive no longer matches keeps the
 pieces, with why (`The camera's pieces of ... stay: ... differs from its copy on Google Drive ...`); a
-video not on Drive keeps them too.
+video not on Drive keeps them too. Only the pieces the video holds go: a piece newer than the video
+stays, named (`... is newer than the lesson video of ..., which does not hold it, so it stays on this
+laptop`). A lesson whose video is still to be made (`lesson video not made yet` in `list`), such as a
+continued lesson whose new part's video was cut off, keeps its audio and its pieces alike, since making
+the video needs both: `The lesson video of ... is still to be made, so none of its audio or camera pieces
+were deleted: making it needs them. Make it first, free: ...`, with the `finish-video` command.
 
 Deleting audio, this way or by hand, never touches Drive. A recording whose audio is gone from the
 laptop after it went up counts as done, never as waiting, and is never uploaded again: `list` and menu
@@ -3061,6 +3066,8 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: ...` (a lesson's start) | Lesson videos stay off Drive by default. Run the command to send them too (they are large: about 2.3 GB an hour at 720p). |
 | `The camera's pieces of ... stay: ....mp4 differs from its copy on Google Drive ...` (free-space) | The video on the laptop is not the one on Drive (made again since, say). The pieces are kept; free-space deletes them once a video's copy on Drive matches. |
 | `Freed the camera's 2 pieces of ... (...): its lesson video is on Google Drive, checked, in ...; the video stays here too` | Normal: the pieces kept for Drive went once its copy of the video was checked. |
+| `The lesson video of ... is still to be made, so none of its audio or camera pieces were deleted: ...` (free-space) | A camera piece is newer than the lesson's video, or there is no video, so free-space keeps the lesson whole. Run the `finish-video` command the line gives, then free-space again. If you do not want the video, delete the `.cam*.mp4` pieces by hand first. |
+| `... is newer than the lesson video of ..., which does not hold it, so it stays on this laptop` (free-space) | That piece's picture is in no video, and the sound to make one is gone from the laptop. Download the `.wav` files from Drive into the lesson's folder and run `finish-video`, or delete the piece by hand if you do not need it. |
 | `Another ClassScribe is uploading to Google Drive; ... waits and goes up after it` | Nothing to do: one upload runs at a time, and the one running takes this recording before it stops. `... is on Drive already, unchanged since it went up` instead means nothing of it needed to go up. |
 | `<base> waits to go up to Google Drive: ...`, `<problem> 2 recordings wait to go up to Google Drive after the next class, or with menu choice 9 > U, or ClassScribe drive upload.` | It goes up later; the reason is in the line. To send it now, press U in the report at the start, or 9 > U, or run `drive upload`. With `Drive:Enabled` set to `false` the line ends `... to go up to Google Drive with menu choice 9 > U, or ClassScribe drive upload.`, since nothing goes up after a class then. |
 | `<file> did not go up to Google Drive: ...`, `<file> could not be read to go up to Google Drive: ...` | That file waits, with Drive's words or Windows' reason, and the recording's other files went up. The next upload tries it again. |

@@ -1275,7 +1275,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   keeps all of that recording's audio; then the files are deleted (nothing else, nothing on Drive),
   `FreedUtc` and the length kept in the manifest as it is then (read again, so a queue written
   meanwhile stays), and `Freed <size> on this laptop: ...` said. A lesson's camera pieces, kept for a video bound for
-  Drive, are freed the same way once its `.mp4` is verified there (`FreePiecesAsync`; the video stays here too). Menu choice 4 with a folder asks
+  Drive, are freed the same way once its `.mp4` is verified there (`FreePiecesAsync`; the video stays here too; only the
+  pieces not newer than the video), and a lesson whose video is still to be made keeps everything. Menu choice 4 with a folder asks
   about the recording transcribe would take, a newer freed one included (`MenuCommand.RecordingAt`,
   as `TranscribeCommand.TranscribeFolderAsync`). The
   rest of the app reads freed audio through `IAudioOnDrive` (`Storage`, `DriveCopies` from the
@@ -1673,7 +1674,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   choice 3 notes `lesson video` or `lesson video not made yet` (as `list` does) and takes V before a number. Drive:
   `Drive:LessonVideos` (false) sends `<base>.mp4` last, streamed as `video/mp4` with a line of its size and time, never
   the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`); the pass also waits while a class is
-  transcribed (N13); `LocalAudioFreer.FreePiecesAsync` deletes the pieces once the video is verified on Drive. There is no
+  transcribed (N13); `LocalAudioFreer.FreePiecesAsync` deletes the pieces once the video is verified on Drive, only those
+  not newer than it (a newer one stays, named), and `FreeAsync` refuses a lesson whose video is `NotMade` while its sound is
+  here, deleting nothing (`LocalAudioFreer.VideoStillToMake`, with the `finish-video` command). There is no
   `folders.lock` or `MoveJournal` on develop, so `finish-video` and V check neither. Fakes: `FakeLessonVideoMedia`
   (`TestDoubles.LessonVideo.cs`: `Holds`, `Unreadable`, `HoldWrite`, `WriteFailure`, `CheckAnswer`, `Written`, `Checks`,
   the sound's samples). Tests: `LessonVideoPlanTests`, `LessonVideoFilesTests`, `CameraFinishJobTests` (the real host over
