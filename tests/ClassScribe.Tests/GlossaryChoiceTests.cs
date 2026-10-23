@@ -176,7 +176,9 @@ public class GlossaryChoiceTests
 
     /// <summary>
     /// A glossary that is not there gives a warning and no terms, and the transcript goes on: the warning names the file, where
-    /// the value came from, and how to fix it, for the setting and for a class.
+    /// the value came from, and how to fix it, for the setting and for a class: the file put there reaches this recording's
+    /// next transcript, another reaches it with transcribe --again --keyterms, and the setting or the class changes from the
+    /// next recording.
     /// </summary>
     [Test]
     public void A_missing_file_gives_a_warning_and_no_terms_and_the_transcript_goes_on()
@@ -187,8 +189,8 @@ public class GlossaryChoiceTests
         Assert.That((setting.Terms, ofClass.Terms), Is.EqualTo((Array.Empty<string>(), Array.Empty<string>())));
         Assert.That(_log.Problems, Is.EqualTo(new[]
         {
-            $"No glossary at {Path.Combine(_settings, "gone.txt")} (ElevenLabs:KeytermsFile), so the transcript is made without its terms. Put the file there, or point ElevenLabs:KeytermsFile at another: ClassScribe settings set ElevenLabs:KeytermsFile \"<file>\"",
-            $"No glossary at {Path.Combine(_settings, "mantiq.txt")} (the saved class \"Mantiq (Chrome)\"), so the transcript is made without its terms. Put the file there, or point the class at another: ClassScribe class set \"Mantiq (Chrome)\" --keyterms \"<file>\""
+            $"No glossary at {Path.Combine(_settings, "gone.txt")} (ElevenLabs:KeytermsFile), so the transcript is made without its terms. Put the file there, and this recording's next transcript sends it, or send another: ClassScribe transcribe \"<recording>\" --again --keyterms \"<file>\". To point the setting at another from the next recording: ClassScribe settings set ElevenLabs:KeytermsFile \"<file>\"",
+            $"No glossary at {Path.Combine(_settings, "mantiq.txt")} (the saved class \"Mantiq (Chrome)\"), so the transcript is made without its terms. Put the file there, and this recording's next transcript sends it, or send another: ClassScribe transcribe \"<recording>\" --again --keyterms \"<file>\". To point the class at another from its next recording: ClassScribe class set \"Mantiq (Chrome)\" --keyterms \"<file>\""
         }));
     }
 

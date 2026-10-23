@@ -36,7 +36,8 @@ public sealed record GlossaryUse(string Path, string From, IReadOnlyList<string>
 /// <list type="number">
 /// <item>a glossary given to the command, transcribe --keyterms, or none;</item>
 /// <item>the recording's own record, when it has one, with a line that says so; when its file is gone, the steps below
-/// decide again, with a warning; when the file changed, it is used as it is now, and the line says so;</item>
+/// decide again, with a warning, and at a run's upload the glossary its start decided stands for them, since a recorder
+/// has no saved classes to decide by; when the file changed, it is used as it is now, and the line says so;</item>
 /// <item>the saved class the run was started as, when it names a glossary;</item>
 /// <item>a saved class whose course is the recording's name, for a start by name and a later transcription alike; when the
 /// classes of that course name different glossaries, the next step, with a warning that names them;</item>
@@ -89,32 +90,42 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
     }
 
     /// <summary>
-    /// At a run's start, in either home: a recording that has its record, as a continued one does, keeps it, and its line says
-    /// the glossary decided then; otherwise the glossary is the request's, as the window decided it, or else decided here
-    /// (see <see cref="ForRun"/>), and the record is written with it, before any transcript, so that a recording made with
-    /// record-only has it too. The line says which glossary, and a glossary that is not there is warned about now, as the
-    /// class starts, not after the upload. Never throws over the glossary or its record.
+    /// At a run's start, in either home: the run's glossary is the request's, as the window decided it, or, for a request
+    /// that carries none or one that is incomplete, decided here (see <see cref="ForRun"/>). A recording that has its record,
+    /// as a continued one does, keeps it, and its line says the glossary decided then; when the file decided then is gone,
+    /// the run's glossary is decided in its place and written into the record, so that this recording's transcripts send
+    /// what this start says. Otherwise the record is written with the run's glossary, before any transcript, so that a
+    /// recording made with record-only has it too. The line says which glossary, and a glossary that is not there is warned
+    /// about now, as the class starts, not after the upload. Returns the run's glossary, which the run hands to its
+    /// transcript for when the record gives none then (see <see cref="ForTranscript"/>): a recorder's settings hold no saved
+    /// classes to decide again by. Never throws over the glossary or its record.
     /// </summary>
-    public void AtStart(RecordingFiles files, RecordRequest request)
+    public GlossaryPick AtStart(RecordingFiles files, RecordRequest request)
     {
+        var run = Whole(request.Glossary) ?? ForRun(request.Name, request.ClassName);
         var (record, readable) = ReadRecord(files);
         if (record is not null)
         {
-            if (Reuse(record.Decided) is null) Decide(request.Glossary ?? ForRun(request.Name, request.ClassName));
-            return;
+            if (Reuse(record.Decided) is null)
+                WriteRecord(files, record with { Decided = Decision(run, Decide(run)) }, "the recording is not affected");
+            return run;
         }
 
-        var pick = request.Glossary ?? ForRun(request.Name, request.ClassName);
-        var loaded = Decide(pick);
-        if (readable) WriteRecord(files, new GlossaryRecord(GlossaryRecord.CurrentVersion, Decision(pick, loaded), []), "the recording is not affected");
+        var loaded = Decide(run);
+        if (readable) WriteRecord(files, new GlossaryRecord(GlossaryRecord.CurrentVersion, Decision(run, loaded), []), "the recording is not affected");
+        return run;
     }
 
     /// <summary>
     /// Before an upload of <paramref name="files"/>: the glossary to send, by the order of the class (see the class), with
-    /// <paramref name="given"/> as the command's own when it is not null, and its line. A recording without a record gets one
-    /// now, from steps 4 to 6, so that the next transcription reuses it. Never throws over the glossary or its record.
+    /// <paramref name="given"/> as the command's own when it is not null, and its line. When the recording's record gives
+    /// none, because it cannot be read, was never written or names a file that is gone, the glossary is
+    /// <paramref name="run"/>, the one the recording's run decided at its start (see <see cref="AtStart"/>), so that the
+    /// transcript sends what the start line named; without one, as for a later transcription, steps 4 to 6 decide. A
+    /// recording without a record gets one now, so that the next transcription reuses it. Never throws over the glossary or
+    /// its record.
     /// </summary>
-    public GlossaryUse ForTranscript(RecordingFiles files, string? given)
+    public GlossaryUse ForTranscript(RecordingFiles files, string? given, GlossaryPick? run = null)
     {
         var (record, readable) = ReadRecord(files);
         GlossaryUse? use = null;
@@ -133,14 +144,14 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
         Loaded? decidedLoaded = null;
         if (use is null)
         {
-            decided = ForRun(files.Name, className: null);
+            decided = Whole(run) ?? ForRun(files.Name, className: null);
             decidedLoaded = Decide(decided);
             use = new GlossaryUse(decided.Path, decided.From, decidedLoaded.Terms, decidedLoaded.Sha256, record?.Decided);
         }
 
         if (record is not null || !readable) return readable ? use : use with { Decided = null };
 
-        decided ??= ForRun(files.Name, className: null);
+        decided ??= Whole(run) ?? ForRun(files.Name, className: null);
         decidedLoaded ??= Load(decided, say: false);
         var decision = Decision(decided, decidedLoaded);
         WriteRecord(files, new GlossaryRecord(GlossaryRecord.CurrentVersion, decision, []), "the transcript is not affected");
@@ -218,6 +229,19 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
             // there; a glossary must never stop a recording.
             return value.Trim();
         }
+    }
+
+    /// <summary>
+    /// <paramref name="pick"/>, when it is whole; null, after a warning, when a field of it is missing, as a request or run file
+    /// of another shape or a damaged one reads, so that the glossary is decided here instead, as for a request that carries none.
+    /// </summary>
+    private GlossaryPick? Whole(GlossaryPick? pick)
+    {
+        // A field missing from the file reads as null, whatever its type says.
+        if (pick is null or { Setting: not null, Path: not null, From: not null }) return pick;
+
+        logger.LogWarning("The glossary this run's request carries is incomplete, so the glossary is decided here instead");
+        return null;
     }
 
     /// <summary>What decides whether two classes name the same glossary: the file, in any case, or nothing for none.</summary>
@@ -320,11 +344,20 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
         if (read.OverLimit) logger.LogWarning("The keyterms file has more than {MaxTerms} terms; the rest are ignored", KeytermLimits.ElevenLabs.MaxTerms);
     }
 
-    /// <summary>What a warning about a file that is not there says to do, by where <paramref name="pick"/> came from.</summary>
+    /// <summary>
+    /// What a warning about a file that is not there says to do, by where <paramref name="pick"/> came from: the file put
+    /// there reaches this recording's next transcript, as its record names it, and another reaches it through transcribe
+    /// --again --keyterms. A change to the class or the setting counts from the next recording: a run keeps the glossary its
+    /// start decided, so a change made during the class never reaches it.
+    /// </summary>
     private static string Advice(GlossaryPick pick) =>
-        pick.ClassName is { } name ? $"Put the file there, or point the class at another: ClassScribe class set \"{name}\" --keyterms \"<file>\""
-        : pick.From == SettingName ? $"Put the file there, or point {SettingName} at another: ClassScribe settings set {SettingName} \"<file>\""
+        pick.ClassName is { } name ? $"{FileThere} To point the class at another from its next recording: ClassScribe class set \"{name}\" --keyterms \"<file>\""
+        : pick.From == SettingName ? $"{FileThere} To point the setting at another from the next recording: ClassScribe settings set {SettingName} \"<file>\""
         : "Put the file there, or give another";
+
+    /// <summary>The first part of the advice for a class's or the setting's glossary that is not there: what reaches this recording.</summary>
+    private const string FileThere =
+        "Put the file there, and this recording's next transcript sends it, or send another: ClassScribe transcribe \"<recording>\" --again --keyterms \"<file>\".";
 
     /// <summary>What the record holds of <paramref name="pick"/>, read as <paramref name="loaded"/>, now.</summary>
     private GlossaryDecision Decision(GlossaryPick pick, Loaded loaded) =>

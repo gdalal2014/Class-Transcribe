@@ -78,7 +78,17 @@ public sealed class TranscriptionWorkflow(
     /// </summary>
     /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
     /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
-    public async Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, string? keyterms, CancellationToken cancellationToken)
+    public Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, string? keyterms, CancellationToken cancellationToken) =>
+        TranscribeRecordingAsync(files, keyterms, run: null, cancellationToken);
+
+    /// <summary>
+    /// Transcribes a recording as <see cref="TranscribeRecordingAsync(RecordingFiles, string, CancellationToken)"/> does, for
+    /// the run that recorded it: <paramref name="run"/> is the glossary its start decided (see <see cref="GlossaryChoice.AtStart"/>),
+    /// which is sent when the recording's record gives none, as the start line named it (see <see cref="GlossaryChoice.ForTranscript"/>).
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
+    /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
+    public async Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, string? keyterms, GlossaryPick? run, CancellationToken cancellationToken)
     {
         string? upload = null;
         var saved = false;
@@ -118,7 +128,7 @@ public sealed class TranscriptionWorkflow(
 
             upload = files.Upload;
 
-            var transcript = await UploadAndSaveAsync(upload, files, files.Name, files.StartedUtc, marks.Read(files), VideoOf(files), keyterms, cancellationToken);
+            var transcript = await UploadAndSaveAsync(upload, files, files.Name, files.StartedUtc, marks.Read(files), VideoOf(files), keyterms, run, cancellationToken);
             saved = true;
             return transcript;
         }
@@ -156,7 +166,7 @@ public sealed class TranscriptionWorkflow(
             logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), files.Folder);
 
             if (TryPrepare(path, files.Upload, cancellationToken)) upload = files.Upload;
-            var transcript = await UploadAndSaveAsync(upload ?? path, files, files.Name, recordedUtc: null, [], video: null, keyterms, cancellationToken);
+            var transcript = await UploadAndSaveAsync(upload ?? path, files, files.Name, recordedUtc: null, [], video: null, keyterms, run: null, cancellationToken);
             saved = true;
             return transcript;
         }
@@ -300,7 +310,8 @@ public sealed class TranscriptionWorkflow(
     /// <summary>
     /// Uploads the audio, with the recording's glossary (see <see cref="GlossaryChoice.ForTranscript"/>: the one given to the
     /// command, <paramref name="keyterms"/>, else the one decided when the recording started, which a recording without a
-    /// record has decided now), and saves ElevenLabs' answer and the Markdown transcript, as the next free copy of the
+    /// record has decided now, or the run's own, <paramref name="run"/>, when the record gives none), and saves ElevenLabs'
+    /// answer and the Markdown transcript, as the next free copy of the
     /// recording's transcript, then adds the transcript's entry to the recording's glossary record. The account's credits are read as the
     /// upload begins, without holding it up, so that the command can say afterwards what the transcript cost (see
     /// <see cref="UsageReport"/>). An answer that has arrived has been paid for: one that cannot be read is kept for later
@@ -310,11 +321,11 @@ public sealed class TranscriptionWorkflow(
     /// </summary>
     private async Task<TranscriptFiles> UploadAndSaveAsync(
         string audioPath, RecordingFiles files, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks, VideoSource? video,
-        string? keyterms, CancellationToken cancellationToken)
+        string? keyterms, GlossaryPick? run, CancellationToken cancellationToken)
     {
         // A cancel made while the upload file was prepared must not go on to "Uploading", which would look as if it had been ignored.
         cancellationToken.ThrowIfCancellationRequested();
-        var glossary = glossaries.ForTranscript(files, keyterms);
+        var glossary = glossaries.ForTranscript(files, keyterms, run);
 
         TranscriptionResult result;
         try

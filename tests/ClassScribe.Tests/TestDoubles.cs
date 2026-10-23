@@ -1054,12 +1054,39 @@ public static class TestGlossaries
     /// <summary>
     /// The resolver over <paramref name="elevenLabs"/>, with a relative glossary taken from <paramref name="places"/>' settings
     /// folder (the test's output folder when none is given), the saved classes given (none by default), the clock given (the
-    /// computer's by default), and its lines to <paramref name="logger"/>, or to nobody.
+    /// computer's by default), and its lines to <paramref name="logger"/>, or to nobody; over <paramref name="files"/> in place
+    /// of the real glossary files when given.
     /// </summary>
     public static GlossaryChoice Choice(TestOptions<ElevenLabsOptions> elevenLabs, SettingsPlaces? places = null, ILogger<GlossaryChoice>? logger = null,
-        SavedClasses? classes = null, TimeProvider? time = null) =>
-        new(new GlossaryFiles(places ?? new SettingsPlaces(AppContext.BaseDirectory, userFolder: null)), classes ?? new SavedClasses(new ConfigurationBuilder().Build()),
+        SavedClasses? classes = null, TimeProvider? time = null, IGlossaryFiles? files = null) =>
+        new(files ?? new GlossaryFiles(places ?? new SettingsPlaces(AppContext.BaseDirectory, userFolder: null)), classes ?? new SavedClasses(new ConfigurationBuilder().Build()),
             elevenLabs, time ?? TimeProvider.System, logger ?? NullLogger<GlossaryChoice>.Instance);
+
+    /// <summary>The saved classes the settings <paramref name="classes"/> hold, by setting name, such as Classes:Risala:KeytermsFile.</summary>
+    public static SavedClasses Classes(IEnumerable<KeyValuePair<string, string?>> classes) =>
+        new(new ConfigurationBuilder().AddInMemoryCollection(classes).Build());
+}
+
+/// <summary>Glossary files that fail every call with an error nobody expects, for the rule that nothing about the glossary may end a class.</summary>
+public sealed class FailingGlossaryFiles : IGlossaryFiles
+{
+    /// <summary>The error every call throws.</summary>
+    public const string Words = "the glossary's files failed as nobody expects";
+
+    /// <inheritdoc />
+    public string Resolve(string configured) => throw new InvalidOperationException(Words);
+
+    /// <inheritdoc />
+    public bool Exists(string path) => throw new InvalidOperationException(Words);
+
+    /// <inheritdoc />
+    public GlossaryText? Read(string path) => throw new InvalidOperationException(Words);
+
+    /// <inheritdoc />
+    public GlossaryRecord? ReadRecord(RecordingFiles files) => throw new InvalidOperationException(Words);
+
+    /// <inheritdoc />
+    public void WriteRecord(RecordingFiles files, GlossaryRecord record) => throw new InvalidOperationException(Words);
 }
 
 /// <summary>Ready-made mocks of the services around the code under test.</summary>

@@ -695,14 +695,23 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   warning), `ElevenLabs:KeytermsFile`, none. The window decides steps 3 to 6 in `RecordStarter`, where
   the saved classes are, and the request carries it (`RecordRequest.Glossary`, a `GlossaryPick`: the
   value, the full path, where it came from; written only when set, so null means the recorder's own
-  setting, as an older window's request reads); `RecordCommand` calls `GlossaryChoice.AtStart` after
-  the start lines, in either home, which writes the record before any transcript (a continued
-  recording keeps its own), and `TranscriptionWorkflow` calls `ForTranscript` before each upload and
-  `Sent` after the transcript is saved. Each says one line: `Glossary: <name> (<from>), N terms`, `No
-  glossary: <from> is empty|says none`, or the reuse line `Glossary: <name>, as decided when this
-  recording started (N terms then, M now)` / `; changed since: ...`; a decided file that is gone is
-  decided again with a warning. A glossary that is not there or cannot be read, and a record that
-  cannot be read (left as it is) or written, never stop a recording or cost a transcript. The term
+  setting, as an older window's request reads, and a pick with a field missing is passed over with a
+  warning and decided where the run is); `RecordCommand` calls `GlossaryChoice.AtStart` after the
+  start lines, in either home, inside a catch-all (`StartTheGlossary`: nothing about the glossary may
+  end a class), which writes the record before any transcript (a continued recording keeps its own;
+  when its decided file is gone, the run's glossary is written in its place) and returns the run's
+  glossary; the run hands that to `TranscriptionWorkflow.TranscribeRecordingAsync(files, keyterms, run,
+  ct)`, and `ForTranscript` sends it whenever the record gives none (unreadable, never written, or
+  naming a file that is gone), since a recorder's settings hold no saved classes to decide again by;
+  without a run (a later transcription), steps 4 to 6 decide. The workflow calls `ForTranscript`
+  before each upload and `Sent` after the transcript is saved. Each says one line: `Glossary: <name>
+  (<from>), N terms`, `No glossary: <from> is empty|says none`, or the reuse line `Glossary: <name>, as
+  decided when this recording started (N terms then, M now)` / `; changed since: ...`; a decided file
+  that is gone is decided again with a warning. The advice for a class's or the setting's glossary
+  that is not there says that `class set` and `settings set` count from the next recording, and that
+  this recording takes the file put there, or another through `transcribe --again --keyterms`. A
+  glossary that is not there or cannot be read, and a record that cannot be read (left as it is) or
+  written, never stop a recording or cost a transcript. The term
   rules are `KeytermRules` (pure: `Read`, `Validate`, `Words`), with `KeytermLimits.ElevenLabs` (1000
   terms, under 50 characters, 5 words) until slice 2 makes them settings. A saved class may name its
   own (`Classes:<name>:KeytermsFile`, a file or `none`; never makes the class unusable; `class
@@ -2099,10 +2108,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ServiceRegistrationTests` and `EndToEndTests`. The glossary's tests: `KeytermRulesTests`,
   `GlossaryFilesTests` (the example glossary, which the test project links into its output as
   `Examples\keyterms-islamic-sciences.txt`), `GlossaryChoiceTests`, `GlossaryRecordTests` (with
-  `GlossaryRecordTests.Reuse.cs`) and `Architecture/RepositoryLayoutTests`, with additions to
+  `GlossaryRecordTests.Reuse.cs`, and `GlossaryRecordTests.Recorder.cs` for a recorder's resolver,
+  which has no saved classes) and `Architecture/RepositoryLayoutTests`, with additions to
   `RecordingFilesTests`, `SavedClassesTests`, `ClassCommandTests`, `ClassCommandLineTests`,
   `ClassesMenuTests`, `CommandLineTreeTests`, `RequestsTests`, `RecordStarterTests`,
   `RecordCommandTests`, `RecorderHostTests`, `TranscriptionWorkflowTests`, `DefaultChangesTests`,
   `MenuSettingsTests`, `DownloadBatchTests`, `DryRunScriptTests` and `DryRunWholeTests`;
-  `TestGlossaries.Choice` builds the resolver for tests that build the workflow by hand. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
+  `TestGlossaries.Choice` builds the resolver for tests that build the workflow by hand (over
+  `FailingGlossaryFiles` for an error nobody expects), and `TestGlossaries.Classes` the saved classes. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
   guard. The test project sees ClassScribe's internals (`InternalsVisibleTo` in `CoreAudioInterop.cs`).

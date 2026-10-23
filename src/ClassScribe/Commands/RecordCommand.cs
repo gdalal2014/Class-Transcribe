@@ -63,6 +63,12 @@ public sealed class RecordCommand(
     private string? _videoEnded;
 
     /// <summary>
+    /// The glossary the run's start decided (see <see cref="GlossaryChoice.AtStart"/>), handed to its transcript for when the
+    /// recording's record gives none then; null before the start, or when the start could not decide one.
+    /// </summary>
+    private GlossaryPick? _glossary;
+
+    /// <summary>
     /// Runs the class under <paramref name="name"/> as a new recording, transcribed when <paramref name="transcribe"/> is
     /// true: from what is chosen now (menu choice 6, or the settings) into the recordings folder of the settings, opening
     /// the results as the settings say. It stays for the callers that pass a name alone, until they pass a whole request to
@@ -150,7 +156,7 @@ public sealed class RecordCommand(
                         // 5. The start lines, the glossary's among them, with the recording's glossary record written now, before
                         // any transcript, then 6. the loop, until the stop.
                         LogTheStart(request, files, offset);
-                        glossaries.AtStart(files, request);
+                        _glossary = StartTheGlossary(files, request);
                         stopping = await loop.RunAsync(started, files, request, run, offset);
                     }
                     finally
@@ -354,7 +360,7 @@ public sealed class RecordCommand(
         try
         {
             logger.LogInformation("Press Ctrl+C to cancel the upload. The recording is kept either way");
-            var saved = await workflow.TranscribeRecordingAsync(files, signals.Cancellation);
+            var saved = await workflow.TranscribeRecordingAsync(files, keyterms: null, _glossary, signals.Cancellation);
             logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
             await WaitForTheLessonVideoAsync();
             End(request, stopping, RecorderPhase.Done,
@@ -483,6 +489,28 @@ public sealed class RecordCommand(
                 logger.LogWarning("{Message}", again);
                 return (again, command);
             }
+        }
+    }
+
+    /// <summary>
+    /// Step 5's glossary: which glossary the recording's transcripts take, said and written beside it, or kept from its start
+    /// for a continued recording (see <see cref="GlossaryChoice.AtStart"/>); returns the run's glossary, which its transcript
+    /// sends when the recording's record gives none then. The class is recording already, so nothing about the glossary may
+    /// end it: whatever fails here is logged, the class records on, and its transcript decides the glossary as a later
+    /// transcription would; null then.
+    /// </summary>
+    private GlossaryPick? StartTheGlossary(RecordingFiles files, RecordRequest request)
+    {
+        try
+        {
+            return glossaries.AtStart(files, request);
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: the capture has started, and the glossary only decides which terms the transcript is
+            // sent with; an exception here would stop the capture and end the class.
+            logger.LogError(ex, "Could not decide the recording's glossary at its start ({Reason}); the class records on, and its transcript decides the glossary when it is made", ex.Message);
+            return null;
         }
     }
 
