@@ -17,11 +17,14 @@ editor's job. The script:
      script's process, so that it ends with the dry run even when this window is closed with its X;
   5. sets, in its own process only (never at user scope): a dummy ELEVENLABS_API_KEY (with -Real, the user-scope key,
      after a typed YES), ElevenLabs__BaseUrl at the stand-in, Drive__Enabled=false, and CLASSSCRIBE_SETTINGS_FOLDER at a
-     folder of the dry run's own, seeded with a copy of %APPDATA%\ClassScribe\appsettings.json when there is one;
+     folder of the dry run's own, seeded with a copy of %APPDATA%\ClassScribe\appsettings.json when there is one, and
+     with each glossary it (or -Setting) names by a relative path, copied from %APPDATA%\ClassScribe;
   6. starts the window: record "<Name>" --app <App> --mic "<Mic>" --mic-follows <Follows> --new
      --output "%USERPROFILE%\ClassScribe dry runs", and waits until the run is over and the window is closed;
   7. checks the run file (the recorder ran separately, the transcript was saved, the run was seen), the transcript and
-     any -Expect files, the recording's log, and the stand-in's log;
+     any -Expect files, the recording's log (its glossary lines shown), the stand-in's log, and the glossary: when the
+     seeded settings name one, the keyterms the stand-in counted must be those the recording's .glossary.json and the
+     glossary's file say; when they name none, keyterms: none is a note;
   8. stops the stand-in, removes the side copy (unless -Keep), lists the three folders again and names each change it
      did not expect;
   9. writes the branch, the commit it published and the result to %LOCALAPPDATA%\ClassScribe-DryRuns\runs.log.
@@ -324,6 +327,149 @@ function Read-StandInLog {
     $summary
 }
 
+# True when Value names no glossary: empty, or none in any case, as ClassScribe reads it.
+function Test-NoGlossary {
+    param([AllowEmptyString()][AllowNull()][string]$Value)
+
+    $trimmed = ([string]$Value).Trim()
+    return $trimmed.Length -eq 0 -or $trimmed -ieq 'none'
+}
+
+# The glossaries a settings file names (architecture 8.7): ElevenLabs:KeytermsFile and each saved class's KeytermsFile,
+# each with its setting's name (Key), its value as written (Value) and, for a class, its course (Course); then the
+# -Setting overrides of the dry run (Key=value), which replace a value of the same name or add one. A file that is not
+# there names none; one that is not JSON is passed over here, as the side copy reports it.
+function Get-GlossarySettings {
+    param([Parameter(Mandatory = $true)][string]$SettingsFile, [string[]]$Overrides = @())
+
+    $found = [ordered]@{}
+    if (Test-Path -LiteralPath $SettingsFile -PathType Leaf) {
+        $json = $null
+        try { $json = Get-Content -LiteralPath $SettingsFile -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop }
+        catch {
+            # Deliberately not rethrown: a settings file that is not JSON names no glossary the kit can copy; the side copy
+            # says what is wrong with the file itself as it starts.
+            Write-Verbose "The glossaries of $SettingsFile could not be read: $($_.Exception.Message)"
+        }
+        if ($json) {
+            if ($json.ElevenLabs -and $null -ne $json.ElevenLabs.KeytermsFile) {
+                $found['ElevenLabs:KeytermsFile'] = [pscustomobject]@{ Key = 'ElevenLabs:KeytermsFile'; Value = [string]$json.ElevenLabs.KeytermsFile; Course = $null }
+            }
+            if ($json.Classes) {
+                foreach ($class in $json.Classes.PSObject.Properties) {
+                    if ($null -eq $class.Value.KeytermsFile) { continue }
+                    $key = "Classes:$($class.Name):KeytermsFile"
+                    $found[$key] = [pscustomobject]@{ Key = $key; Value = [string]$class.Value.KeytermsFile; Course = [string]$class.Value.Course }
+                }
+            }
+        }
+    }
+    foreach ($item in @($Overrides)) {
+        $pair = $item -split '=', 2
+        if ($pair.Count -ne 2) { continue }
+        if ($pair[0] -ieq 'ElevenLabs:KeytermsFile' -or $pair[0] -match '^Classes:.+:KeytermsFile$') {
+            $existing = @($found.Keys | Where-Object { $_ -ieq $pair[0] })
+            $key = if ($existing.Count) { $existing[0] } else { $pair[0] }
+            $course = if ($existing.Count) { $found[$key].Course } else { $null }
+            $found[$key] = [pscustomobject]@{ Key = $key; Value = $pair[1]; Course = $course }
+        }
+    }
+    @($found.Values)
+}
+
+# Copies into the dry run's settings folder (To) each glossary of Glossaries named by a relative path, from the user's
+# settings folder (From), where ClassScribe would read it, so that the side copy reads the same glossary as a class;
+# one named by a full path, or with an environment variable such as %APPDATA%, is read where it is, never copied. Each
+# comes back with a line saying what was done.
+function Copy-RelativeGlossaries {
+    param($Glossaries, [Parameter(Mandatory = $true)][string]$From, [Parameter(Mandatory = $true)][string]$To)
+
+    foreach ($glossary in @($Glossaries)) {
+        if (-not $glossary -or (Test-NoGlossary $glossary.Value)) { continue }
+        $value = $glossary.Value.Trim().Trim('"').Trim()
+        $expanded = [Environment]::ExpandEnvironmentVariables($value)
+        if ($expanded -ne $value -or [IO.Path]::IsPathRooted($expanded)) {
+            [pscustomobject]@{ Key = $glossary.Key; Value = $value; Copied = $false; Line = "$($glossary.Key) names $value, which the dry run reads where it is." }
+            continue
+        }
+        $source = Join-Path $From $value
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            [pscustomobject]@{ Key = $glossary.Key; Value = $value; Copied = $false; Line = "$($glossary.Key) names $value, which is not in $From, so the dry run has no such glossary either." }
+            continue
+        }
+        $target = Join-Path $To $value
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+        Copy-Item -LiteralPath $source -Destination $target -Force
+        [pscustomobject]@{ Key = $glossary.Key; Value = $value; Copied = $true; Line = "Copied $value, which $($glossary.Key) names, from $From into the dry run's settings folder." }
+    }
+}
+
+# How many terms the glossary at Path holds, as ClassScribe counts them for a glossary whose terms are all valid: each
+# line trimmed and composed, blank lines and lines starting with # passed over, a term repeated in any case counted
+# once. Null when there is no file there.
+function Get-GlossaryTermCount {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Path)
+
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($line in [IO.File]::ReadAllLines($Path, [Text.Encoding]::UTF8)) {
+        $term = $line.Trim().Normalize([Text.NormalizationForm]::FormC)
+        if ($term.Length -gt 0 -and -not $term.StartsWith('#')) { [void]$seen.Add($term) }
+    }
+    $seen.Count
+}
+
+# The lines of a recording's log that say which glossary the run took: at its start and before each upload, a glossary
+# that is not there among them.
+function Get-GlossaryLines {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+    Get-Content -LiteralPath $Path -Encoding UTF8 | Where-Object { $_ -match '(Glossary: |No glossary|The glossary decided when this recording started)' }
+}
+
+# What the dry run finds about the glossary (architecture 8.7), as Problems and Notes. Named says whether the seeded
+# settings name a glossary; StandInTerms are the keyterms the stand-in counted in each transcript; Record is the
+# recording's .glossary.json, read, or null when the build wrote none; FileTerms is the number of terms of the glossary
+# the record says went up (Get-GlossaryTermCount), or null. With no glossary named, keyterms: none is a note, not a
+# problem. With one named, the keyterms must have gone up, as many as the record and the file say.
+function Get-GlossaryFindings {
+    param([bool]$Named, [int[]]$StandInTerms = @(), $Record, $FileTerms)
+
+    $problems = New-Object System.Collections.Generic.List[string]
+    $notes = New-Object System.Collections.Generic.List[string]
+    $sent = @($StandInTerms | Where-Object { $_ -gt 0 })
+    if (-not $Named) {
+        if ($sent.Count -eq 0) { $notes.Add('keyterms: none, as the seeded settings name no glossary') }
+        else { $notes.Add("The stand-in counted $($sent -join ', ') keyterms though the seeded settings name no glossary (a build that ships one)") }
+        return [pscustomobject]@{ Problems = @($problems); Notes = @($notes) }
+    }
+    if (@($StandInTerms).Count -eq 0) { return [pscustomobject]@{ Problems = @($problems); Notes = @($notes) } }
+    if (-not $Record) {
+        $notes.Add('This build writes no .glossary.json beside the recording')
+        if ($sent.Count -eq 0) { $problems.Add('No keyterms went up with the transcript, though the seeded settings name a glossary.') }
+        return [pscustomobject]@{ Problems = @($problems); Notes = @($notes) }
+    }
+    $entries = @($Record.sent | Where-Object { $_ })
+    $counted = @($StandInTerms)[-1]
+    if ($entries.Count -eq 0) {
+        $problems.Add("The recording's .glossary.json has no entry for the transcript the stand-in answered.")
+        return [pscustomobject]@{ Problems = @($problems); Notes = @($notes) }
+    }
+    $last = $entries[-1]
+    if (-not [string]$last.path) {
+        # The run decided no glossary, as a saved class that says none does, though another one is named.
+        $notes.Add("The run took no glossary: $($Record.decided.from) $(if ([string]$Record.decided.setting) { 'says none' } else { 'is empty' })")
+        if ($counted -gt 0) { $problems.Add("The stand-in counted $counted keyterms, but the recording's .glossary.json says no glossary went up.") }
+        return [pscustomobject]@{ Problems = @($problems); Notes = @($notes) }
+    }
+    $recorded = [int]$last.terms
+    if ($counted -ne $recorded) { $problems.Add("The stand-in counted $counted keyterms, but the recording's .glossary.json says $recorded went up.") }
+    if ($null -ne $FileTerms -and $FileTerms -ne $recorded) { $problems.Add("$($last.path) holds $FileTerms terms, but $recorded went up.") }
+    if ($counted -eq 0) { $problems.Add('No keyterms went up with the transcript, though the seeded settings name a glossary.') }
+    [pscustomobject]@{ Problems = @($problems); Notes = @($notes) }
+}
+
 # Options given as one string each, as Start-DryRun.cmd hands them on (Windows PowerShell's -File passes ".srt,.vtt" as
 # one string): each split at Separator and trimmed, empty ones left out.
 function Split-Items {
@@ -571,6 +717,8 @@ function Invoke-DryRun {
     $uncommitted = 0
     $problems = New-Object System.Collections.Generic.List[string]
     $notes = New-Object System.Collections.Generic.List[string]
+    $glossaryNamed = $false
+    $glossaryRecord = $null
     try { Start-Transcript -LiteralPath (Join-Path $folder 'console.txt') | Out-Null }
     catch {
         # Deliberately not rethrown: the dry run goes on without a record of its console (a host that cannot keep one, or
@@ -704,6 +852,11 @@ function Invoke-DryRun {
         New-Item -ItemType Directory -Force -Path $settingsFolder | Out-Null
         $userSettings = $Roots.UserSettings
         if (Test-Path -LiteralPath $userSettings) { Copy-Item -LiteralPath $userSettings -Destination $settingsFolder }
+        # The glossaries the seeded settings name by a relative path are taken from the user's settings folder, as a class
+        # takes them, into the dry run's own; one named by a full path is read where it is (architecture 8.7).
+        $glossaries = @(Get-GlossarySettings -SettingsFile (Join-Path $settingsFolder 'appsettings.json') -Overrides $settings)
+        foreach ($copied in @(Copy-RelativeGlossaries -Glossaries $glossaries -From $Roots.AppData -To $settingsFolder)) { Write-Line "  $($copied.Line)" }
+        $glossaryNamed = @($glossaries | Where-Object { -not (Test-NoGlossary $_.Value) }).Count -gt 0
         [Environment]::SetEnvironmentVariable('Drive__Enabled', 'false', 'Process')
         [Environment]::SetEnvironmentVariable('CLASSSCRIBE_SETTINGS_FOLDER', $settingsFolder, 'Process')
         foreach ($item in $settings) {
@@ -807,6 +960,15 @@ function Invoke-DryRun {
                     $notes.Add("$($warnings.Count) warning or error line(s) in the recording's log")
                 }
                 foreach ($errorLine in @(Select-LogErrors -Lines $warnings)) { $problems.Add("The recording's log has an error: $errorLine") }
+                foreach ($glossaryLine in @(Get-GlossaryLines -Path (Join-Path $recordingFolder "$baseName.log"))) { Write-Line "The run's glossary: $glossaryLine" }
+                $glossaryRecordPath = Join-Path $recordingFolder "$baseName.glossary.json"
+                if (Test-Path -LiteralPath $glossaryRecordPath -PathType Leaf) {
+                    try { $glossaryRecord = Get-Content -LiteralPath $glossaryRecordPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop }
+                    catch {
+                        # Deliberately not rethrown: a glossary record the kit cannot read fails the dry run, with its message.
+                        $problems.Add("The recording's .glossary.json could not be read: $($_.Exception.Message)")
+                    }
+                }
             }
         }
         if ($standIn) {
@@ -814,7 +976,15 @@ function Invoke-DryRun {
             $terms = if ($summary.Keyterms.Count) { $summary.Keyterms -join ', ' } else { 'none' }
             Write-Line "The stand-in answered $($summary.Transcripts) transcript(s) (keyterms: $terms) and $($summary.Accounts) read(s) of the account."
             if ($summary.Transcripts -ne 1) { $problems.Add("The stand-in answered $($summary.Transcripts) transcripts; one was expected.") }
-            if ($summary.Transcripts -gt 0 -and @($summary.Keyterms | Where-Object { $_ -gt 0 }).Count -eq 0) { $problems.Add('No keyterms went up with the transcript.') }
+            $fileTerms = $null
+            if ($glossaryRecord) {
+                $wentUp = @($glossaryRecord.sent | Where-Object { $_ })
+                $glossaryPath = if ($wentUp.Count) { [string]$wentUp[-1].path } else { [string]$glossaryRecord.decided.path }
+                if ($glossaryPath) { $fileTerms = Get-GlossaryTermCount -Path $glossaryPath }
+            }
+            $findings = Get-GlossaryFindings -Named $glossaryNamed -StandInTerms @($summary.Keyterms) -Record $glossaryRecord -FileTerms $fileTerms
+            foreach ($problem in $findings.Problems) { $problems.Add($problem) }
+            foreach ($note in $findings.Notes) { $notes.Add($note) }
             foreach ($stray in $summary.Unexpected) { $problems.Add("The stand-in had a request it does not know: $stray") }
             foreach ($refusal in $summary.Refused) { $problems.Add("The stand-in refused or failed a request: $refusal") }
         }

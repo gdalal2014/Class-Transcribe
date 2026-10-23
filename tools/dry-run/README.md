@@ -28,7 +28,7 @@ Options can follow the `.cmd` from a terminal, as for the script:
 .\Start-DryRun.cmd -Short -Mic "Microphone Array"    # five minutes with the microphone
 .\Start-DryRun.cmd -Follows none                     # the microphone written throughout, not only while Chrome listens
 .\Start-DryRun.cmd -Expect .srt,.vtt                 # files that must be beside the recording (subtitles, build plan step 5)
-.\Start-DryRun.cmd -Setting "ElevenLabs:KeytermsFile=keyterms-islamic-sciences.txt"
+.\Start-DryRun.cmd -Setting "ElevenLabs:KeytermsFile=keyterms-islamic-sciences.txt"   # copied from %APPDATA%\ClassScribe
 .\Start-DryRun.cmd -Exe "$env:LOCALAPPDATA\Programs\ClassScribe\ClassScribe.exe"   # an installed exe, nothing published
 ```
 
@@ -73,7 +73,10 @@ Options can follow the `.cmd` from a terminal, as for the script:
 5. In its own process only, never at user scope, inherited by the window and its recorder: a dummy `ELEVENLABS_API_KEY`
    (with `-Real`, your user-scope key), `ElevenLabs__BaseUrl` at the stand-in, `Drive__Enabled=false`, and
    `CLASSSCRIBE_SETTINGS_FOLDER` at a `settings` folder of the dry run's own, seeded with a copy of
-   `%APPDATA%\ClassScribe\appsettings.json` when you have one. They end with the script.
+   `%APPDATA%\ClassScribe\appsettings.json` when you have one. They end with the script. Each glossary those settings
+   (or `-Setting`) name by a relative path, `ElevenLabs:KeytermsFile` and each saved class's `KeytermsFile`, is copied
+   from `%APPDATA%\ClassScribe` into that folder, as a class would read it there; one named by a full path or with
+   `%APPDATA%` is read where it is, never copied, and your settings folder is only read.
 6. It starts the window: `record "Dry run" --app chrome --mic "Microphone Array" --mic-follows chrome --new --output
    "%USERPROFILE%\ClassScribe dry runs"`, and tells you what to do: play a lecture in Chrome and speak for part of it,
    M once, P twice, close the window once (the recorder goes on), press O in the dry run's window (the side copy opens
@@ -83,7 +86,11 @@ Options can follow the `.cmd` from a terminal, as for the script:
    and no ClassScribe of the copy is left; until then it names the process ids of the copy's windows still open.
 7. It checks: the run file's `home` is `Separate` (else the recorder ran in the window), the run finished as
    `Transcribed`, the transcript is there, the run was marked seen; any `-Expect` files; the recording's log (warnings
-   are shown, errors fail the run); and the stand-in's log: one transcript, keyterms sent, no request it does not know.
+   are shown, errors fail the run, and its glossary lines are shown); the stand-in's log: one transcript, no request it
+   does not know; and the glossary. When the seeded settings name one, keyterms must have gone up, as many as the
+   recording's `.glossary.json` says went up and as the glossary's file holds; a run that decided none (a saved class
+   that says none) is a note. When they name none, "keyterms: none" is a note, not a problem. A build that writes no
+   `.glossary.json`, as the builds before the glossary left the app, is checked by the stand-in's count alone.
 8. It stops the stand-in, waits until no ClassScribe of the copy is left, removes the side copy (unless `-Keep`), lists
    the three folders again and names each change. Expected: the dry run's run file, lines in `recorder.log` (and
    `recorder.old.log`), the lock file's time, and the files the side copy's recorder prunes as it starts going: run
