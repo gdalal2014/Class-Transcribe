@@ -78,6 +78,14 @@ public interface IMicrophoneRecording
     /// from Windows when asked; null while none is recorded, or when Windows cannot say.
     /// </summary>
     bool? MutedInWindows { get; }
+
+    /// <summary>
+    /// The webcam the microphone belongs to (camera-first 3.4), and whether its picture is held with its frames arriving;
+    /// null for a microphone of no webcam, and for a recording that cannot say. The webcam zeros rules take the place of
+    /// the warning about only silence for such a microphone. It has no default body, so that every recording with the
+    /// microphone must say, and one that stopped saying would not build rather than fall silent in a class.
+    /// </summary>
+    Camera.WebcamState? Webcam { get; }
 }
 
 /// <summary>The words for the app the microphone track follows, as the run's lines, status line and summary use them.</summary>
@@ -845,7 +853,8 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
 /// seconds, the echo checked again whenever the class moves to another device (in app mode, the app's device every 30
 /// seconds), the gate that follows the class app (a line when a state has held for a second, the app not opening the
 /// microphone for 5 minutes, its sessions unreadable for 10 seconds, the evidence that its mute is visible), a microphone
-/// missing beside the class, and only exact zeros from it, which the recording reports after 2 minutes of them. The
+/// missing beside the class, and only exact zeros from it, which the recording reports after 2 minutes of them (for a
+/// webcam's microphone the webcam zeros rules instead, at the device's own depth, and the problems of its hold). The
 /// status line's clause about the microphone comes from here too. Nothing here opens a microphone: the advice reads the
 /// registry, the echo check reads Windows' lists of devices and apps, the gate is read as the watch left it, and the
 /// mute is read from Windows' own switch.
@@ -919,6 +928,19 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
     private bool _zerosSaid;
 
     private string _zerosText = "";
+
+    /// <summary>The capture the webcam rule at the start was said for, by its number; 0 for none; and the words it was said with.</summary>
+    private int _webcamStartSaidFor;
+
+    private string _webcamStartText = "";
+
+    /// <summary>Where the webcam rule after sound stands, said once a recording; and the words it was said with.</summary>
+    private WebcamLater _webcamLater;
+
+    private string _webcamLaterText = "";
+
+    /// <summary>Whether Windows mutes the webcam's microphone, as asked once in the stretch of zeros now; null outside one.</summary>
+    private bool? _webcamMuted;
 
     /// <summary>True while Windows' lists of devices and apps cannot be read, from the look that noted it: the note is given once per such stretch.</summary>
     private bool _listingFailing;
@@ -1017,7 +1039,14 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
         var state = described?.State;
         if (described is { } gateNow) WatchTheGate(gateNow.State, gateNow.Why, details!.Follows, snapshot, now, began, lines, conditions);
         WatchAMissingMicrophone(track, withClass, now, lines, conditions);
-        WatchOnlyZeros(track, state, snapshot.Paused, withClass, MicrophoneWords.App(details?.Follows), details, lines, conditions);
+
+        // A webcam's microphone has rules of its own for its zeros, which a quiet room does not set off (camera-first 3.4);
+        // Windows' own silence (packets flagged silent, a muted microphone) stays with the warning every microphone has.
+        if (details?.Webcam is { } webcam && !track.WindowsSilent && !WebcamMuted(track, details))
+            WatchWebcamZeros(track, state, snapshot.Paused, withClass, webcam, lines, conditions);
+        else
+            WatchOnlyZeros(track, state, snapshot.Paused, withClass, MicrophoneWords.App(details?.Follows), details, lines, conditions);
+        WatchTheHold(details?.Webcam, withClass, conditions);
         ReportEvidence(MicrophoneWords.App(details?.Follows), now, lines);
 
         _noticed.RemoveAll(notice => time.GetElapsedTime(notice.At, now) >= NoticeFor);
@@ -1359,6 +1388,94 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
         return $"{silence}. Check that it is not muted in Windows (the microphone key, or Sound settings > Input) and that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)";
     }
 
+    /// <summary>
+    /// Whether Windows mutes the webcam's microphone, asked once per stretch of zeros long enough for a webcam rule, so that
+    /// a muted microphone is left to the warning every microphone has; false while no such stretch lasts.
+    /// </summary>
+    private bool WebcamMuted(TrackSnapshot track, IMicrophoneRecording details)
+    {
+        if (track.RawZerosFor is not { } zeros || zeros < RecordingSession.WebcamZerosAtStart)
+        {
+            _webcamMuted = null;
+            return false;
+        }
+
+        return _webcamMuted ??= details.MutedInWindows == true;
+    }
+
+    /// <summary>
+    /// The webcam zeros rules (camera-first 3.4), in place of the warning about only silence for a microphone that belongs
+    /// to a webcam, such as the OBSBOT, whose noise reduction sends exact zeros whenever the room is quiet (finding 4). The
+    /// zeros are counted at the device's own depth, so Windows' faint residue counts as sound. At the start: only exact
+    /// zeros since the capture opened for <see cref="RecordingSession.WebcamZerosAtStart"/>, said once a capture, in words
+    /// that depend on whether the hold has the camera awake. Later, after sound: only exact zeros for
+    /// <see cref="RecordingSession.WebcamZerosAfterSound"/>, said once a recording, never while the hold's frames arrive (the
+    /// camera cannot be asleep), its Notice ending when sound returns. Each a Notice with the class, an Alert in person.
+    /// </summary>
+    private void WatchWebcamZeros(TrackSnapshot track, MicrophoneGateState? state, bool paused, bool withClass, Camera.WebcamState webcam,
+        List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
+    {
+        _zerosSaid = false;
+        var heard = state is null or MicrophoneGateState.Recording or MicrophoneGateState.Unfollowed;
+        var zeros = !paused && !track.Off && track.Capturing && heard ? track.RawZerosFor : null;
+
+        if (zeros is { } sinceOpened && !track.RawSoundSinceOpened && sinceOpened >= RecordingSession.WebcamZerosAtStart)
+        {
+            if (_webcamStartSaidFor != track.CaptureNumber)
+            {
+                _webcamStartSaidFor = track.CaptureNumber;
+                _webcamStartText = WebcamStartText(webcam);
+                lines.Add((LogLevel.Warning, _webcamStartText));
+            }
+
+            conditions.Add(WebcamCondition(withClass, _webcamStartText));
+            return;
+        }
+
+        var later = zeros is { } quiet && track.RawSoundSinceOpened && quiet >= RecordingSession.WebcamZerosAfterSound && !(webcam.Holding && webcam.HasFrames);
+        if (later && _webcamLater == WebcamLater.NotSaid)
+        {
+            _webcamLater = WebcamLater.Lasting;
+            _webcamLaterText = WebcamLaterText(webcam);
+            lines.Add((LogLevel.Warning, _webcamLaterText));
+        }
+        else if (_webcamLater == WebcamLater.Lasting && zeros is { } now && now < RecordingSession.WebcamZerosAfterSound)
+        {
+            _webcamLater = WebcamLater.Over;
+        }
+
+        if (later && _webcamLater == WebcamLater.Lasting) conditions.Add(WebcamCondition(withClass, _webcamLaterText));
+    }
+
+    /// <summary>A webcam zeros rule as what needs attention: a Notice with the class, an Alert in person.</summary>
+    private static Condition WebcamCondition(bool withClass, string text) => withClass
+        ? ("WebcamSilent", AttentionLevel.Notice, "only zeros from the webcam's microphone", text)
+        : ("WebcamSilent", AttentionLevel.Alert, "ONLY ZEROS FROM THE WEBCAM'S MICROPHONE", text);
+
+    /// <summary>The webcam's hold has a problem (the picture stopped, or the camera cannot be opened): a Notice with the class, an Alert in person, while it lasts.</summary>
+    private static void WatchTheHold(Camera.WebcamState? webcam, bool withClass, List<Condition> conditions)
+    {
+        if (webcam is not { Problem: { } problem }) return;
+
+        var words = webcam.ProblemShort ?? "camera";
+        conditions.Add(withClass
+            ? ("CameraHold", AttentionLevel.Notice, words, problem)
+            : ("CameraHold", AttentionLevel.Alert, words.ToUpperInvariant(), problem));
+    }
+
+    /// <summary>The start rule's words: what the light says, or, with the hold's frames arriving, what else to check.</summary>
+    public static string WebcamStartText(Camera.WebcamState webcam)
+    {
+        var since = $"The microphone of the camera \"{webcam.CameraName}\" has sent only exact zeros since it opened, {RecordingMonitor.Count((long)RecordingSession.WebcamZerosAtStart.TotalMinutes, "minute")} ago";
+        return webcam.Holding && webcam.HasFrames
+            ? $"{since}, although its camera is open and awake. Check that its microphone is on in OBSBOT Center, and that Windows lets desktop apps use the microphone"
+            : $"{since}. If the camera's light is off, the camera is asleep and its microphone off: unfold its lens or wake it, and turn off Device Auto Sleep in OBSBOT Center or turn on Recording:WakeCameraMicrophone. If the light is on, the room is just quiet: this camera sends exact zeros in silence";
+    }
+
+    /// <summary>The later rule's words: the light tells a camera fallen asleep from a quiet room.</summary>
+    public static string WebcamLaterText(Camera.WebcamState webcam) =>
+        $"The microphone of the camera \"{webcam.CameraName}\" has sent only exact zeros for {RecordingMonitor.Count((long)RecordingSession.WebcamZerosAfterSound.TotalMinutes, "minute")}. If its light is off, the camera has fallen asleep (an open microphone does not keep it awake) and your voice is not being recorded: turn off Device Auto Sleep in OBSBOT Center, or turn on Recording:WakeCameraMicrophone. If the light is on, the room is quiet and nothing is lost";
+
     /// <summary>The evidence the gate reported since the last look: each a warning and a Notice.</summary>
     private void ReportEvidence(string app, long now, List<(LogLevel Level, string Text)> lines)
     {
@@ -1387,6 +1504,19 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
 
     /// <summary>A warning that is a Notice: its name, its words for the title and the log, and when it was given.</summary>
     private sealed record Noticed(string Name, string Short, string Text, long At);
+
+    /// <summary>Where the webcam rule after sound stands: said at most once a recording.</summary>
+    private enum WebcamLater
+    {
+        /// <summary>Not said yet.</summary>
+        NotSaid,
+
+        /// <summary>Said, and the zeros last: a Notice, or an Alert in person.</summary>
+        Lasting,
+
+        /// <summary>Said, and sound came back: never said again in this recording.</summary>
+        Over
+    }
 
     /// <summary>The ear for the gate's evidence; disposing it stops listening.</summary>
     private sealed class Ear(Action? stop) : IDisposable

@@ -118,6 +118,23 @@ public class CommandLineTests
     }
 
     /// <summary>
+    /// In person, the camera and the size the run resolved are kept, so that the continued part takes the same picture:
+    /// --camera with its name part when one was given, and --resolution as the size is written.
+    /// </summary>
+    [Test]
+    public void The_record_command_keeps_the_camera_and_its_size()
+    {
+        var named = Request(new ClassSource.Automatic()) with
+        {
+            Source = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT", "1080p"))
+        };
+        var unnamed = named with { Source = named.Source with { Camera = new CameraChoice(null, "1024x576") } };
+
+        Assert.That(CommandLine.Record(named, Exe, ExeFolder), Does.EndWith(@" record ""Kalam"" --in-person ""OBSBOT"" --camera ""OBSBOT"" --resolution ""1080p"" --output ""D:\Classes"" --continue"));
+        Assert.That(CommandLine.Record(unnamed, Exe, ExeFolder), Does.EndWith(@" record ""Kalam"" --in-person ""OBSBOT"" --camera --resolution ""1024x576"" --output ""D:\Classes"" --continue"));
+    }
+
+    /// <summary>
     /// A rule chosen for the run with --mic-follows, or in the menu, is kept when the recording is continued, so that the
     /// next part follows the same app: the name part, auto or none, as the option spells them. Without one, nothing is
     /// added, and the continued part follows the recorded app or the setting, as the run did.

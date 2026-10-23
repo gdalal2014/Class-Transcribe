@@ -1,4 +1,5 @@
 using ClassScribe;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
@@ -8,6 +9,12 @@ using ClassScribe.Settings;
 // which nobody could press. Its key comes from its own environment, inherited from the window, and from nowhere else.
 if (RecorderHost.IsRecorderStart(args, out var recorderRunId))
     return await new RecorderHost().RunAsync(recorderRunId, Environment.GetEnvironmentVariable(ElevenLabsOptions.ApiKeyVariable));
+
+// A camera process, started by a window or a recorder as "ClassScribe.exe --camera-process <job id>" in a job that ends it
+// with its starter: it speaks over its standard input and output, which are pipes, so it too is handed its job before
+// anything touches the console. It needs no key and reads no settings: its job carries what it needs.
+if (CameraProtocol.IsCameraProcessStart(args, out var cameraJobId))
+    return await new CameraHost().RunAsync(cameraJobId, Console.OpenStandardInput(), Console.OpenStandardOutput());
 
 // First, before anything writes to the console, so that the log shows Arabic, transliteration and
 // device names such as "Intel®" as they are.

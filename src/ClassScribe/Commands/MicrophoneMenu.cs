@@ -1,5 +1,6 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Options;
 
@@ -10,12 +11,23 @@ namespace ClassScribe.Commands;
 /// with the class (W), alone in person (I) or not at all (N); then lists the microphones Windows can record from, with
 /// notes, for a number to pick one, or Enter to leave it to Recording:Microphone and Windows' default microphone, never a
 /// Bluetooth one; and with the class, which app the microphone follows: Enter keeps the app in force, a name picks
-/// another, A any app that holds the microphone, N none (V alone). The pick holds until ClassScribe is closed, whatever
-/// the settings say (see <see cref="SourceChoice"/>), and the menu says which settings would keep it. Listing the
-/// microphones reads what Windows says about them; nothing is opened. Esc at any question goes back without a change.
+/// another, A any app that holds the microphone, N none (V alone); in person, which camera records the lesson's picture
+/// too, a number or Enter for none, and then the picture's size (amendment 39). The pick holds until ClassScribe is closed,
+/// whatever the settings say (see <see cref="SourceChoice"/>), and the menu says which settings would keep it; the camera is
+/// no setting, and every start from the menu asks first whether to use it. Listing the microphones and the cameras reads
+/// what Windows says about them; nothing is opened. Esc at any question goes back without a change.
 /// </summary>
-public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice choice, SettingsFile settings, IOptionsSnapshot<RecordingOptions> recording, IConsoleUi ui)
+/// <param name="microphones">Lists the microphones.</param>
+/// <param name="choice">What is chosen for the session.</param>
+/// <param name="settings">The settings file, named in the advice.</param>
+/// <param name="recording">The run's recording settings.</param>
+/// <param name="ui">The window the questions are asked in.</param>
+/// <param name="cameras">Lists the cameras, for the camera question in person; null asks no camera question.</param>
+public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice choice, SettingsFile settings, IOptionsSnapshot<RecordingOptions> recording, IConsoleUi ui,
+    ICameraProvider? cameras = null)
 {
+    /// <summary>What the menu says once a camera is picked: it is no setting, and each start asks first.</summary>
+    public const string CameraIsAsked = "The camera is no setting: it holds until ClassScribe is closed, and each start from the menu asks first (Enter records with the camera; S records the sound only).";
     /// <summary>How many microphones are offered, so that one digit picks one.</summary>
     private const int MostListed = 9;
 
@@ -63,9 +75,74 @@ public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice
             follows = Follow(answer.Trim(), inForce);
         }
 
-        choice.PickMicrophone(mode, picked?.Name, follows);
-        ui.WriteLine($"{Pinned()} To keep that, {Keep(mode, picked, follows, fromSettings)} in {settings.Path}.");
+        string? camera = null;
+        CameraSize? size = null;
+        if (mode == RecordingMode.Microphone && cameras is not null)
+        {
+            var asked = await AskCameraAsync(cameras);
+            if (asked.Back) return 0;
+
+            (camera, size) = (asked.Camera?.Name, asked.Size);
+        }
+
+        choice.PickMicrophone(mode, picked?.Name, follows, camera, size);
+        ui.WriteLine($"{Pinned()} To keep that, {Keep(mode, picked, follows, fromSettings, size)} in {settings.Path}.");
+        if (camera is not null) ui.WriteLine(CameraIsAsked);
         return 0;
+    }
+
+    /// <summary>
+    /// In person: lists the colour cameras, numbered, for one to record the lesson's picture too, or Enter for none; then,
+    /// for a camera picked, asks the picture's size (see <see cref="AskSizeAsync"/>). Esc, Q or Ctrl+C go back at either.
+    /// </summary>
+    private async Task<(bool Back, CameraDevice? Camera, CameraSize? Size)> AskCameraAsync(ICameraProvider provider)
+    {
+        var list = await provider.GetCamerasAsync(CancellationToken.None);
+        var listed = list.Cameras.Take(MostListed).ToList();
+        ui.WriteLine("Camera, for a lesson video:");
+        if (list.Problem is { } problem) ui.WriteLine($"  The cameras could not be listed: {problem}.");
+        else if (listed.Count == 0) ui.WriteLine("  None is connected now.");
+        for (var i = 0; i < listed.Count; i++)
+            ui.WriteLine($"  {i + 1}  {listed[i].Described}");
+
+        ui.WriteLine("Press a camera's number to record its picture too, Enter for none, or Esc to go back.");
+        while (true)
+        {
+            var key = await ui.ReadKeyAsync(CancellationToken.None);
+            if (key is not { } pressed || IsBack(pressed)) return (true, null, null);
+            if (pressed.Key == ConsoleKey.Enter) return (false, null, null);
+            if (pressed.KeyChar is >= '1' and <= '9' && pressed.KeyChar - '1' < listed.Count)
+            {
+                var camera = listed[pressed.KeyChar - '1'];
+                var (back, size) = await AskSizeAsync();
+                return back ? (true, null, null) : (false, camera, size);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The picture's size (amendment 39): Enter for the size Recording:CameraResolution gives (null, the setting), 1, 2 or 3
+    /// for 480p, 720p or 1080p, T to type a size, checked by <see cref="CameraSize.TryParse"/> and asked again with the rule
+    /// when it is not one. Esc, Q or Ctrl+C go back.
+    /// </summary>
+    private async Task<(bool Back, CameraSize? Size)> AskSizeAsync()
+    {
+        var setting = CameraSize.TryParse(recording.Value.CameraResolution, out var set) ? set : CameraSize.Default;
+        while (true)
+        {
+            ui.WriteLine($"Picture size: Enter for {setting.Text} (your setting), 1 480p, 2 720p, 3 1080p, T to type a size");
+            var key = await ui.ReadKeyAsync(CancellationToken.None);
+            if (key is not { } pressed || IsBack(pressed)) return (true, null);
+            if (pressed.Key == ConsoleKey.Enter) return (false, null);
+            if (pressed.KeyChar is >= '1' and <= '3') return (false, CameraSize.Presets[pressed.KeyChar - '1'].Size);
+            if (pressed.Key != ConsoleKey.T) continue;
+
+            ui.Write("Width and height, such as 1024x576: ");
+            if (await ui.ReadLineAsync(CancellationToken.None) is not { } typed) return (true, null);
+            if (CameraSize.TryParse(typed, out var size)) return (false, size);
+
+            ui.WriteLine($"\"{typed.Trim()}\" is not a size ClassScribe takes: {CameraSize.Rule}.");
+        }
     }
 
     /// <summary>
@@ -163,13 +240,15 @@ public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice
 
     /// <summary>
     /// The settings that would keep the pick, as one instruction: Recording:Mode, Recording:Microphone when a microphone was
-    /// picked, and Recording:MicrophoneFollows when an app was; for Enter, that Recording:Microphone stays as it is.
+    /// picked, Recording:MicrophoneFollows when an app was, and Recording:CameraResolution when a picture's size was; for
+    /// Enter at the microphone, that Recording:Microphone stays as it is.
     /// </summary>
-    private static string Keep(RecordingMode mode, Microphone? picked, FollowRule? follows, string? fromSettings)
+    private static string Keep(RecordingMode mode, Microphone? picked, FollowRule? follows, string? fromSettings, CameraSize? size = null)
     {
         List<string> sets = [$"Recording:Mode to \"{mode}\""];
         if (picked is not null) sets.Add($"Recording:Microphone to \"{picked.Name}\"");
         if (follows is not null) sets.Add($"Recording:MicrophoneFollows to \"{follows.Word}\"");
+        if (size is not null) sets.Add($"Recording:CameraResolution to \"{size.Text}\"");
 
         var set = sets.Count == 1 ? $"set {sets[0]}" : $"set {string.Join(", ", sets[..^1])} and {sets[^1]}";
         return picked is not null ? set

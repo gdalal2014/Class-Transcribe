@@ -1,5 +1,6 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
@@ -17,7 +18,7 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Adds everything ClassScribe needs, bound to the given configuration: the settings, the storage, Windows audio and
-    /// the microphone (each made only when first used), the transcription, Google Drive, YouTube videos, the Windows
+    /// the microphone (each made only when first used), the camera, the transcription, Google Drive, YouTube videos, the Windows
     /// integration, the commands and what a run needs in either home, and the window's side of a run in the background, last, since it
     /// replaces the stand-in report the commands add. The link to a recorder needs no registration: the view of a run makes
     /// its own client, and the server is the recorder's. The settings file and what reads it again before each run are added
@@ -33,6 +34,7 @@ public static class ServiceCollectionExtensions
             .AddStorage()
             .AddAudio()
             .AddMicrophone()
+            .AddCamera()
             .AddTranscription()
             .AddDrive()
             .AddYouTube()

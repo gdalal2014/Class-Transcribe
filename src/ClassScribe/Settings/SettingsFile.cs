@@ -7,7 +7,8 @@ public sealed record SettingsText(string Path, byte[]? Bytes);
 
 /// <summary>
 /// appsettings.json next to the exe, the one file ClassScribe reads its settings from. Under dotnet run that is the copy a
-/// build puts in bin\Debug\net10.0, so it also says when the project's own file has changed since that copy was made.
+/// build puts in bin\Debug\net10.0-windows10.0.19041.0, so it also says when the project's own file has changed since that
+/// copy was made.
 /// </summary>
 public sealed class SettingsFile(string contentRoot, ILogger<SettingsFile> logger)
 {

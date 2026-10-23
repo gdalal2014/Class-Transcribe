@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Desktop;
 using ClassScribe.Storage;
 
@@ -38,15 +39,18 @@ public enum CommandKind
 /// ClassScribe                                     the menu
 /// ClassScribe &lt;path&gt;                              as transcribe &lt;path&gt;; a file dropped on the exe
 /// ClassScribe record "&lt;name&gt;" SOURCE --output "&lt;folder&gt;" [--mic ["&lt;microphone&gt;"] [--mic-follows &lt;app&gt;|auto|none]]
+///                                                     [--camera ["&lt;camera&gt;"] [--resolution &lt;size&gt;]]
 ///                                                     [--minutes &lt;n&gt;] [--no-open] [--continue | --new]
 /// ClassScribe record-only "&lt;name&gt;" ...          the same options
 ///     SOURCE is --device "&lt;part of its name&gt;", --device auto, --app &lt;process&gt; or --in-person ["&lt;microphone&gt;"]
-///     --mic adds your microphone to --device or --app; --in-person records it alone
+///     --mic adds your microphone to --device or --app; --in-person records it alone; --camera, only with --in-person,
+///     records a lesson's picture too (refused before anything records until the camera's recording is built)
 /// ClassScribe transcribe &lt;path&gt; [--output "&lt;folder&gt;"] [--no-open] [--again]
 /// ClassScribe rebuild &lt;path&gt; [--no-open]
 /// ClassScribe list [--output "&lt;folder&gt;"]
 /// ClassScribe devices
 /// ClassScribe mic-check [--seconds &lt;n&gt;] [--log-folder "&lt;folder&gt;"]
+/// ClassScribe camera-check ["&lt;camera&gt;"] [--resolution &lt;size&gt;]    opens the camera, shared, only after a typed Y
 /// ClassScribe drive signin [--client "&lt;downloaded client file&gt;"]    the first time needs --client
 /// ClassScribe drive signout
 /// ClassScribe drive status
@@ -62,9 +66,9 @@ public enum CommandKind
 /// help to standard output, and the exit code is 2 (System.CommandLine's own would be 1). For record and record-only one
 /// validator names each missing piece, because once a validator has found a mistake, System.CommandLine reports neither
 /// its own missing pieces nor the values it cannot read. --minutes is read with a dot and the invariant culture, so 1,5
-/// is refused rather than read as 15. --mic and --in-person may take a microphone's name, so a recording's name right
-/// after them is taken as the microphone's, which the message points out. An argument that starts with @ stays a path,
-/// and Ctrl+C stays with ClassScribe.
+/// is refused rather than read as 15. --mic and --in-person may take a microphone's name, and --camera a camera's, so a
+/// recording's name right after them is taken as the microphone's or the camera's, which the message points out. An
+/// argument that starts with @ stays a path, and Ctrl+C stays with ClassScribe.
 /// </summary>
 public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand menu, IConsoleUi ui, TimeProvider time, TextWriter output, TextWriter errors)
 {
@@ -241,6 +245,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(ListCommand(optionNames, examples));
         root.Add(DevicesCommand(examples));
         root.Add(MicCheckCommand(optionNames, examples));
+        root.Add(CameraCheckCommand(optionNames, examples));
         root.Add(DriveCommand(optionNames, examples));
         root.Add(YouTubeCommand(optionNames, examples));
         root.Add(AttachCommand(examples));
@@ -546,6 +551,17 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
                 HelpName = "app",
                 Description = $"With --mic: the app whose microphone use your microphone follows, by part of its process name, such as chrome; {FollowRule.AnyWord} follows any app that holds the microphone; {FollowRule.NoneWord} records whenever V is on. Without it, the app recorded with --app, else Recording:MicrophoneFollows."
             },
+            new Option<string>("--camera")
+            {
+                HelpName = "camera",
+                Arity = ArgumentArity.ZeroOrOne,
+                Description = "With --in-person: record a lesson's picture too, from the camera whose name holds this part, such as \"OBSBOT\", or nothing for a USB camera, else the built-in front camera. This build cannot record the picture yet, so such a recording is refused before anything records."
+            },
+            new Option<string>("--resolution")
+            {
+                HelpName = "size",
+                Description = $"With --camera: the picture's size, {CameraSize.Rule}. Without it, Recording:CameraResolution (720p)."
+            },
             new Option<string>("--output")
             {
                 HelpName = "folder",
@@ -569,7 +585,8 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             ? "Record now under that name, then transcribe the recording."
             : "Record now under that name; transcribe it later with transcribe, or from the menu.")
         {
-            symbols.Name, symbols.Device, symbols.App, symbols.InPerson, symbols.Mic, symbols.MicFollows, symbols.Output, symbols.Minutes, symbols.NoOpen, symbols.Continue, symbols.New
+            symbols.Name, symbols.Device, symbols.App, symbols.InPerson, symbols.Mic, symbols.MicFollows, symbols.Camera, symbols.Resolution, symbols.Output, symbols.Minutes,
+            symbols.NoOpen, symbols.Continue, symbols.New
         };
         command.Validators.Add(result =>
         {
@@ -582,7 +599,8 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// What keeps a record or record-only command line from running, one sentence each, in the order its pieces go: the
-    /// name, the source, the microphone and the app it follows, --output, --minutes, then --continue with --new.
+    /// name, the source, the microphone and the app it follows, the camera and its size, --output, --minutes, then
+    /// --continue with --new.
     /// </summary>
     private static IEnumerable<string> RecordProblems(string word, CommandResult result, RecordSymbols symbols, HashSet<string> optionNames)
     {
@@ -613,6 +631,14 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             if (FollowProblem(TokenOf(follows), optionNames) is { } followProblem) yield return followProblem;
         }
 
+        var camera = result.GetResult(symbols.Camera);
+        if (camera is not null && inPerson is null) yield return "--camera records only in person in this build: give it with --in-person";
+        if (result.GetResult(symbols.Resolution) is { } resolution)
+        {
+            if (camera is null) yield return "--resolution needs --camera";
+            if (ResolutionProblem(TokenOf(resolution), optionNames) is { } resolutionProblem) yield return resolutionProblem;
+        }
+
         if (result.GetResult(symbols.Output) is not { } output) yield return $"{word} needs --output \"<folder>\", the folder the recording goes to";
         else if (FolderProblem(symbols.Output.Name, TokenOf(output), optionNames) is { } outputProblem) yield return outputProblem;
 
@@ -623,16 +649,17 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// When an option whose value may be left out took the word meant as the recording's name, says so, after a space, in
-    /// brackets: record --new True gives (--new took "True" as its value), and record --in-person Kalam gives (--in-person
-    /// took "Kalam" as the microphone's name). Empty otherwise.
+    /// brackets: record --new True gives (--new took "True" as its value), record --in-person Kalam gives (--in-person
+    /// took "Kalam" as the microphone's name), and --camera Kalam (--camera took "Kalam" as the camera's name). Empty otherwise.
     /// </summary>
     private static string NameTakenBy(CommandResult result, RecordSymbols symbols)
     {
         var taken = result.Command.Options
             .Where(option => option.Arity is { MinimumNumberOfValues: 0, MaximumNumberOfValues: > 0 })
-            .Select(option => (option.Name, Token: TokenOf(result.GetResult(option)), Microphone: option == symbols.Mic || option == symbols.InPerson))
+            .Select(option => (option.Name, Token: TokenOf(result.GetResult(option)),
+                As: option == symbols.Mic || option == symbols.InPerson ? "the microphone's name" : option == symbols.Camera ? "the camera's name" : "its value"))
             .Where(taker => taker.Token is not null)
-            .Select(taker => $"{taker.Name} took \"{taker.Token}\" as {(taker.Microphone ? "the microphone's name" : "its value")}")
+            .Select(taker => $"{taker.Name} took \"{taker.Token}\" as {taker.As}")
             .ToList();
         return taken.Count > 0 ? $" ({string.Join("; ", taken)})" : "";
     }
@@ -643,9 +670,10 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// Starts the recording a record or record-only command line describes, as a request from the command line: the class
-    /// alone, the class and the microphone, or the microphone alone in person. A microphone without a name, and the app it
-    /// follows without --mic-follows, are left to the run, which reads Recording:Microphone and Recording:MicrophoneFollows,
-    /// or follows the app it records.
+    /// alone, the class and the microphone, or the microphone alone in person, with the camera when --camera asks for it. A
+    /// microphone without a name, and the app it follows without --mic-follows, are left to the run, which reads
+    /// Recording:Microphone and Recording:MicrophoneFollows, or follows the app it records; a picture's size without
+    /// --resolution is left to the starter, which resolves it before the run starts.
     /// </summary>
     private Task<int> RecordAsync(ParseResult parsed, RecordSymbols symbols, bool transcribe)
     {
@@ -655,7 +683,8 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             : parsed.GetValue(symbols.App) is { } app ? new ClassSource.App(ProcessName(app))
             : parsed.GetValue(symbols.Device) is { } device && !device.Equals(Automatic, StringComparison.OrdinalIgnoreCase) ? new ClassSource.Device(device)
             : new ClassSource.Automatic();
-        var plan = inPerson ? new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice(NamePart(parsed.GetValue(symbols.InPerson))))
+        var camera = parsed.GetResult(symbols.Camera) is null ? null : new CameraChoice(NamePart(parsed.GetValue(symbols.Camera)), ResolutionOf(parsed.GetValue(symbols.Resolution)));
+        var plan = inPerson ? new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice(NamePart(parsed.GetValue(symbols.InPerson))), camera)
             : mic ? new SourcePlan(RecordingMode.ClassAndMicrophone, source, new MicrophoneChoice(NamePart(parsed.GetValue(symbols.Mic)), FollowRuleOf(parsed.GetValue(symbols.MicFollows))))
             : new SourcePlan(RecordingMode.Class, source, Microphone: null);
         var continueChoice = parsed.GetValue(symbols.Continue) ? ContinueChoice.Continue
@@ -758,10 +787,10 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         return command;
     }
 
-    /// <summary>devices: the output devices and the apps with sound.</summary>
+    /// <summary>devices: the output devices, the apps with sound, the microphones and the cameras.</summary>
     private Command DevicesCommand(Dictionary<Command, string> examples)
     {
-        var command = new Command("devices", "List the output devices and the apps with sound, each with the option that records it.");
+        var command = new Command("devices", "List the output devices, the apps with sound, the microphones and the cameras, each with the option that records it. Opens nothing.");
         command.SetAction(_ => commands.DevicesAsync());
         examples[command] = DevicesExamples;
         return command;
@@ -802,6 +831,52 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         examples[command] = MicCheckExamples;
         return command;
     }
+
+    /// <summary>
+    /// camera-check: the cameras from Windows' own lists, which apps use one, the camera and the picture's size a lesson
+    /// recorded with --camera would take, and the camera's set-up lines; it opens the camera for 5 seconds, shared, only after a typed Y. Part of a camera's
+    /// name and --resolution, checked as record's are, show what a lesson with them would take.
+    /// </summary>
+    private Command CameraCheckCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
+    {
+        var camera = new Argument<string?>("camera")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "Part of a camera's name, such as OBSBOT: the camera a lesson recorded with --camera \"OBSBOT\" would take."
+        };
+        var resolution = new Option<string>("--resolution")
+        {
+            HelpName = "size",
+            Description = $"The picture's size to show: {CameraSize.Rule}. Without it, Recording:CameraResolution."
+        };
+
+        var command = new Command("camera-check",
+            "List the cameras, which apps use one now, the camera and the size a lesson would take, and what the camera needs on this computer. Opens the camera for 5 seconds, shared, only after you type Y.")
+        {
+            camera, resolution
+        };
+        command.Validators.Add(result =>
+        {
+            if (result.GetResult(resolution) is { } given && ResolutionProblem(TokenOf(given), optionNames) is { } problem) result.AddError(problem);
+        });
+        command.SetAction(parsed => commands.CameraCheckAsync(new CameraCheckRequest(NamePart(parsed.GetValue(camera)), ResolutionOf(parsed.GetValue(resolution)))));
+        examples[command] = CameraCheckExamples;
+        return command;
+    }
+
+    /// <summary>
+    /// What is wrong with <paramref name="value"/> as the size --resolution names: no value, an option taken as the value, or
+    /// a size <see cref="CameraSize.TryParse"/> does not take, with its rule. Null for a size.
+    /// </summary>
+    private static string? ResolutionProblem(string? value, HashSet<string> optionNames)
+    {
+        if (ValueProblem(value, "--resolution needs a size after it, such as 720p", optionNames) is { } missing) return missing;
+
+        return CameraSize.TryParse(value, out _) ? null : $"--resolution takes {CameraSize.Rule}; \"{value}\" is not one";
+    }
+
+    /// <summary>The size --resolution names, already checked, as it is written (720p, 1024x576); null when it was not given.</summary>
+    private static string? ResolutionOf(string? value) => CameraSize.TryParse(value, out var size) ? size.Text : null;
 
     /// <summary>
     /// The hidden attach: shows the recording in progress, or, with --alert, the run named, in a window the recorder opened
@@ -966,6 +1041,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
         The name, one source (--device, --app or --in-person) and --output are needed, and nothing is asked.
         --mic adds your microphone to --device or --app, as a second track mixed into one transcript; --in-person records it alone. Either takes part of a microphone's name, or nothing for Recording:Microphone.
+        --camera, with --in-person, asks for a lesson's picture too; this build cannot record it yet and refuses such a recording before anything records. ClassScribe camera-check shows the cameras.
         While recording, Q twice or Ctrl+C twice stops, P pauses or resumes, M marks a moment, and V switches your microphone off and on; Esc leaves the view of a recording in the background, which carries on.
         """;
 
@@ -1009,6 +1085,16 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
         Nothing is recorded and no microphone is opened: it only reads which programs hold the microphone, and whether it is muted in Windows, and writes a line for each change.
         The log's path is printed at the start and at the end. Q stops the check; M writes a numbered mark.
+        """;
+
+    /// <summary>The examples and notes under the help of camera-check.</summary>
+    private const string CameraCheckExamples = """
+        Examples:
+          ClassScribe camera-check
+          ClassScribe camera-check "OBSBOT" --resolution 1080p
+
+        The cameras come from Windows' own lists, and the set-up lines from Windows' settings and its Security Center, which open nothing. Then, only after you type Y and Enter, the chosen camera is opened for 5 seconds, shared, as a lesson will: its light comes on, each call is shown with its outcome, and a security program such as Bitdefender may ask about ClassScribe; allow it. Nothing of the picture is kept.
+        Exit code 0 when the camera can be used on this computer; 1 when a set-up line says what keeps it from being used, or the camera opened and sent no picture.
         """;
 
     /// <summary>The examples and notes under the help of drive.</summary>
@@ -1111,13 +1197,16 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// <param name="InPerson">--in-person: the microphone alone, with part of its name or nothing.</param>
     /// <param name="Mic">--mic: the microphone beside the class, with part of its name or nothing.</param>
     /// <param name="MicFollows">--mic-follows: the app the microphone follows, or auto or none.</param>
+    /// <param name="Camera">--camera: the lesson's picture too, in person, with part of a camera's name or nothing.</param>
+    /// <param name="Resolution">--resolution: the picture's size, with --camera.</param>
     /// <param name="Output">--output: the recordings folder for this run.</param>
     /// <param name="Minutes">--minutes: stop by itself after this many minutes.</param>
     /// <param name="NoOpen">--no-open: open nothing at the end.</param>
     /// <param name="Continue">--continue: continue a recent recording of this name.</param>
     /// <param name="New">--new: start a new recording without a word.</param>
     private sealed record RecordSymbols(Argument<string> Name, Option<string> Device, Option<string> App, Option<string> InPerson, Option<string> Mic,
-        Option<string> MicFollows, Option<string> Output, Option<double?> Minutes, Option<bool> NoOpen, Option<bool> Continue, Option<bool> New);
+        Option<string> MicFollows, Option<string> Camera, Option<string> Resolution, Option<string> Output, Option<double?> Minutes, Option<bool> NoOpen,
+        Option<bool> Continue, Option<bool> New);
 
     /// <summary>The tree as built, with what tidying, parsing and the kind of a command line need from it.</summary>
     /// <param name="Root">The root command.</param>

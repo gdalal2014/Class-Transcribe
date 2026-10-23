@@ -11,14 +11,15 @@ namespace ClassScribe.Tests;
 /// queue for Google Drive. So the switches <see cref="RoamingFolder.RefuseTheRealFolderSwitch"/> and
 /// <see cref="RuntimeFolder.RefuseTheRealFolderSwitch"/> are turned on, and a test that asks for either real folder fails at
 /// once, naming what to register instead. Nor may a test run the real yt-dlp, Deno or FFmpeg, which would reach YouTube
-/// from his connection: <see cref="YouTube.YouTubeGuards.RefuseTheRealThingsSwitch"/> is turned on too.
+/// from his connection: <see cref="YouTube.YouTubeGuards.RefuseTheRealThingsSwitch"/> is turned on too. Nor may a test open a
+/// real camera or microphone: <see cref="Desktop.DeviceGuards.RefuseTheRealDevicesSwitch"/> is turned on as well.
 /// </summary>
 [SetUpFixture]
 public sealed class TestGuards
 {
     /// <summary>
-    /// Turns on the switches that keep every test out of the real %APPDATA%\ClassScribe and %LOCALAPPDATA%\ClassScribe, and
-    /// away from the real tools of the YouTube feature.
+    /// Turns on the switches that keep every test out of the real %APPDATA%\ClassScribe and %LOCALAPPDATA%\ClassScribe, away
+    /// from the real tools of the YouTube feature, and away from the real cameras and microphones.
     /// </summary>
     [OneTimeSetUp]
     public void KeepOutOfTheRealFolders()
@@ -26,6 +27,7 @@ public sealed class TestGuards
         AppContext.SetSwitch(RoamingFolder.RefuseTheRealFolderSwitch, true);
         AppContext.SetSwitch(RuntimeFolder.RefuseTheRealFolderSwitch, true);
         AppContext.SetSwitch(YouTube.YouTubeGuards.RefuseTheRealThingsSwitch, true);
+        AppContext.SetSwitch(Desktop.DeviceGuards.RefuseTheRealDevicesSwitch, true);
     }
 }
 

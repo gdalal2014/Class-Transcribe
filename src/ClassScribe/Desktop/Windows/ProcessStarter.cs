@@ -55,6 +55,23 @@ internal sealed record ThisProgram(string? ProcessPath, string AppFolder)
 {
     /// <summary>The program this process runs.</summary>
     public static ThisProgram Current => new(Environment.ProcessPath, AppContext.BaseDirectory);
+
+    /// <summary>The file name of ClassScribe's dll, which dotnet runs: ClassScribe.dll.</summary>
+    public static string AppDll => typeof(ThisProgram).Assembly.GetName().Name + ".dll";
+
+    /// <summary>
+    /// The program to start and its whole command line, to run this program again with <paramref name="arguments"/>: the
+    /// exe, quoted, then the arguments; under dotnet, dotnet running ClassScribe's dll from the app's folder, as
+    /// <see cref="Commands.CommandLine"/> prints it. Null when Windows did not say which program this process runs.
+    /// </summary>
+    public (string Application, string CommandLine)? CommandFor(string arguments)
+    {
+        if (ProcessPath is not { } program) return null;
+
+        return Path.GetFileNameWithoutExtension(program).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
+            ? (program, $"\"{program}\" \"{Path.Combine(AppFolder, AppDll)}\" {arguments}")
+            : (program, $"\"{program}\" {arguments}");
+    }
 }
 
 /// <summary>Everything CreateProcessW is given to start a process, as <see cref="ProcessStarter"/> fills it in.</summary>
@@ -228,15 +245,13 @@ public sealed class ProcessStarter(string workingFolder, ILogger<ProcessStarter>
     /// </summary>
     private StartedProcess Start(string what, string arguments, ProcessCreationFlags flags, ProcessWindowShow? show)
     {
-        if (_program.ProcessPath is not { } program)
+        if (_program.CommandFor(arguments) is not { } command)
         {
             logger.LogDebug("Did not start {What}: Windows did not say which program ClassScribe runs as", what);
             throw new Win32Exception(FileNotFound, $"Windows did not start {what}: it did not say which program ClassScribe runs as (error {FileNotFound})");
         }
 
-        var commandLine = Path.GetFileNameWithoutExtension(program).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
-            ? $"\"{program}\" \"{Path.Combine(_program.AppFolder, AppDll)}\" {arguments}"
-            : $"\"{program}\" {arguments}";
+        var (program, commandLine) = command;
         var launch = new ProcessLaunch(program, commandLine, InheritHandles: false, flags, workingFolder, show);
 
         if (_api.Start(launch, out var error) is { } started)
@@ -253,8 +268,7 @@ public sealed class ProcessStarter(string workingFolder, ILogger<ProcessStarter>
         throw StartRefusal.For(what, error);
     }
 
-    /// <summary>The file name of ClassScribe's dll, which dotnet runs: ClassScribe.dll.</summary>
-    private static string AppDll => typeof(ProcessStarter).Assembly.GetName().Name + ".dll";
+
 
     /// <summary>Windows' words for an error code, and the code, as in "Access is denied, error 5".</summary>
     private static string Describe(int error) => $"{new Win32Exception(error).Message.TrimEnd('.')}, error {error}";

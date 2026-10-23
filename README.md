@@ -154,8 +154,8 @@ ClassScribe starts with a menu. Press the number of what you want:
   4  Transcribe a file
   5  Open the recordings folder
   6  Choose what to record: a device or an app
-  7  Microphone: none, with the class, or in person
-  8  Check the microphone: watch what apps do with it (opens nothing)
+  7  Microphone and camera: none, with the class, or in person
+  8  Check the microphone, or a camera (a camera opens only after you type Y)
   9  Google Drive: upload, free room on this laptop, sign in
   Y  YouTube: record videos as they play, or download them, then transcribe
   A  Show the recording in progress        (only while one records)
@@ -231,12 +231,16 @@ never counted as waiting; it goes up once it has stopped.
   a class whose audio is on Google Drive alone, and nothing sent while it is being recorded.
 - **5 Open the recordings folder** shows it in Explorer.
 - **6 Choose what to record** lists the output devices and the apps with sound; see below.
-- **7 Microphone** asks whether to record your microphone with the class (W), alone for a class in the
-  room (I) or not at all (N), then which microphone, and with the class which app it follows; see
-  [Your microphone](#your-microphone). The pick holds until ClassScribe is closed.
-- **8 Check the microphone** watches what the programs on your computer do with the microphone and
-  writes a line for each change, without opening it; see
+- **7 Microphone and camera** asks whether to record your microphone with the class (W), alone for a
+  class in the room (I) or not at all (N), then which microphone, and with the class which app it
+  follows; see [Your microphone](#your-microphone). In person it then lists the cameras for a lesson
+  video (a number, or Enter for none) and, for a camera, the picture's size; see
+  [Recording with the camera](#recording-with-the-camera). The pick holds until ClassScribe is closed.
+- **8 Check the microphone, or a camera** asks W or C. **W** watches what the programs on your computer
+  do with the microphone and writes a line for each change, without opening it; see
   [Checking what your class page does with your microphone](#checking-what-your-class-page-does-with-your-microphone).
+  **C** is the camera check (`ClassScribe camera-check`): see [Checking the cameras](#checking-the-cameras).
+  Esc goes back.
 - **9 Google Drive** says whether ClassScribe is signed in to Google Drive, and as whom
   (`Google Drive: signed in as you@gmail.com since 17 Oct 2026.`), without asking Google. While
   signed in: U uploads what waits to go up (its line says how many and how much, such as
@@ -409,7 +413,7 @@ kind your class app is:
   of the microphone when you mute (most class apps and pages keep it open), so it cannot follow your
   mute yet: your voice is recorded only after you press V, and only while chrome holds the microphone.
   Muting the microphone in Windows (the microphone key) stops it too. Run the microphone check (menu
-  choice 8) during a class, or set Recording:ClassAppMute.` When ClassScribe sees the app let go of
+  choice 8, then W) during a class, or set Recording:ClassAppMute.` When ClassScribe sees the app let go of
   the microphone and take it again, it tells you once: `chrome let go of the microphone at 19:12:03
   and took it again at 19:12:40. If that was you muting and unmuting in the class page, your mute is
   visible to Windows: set Recording:ClassAppMute to Visible and ClassScribe will follow it by itself.`
@@ -488,7 +492,9 @@ the microphone "..." for 60 seconds. Check that it is not muted in Windows (the 
 that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)`), and when the
 microphone hands over nothing but exact zeros for 2 minutes it says so, with `ONLY SILENCE FROM THE
 MICROPHONE` in red in the title (`Only silence from the microphone "..." for 2 minutes: it is muted in
-Windows (the microphone key, or Sound settings > Input)` when Windows says it is muted). Everyone in
+Windows (the microphone key, or Sound settings > Input)` when Windows says it is muted). A webcam's
+microphone, such as the OBSBOT's, has rules of its own for its zeros (see [A webcam's
+microphone](#a-webcams-microphone-the-obsbot)). Everyone in
 the room is recorded and uploaded to ElevenLabs, so ask before recording others, and keep to what your
 teacher and your institution allow.
 
@@ -877,8 +883,9 @@ ClassScribe record "Kalam" --in-person --output "D:\Classes"            # your m
 ClassScribe transcribe "C:\path\to\recording folder or file"
 ClassScribe rebuild "C:\path\to\recording folder or file"
 ClassScribe list                                                        # the recordings, newest first
-ClassScribe devices                                                     # the devices, apps with sound and microphones
+ClassScribe devices                                                     # the devices, apps with sound, microphones and cameras
 ClassScribe mic-check                                                   # watch what apps do with the microphone
+ClassScribe camera-check                                                # the cameras and what the camera needs here; opens one only after you type Y
 ClassScribe drive signin --client "$env:USERPROFILE\Downloads\client_secret_....json"   # the first Google sign-in
 ClassScribe drive signin                                                # sign in again, with the client kept
 ClassScribe drive status                                                # the account, storage, folder on Drive and what waits
@@ -899,10 +906,11 @@ ClassScribe --help                                                      # the co
 runs in the window, and closing the window ends it.
 
 In short: `record "<name>" SOURCE --output "<folder>" [--mic ["<microphone>"] [--mic-follows <app>|auto|none]]
-[--minutes <n>] [--no-open] [--continue | --new]`, `record-only` with the same options,
+[--camera ["<camera>"] [--resolution <size>]] [--minutes <n>] [--no-open] [--continue | --new]` (`--camera` only
+with `--in-person`, and refused before anything records in this build), `record-only` with the same options,
 `transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
 `list [--output "<folder>"]`, `devices`, `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
-`drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]`,
+`camera-check ["<camera>"] [--resolution <size>]`, `drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]`,
 `drive free-space "<path>" --yes`,
 `youtube <link>... [--list "<file>"] --name "<course>" --output "<folder>" [--download] (--yes | --plan)
 [--no-transcribe] [--no-open] [--again] [--allow-unlisted]` and `youtube check`,
@@ -1028,19 +1036,26 @@ option that records it, leaving out ClassScribe itself; then `Microphones:`, eac
 `records what the computer plays; never recorded`), `muted in Windows` when it is, and which apps hold
 it now (`chrome is listening`, `vibe holds it without listening`), with the `--mic "<its name>"` option
 that picks it (`--in-person` takes the same name), then the row `Windows' default microphone, never a
-Bluetooth one  --mic`, or `None is connected now.` when there is none. It opens nothing
-(`Nothing was opened or recorded to list these.`), and ends with example lines for `--device auto`,
-`--app chrome --mic` and `--in-person`. A list Windows does not give at that moment says so in its
-place (`Could not be read now: EnumAudioEndpoints: The parameter is incorrect. (0x80070057)`, the
-Windows call that failed first) and the others are listed in full, with exit code 0; when only the
-apps that hold each microphone cannot be read, the microphones are listed with `Which apps hold each
-microphone could not be read now: ...` below them. What a list could read only in part is said below
-what it is about, with whose it was and which call failed: below the apps, `Could not be read now:
-Zoom's audio session on "Speakers (...)" (GetState: The parameter is incorrect. (0x80070057))` (an
-app Windows names is still listed; a session of no app named is left out), and below a microphone,
-`Could not be read now: session 2 of 3 (Zoom, pid 9090) not readable: GetState: ...`. Whenever
-anything could not be read, the line before `Nothing was opened ...` says `Not everything could be
-read from Windows just now: the lines above say what, and why.`
+Bluetooth one  --mic`, or `None is connected now.` when there is none; then `Cameras:`, the colour
+cameras Windows lists (never the infrared one Windows Hello uses), each with where it is (`built in,
+front`, `USB`, or `virtual, such as a phone's camera through Phone Link: recorded only when named`)
+and, for a webcam, its own microphone, which shares the camera's container in Windows
+(`OBSBOT Meet Flip StreamCamera  (USB; its microphone: OBSBOT Meet Flip Microphone (OBSBOT Meet Flip
+Audio))`), with the `--camera "<its name>"` option, then the row `A USB camera, else the built-in front
+camera  --camera`. It opens nothing (`Nothing was opened or recorded to list these.`): no camera's
+light comes on. It ends with example lines for `--device auto`, `--app chrome --mic` and `--in-person`.
+A list Windows does not give at that moment says so in its place (`Could not be read now:
+EnumAudioEndpoints: The parameter is incorrect. (0x80070057)`, the Windows call that failed first;
+for the cameras, `The cameras could not be listed: ...`) and the others are listed in full, with exit
+code 0; when only the apps that hold each microphone cannot be read, the microphones are listed with
+`Which apps hold each microphone could not be read now: ...` below them. What a list could read only
+in part is said below what it is about, with whose it was and which call failed: below the apps,
+`Could not be read now: Zoom's audio session on "Speakers (...)" (GetState: The parameter is
+incorrect. (0x80070057))` (an app Windows names is still listed; a session of no app named is left
+out), and below a microphone, `Could not be read now: session 2 of 3 (Zoom, pid 9090) not readable:
+GetState: ...`. Whenever anything could not be read, the cameras included, the line before `Nothing
+was opened ...` says `Not everything could be read from Windows just now: the lines above say what,
+and why.`
 
 At the end, ClassScribe hands Windows an exit code, which a script can check (in PowerShell,
 `$LASTEXITCODE` holds it):
@@ -1048,8 +1063,8 @@ At the end, ClassScribe hands Windows an exit code, which a script can check (in
 | Exit code | Meaning |
 | --- | --- |
 | 0 | Done: the recording (`record-only`) or the transcript (`record`) was saved; also after Esc left the view of a recording that carries on, when `mic-check` stopped normally, when `drive upload` found everything it took on Drive, and when `drive free-space` freed the audio of every recording it took (or found none left). For `youtube`: every video ended as asked (recorded with a confirmed end, or downloaded, and transcribed when asked) or was done before; `--plan` printed its plan; `youtube check` found all four tools, and yt-dlp at most 90 days old. An upload to Google Drive after a class or a transcript never changes the exit code. |
-| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked. For `youtube`: any video refused, left out, waiting for your word, not fetched, recorded but possibly cut short, not transcribed, or left recording in the background; another YouTube batch running; Chrome, yt-dlp or a helper not found; no API key while transcripts are asked; too little room for a download; `youtube check` finding a tool missing, or yt-dlp more than 90 days old. |
-| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. For `youtube`: no `--name`, `--output` or link, a word that is no link it takes, neither or both of `--yes` and `--plan`, a playlist's or `/live/` link or more than 10 videos without `--download`, more than 500 videos with it, and `--allow-unlisted` without `--download` or while `YouTube:CourseChannels` is empty. Nothing was started. (A batch whose playlists turn out to hold more than 500 videos once they are read ends with 2 as well, before anything is downloaded.) |
+| 1 | It failed, or it was refused, and the message says why: settings ClassScribe cannot use, nothing recorded (a class track that holds nothing while the microphone's does counts here, with the command that transcribes the microphone's files alone), a transcript that failed (the audio is kept), another recording running, a recording with `--camera`, which this build refuses before anything records (as it does a camera that Windows keeps from desktop apps), `camera-check` when a set-up line is a problem or the camera it opened sent no picture, a recorder that was lost and not continued, a recording that already has a transcript or a paid answer (without `--again`), a recording being recorded now, `rebuild` without a saved answer, `mic-check` unable to create its log, a Google sign-in that did not go through, `drive status` while not signed in or with Google out of reach, `drive signout` when Google could not be asked to end the access, `drive upload` with anything left waiting or a path that names no recording, `drive free-space` when any recording kept its audio or Google Drive could not be asked. For `youtube`: any video refused, left out, waiting for your word, not fetched, recorded but possibly cut short, not transcribed, or left recording in the background; another YouTube batch running; Chrome, yt-dlp or a helper not found; no API key while transcripts are asked; too little room for a download; `youtube check` finding a tool missing, or yt-dlp more than 90 days old. |
+| 2 | A mistake on the command line, named with that command's help: a missing name, source or `--output`, two sources, `--mic` with `--in-person`, `--mic-follows` without `--mic`, `--camera` without `--in-person`, `--resolution` without `--camera` or with a size it cannot take, a value that cannot be used, an unknown word, a path that is not there, `drive` alone, or `drive free-space` without a path or `--yes`. For `youtube`: no `--name`, `--output` or link, a word that is no link it takes, neither or both of `--yes` and `--plan`, a playlist's or `/live/` link or more than 10 videos without `--download`, more than 500 videos with it, and `--allow-unlisted` without `--download` or while `YouTube:CourseChannels` is empty. Nothing was started. (A batch whose playlists turn out to hold more than 500 videos once they are read ends with 2 as well, before anything is downloaded.) |
 | 130 | Cancelled with Ctrl+C, or with Esc while `drive signin` waits for Google; Ctrl+C during `drive upload` too, which goes on from where it stopped the next time, and during `drive free-space`. For `youtube`: Ctrl+C twice while videos are recorded as they play (no transcripts follow), Ctrl+C or Q twice during a download, and Ctrl+C during a transcript. |
 | none | The window was closed while the recording ran in the background; the next start reports how it ended. Likewise for a `youtube` batch whose window was closed: a video being recorded carries on in its recorder to its end, nothing else goes on, and the same command later picks up where it stopped. |
 
@@ -1272,9 +1287,115 @@ refused with where the audio is: `The audio of ... is on Google Drive, not on th
 ... (https://...). To transcribe it again, download its .wav files from there into ... first`, followed
 by the free `rebuild` command.
 
+### Recording with the camera
+
+For a lesson video, ClassScribe is to record your camera's picture beside your microphone, in person:
+the laptop's own camera or a USB webcam such as the OBSBOT Meet Flip. **This build does not record the
+picture yet**: it lists and checks the cameras, lets you choose one and its size, and refuses a
+recording with the camera before anything records, so that no class starts with a half-built camera.
+
+- In the menu: choice 7, I, your microphone, then the camera's number and the picture's size
+  (`Picture size: Enter for 720p (your setting), 1 480p, 2 720p, 3 1080p, T to type a size`). The
+  header then reads `Recording from: your microphone "OBSBOT", in person, with the camera "OBSBOT Meet
+  Flip StreamCamera" (720p)`. The camera is no setting: it holds until ClassScribe is closed, and
+  every start from the menu asks first. In this build that start says `Camera "OBSBOT Meet Flip
+  StreamCamera" (720p): The camera's recording is not built yet in this build of ClassScribe, so this
+  recording cannot take the camera. Enter records the sound only; Esc goes back.` Once a build records
+  the picture, it asks `Enter records with the camera; S records the sound only.`
+- On the command line: `record "Tajwid 4" --in-person "OBSBOT" --camera "OBSBOT" --resolution 720p
+  --output "<folder>"`. `--camera` takes part of a camera's name, or nothing for a USB camera when one
+  is plugged in, else the built-in front camera (a phone's virtual camera only when named), and only
+  with `--in-person` (`--camera records only in person in this build: give it with --in-person`, exit
+  2). `--resolution` takes `480p`, `720p`, `1080p` or a size such as `1024x576`, only with `--camera`
+  (`--resolution needs --camera`, exit 2). In this build the command says `The camera's recording is not
+  built yet in this build of ClassScribe, so this recording cannot take the camera. Nothing was
+  recorded; leave out --camera to record the sound alone.` and ends with exit 1.
+- The picture's size: `--resolution`, else the menu's pick, else `Recording:CameraResolution`, else
+  720p, decided by the window before the recording starts and kept in its run file.
+- Before the size counts, the start also refuses the camera when Windows is older than 10 version 2004,
+  when Windows' privacy switches keep desktop apps from the camera, or when no H.264 encoder is
+  installed, with the same words as the camera check.
+
+### Checking the cameras
+
+Menu choice 8 then C, or `ClassScribe camera-check`, shows what ClassScribe knows of the cameras,
+opening none of them until you type Y:
+
+- `Cameras (from Windows' own lists; none was opened):`, numbered, each with where it is and, for a
+  webcam, its own microphone (the one that shares its container in Windows), as `devices` lists them;
+- which apps use a camera now, from Windows' camera record (`Using a camera now, as Windows' camera
+  record shows: Zoom.`, or `No app is using a camera now, ...`);
+- the camera and the picture size a lesson recorded with `--camera` would take: `A lesson recorded
+  with --camera would take the camera "OBSBOT Meet Flip StreamCamera", at 720p (1280x720;
+  Recording:CameraResolution).` `camera-check "Integrated" --resolution 1080p` shows another camera
+  and size; a name that fits no camera says the lesson would wait for it;
+- `Set-up:`, a line each, `OK`, `PROBLEM`, `NOTE` or `OFF`: Windows' version (10.0.19041, version
+  2004, or later), Windows' camera privacy switches (Settings > Privacy & security > Camera, Let
+  desktop apps access your camera), an H.264 video encoder (a Windows N edition needs the Media
+  Feature Pack), the antivirus that is on, with Bitdefender's Webcam Protection step (`Bitdefender:
+  Privacy > Video & Audio Protection > Webcam Protection`: allow ClassScribe when it asks), each
+  webcam's own microphone, and whether `Recording:WakeCameraMicrophone` is on.
+
+Then it offers to open that camera: `To see that "OBSBOT Meet Flip StreamCamera" opens, ClassScribe can
+open it now for 5 seconds, shared, at 720p, as a lesson will: ...` and `Type Y and Enter to open it, or
+just Enter to leave it closed:`. Only Y opens it; anything else ends with `The camera was not opened.`,
+and a window that takes no typing with `The camera is opened only after you type Y, and this window takes
+no typing, so it was not opened.` After Y, a camera process of ClassScribe's own opens the camera
+shared, never exclusively, so a class app can still use it, and keeps none of the picture. Its light
+comes on, and a security program may ask about ClassScribe now, while you watch: allow it (Bitdefender:
+Webcam Protection). Every call is shown in order with its outcome and how long it took, such as `4.
+MediaCapture.InitializeAsync (SharedReadOnly, video only): OK (412 ms)`, or with the code that failed
+and Windows' words, such as `failed (35 ms): 0x80070005 E_ACCESSDENIED (Windows: "Access is
+denied.")`; then the camera's format as it runs, the frames counted, and the end: `The camera "..."
+opened, shared, and sent its picture: 148 frames in 5 seconds.` Do this once before turning on
+`Recording:WakeCameraMicrophone`, and after installing a new build if Bitdefender asks again.
+
+The exit code is 0, or 1 when a `PROBLEM` line keeps the camera from being used, or the camera that was
+opened sent no picture or could not be opened. A recording with the camera is still refused before
+anything records in this build (see [Recording with the camera](#recording-with-the-camera)).
+
+### A webcam's microphone (the OBSBOT)
+
+A webcam with its own microphone, such as the OBSBOT Meet Flip, is told by the container its camera and
+its microphone share in Windows: never the laptop's own camera, whose container the laptop's microphone
+array shares, and never a phone's camera through Phone Link. Two things differ when its microphone is
+recorded, beside the class or in person.
+
+- **Its silence.** The OBSBOT's noise reduction sends exact zeros whenever the room is quiet, even
+  awake, and sends nothing but zeros once the camera has fallen asleep (Device Auto Sleep in OBSBOT
+  Center; an open microphone does not keep it awake). So the warning about only silence that other
+  microphones get gives way to two rules that a quiet room does not set off. They count exact zeros as
+  the camera sends them, before ClassScribe rounds the sound to 16 bits, so Windows' faint background
+  noise counts as sound.
+  - At the start: 60 seconds of exact zeros since the microphone opened gives `The microphone of the
+    camera "OBSBOT Meet Flip StreamCamera" has sent only exact zeros since it opened, 1 minute ago. If
+    the camera's light is off, the camera is asleep and its microphone off: ...`, once each time the
+    microphone opens.
+  - After it has carried sound: 2 minutes of exact zeros gives `The microphone of the camera "..." has
+    sent only exact zeros for 2 minutes. If its light is off, the camera has fallen asleep ...`, at most
+    once a recording; a quiet class gives no more than this one line.
+
+  Each is a Notice with the class, and an Alert (in red) in person. The camera's light is the test: off,
+  the camera is asleep and your voice is not recorded; on, the room is just quiet and nothing is lost.
+  Windows' own silence (a microphone muted in Windows, or withheld by its privacy settings) keeps the
+  warning every microphone gets.
+- **Keeping it awake.** With `Recording:WakeCameraMicrophone` on (it is off unless you turn it on),
+  ClassScribe holds the webcam's picture open from before its microphone opens until the recording
+  stops, through P and V, in a camera process of its own, so the camera cannot fall asleep. The camera
+  is opened shared, never exclusively, so the class app can still show your face; ClassScribe asks it
+  for no size and no format, lets every frame go unread and keeps none of the picture. The camera's light
+  stays on while recording. The microphone opens once the first frame has come, or after 5 seconds; its
+  track is on the recording's clock, so the class's track never waits. While the held picture's frames
+  arrive, the later zeros rule is off: the camera cannot be asleep. When the recording follows the class
+  app to another microphone, the hold follows, or lets go for a microphone of no webcam. Nothing the
+  camera does can keep the microphone from recording: when Windows does not list the cameras within 5
+  seconds, or a camera process cannot start, the microphone is recorded all the same and the hold tries
+  again by itself. Run `camera-check` and type Y once first (see
+  [Checking the cameras](#checking-the-cameras)).
+
 ### Checking what your class page does with your microphone
 
-Menu choice 8, or `ClassScribe mic-check`, watches what the programs on your computer do with the
+Menu choice 8 then W, or `ClassScribe mic-check`, watches what the programs on your computer do with the
 microphone and writes a line for each change, until you press Q (or Ctrl+C once), or until
 `--seconds` runs out. It only reads Windows' own lists: which microphones there are, which programs
 have a session on them, and Windows' record of which program used the microphone and when (the same
@@ -1292,7 +1413,7 @@ file is complete even if the window is closed, and the window's title shows
 
 The steps, before or during a class:
 
-1. Start the check: choice 8, or `ClassScribe mic-check` in a terminal. It prints a few lines about
+1. Start the check: choice 8 then W, or `ClassScribe mic-check` in a terminal. It prints a few lines about
    how things are right now, then waits. Leave it open; it is fine behind Chrome, for the whole class.
 2. Join the class as usual, with headphones, and start muted. If the page asks for microphone
    permission, answer as you normally do. Note which microphone you expect to be used; the first `MIC`
@@ -2006,7 +2127,7 @@ That is billed as a new transcription.
 
 `appsettings.json` holds the settings. ClassScribe reads the copy next to the app, and the menu
 names it at the top (`Settings: ...`). A published app reads the copy beside `ClassScribe.exe`. With
-`dotnet run` it is the copy in `src\ClassScribe\bin\Debug\net10.0`, which a build makes from
+`dotnet run` it is the copy in `src\ClassScribe\bin\Debug\net10.0-windows10.0.19041.0`, which a build makes from
 `src\ClassScribe\appsettings.json` and replaces only when that file is the newer of the two. So edit
 `src\ClassScribe\appsettings.json` and build again (`dotnet run` builds each time it starts), or edit
 the copy itself, which a build then leaves alone until the project's file changes again. While the
@@ -2053,6 +2174,8 @@ The ones you are most likely to change:
 | `Recording:MicrophoneProcessing` | `Raw` | `Raw` asks Windows for the microphone's audio without its sound processing, and takes `Default` when that is not available; `Default` takes the processed audio, as any app gets it. |
 | `Recording:MicrophoneFollows` | `chrome` | With the class and your microphone, when the class is recorded from a device: the app whose microphone use your microphone follows, by part of its process name. Your voice is recorded only while that app has the microphone open and taking sound. `auto` follows any app that holds the microphone; `none` records whenever V is on. In app mode the recorded app is followed and this is not read; `--mic-follows` and menu choice 7 can name another for a run. Empty, or naming ClassScribe itself, is refused. |
 | `Recording:ClassAppMute` | `Unknown` | Whether the class app lets go of the microphone when you mute in it: `Visible` (it does; ClassScribe follows your mute by itself), `Invisible` (it keeps the microphone open; your voice is recorded only after you press V, and only while the app holds the microphone) or `Unknown` (as `Invisible`, and ClassScribe reports when it sees the app let go of the microphone). Measure your class page with the microphone check before setting `Visible`. |
+| `Recording:CameraResolution` | `720p` | The size of the camera's picture for a lesson recorded with the camera: `480p` (848x480, about 1.2 GB an hour with the sound), `720p` (1280x720, about 2.3 GB an hour) or `1080p` (1920x1080, about 3.7 GB an hour), in any letter case, or a width and a height such as `1024x576`: the width from 320 to 1920 and the height from 240 to 1080, both even, in a shape from 4:3 to 16:9 (a typed size was not measured; the camera records the closest it offers). `--resolution` and menu choice 7 choose another for a run. This file is replaced by the next build of the program folder, so to keep another size, use the menu or the command line. The camera's recording itself comes in a later build; `camera-check` shows the size in force. |
+| `Recording:WakeCameraMicrophone` | false | When on, and the microphone being recorded belongs to a webcam (by the container it shares with a camera that is neither built in nor virtual), ClassScribe keeps that webcam's picture open, shared and never exclusively, from before the microphone opens until the recording ends, keeping none of it, so that a webcam that sleeps by itself, such as the OBSBOT Meet Flip with Device Auto Sleep on, cannot fall asleep and silence its microphone. The camera's light stays on while recording. Run `camera-check` and type Y once before turning it on, so that a security program such as Bitdefender asks about ClassScribe while you watch. This file is replaced by the next build of the program folder, so to keep it on, set it for the ClassScribe you start (`Recording__WakeCameraMicrophone=true` in its environment). See [A webcam's microphone](#a-webcams-microphone-the-obsbot). |
 | `Recording:SilenceWarningSeconds` | 60 | Warn after this much silence. At least 1. |
 | `Recording:KeepUploadFile` | false | Keep the 16 kHz copy that was uploaded, after a failed or cancelled try as well. When off, the copy is removed after every try, whether it worked or not. |
 | `Recording:OpenFolderWhenDone` | true | Open the folder in Explorer when the recording or transcript is ready. |
@@ -2133,7 +2256,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 
 Keep `ClassScribe.exe` together with the files beside it, and make a shortcut to it: right-click
 `ClassScribe.exe`, then Show more options, Send to, Desktop (create shortcut). It needs .NET 10,
-which the SDK from [Set up once](#set-up-once) includes. Start classes from this copy: its
+which the SDK from [Set up once](#set-up-once) includes, and Windows 10 version 2004 or later. The
+folder is about 33 MB, 25 MB of it Windows' own camera API (`Microsoft.Windows.SDK.NET.dll`), which
+ClassScribe uses to list the cameras. Start classes from this copy: its
 recordings run in the background, and a rebuild of the repo during a class never touches it.
 
 Double-click the shortcut for the menu. Dropping an audio or video file on the shortcut, or on
@@ -2255,7 +2380,7 @@ words you see.
 | `... is no longer there, so the settings stay as they were when it was last read` | `appsettings.json` was deleted or renamed while ClassScribe ran. Put it back; under `dotnet run`, a build puts the copy back. To go back to the defaults instead, start ClassScribe again without the file. |
 | `... could not be read: ...` | Another program, such as OneDrive or an editor, held the settings file for longer than a moment, or Windows would not let ClassScribe read it. Close that program, then choose again, or run the command again. |
 | `appsettings.json cannot be read: ...` | The file is valid JSON, but not in the shape settings take: the same setting written twice in one section, say, or something other than `{ ... }` around them all. Fix what the message names, then choose again. |
-| `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0`. Build again, or edit that copy, for the change to count. |
+| `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0-windows10.0.19041.0`. Build again, or edit that copy, for the change to count. |
 | `ClassScribe could not start.` and `An environment variable sets a value ClassScribe cannot use` | Change or remove the variable the message names (the setting's name, with `__` for each colon), then start ClassScribe again. |
 | `ClassScribe shows its menu only when someone can type into its window` | ClassScribe was started without a command from a script, or with its input redirected. Give it a command, such as `record` or `list`; the help follows the message. |
 | `Could not be read now: ...` under a list of `devices`, below an app or a microphone, `Which apps hold each microphone could not be read now: ...`, and `Not everything could be read from Windows just now` at the end | Windows did not give that list, or one app's session in it, at that moment; the rest is complete. The line names the app when Windows did (`Zoom's audio session`, `(Zoom, pid 9090)`) and the Windows call that failed (`GetState: ...`). Run `devices` again. If it keeps saying so, quit the other apps that use sound (Zoom, Teams, Discord, WhatsApp, tray icons included) and run it again; if it still does, restart Windows. A recording goes on beside one app's session that cannot be read; when that app is the one your microphone follows, see `Cannot read zoom's microphone session` below. |
@@ -2351,6 +2476,19 @@ words you see.
 | `chrome let go of the microphone at 19:12:03 and took it again at 19:12:40. If that was you muting and unmuting in the class page ...` | If those were your clicks, your mute is visible to Windows: set `Recording:ClassAppMute` to `Visible`. If it was a rejoin or a device change, leave it. |
 | `Only silence from the microphone "..." for 2 minutes although chrome is listening and Windows is not muting it. Check Settings > Privacy & security > Microphone (Let desktop apps access your microphone), and the microphone itself` | The app listens and nothing is muted, yet the microphone hands over exact zeros: Windows' privacy switch, or the microphone itself. |
 | `Only silence from the microphone "..." for 2 minutes: it is muted in Windows (the microphone key, or Sound settings > Input)`, or `... Check that it is not muted in Windows ... and that Windows lets desktop apps use it (Settings > Privacy & security > Microphone)` | Unmute it with the microphone key, or check the privacy switch. In person this is `ONLY SILENCE FROM THE MICROPHONE` in red, since the whole recording is then silence. |
+| `The microphone of the camera "..." has sent only exact zeros since it opened, 1 minute ago. If the camera's light is off, the camera is asleep and its microphone off: unfold its lens or wake it, and turn off Device Auto Sleep in OBSBOT Center or turn on Recording:WakeCameraMicrophone. If the light is on, the room is just quiet: this camera sends exact zeros in silence`, with `(only zeros from the webcam's microphone)` in the title | A webcam's microphone has sent nothing but exact zeros since it opened. Look at the camera's light: off, wake the camera (unfold its lens) and turn off Device Auto Sleep for the next class, or turn on `Recording:WakeCameraMicrophone`; on, nothing is wrong. In person it is an Alert in red. |
+| `The microphone of the camera "..." has sent only exact zeros since it opened, 1 minute ago, although its camera is open and awake. Check that its microphone is on in OBSBOT Center, and that Windows lets desktop apps use the microphone` | ClassScribe holds the camera's picture and its frames arrive, so the camera is awake, yet its microphone sends nothing: its own microphone switch (OBSBOT Center), or Windows' privacy switch. |
+| `The microphone of the camera "..." has sent only exact zeros for 2 minutes. If its light is off, the camera has fallen asleep (an open microphone does not keep it awake) and your voice is not being recorded: turn off Device Auto Sleep in OBSBOT Center, or turn on Recording:WakeCameraMicrophone. If the light is on, the room is quiet and nothing is lost` | Said at most once a recording, and never while ClassScribe holds the camera's picture with its frames arriving. Light off: wake the camera, and the voice from then on is recorded. Light on: a quiet class. |
+| `The microphone being recorded belongs to the camera "...", so ClassScribe keeps the camera's picture open, shared, until the recording ends: the camera cannot fall asleep and silence its microphone. Nothing of the picture is kept; the camera's light stays on` | `Recording:WakeCameraMicrophone` is on and the microphone is a webcam's. Nothing to do; `Let go of the picture of the camera "..."` follows at the stop, before the upload. |
+| `The camera "..." has sent no picture yet; its microphone records meanwhile` | The held camera sent no frame within 5 seconds, so the microphone was opened without waiting longer. Look at its light; the camera is opened again by itself. |
+| `The camera "..." stopped sending its picture. Is its lens folded? Folded, its microphone is off. ClassScribe opens it again every 5 seconds`, with `(camera's picture stopped)` in the title, then `The camera "..." is open again` | The held picture stopped for 3 seconds: a folded lens, the camera unplugged, or another app holding it alone. Unfold or plug it in; ClassScribe opens it again by itself. In person it is an Alert in red. |
+| `The camera "..." could not be opened: ... Without its picture open the camera may fall asleep, and its microphone then sends only silence. Turn off Device Auto Sleep in OBSBOT Center, or record another microphone. ClassScribe tries again every 5 seconds`, with `(camera not opened)` in the title | The words after `opened:` say why: Windows' camera privacy settings or a security program (allow ClassScribe in Bitdefender's Webcam Protection, then `camera-check` with Y), another app holding it alone, the camera not connected, or the call that failed with its code. The microphone is recorded all the same. |
+| `The camera process holding "..." failed: A call on the camera's route did not return within 30 seconds` | A call to open the camera got stuck inside Windows, often while a security program's prompt (Bitdefender's Webcam Protection) waits for an answer. ClassScribe starts another camera process by itself, and the microphone records meanwhile. If it repeats, run `camera-check`, type Y and answer the prompt. |
+| `Camera process: Letting the camera go did not return within 30 seconds` | At the end of the hold, letting the camera go got stuck inside Windows. The camera process ends right after, and Windows lets the camera go with it. Nothing to do unless it repeats; then unplug the camera and plug it in again after the class. |
+| `Could not tell whether the microphone "..." belongs to a webcam, so no camera's picture is held for it yet; the microphone is recorded all the same, and each look asks again: ...` | With `Recording:WakeCameraMicrophone` on, Windows did not list the cameras (within 5 seconds, or with the error after the colon). The microphone is recorded; ClassScribe asks again at the microphone's next look (every 10 seconds) and holds the picture once the list comes. Meanwhile look at the camera's light: off, wake the camera. |
+| `The camera's hold could not look at its camera process; it tries again in 5 seconds, and the microphone is recorded all the same` | Not expected: something failed while starting or watching the camera process. The microphone is recorded, and the hold tries again by itself. |
+| `The camera "..." opened, shared, and sent its picture: ... frames in 5 seconds.` (`camera-check`) | The camera opens as a lesson and the hold will open it. |
+| `The camera "..." could not be opened: ...`, `The camera "..." opened but sent no picture in 5 seconds; is its lens folded, or is it asleep?`, `Windows did not start ClassScribe's camera process: ...`, `The camera process did not finish within 75 seconds, so it was ended` (`camera-check`, exit 1) | The numbered calls above the line show which one failed, with its code and Windows' words. Allow ClassScribe if a security program asked, unfold the lens or wake the camera, then run the check again. |
 | `No sound from the microphone "..." for 60 seconds. Check that it is not muted in Windows (the microphone key) and that Windows lets desktop apps use it ...` | In person, a minute without anything audible. Check the microphone, its mute and the privacy switch. |
 | `No audio has arrived from "Microphone Array ..." for 5 seconds although it should; ... Reopening it` (`(no audio from the microphone)` in the title) | The microphone's capture stopped handing over audio and was reopened in a new file. If it keeps coming back, try another microphone. |
 | `A packet arrived ... s ahead of the track, further than expected, and no time ClassScribe did not run was found; it is written as it comes` | Not expected; the next second's padding catches the track up. |
@@ -2367,6 +2505,18 @@ words you see.
 | `ERROR    Windows' list of microphones could not be read: ...`, `ERROR    Windows' microphone usage record could not be read: ...` | Windows' audio service is restarting, or the registry refused. The check keeps trying, and a `NOTE` says when it reads again. |
 | `NOTE     no check for ... s: the laptop slept or the check was held up` | A change that came and went in that time is not in the log. |
 | `SELF     ClassScribe's own process has a session on this microphone.` | Should never appear; it would mean ClassScribe itself opened the microphone during the check. |
+
+### The camera
+
+| What you see | What to do |
+| --- | --- |
+| `The camera's recording is not built yet in this build of ClassScribe, so this recording cannot take the camera` | This build lists, checks and chooses cameras but does not record their picture. In the menu press Enter to record the sound only; on the command line leave out `--camera`. |
+| `--camera records only in person in this build: give it with --in-person` (exit code 2) | The camera goes with your microphone alone, in person: use `--in-person` as the source. |
+| `--resolution needs --camera` or `--resolution takes 480p, 720p or 1080p, ...` (exit code 2) | Give `--resolution` only with `--camera`, and one of the three sizes or a width and a height such as `1024x576` within the limits the message gives. |
+| `PROBLEM  Windows does not let desktop apps use the camera: ...` (camera check, exit code 1) | Turn on Let desktop apps access your camera in Settings > Privacy & security > Camera (the line names the page), then run the camera check again. |
+| `PROBLEM  No H.264 video encoder is installed, ...` | A Windows N edition lacks it: add the Media Feature Pack in Settings > System > Optional features. |
+| `NOTE     Bitdefender Antivirus watches the camera: ...` | When Bitdefender asks about ClassScribe and the camera, allow it (Bitdefender: Privacy > Video & Audio Protection > Webcam Protection). |
+| `The cameras could not be listed: The camera needs Windows 10 version 2004 (build 19041) or later; ...` | The camera needs a newer Windows; everything else in ClassScribe works as before. |
 
 ### The background recorder and its windows
 
@@ -2667,5 +2817,5 @@ a stand-in `ClassScribe.exe` that records nothing and runs the whole dry run wit
 folders. No test ever starts ClassScribe itself, records, opens a device or a microphone, plays a
 sound, opens a browser, runs yt-dlp, or sends anything to ElevenLabs, Google or YouTube, and none
 reads or writes the real `%APPDATA%\ClassScribe`, `%LOCALAPPDATA%\ClassScribe` or
-`%USERPROFILE%\ClassScribe`. The suite holds 3,960 tests and takes about three minutes; a test
+`%USERPROFILE%\ClassScribe`. The suite holds 4,180 tests and takes about three minutes; a test
 run that hangs is stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).

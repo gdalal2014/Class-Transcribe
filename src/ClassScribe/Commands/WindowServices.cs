@@ -10,7 +10,7 @@ namespace ClassScribe.Commands;
 /// <summary>
 /// Registers the window's side of a run in the background: what starts a run (the starter, the launcher of the recorder,
 /// the question whether to continue a recent recording), what shows one (the view of runs and the attach command), the
-/// report at the start, the list and devices commands, and the two things that reach Windows for them: the starter of the
+/// report at the start, the list, devices and camera-check commands, and the two things that reach Windows for them: the starter of the
 /// recorder and the alert window, and the reader of the job ClassScribe runs in. The recorder's host adds these too, since
 /// it is put together from the same registrations, and uses none of them.
 /// </summary>
@@ -26,9 +26,11 @@ public static class WindowServices
         services.AddScoped<IRecordStarter, RecordStarter>();
         services.AddScoped<IRunViewer, RecorderView>();
         services.AddScoped<ContinueQuestion>();
+        services.AddScoped<CameraStart>();
         services.AddTransient<AttachCommand>();
         services.AddTransient<ListCommand>();
         services.AddTransient<DevicesCommand>();
+        services.AddTransient<CameraCheckCommand>();
         services.AddSingleton<RecorderLauncher>();
 
         // The real report, in place of the one that reports nothing, which the commands' registration adds only when no

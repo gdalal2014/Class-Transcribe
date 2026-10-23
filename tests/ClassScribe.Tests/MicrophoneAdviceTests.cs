@@ -105,7 +105,7 @@ public class MicrophoneAdviceTests
 
         Assert.That(lines[1], Is.EqualTo("ClassScribe has not been told whether chrome lets go of the microphone when you mute (most class apps and pages keep it open), so it cannot follow your mute yet: " +
             "your voice is recorded only after you press V, and only while chrome holds the microphone. Muting the microphone in Windows (the microphone key) stops it too. " +
-            "Run the microphone check (menu choice 8) during a class, or set Recording:ClassAppMute."));
+            "Run the microphone check (menu choice 8, then W) during a class, or set Recording:ClassAppMute."));
         Assert.That(lines[1], Does.Not.StartWith("chrome keeps the microphone open"), "what has not been measured is not stated as a fact");
     }
 

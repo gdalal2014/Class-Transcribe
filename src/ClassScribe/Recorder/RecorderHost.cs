@@ -67,14 +67,15 @@ public sealed class RecorderHost
     public Action<IServiceCollection>? ConfigureServices { get; init; }
 
     /// <summary>
-    /// True when <paramref name="args"/> start ClassScribe as a recorder: exactly <c>--recorder</c> and a run id, as the
-    /// window starts it, with the id in <paramref name="runId"/>. Program hands such a start to
-    /// <see cref="RunAsync(string, string?)"/> before the command line is parsed and before anything touches the console.
-    /// Anything else is the command line's.
+    /// True when <paramref name="args"/> start ClassScribe as a recorder: exactly <c>--recorder</c> and a well-formed run
+    /// id (<see cref="RunIds.IsWellFormed"/>, amendment 24), as the window starts it, with the id in <paramref name="runId"/>.
+    /// Program hands such a start to <see cref="RunAsync(string, string?)"/> before the command line is parsed and before
+    /// anything touches the console. Anything else is the command line's, so <c>--recorder</c> with anything but a run id is
+    /// a mistake with the help, never a hidden recorder.
     /// </summary>
     public static bool IsRecorderStart(string[] args, [NotNullWhen(true)] out string? runId)
     {
-        if (args is [var switchWord, var id] && switchWord == ProcessArguments.Recorder)
+        if (args is [var switchWord, var id] && switchWord == ProcessArguments.Recorder && RunIds.IsWellFormed(id))
         {
             runId = id;
             return true;

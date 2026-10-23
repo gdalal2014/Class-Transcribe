@@ -1,5 +1,6 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Drive;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Configuration;
@@ -254,6 +255,69 @@ public class SettingsCheckTests
         Assert.That(problems, Has.Count.EqualTo(1));
         Assert.That(problems[0], Does.StartWith($"Recording:MicrophoneFollows is \"{value}\"").And.Contain("such as chrome").And.Contain("auto").And.Contain("none"));
         if (value.Trim().Length > 0) Assert.That(problems[0], Does.Contain("ClassScribe itself"));
+    }
+
+    /// <summary>
+    /// The camera's settings (camera-first step 11): the picture is 720p unless Recording:CameraResolution says otherwise,
+    /// and the wake of a sleeping webcam is off by default; the shipped file holds both at those values, and passes.
+    /// </summary>
+    [Test]
+    public void The_cameras_settings_have_their_defaults_and_the_shipped_file_holds_them()
+    {
+        var shipped = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false, reloadOnChange: false)
+            .AddApiKeyFromEnvironment("test-key")
+            .Build();
+        var fromFile = shipped.GetSection(RecordingOptions.SectionName).Get<RecordingOptions>()!;
+        var defaults = new RecordingOptions();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(defaults.CameraResolution, Is.EqualTo("720p"));
+            Assert.That(defaults.WakeCameraMicrophone, Is.False);
+            Assert.That(shipped["Recording:CameraResolution"], Is.EqualTo("720p"));
+            Assert.That(shipped["Recording:WakeCameraMicrophone"], Is.EqualTo("False").IgnoreCase);
+            Assert.That((fromFile.CameraResolution, fromFile.WakeCameraMicrophone), Is.EqualTo((defaults.CameraResolution, defaults.WakeCameraMicrophone)));
+            Assert.That(new SettingsCheck().FindProblems(shipped), Is.Empty);
+        }
+    }
+
+    /// <summary>
+    /// The picture's size is read by the same parser as --resolution and the menu: the three sizes in any case and a typed
+    /// size within the limits pass; anything else is refused with the setting's name, the value and the rule.
+    /// </summary>
+    [TestCase("480p", true)]
+    [TestCase("1080P", true)]
+    [TestCase("1024x576", true)]
+    [TestCase("", false)]
+    [TestCase("720", false)]
+    [TestCase("1025x576", false)]
+    [TestCase("4096x2160", false)]
+    public void The_picture_size_is_checked_by_the_one_parser(string value, bool usable)
+    {
+        var problems = Problems(new() { ["Recording:CameraResolution"] = value });
+
+        if (usable)
+        {
+            Assert.That(problems, Is.Empty);
+            return;
+        }
+
+        Assert.That(problems, Has.Count.EqualTo(1));
+        Assert.That(problems[0], Does.StartWith($"Recording:CameraResolution is \"{value}\"").And.Contain(CameraSize.Rule));
+    }
+
+    /// <summary>The wake is a yes or no: true and false in any case pass, and anything else is refused by its name.</summary>
+    [TestCase("true", true)]
+    [TestCase("False", true)]
+    [TestCase("yes", false)]
+    [TestCase("1x", false)]
+    public void The_wake_is_a_yes_or_no(string value, bool usable)
+    {
+        var problems = Problems(new() { ["Recording:WakeCameraMicrophone"] = value });
+
+        if (usable) Assert.That(problems, Is.Empty);
+        else Assert.That(problems, Has.Some.Contains("Recording:WakeCameraMicrophone"));
     }
 
     /// <summary>

@@ -86,9 +86,9 @@ internal sealed class FakeEndpointCollection(IReadOnlyList<FakeCaptureEndpoint> 
 }
 
 /// <summary>
-/// A capture endpoint as a test plays it: its identifier and state, the property store that describes it, and the
-/// endpoint volume that says whether it is muted in Windows. It keeps account of every interface asked of it, so that a
-/// test can check that nothing but the endpoint volume was ever asked for, and in particular never an audio client.
+/// A capture endpoint as a test plays it: its identifier, state and direction, the property store that describes it, and
+/// the endpoint volume that says whether it is muted in Windows. It keeps account of every interface asked of it, so that
+/// a test can check that nothing but the endpoint volume was ever asked for, and in particular never an audio client.
 /// </summary>
 /// <param name="id">The identifier Windows would give the endpoint.</param>
 /// <param name="name">The name Windows shows for it, PKEY_Device_FriendlyName; null for an endpoint without one.</param>
@@ -96,7 +96,8 @@ internal sealed class FakeEndpointCollection(IReadOnlyList<FakeCaptureEndpoint> 
 /// <param name="jackSubType">Its jack subtype, PKEY_AudioEndpoint_JackSubType, spelled out as Windows spells it; null for none.</param>
 /// <param name="rawSupported">Whether it reports RawProcessingSupported; null for an endpoint without the property.</param>
 [SupportedOSPlatform("windows")]
-internal sealed class FakeCaptureEndpoint(string id, string? name, string? enumerator = "INTELAUDIO", Guid? jackSubType = null, bool? rawSupported = null) : IMMDeviceRaw
+internal sealed class FakeCaptureEndpoint(string id, string? name, string? enumerator = "INTELAUDIO", Guid? jackSubType = null, bool? rawSupported = null)
+    : IMMDeviceRaw, IMMEndpointRaw
 {
     /// <summary>DEVICE_STATE_DISABLED: present but switched off in Sound settings, as Stereo Mix is on this laptop.</summary>
     public const int Disabled = 2;
@@ -112,6 +113,9 @@ internal sealed class FakeCaptureEndpoint(string id, string? name, string? enume
 
     /// <summary>The endpoint's state: active unless set otherwise.</summary>
     public int State { get; init; } = CoreAudio.Active;
+
+    /// <summary>Its direction, as its IMMEndpoint answers: <see cref="CoreAudio.Capture"/>, a microphone, unless set otherwise.</summary>
+    public int DataFlow { get; init; } = CoreAudio.Capture;
 
     /// <summary>The property store that describes the endpoint, holding what the constructor was given and whatever <see cref="With"/> adds.</summary>
     public FakeEndpointStore Store { get; } = FakeEndpointStore.Describing(name, enumerator, jackSubType, rawSupported);
@@ -178,6 +182,13 @@ internal sealed class FakeCaptureEndpoint(string id, string? name, string? enume
     public int GetState(out int state)
     {
         state = State;
+        return FakeResults.Ok;
+    }
+
+    /// <inheritdoc />
+    public int GetDataFlow(out int dataFlow)
+    {
+        dataFlow = DataFlow;
         return FakeResults.Ok;
     }
 }

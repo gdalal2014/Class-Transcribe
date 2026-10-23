@@ -17,7 +17,7 @@ namespace ClassScribe.Tests;
 /// hand at each look, the clock is moved by hand, and the free space is set by the test.
 /// </summary>
 [TestFixture]
-public class RecordingMonitorTests
+public partial class RecordingMonitorTests
 {
     /// <summary>The folder the tests' recording goes to; only its drive's free space is read, from the test's stand-in.</summary>
     private const string Folder = @"D:\Classes\Kalam";
@@ -919,7 +919,7 @@ public class RecordingMonitorTests
     private const string RoomPrivacy = "Your microphone records the room, and the recording is uploaded to ElevenLabs. Ask before recording others.";
     private const string VisibleCase = "Your voice is recorded while chrome is listening: when you mute in chrome, ClassScribe stops too. V switches it off by hand.";
     private const string InvisibleCase = "chrome keeps the microphone open while you are muted, so ClassScribe cannot see your mute. Your voice is recorded only after you press V, and only while chrome holds the microphone. Muting the microphone in Windows (the microphone key) stops it too.";
-    private const string UnknownCase = "ClassScribe has not been told whether chrome lets go of the microphone when you mute (most class apps and pages keep it open), so it cannot follow your mute yet: your voice is recorded only after you press V, and only while chrome holds the microphone. Muting the microphone in Windows (the microphone key) stops it too. Run the microphone check (menu choice 8) during a class, or set Recording:ClassAppMute.";
+    private const string UnknownCase = "ClassScribe has not been told whether chrome lets go of the microphone when you mute (most class apps and pages keep it open), so it cannot follow your mute yet: your voice is recorded only after you press V, and only while chrome holds the microphone. Muting the microphone in Windows (the microphone key) stops it too. Run the microphone check (menu choice 8, then W) during a class, or set Recording:ClassAppMute.";
     private const string VAlone = "V switches it off and on; muting yourself in the class app does not.";
     private const string FollowingChrome = "Following: chrome (Recording:MicrophoneFollows)";
     private const string ArrayRaw = "Microphone: \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" (Windows' default microphone), without Windows' sound processing (RAW)";

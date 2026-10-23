@@ -87,9 +87,19 @@ public sealed record RecordingResult(string Folder, IReadOnlyList<string> Segmen
 /// settings gives. False before its first packet, and while no capture is open.
 /// </param>
 /// <param name="HeardSound">True once audible sound has reached the segment files in this run; sound heard only while paused does not count.</param>
+/// <param name="RawZerosFor">
+/// How long the open capture has handed over nothing but exact zeros at the device's own depth, before ClassScribe's 16-bit
+/// conversion, since it was opened or since its last sample other than zero (camera-first 3.4): Windows' faint residue in
+/// a quiet room is not zero here, though the conversion rounds it to zero. Packets Windows flags as silent count as neither.
+/// Null while no capture is open, and before its first packet.
+/// </param>
+/// <param name="RawSoundSinceOpened">True once the open capture has handed over a sample other than zero, at the device's own depth, since it was opened.</param>
+/// <param name="WindowsSilent">True when Windows flagged the open capture's last packet as silent: Windows' silence, such as a muted or blocked microphone, not the device's.</param>
+/// <param name="CaptureNumber">How many captures this session has opened so far: a new number is a new capture.</param>
 public sealed record RecordingStatus(TimeSpan Captured, TimeSpan SinceLastSound, string DeviceName, int SegmentCount, bool Paused, string? WaitingFor,
     TimeSpan? SinceLastPacket = null, bool DeliversContinuously = false, float? RecordedLevel = null, bool SoundWhilePaused = false,
-    bool WriteFailing = false, bool Off = false, bool OnlyZeros = false, bool HeardSound = false);
+    bool WriteFailing = false, bool Off = false, bool OnlyZeros = false, bool HeardSound = false, TimeSpan? RawZerosFor = null, bool RawSoundSinceOpened = false,
+    bool WindowsSilent = false, int CaptureNumber = 0);
 
 /// <summary>
 /// Records what its source picks into WAV segment files: for the class, the output device it plays through, the one
@@ -177,6 +187,19 @@ public sealed class RecordingSession(
 
     /// <summary>After this long with nothing but exact zeros from the open capture, the status says so (see <see cref="RecordingStatus.OnlyZeros"/>).</summary>
     public static readonly TimeSpan OnlyZerosAfter = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// The webcam zeros rule at the start (camera-first 3.4): a webcam's microphone that has handed over only exact zeros,
+    /// at its own depth, for this long since its capture opened. Awake, the OBSBOT's zeros after an open lasted 4 seconds
+    /// (finding 4), so a quiet start has room; a camera asleep when the class begins sends zeros from the first packet.
+    /// </summary>
+    public static readonly TimeSpan WebcamZerosAtStart = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// The webcam zeros rule after sound: only exact zeros for this long after the microphone has carried sound. A quiet
+    /// room's runs were at most 18.7 seconds in 12 minutes (finding 4); a camera that falls asleep stays silent to the end.
+    /// </summary>
+    public static readonly TimeSpan WebcamZerosAfterSound = TimeSpan.FromMinutes(2);
 
     /// <summary>The least time between two replacements of a capture that keeps ending.</summary>
     private static readonly TimeSpan RestartSpacing = TimeSpan.FromSeconds(2);
@@ -278,6 +301,15 @@ public sealed class RecordingSession(
 
     /// <summary>When the open capture last handed over a sample other than an exact zero, on the steady clock; null while it has handed over only zeros.</summary>
     private long? _lastNonZero;
+
+    /// <summary>When the open capture last handed over a sample other than zero at the device's own depth, before the conversion; null while none.</summary>
+    private long? _lastRawNonZero;
+
+    /// <summary>Whether Windows flagged the open capture's last packet as silent.</summary>
+    private bool _lastPacketSilent;
+
+    /// <summary>How many captures this session has opened.</summary>
+    private int _captureCount;
 
     /// <summary>Whether the open capture hands over audio all the time (see <see cref="IAudioCapture.DeliversContinuously"/>).</summary>
     private bool _deliversContinuously;
@@ -470,7 +502,11 @@ public sealed class RecordingSession(
                 WriteFailing: _writeFailing,
                 Off: !_enabled,
                 OnlyZeros: open && _anyPacket && time.GetElapsedTime(_lastNonZero ?? _captureOpened, now) >= OnlyZerosAfter,
-                HeardSound: _heardSound);
+                HeardSound: _heardSound,
+                RawZerosFor: open && _anyPacket ? time.GetElapsedTime(_lastRawNonZero ?? _captureOpened, now) : null,
+                RawSoundSinceOpened: open && _lastRawNonZero is not null,
+                WindowsSilent: open && _lastPacketSilent,
+                CaptureNumber: _captureCount);
         }
     }
 
@@ -751,6 +787,9 @@ public sealed class RecordingSession(
                     _lastRate = capture.Format.SampleRate;
                     _anyPacket = false;
                     _lastNonZero = null;
+                    _lastRawNonZero = null;
+                    _lastPacketSilent = false;
+                    _captureCount++;
 
                     // Until its first packet, the time without audio counts from now.
                     _captureOpened = _lastPacket = time.GetTimestamp();
@@ -810,6 +849,12 @@ public sealed class RecordingSession(
             _anyPacket = true;
 
             var format = _capture.Format;
+
+            // At the device's own depth, before the conversion rounds Windows' faint residue to zero (camera-first 3.4); a
+            // packet Windows flags as silent is Windows' silence, not the device's, and counts as neither.
+            _lastPacketSilent = e.Flags.HasFlag(PacketFlags.Silent);
+            if (!_lastPacketSilent && PcmConverter.AnyNonZero(e.Buffer.AsSpan(0, e.ByteCount), format)) _lastRawNonZero = now;
+
             var needed = e.ByteCount / format.BytesPerFrame * 2;
             if (_convertBuffer.Length < needed) _convertBuffer = new byte[needed];
 

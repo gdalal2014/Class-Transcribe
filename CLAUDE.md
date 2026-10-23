@@ -130,7 +130,19 @@ advice after a format error (10 A).
   the microphones (`WasapiMicrophoneProvider`, `WasapiMicrophoneSessions`, the usage record) never
   ask Windows for an audio client, the object through which a program opens a microphone, so they
   cannot open one; the fake endpoints fail a test that asks for one. Keep it that way: the menu, the
-  `devices` command, the microphone check and the watch on the class app all rest on it.
+  `devices` command, the microphone check and the watch on the class app all rest on it. No test opens a
+  camera either. `DeviceGuards` (`Desktop/DeviceGuards.cs`, the switch `ClassScribe.Devices.RefuseTheRealDevices`,
+  turned on by `TestGuards` beside the others) makes the real start of a camera process and Windows' activation of a
+  capture endpoint (`WindowsAudioClientActivator`, which reads the endpoint's direction through `IMMEndpointRaw` only
+  while the switch is on) refuse in a test, naming the fake (`FakeCameraProcess`, `FakeAudioClientActivator`); an output
+  device, which `AudioClient2SlotTests` stands in for a microphone, passes. `DeviceGuardsTests` pins the activator's
+  guard over a fake enumerator (its internal constructor takes the enumerator's maker; `FakeCaptureEndpoint` answers
+  `IMMEndpointRaw` with its `DataFlow`): a capture endpoint is refused before anything is asked of it. An `[Explicit]` test that must open a real
+  device turns the switch off for itself and on again in a `finally`. Listing cameras (WinRT's device lists) opens
+  nothing, so no light comes on. The camera's real open, `WindowsCameraCapture.InitializeShared` (MediaCapture's
+  InitializeAsync), refuses in a test too, naming `FakeCameraCapture`, before anything is asked of Windows; the one real
+  MediaCapture a test makes (`WindowsCameraCaptureTests`, WindowsCamera) is never initialised, which touches no device
+  (the probe fix's rule 6: it checks that Windows still refuses before InitializeAsync what the fake refuses).
 - Tests never read or write the real `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` or
   `%USERPROFILE%\ClassScribe`: temporary folders only (`TestRuntime`, `TempFolder`). The real
   `%LOCALAPPDATA%\ClassScribe` holds the run files and logs of real classes now, and
@@ -144,7 +156,13 @@ advice after a format error (10 A).
 
 - .NET 10 and C# 14, nullable on, file-scoped namespaces, primary constructors, records and
   `init` for immutable data, target-typed `new`, collection expressions, LINQ where it reads
-  well, async/await, the built-in DI container.
+  well, async/await, the built-in DI container. Both projects target `net10.0-windows10.0.19041.0`
+  (teach-video 6.3; Windows 10 version 2004 or later), for Windows' camera API (WinRT: the device lists and, from
+  0.6.0, `MediaCapture`); the test project must follow or NuGet refuses the reference (NU1201). NAudio still takes its
+  `netstandard2.0` library, and CsWinRT's `ComWrappers` sits beside NAudio's and ClassScribe's built-in COM. The
+  published folder grew from about 7 to 33 MB (`Microsoft.Windows.SDK.NET.dll` is 25 MB); trimming and Native AOT stay off.
+  In a namespace that ends in `Windows` (`ClassScribe.Audio.Windows`, `ClassScribe.Desktop.Windows`), WinRT's own namespaces
+  need `global::Windows`.
 - HTTP APIs are called through Refit interfaces registered with `AddRefitGeneratedClient` (Refit's
   source-generated client, given the `ElevenLabsJson` System.Text.Json context), not requests built
   by hand with `HttpClient`. Google's are `IGoogleOAuthApi` (`GoogleOAuthJson`, snake_case: token and
@@ -518,6 +536,7 @@ dotnet test --filter TestCategory=WindowsPower                         # a real 
 dotnet test --filter TestCategory=AudioDevice                          # Explicit tests on real devices
 dotnet test --filter TestCategory=WindowsProcess                       # real processes, pipes, windows, all of the test's own
 dotnet test --filter TestCategory=WindowsRegistry                      # reads two HKCU values every profile has and one HKLM value; creates nothing
+dotnet test --filter TestCategory=WindowsCamera                        # the real camera list, and a MediaCapture never initialised; opens no camera, no light
 dotnet test --filter "FullyQualifiedName~Four_simulated_hours"         # the Explicit four-hour soak; run it before any path moves onto the clock
 dotnet test --filter TestCategory=DryRunKit                            # Explicit: the whole dry run with a stand-in ClassScribe.exe, in temporary folders
 dotnet build --no-incremental --disable-build-servers                  # when other builds run at the same time; must report 0 warnings
@@ -529,6 +548,7 @@ dotnet run --project src/ClassScribe -- record-only "Kalam" --app chrome --outpu
 dotnet run --project src/ClassScribe -- record "Kalam" --app chrome --mic --mic-follows chrome --output "<folder>"   # the class and the microphone
 dotnet run --project src/ClassScribe -- record "Kalam" --in-person --output "<folder>"         # the microphone alone, in person
 dotnet run --project src/ClassScribe -- mic-check --seconds 600        # watch what apps do with the microphone; opens nothing
+dotnet run --project src/ClassScribe -- camera-check "OBSBOT"                   # the cameras and the set-up; opens the camera for 5 s, shared, only after a typed Y (the user's word only)
 dotnet run --project src/ClassScribe -- transcribe "C:\path\to\folder-or-file"   # --no-open opens nothing; --output for a file
 dotnet run --project src/ClassScribe -- transcribe "<path>" --again    # one with a transcript; billed again
 dotnet run --project src/ClassScribe -- rebuild "C:\path\to\folder-or-file"      # free, from the saved .json; --no-open
@@ -687,7 +707,15 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   download path), 3,819 after slice 2 (recording as it plays), and 3,875 after the review's repairs
   to them. With both merged into `develop` (step 0) the count is 3,900, all passing, in about
   three minutes; 3,901 with 0.4.0's microphone timing fix, and 3,960 with the Zoom fix (step 0b)
-  merged on 22 October. The uploads by themselves were tested in `DriveAutoUploadTests`
+  merged on 22 October. From YouTube's 3,875 the camera's basics grew on `feature/camera-basics` to
+  4,001 (camera-first step 11 without the probe's parts: the target framework, the device guard, the
+  camera list, its settings, the camera check, the camera's choice and refusal, and the camera
+  process's role), 4,012 after the review's fixes to them (a camera job or line without a body, a
+  tool start that throws, and the tests that pin the microphone guard's wiring and the camera start's
+  order and registration), and 4,068 after the camera's shared open (the probe fix's order), the
+  camera process's hold and check jobs, the webcam hold, the webcam zeros rules and the camera
+  check's open after a typed Y, and 4,095 with the fixes that keep a camera failure from the microphone
+  and pin the camera's rules. Merged into `develop` on 22 October, the count is 4,180, all passing. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
   `DriveQueueReportTests`,
@@ -724,7 +752,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
   three minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
   2 min 17 s for 3,395 later that day, 3 min 55 s for YouTube's 3,875 on 18 October, 3 min 7 s for
-  3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, plus the build). `[CancelAfter]` cannot
+  3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, 3 min 4 s for 4,180 with the camera's basics, plus the build). `[CancelAfter]` cannot
   interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -763,6 +791,31 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   processes, this one and any other ClassScribe, are left out of the apps with sound and never count
   as an app listening on a microphone (`IOwnProcesses`), so neither `Recording:App` nor
   `Recording:MicrophoneFollows` can pick ClassScribe.
+- The camera in a run (camera-first step 11, the part that needs no probe): `SourcePlan.Camera` (`CameraChoice(NamePart,
+  Resolution)`, a last field with a default, written only when set, so a run without a camera writes its files byte for
+  byte as before; never a fourth `RecordingMode`), only in person. `record`/`record-only --camera ["<camera>"]
+  [--resolution <size>]`: `--camera` only with `--in-person` (`--camera records only in person in this build: give it with
+  --in-person`), `--resolution` only with `--camera` (`--resolution needs --camera`) and checked by `CameraSize.TryParse`,
+  each exit 2; a name right after `--camera` is pointed out as the camera's. Menu choice 7 (now "Microphone and camera"),
+  in person, lists the cameras (`MicrophoneMenu`'s optional `ICameraProvider`) and asks the size (`Picture size: Enter for
+  720p (your setting), 1 480p, 2 720p, 3 1080p, T to type a size`), held by `SourceChoice` (`PickMicrophone(..., camera,
+  size)`, `PickedCameraResolution`, `CameraResolution`; W and N drop the camera; the header adds `with the camera "..."
+  (720p)`). `RecordStarter` hands a plan with a camera to `CameraStart` (scoped; before the continue question, amendment
+  17), which resolves the size into the request (`--resolution`, else menu 7's pick, else `Recording:CameraResolution`,
+  else 720p, so the recorder never reads it and the run file keeps it), then refuses with the set-up's first problem or
+  `ICameraRecorder.NotReady`: in the menu `Camera "...": <why>. Enter records the sound only; Esc goes back.`, elsewhere
+  `<why>. Nothing was recorded; leave out --camera to record the sound alone.` with exit 1; a ready build would ask
+  `Enter records with the camera; S records the sound only.` in the menu. `ICameraRecorder` (`Camera/CameraRecorder.cs`,
+  with `ICameraTrack` and `CameraTrackStart`) is the seam the camera process fills in slice 7; this build registers
+  `CameraRecorderNotBuilt` (`Words`: "The camera's recording is not built yet in this build of ClassScribe, so this
+  recording cannot take the camera"), a `RecordStarter` without a `CameraStart` refuses the same way, and
+  `TrackSetFactory.Create` throws `CameraNotBuiltException` for a plan with a camera, so no class starts with a half-built
+  camera. `CommandLine.Record` keeps `--camera` and `--resolution`. Amendment 2's extension data: `RunRecord`,
+  `RecordRequest` and `SourcePlan` carry `[JsonExtensionData] Dictionary<string, JsonElement>? Extra` (null when nothing
+  unknown was read, so records still compare equal), with a setter, not `init`: the generated reader fills init-only
+  properties through the constructor, where extension data cannot go. A build older than this one still drops what it
+  does not know when it writes a run file back. Tests: `CameraMenuTests`, `CameraStartTests`, and additions to
+  `CommandLineTreeTests`, `CommandLineTests`, `RecordStarterTests`, `RequestsTests` and `TrackSetTests`.
 - The run with the microphone (`RecordingMonitor`, `MicrophoneChecks`): the advice lines at the
   checks' first look (`MicrophoneAdvice.AtStart`: privacy, the `ClassAppMute` case line, the
   following line, the microphone line, then the warnings about Vantage, ducking, Bluetooth and the
@@ -952,7 +1005,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   upload's answer, so the read beside an upload cannot steal it), and `FakeElevenLabsAccount` stands in
   for the reader where the client is mocked.
 - Settings are in `src/ClassScribe/appsettings.json`, read from the exe's folder (under `dotnet run`,
-  the copy in `bin\Debug\net10.0`; the menu names it and warns when the project's file is newer).
+  the copy in `bin\Debug\net10.0-windows10.0.19041.0`; the menu names it and warns when the project's file is newer).
   `RunGate` reads the file again before each menu choice and each command (`SettingsReloader`): a
   staged copy is checked by `SettingsCheck`, and only values that pass reach the live settings,
   through `CheckedSettingsSource` and a reload; nothing watches the file. A refused file keeps the
@@ -970,6 +1023,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `Default`), `Recording:MicrophoneFollows` (refused when empty or when it names ClassScribe; not
   read in app mode) and `Recording:ClassAppMute` (`Visible`, `Invisible`, `Unknown`; a fact about
   the class app, so no command-line option), plus `Transcript:ShowGapsLongerThanSeconds` (0 or more).
+  The camera's settings (camera-first step 11) are `Recording:CameraResolution` (`720p`; `480p`, `720p`, `1080p` in any
+  case or `WxH`, checked by `CameraSize.TryParse`, the one parser `--resolution` and menu choice 7 use too; amendment 39)
+  and `Recording:WakeCameraMicrophone` (false, a yes or no: the webcam hold, see "The webcam hold" below;
+  turned on for one ClassScribe through its environment, `Recording__WakeCameraMicrophone=true`, which the window's
+  settings snapshot carries to the recorder, until a settings file of the user's own exists). New choices are new keys, not new values of an existing enum (amendment 5): an older build
+  refuses a value it does not know, and a key it does not know it passes over.
   The cost line's settings are `ElevenLabs:PricePerHourUsd` (0.22) and
   `ElevenLabs:KeytermsPricePerHourUsd` (0.05), each from 0 to 100 dollars an hour, and
   `ElevenLabs:ReadAccountUsage` (true). The Drive section (`DriveOptions`, `Drive/`): `Drive:FolderName`
@@ -1327,7 +1386,123 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with a renewed Bitdefender exception (Bitdefender may notice ClassScribe starting Chrome). Left for
   later, only if use calls for it: the media-controls probe for paused against ended, titled date
   folders, and automated playback (Gulzar chose attended).
-- The microphone check (`MicCheckCommand`, menu choice 8 and `mic-check`, resolved through
+- The camera's open (`Camera/CameraRoute.cs`, following `ROOT-CAUSE.md` beside the camera probe, finding 7 of 21
+  October): `CameraRoute.Open` makes the MediaCapture, registers `Failed`, finds the camera's source group by its id (never
+  left out: a camera Windows no longer lists is an error, never Windows' default camera), calls InitializeAsync with
+  `SharedReadOnly` and video only, and only after it has completed registers the events that only report (stream state,
+  exclusive control; each optional, a refusal recorded and passed over) and reads `FrameSources`. Before InitializeAsync
+  those are refused with 0xC00D36B6 MF_E_NOT_INITIALIZED, which is what every probe open of 21 October hit. Then the frame
+  reader: no format set (a shared open cannot set one; `SetFormatAsync` is noted as not called), nothing converted for
+  the hold or NV12 at the picture's size for the check, `Realtime`, each frame taken and released unread, and
+  `StartAsync`, whose status must be `Success`. There is no exclusive mode anywhere: the camera is only ever shared
+  (Gulzar's decision; his face sometimes shows in Zoom). Every call goes through `CameraCallLog` (name, time, OK or the
+  HRESULT with its name from `CameraHresults`, the probe's checked table, and Windows' words), so a failure names its call;
+  `CameraRoute.Close` lets the camera go, every call optional. `ICameraCapture` is the seam, one member a step;
+  `Camera/Windows/WindowsCameraCapture.cs` is the real MediaCapture (no memory preference), made by
+  `WindowsCameraCaptureFactory`. `CameraThread` is the camera process's own STA thread: every call on the route runs
+  there, each waited for at most the probe's 30 s (`CameraHost.CallLimit`), after which the thread is abandoned and the
+  job ends. Fakes: `FakeCameraCapture` (refuses what Windows refuses before InitializeAsync, with Windows' exception and
+  code; any step can fail, or get `Stuck` until a gate is set; `FramesOnStart`) and `FakeCameraCaptureFactory`; tests
+  `CameraRouteTests` (the order of 21 October fails on the fake as every open did), `CameraThreadTests` (STA, the limit
+  on the manual clock, every later call refused unqueued) and `WindowsCameraCaptureTests` (a camera id Windows does not
+  list throws in `FindSourceGroup`, never a fallback to another group).
+- The camera process (teach-video 6.2, amendment 24; its hold and check jobs open the camera, only shared):
+  `ClassScribe.exe --camera-process <job id>` (under dotnet, `dotnet ClassScribe.dll --camera-process <job id>`), taken
+  by `Program` before anything touches the console, as `--recorder` is, and only for exactly the switch and an id
+  `RunIds.IsWellFormed` takes (`CameraProtocol.IsCameraProcessStart`; `RecorderHost.IsRecorderStart` now checks its id the
+  same way), so anything else is the command line's mistake. `CameraHost` reads its job, the first line on its standard
+  input, and speaks the lines of `CameraProtocol` (`Camera/CameraProtocol.cs`: the job, `CameraJob` with `CameraJobKind`
+  Record, Finish, Check or Hold (the wake job renamed); to it `clock`, `off`, `on`, `stop` (`CameraStop`), `cancel`; from it
+  `opened`, `status`, `problem`, `piece`, `progress`, `made`, `failed`, `log`; `CameraJson`, strict as the link's) on its
+  standard output, as lines of UTF-8 JSON through `LineChannel` over a `JoinedStream` of the two pipes. Two jobs are
+  taken (`Camera/CameraJobs.cs`), each on a `CameraThread`: the hold (`CameraHoldJob`: the camera opened shared, nothing
+  converted; a `status` at the first frame of each open and once a second, with the frames and the seconds since the last;
+  a refused open said once per cause as a `problem` through `CameraProblems.ForFailedOpen` (E_ACCESSDENIED as privacy or a
+  security program, a sharing violation or busy as another app, a camera not listed or not connected) and tried again
+  every 5 s; a picture stopped for 3 s, or no first frame in 10 s, let go and opened again 5 s later; the starter's `stop`,
+  `cancel` or closed end lets the camera go and ends it with 0; a starter found gone on a send ends it too) and the check
+  (`CameraCheckJob`: the camera opened at the job's size, each call sent as a `log` line, a failed required call at
+  Warning, `opened`, then a `status` with the frames over `CameraHost.CheckFor` (5 s), let go; 0 with frames, else `failed`
+  and 1). A hold or check naming no camera is not taken. A record or finish job is answered with a log line and `failed`
+  (`CameraRecorderNotBuilt.Words`), opens nothing, and exits 4; no job within `JobPatience` (30 s), a first line that is no
+  job, a job without a body or with one that is not an object, or a job of another `CameraProtocol.Version`, is not taken
+  either, with why in `failed`; it never throws. Its exit codes are internal: 0 done, 1 failed, 4 a job it cannot take,
+  130 cancelled. `ICameraProcessStarter` (`CameraProcessStarter`, registered in `CameraServices`, used by the webcam hold
+  and the camera check) starts it through `PipedProcess` (`Desktop/Windows/PipedProcess.cs`,
+  factored out of `ProcessToolRunner`, which now starts its tools through it): CreateProcessW, no window, three pipes and no
+  other handle, `ChildEnvironment.WithoutTheKey`, the working folder `%LOCALAPPDATA%\ClassScribe`, and a kill-on-close
+  `ToolJob` made before it runs, the job and the pipes let go again when Windows refuses or the start throws
+  (`PipedProcessTests`); its standard error goes to the log at Debug under the category `Camera`; `ThisProgram.CommandFor`
+  gives this program's command line to it and to `ProcessStarter`. `ICameraProcess` gives the channel, the process id, the
+  exit code and `Kill`; `CameraLines` sends the job and the stop and reads each line as its type (a known type whose body
+  is not an object is a `JsonException`, never another exception). The real start refuses in
+  a test (`DeviceGuards`, naming `FakeCameraProcess`), and Windows' tool start refuses any program but cmd.exe there too.
+  Fakes: `FakeCameraProcess` (the lines over a `DuplexStreamPair`; `ProcessStream` lets the real `CameraHost` run over it),
+  `FakeCameraProcessStarter` (thread-safe; `PlayEach` plays each process with a `PlayedCameraProcess`, which reads its
+  job, sends status and problem lines and ends at the stop; `Run` runs, say, the real host per process; `StartFailure`)
+  and `CameraLinesSeen` (a starter's reader of every line); tests `CameraHostTests`, `CameraJobTests` (the real host over
+  the fake capture on the manual clock, stuck calls included: the hold's `failed` and exit 1, the check naming the call)
+  and `CameraProcessStarterTests`.
+- The webcam hold (`Camera/WebcamHold.cs`; camera-first 3.4 as amended on 21 October, behind
+  `Recording:WakeCameraMicrophone`, off by default): `TrackSetFactory` gives each microphone track a `WebcamHold` from
+  `WebcamHolds` (registered in `CameraServices`; optional, so a factory without it has no webcam). At each pick
+  (`TrackSet.OnMicrophonePicked`) `Follow` finds once per microphone whether it belongs to a webcam
+  (`Cameras.WebcamOf`: `CameraOf` but never a virtual camera; the cameras are listed only when `Cameras.MayBeOfACamera`,
+  a container that is not the computer's own, on the pool and waited for at most `ListLimit` (5 s; while a listing hangs a
+  later pick begins none and waits for none); a list that has a problem, throws or does not come leaves the pick
+  undecided, said once per stretch, a warning only with the setting on, and is asked again at the next pick; `Follow`
+  never throws, since it runs inside the microphone's pick). With the setting on it starts a
+  camera process with a hold job carrying the camera's id and name alone, and `MicrophoneProviderTap`'s `beforeOpen`
+  (`WebcamHold.BeforeOpen`) holds the microphone's capture until the first frame, at most `FirstFrameWait` (5 s) after the
+  hold began; the track is `ClockAligned`, so the wait is padded. The hold lasts through P and V off, follows the pick to
+  another webcam or lets go for a microphone of none (the old process let go in the background), and `TrackSet.Stop` lets
+  it go after the tracks have stopped, before the upload (`stop`, at most `StopWait` 5 s, then killed and disposed); leaving
+  the microphone out stops it too. A process that does not start or take its job (for any cause) or ends by itself is
+  started again `RetryEvery` (5 s) later; only the current webcam's start clears its starting flag, so a late start for an
+  earlier webcam is let go without letting a look start a second process for the new one, and a start that finds the
+  hold's process already there is let go too. The one-second timer (`Look`, which never throws: a timer thread's exception
+  would end the process) also says no picture yet (after 5 s), the picture stopped (3 s
+  without a frame, `WebcamHold.Stopped`, short `camera's picture stopped`) and back (`is open again`); a refusal from the
+  process is said once per cause (`WebcamHold.CannotOpen`, short `camera not opened`). Its lines go to the log under the
+  category `Camera`; the process's own log lines go there at Debug, its warnings as warnings. `IMicrophoneRecording.Webcam`
+  (no default body, so every recording with the microphone must say) gives the run a `WebcamState` (name, holding,
+  frames arriving, problem and its short words); `TrackSet.Webcam` reads it, and `MicrophoneChecks.WatchTheHold` makes
+  the problem a Notice with the class, an Alert in person. Tests `CameraHoldTests` (through the real track set too: the
+  job before the microphone's open, read through `IMicrophoneRecording`; a camera list that throws or never answers with
+  the setting on and off, the microphone still opening; a start that fails for any cause; the late start for an earlier
+  webcam), with `FakeCameraProvider.Failure` and `Hangs` and `FakeCameraProcessStarter.HoldStart` and `StartsEntered`.
+- The webcam zeros rules (camera-first 3.4; `MicrophoneChecks.WatchWebcamZeros`), in place of today's only-silence warning
+  for a microphone whose `IMicrophoneRecording.Webcam` is set, unless Windows flagged its last packet silent or Windows
+  mutes it (asked once per stretch of zeros), which keep today's warning; every other microphone keeps it as it was. The
+  zeros are counted at the device's own depth before the 16-bit conversion (`PcmConverter.AnyNonZero`; a negative zero is
+  zero; packets flagged silent count as neither), carried as `RecordingStatus`/`TrackSnapshot` fields with defaults
+  (`RawZerosFor`, `RawSoundSinceOpened`, `WindowsSilent`, `CaptureNumber`). At the start: `WebcamZerosAtStart` (60 s) of
+  zeros since the open, once a capture, in words that name the light, or, with the hold's frames arriving, the
+  microphone's own switch (`MicrophoneChecks.WebcamStartText`). Later: `WebcamZerosAfterSound` (2 min) after sound, once a
+  recording, never while the hold's frames arrive, its Notice ending when sound returns (`WebcamLaterText`). Each a Notice
+  (`only zeros from the webcam's microphone`) with the class, an Alert in person. Both lengths sit beside
+  `RecordingSession.OnlyZerosAfter`. Tests in `WebcamZerosTests.cs` (partial `RecordingSessionTests` for the measure, each
+  capture counted afresh, and partial `RecordingMonitorTests` for the rules: quiet while paused, switched off or not
+  listened to, the hold's problem an Alert in person, finding 4's twelve awake minutes replayed with no line).
+- The camera check (`CameraCheckCommand`, menu choice 8 then C and `camera-check ["<camera>"] [--resolution <size>]`,
+  through `ICommandRunner.CameraCheckAsync` in a scope of its own; teach-video 6.16, camera-first step 11 point 3): the
+  colour cameras numbered, with each webcam's own microphone; which apps use a camera now, from Windows' camera record
+  (`CameraUsageRecord`, ConsentStore\webcam, read by `ConsentStoreRecord` as the microphone's record is); the camera
+  and size a lesson with `--camera` would take; and the set-up lines of `CameraSetupFacts` (`Camera/CameraSetup.cs`, which
+  setup-check will reuse): Windows against 10.0.19041, the three privacy switches (the device's under HKEY_LOCAL_MACHINE,
+  the user's and the desktop apps'), an H.264 encoder (WinRT's `CodecQuery`), the antivirus programs that are on
+  (Security Center's `WSCProductList` through `IWscProductListRaw` and `IWscProductRaw` in
+  `Camera/Windows/SecurityCenterInterop.cs`: IDispatch's four slots first, since Windows registers no type library for
+  late binding; Bitdefender gets its Webcam Protection step), each webcam's microphone, and the hold. Then, only after a
+  typed Y and Enter (`CameraCheckCommand.Question`; anything else is `NotOpened`, a window that takes no typing
+  `NotAsked`), it opens the chosen camera for `OpenFor` (5 s), shared, at the picture's size, through a camera process's
+  check job, and shows every call with its outcome and timing, the camera's format, the frames, or why none came and
+  `TryAgain`; 75 s in all (`CheckLimit`) before the process is ended. Exit 0, or 1 when a `PROBLEM` line keeps the camera
+  from being used or the camera opened sent no picture or could not be opened. Never in a test with a real camera: the
+  tests' starter runs the real host over `FakeCameraCapture`. Menu choice 8 asks W (the microphone check) or C. Fakes:
+  `FakeCameraSystem`, `FakeCameraUsageRecord`; tests `CameraCheckTests` (with `CheckLimit` reached on the manual clock), and the real reads in
+  `WindowsCameraProviderTests` (WindowsCamera).
+- The microphone check (`MicCheckCommand`, menu choice 8 then W and `mic-check`, resolved through
   `IMicCheckRun` in a scope of its own): MicWatch inside ClassScribe. Every 250 ms it reads
   `IMicrophoneSessions.ReadAll()` and `IMicrophoneUsageRecord.Read()`, hands them to the pure
   `MicrophoneChangeTracker` (MIC, SESSION, PRIVACY, MARK, NOTE, ERROR and SELF lines, MicWatch's
@@ -1415,6 +1590,25 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `AudioServices` beside the advice) and `MicrophoneServices.cs` (`AddMicrophone`, called from
   `AddClassScribe`: the capture factory `MicrophoneActivation`, the provider behind
   `LazyMicrophoneProvider`, the sessions reader, and the `Lazy<>`s for `devices`).
+- `src/ClassScribe/Camera` (namespace `ClassScribe.Camera`; teach-video section 6 and camera-first step 11, built to the
+  part that needs no probe): `CameraDevice.cs` (`CameraDevice`, `CameraPlace`, `CameraPanel`, `VideoDeviceFacts`,
+  `CameraList`, `ICameraProvider`, and `Cameras`: the list's rules, colour cameras only, so Windows Hello's infrared camera
+  never shows, built in by the enclosure panel first since a laptop's own camera sits on an internal USB bus too, then USB
+  or virtual by the id; `Choose`, a name part first, virtual ones included, else USB, else the built-in front camera,
+  never a virtual one unnamed; `CameraOf` and `MicrophoneOf`, a webcam's microphone by the container it shares with its
+  camera, never a built-in camera and never by the computer's own container `Cameras.ThisComputer`; `WebcamOf`, never a
+  virtual camera either, for the hold and the zeros rules), `CameraRoute.cs` (the shared open and its call log),
+  `CameraThread.cs`, `CameraJobs.cs` (the hold and check jobs, `CameraProblems`), `WebcamHold.cs` (`WebcamHold`,
+  `WebcamHolds`, `WebcamState`), `Windows/WindowsCameraCapture.cs` (the real MediaCapture),
+  `Windows/WindowsCameraProvider.cs` (WinRT's `DeviceInformation.FindAllAsync` with `System.Devices.ContainerId` and
+  `MediaFrameSourceGroup.FindAllAsync`, which open nothing; Windows older than 10.0.19041 and a list Windows will not give,
+  whatever exception WinRT maps its HRESULT to, answer with a `CameraList` that says why, and only the caller's own cancel
+  is thrown; an internal constructor takes a stand-in read, `WindowsCameraProviderFailureTests`) and `CameraServices`
+  (`AddCamera`, after `AddMicrophone`). The microphone's
+  container is read by `EndpointFacts` (`PropertyKeys.ContainerId`, PKEY_Device_ContainerId) and carried as
+  `Microphone.ContainerId`, a last field with a default. `devices` lists the cameras after the microphones. The fakes are
+  `LaptopCameras` and `FakeCameraProvider` (`TestDoubles.Camera.cs`); the real list is the category `WindowsCamera`
+  (`WindowsCameraProviderTests`, run with the suite, listing only, no light).
 - `src/ClassScribe/Audio/Windows`: `CoreAudioInterop.cs` holds ClassScribe's own Core Audio
   declarations (the property store and its readers, `PropertyKeys`, `EndpointFormFactor`, the
   endpoint volume and session interfaces) and `CoreAudio` (`CreateEnumerator`, `OpenPropertyStore`,

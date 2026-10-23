@@ -1,4 +1,5 @@
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Options;
@@ -12,8 +13,9 @@ namespace ClassScribe.Audio;
 /// whatever the settings say. Choosing an app drops a chosen device and the other way round, so only one is ever set; when
 /// the settings name both, the app wins. The microphone: none, with the class, or alone in person, which microphone, and
 /// which app its track follows. That follows Recording:Mode, Recording:Microphone and Recording:MicrophoneFollows until
-/// menu choice 7 picks something, which then holds in the same way. A run's request takes it all as a source plan
-/// (<see cref="Current"/>).
+/// menu choice 7 picks something, which then holds in the same way. In person, menu choice 7 may pick a camera too, and the
+/// picture's size; there is no setting for the camera, and every start from the menu asks first whether to use it. A run's
+/// request takes it all as a source plan (<see cref="Current"/>).
 /// </summary>
 public sealed class SourceChoice(IOptionsMonitor<RecordingOptions> options)
 {
@@ -41,7 +43,8 @@ public sealed class SourceChoice(IOptionsMonitor<RecordingOptions> options)
                 var settings = options.CurrentValue;
                 return ModeNow(settings) switch
                 {
-                    RecordingMode.Microphone => new SourcePlan(RecordingMode.Microphone, Class: null, new MicrophoneChoice(_microphone?.NamePart)),
+                    RecordingMode.Microphone => new SourcePlan(RecordingMode.Microphone, Class: null, new MicrophoneChoice(_microphone?.NamePart),
+                        _microphone?.Camera is { } camera ? new CameraChoice(camera, SizeNow(settings).Text) : null),
                     RecordingMode.ClassAndMicrophone => new SourcePlan(RecordingMode.ClassAndMicrophone, Class, new MicrophoneChoice(_microphone?.NamePart, _microphone?.Follows)),
                     _ => new SourcePlan(RecordingMode.Class, Class, Microphone: null)
                 };
@@ -117,14 +120,40 @@ public sealed class SourceChoice(IOptionsMonitor<RecordingOptions> options)
     }
 
     /// <summary>
+    /// The picture's size menu choice 7 picked for the session; null while Recording:CameraResolution decides.
+    /// </summary>
+    public CameraSize? PickedCameraResolution
+    {
+        get
+        {
+            lock (_gate) return _microphone?.Size;
+        }
+    }
+
+    /// <summary>The picture's size in force now: menu choice 7's pick, else Recording:CameraResolution, else 720p.</summary>
+    public CameraSize CameraResolution
+    {
+        get
+        {
+            lock (_gate) return SizeNow(options.CurrentValue);
+        }
+    }
+
+    /// <summary>
     /// Menu choice 7: records <paramref name="mode"/> for the rest of the session, whatever the settings say, with the
     /// microphone whose name contains <paramref name="namePart"/>, or null to leave the microphone to Recording:Microphone
     /// and Windows' default, and with the microphone following <paramref name="follows"/>, or null to leave that to the app
-    /// recorded and Recording:MicrophoneFollows.
+    /// recorded and Recording:MicrophoneFollows. In person, with the camera whose name contains <paramref name="camera"/>,
+    /// or none when it is null, at <paramref name="size"/>, or null for Recording:CameraResolution; with the class there is
+    /// never a camera in this build.
     /// </summary>
-    public void PickMicrophone(RecordingMode mode, string? namePart, FollowRule? follows)
+    public void PickMicrophone(RecordingMode mode, string? namePart, FollowRule? follows, string? camera = null, CameraSize? size = null)
     {
-        lock (_gate) _microphone = new MenuMicrophone(mode, Normalise(namePart), follows);
+        lock (_gate)
+        {
+            var inPerson = mode == RecordingMode.Microphone;
+            _microphone = new MenuMicrophone(mode, Normalise(namePart), follows, inPerson ? Normalise(camera) : null, inPerson ? size : null);
+        }
     }
 
     /// <summary>
@@ -141,7 +170,9 @@ public sealed class SourceChoice(IOptionsMonitor<RecordingOptions> options)
                 var microphone = (_microphone?.NamePart ?? Normalise(settings.Microphone)) is { } name ? $"your microphone \"{name}\"" : "Windows' default microphone";
                 return ModeNow(settings) switch
                 {
-                    RecordingMode.Microphone => $"{microphone}, in person",
+                    RecordingMode.Microphone => _microphone?.Camera is { } camera
+                        ? $"{microphone}, in person, with the camera \"{camera}\" ({SizeNow(settings).Text})"
+                        : $"{microphone}, in person",
                     RecordingMode.ClassAndMicrophone => $"{DescribeClass(Class)}, and {microphone}{FollowWords(FollowsNow(settings))}",
                     _ => DescribeClass(Class)
                 };
@@ -154,6 +185,10 @@ public sealed class SourceChoice(IOptionsMonitor<RecordingOptions> options)
 
     /// <summary>What a recording holds now: the pick from menu choice 7, or else <paramref name="settings"/>. Call with the lock held.</summary>
     private RecordingMode ModeNow(RecordingOptions settings) => _microphone?.Mode ?? settings.Mode;
+
+    /// <summary>The picture's size now (see <see cref="CameraResolution"/>). Call with the lock held.</summary>
+    private CameraSize SizeNow(RecordingOptions settings) =>
+        _microphone?.Size ?? (CameraSize.TryParse(settings.CameraResolution, out var set) ? set : CameraSize.Default);
 
     /// <summary>The app the microphone follows now (see <see cref="Follows"/>). Call with the lock held.</summary>
     private FollowRule? FollowsNow(RecordingOptions settings) =>
@@ -187,6 +222,10 @@ public sealed class SourceChoice(IOptionsMonitor<RecordingOptions> options)
     /// <summary>Trims a name; a blank one means nothing is chosen.</summary>
     private static string? Normalise(string? name) => string.IsNullOrWhiteSpace(name) ? null : name.Trim();
 
-    /// <summary>What menu choice 7 picked: the mode, the microphone by part of its name, or null for the settings, and the app it follows, or null for the settings.</summary>
-    private sealed record MenuMicrophone(RecordingMode Mode, string? NamePart, FollowRule? Follows);
+    /// <summary>
+    /// What menu choice 7 picked: the mode, the microphone by part of its name, or null for the settings, the app it follows,
+    /// or null for the settings; and in person the camera by its name, or null for none, and the picture's size, or null for
+    /// the setting.
+    /// </summary>
+    private sealed record MenuMicrophone(RecordingMode Mode, string? NamePart, FollowRule? Follows, string? Camera = null, CameraSize? Size = null);
 }

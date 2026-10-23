@@ -463,6 +463,100 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--log-folder names a file, not a folder: {file}" }));
     }
 
+    /// <summary>
+    /// --camera, in person, asks for the lesson's picture too: without a value for the camera the starter picks, with one for
+    /// the camera whose name holds it; --resolution gives its size as it is written, else the starter resolves it.
+    /// </summary>
+    [Test]
+    public async Task Camera_in_person_asks_for_the_picture_too_with_its_size()
+    {
+        Assert.That(await RunAsync("record", "Tajwid 4", "--in-person", "--camera", "--output", Classes), Is.EqualTo(0));
+        Assert.That(OnlySource(), Is.EqualTo(InPerson() with { Camera = new CameraChoice(null) }));
+
+        _recorded.Clear();
+        Assert.That(await RunAsync("record-only", "Tajwid 4", "--in-person", "OBSBOT", "--camera", " OBSBOT ", "--resolution", "1080P", "--output", Classes), Is.EqualTo(0));
+        Assert.That(OnlySource(), Is.EqualTo(InPerson("OBSBOT") with { Camera = new CameraChoice("OBSBOT", "1080p") }));
+    }
+
+    /// <summary>--camera records only in person in this build: with --device or --app it is a mistake, exit 2.</summary>
+    [TestCase("--device", "auto")]
+    [TestCase("--app", "chrome")]
+    public async Task Camera_without_in_person_is_refused(string source, string value)
+    {
+        AssertRefused(await RunAsync("record", "Kalam", source, value, "--camera", "--output", Classes));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--camera records only in person in this build: give it with --in-person" }));
+    }
+
+    /// <summary>--resolution needs --camera, and a size it takes: each mistake is named, exit 2.</summary>
+    [Test]
+    public async Task Resolution_needs_the_camera_and_a_size_it_takes()
+    {
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--resolution", "720p", "--output", Classes));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--resolution needs --camera" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--camera", "--resolution", "4k", "--output", Classes));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {Camera.CameraSize.Rule}; \"4k\" is not one" }));
+    }
+
+    /// <summary>A recording's name right after --camera is taken as the camera's, which the message about the missing name points out.</summary>
+    [Test]
+    public async Task A_name_taken_by_camera_is_pointed_out()
+    {
+        AssertRefused(await RunAsync("record", "--in-person", "--camera", "Kalam", "--output", Classes));
+
+        Assert.That(_line.Mistakes.Single(), Does.EndWith("(--camera took \"Kalam\" as the camera's name)"));
+    }
+
+    /// <summary>
+    /// camera-check runs the camera check, with part of a camera's name when given (trimmed) and --resolution as the size
+    /// is written, whatever its case; nothing is opened.
+    /// </summary>
+    [Test]
+    public async Task Camera_check_takes_a_camera_and_a_size()
+    {
+        List<CameraCheckRequest> checks = [];
+        _commands.Setup(c => c.CameraCheckAsync(It.IsAny<CameraCheckRequest>())).Callback((CameraCheckRequest request) => checks.Add(request)).ReturnsAsync(0);
+
+        Assert.That(await RunAsync("camera-check"), Is.EqualTo(0));
+        Assert.That(await RunAsync("camera-check", " OBSBOT ", "--resolution", "1080P"), Is.EqualTo(0));
+        Assert.That(await RunAsync("Camera-Check", "--resolution", "1024X576"), Is.EqualTo(0));
+
+        Assert.That(checks, Is.EqualTo(new[] { new CameraCheckRequest(), new CameraCheckRequest("OBSBOT", "1080p"), new CameraCheckRequest(null, "1024x576") }));
+    }
+
+    /// <summary>A size camera-check cannot take, or --resolution without one, is a mistake that gives the rule, exit 2.</summary>
+    [TestCase("4k")]
+    [TestCase("1025x576")]
+    public async Task Camera_check_refuses_a_size_it_cannot_take(string given)
+    {
+        AssertRefused(await RunAsync("camera-check", "--resolution", given));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {Camera.CameraSize.Rule}; \"{given}\" is not one" }));
+    }
+
+    /// <summary>
+    /// --resolution with nothing after it is refused in ClassScribe's own words, the only mistake named; on record, where it
+    /// took the next option for its size, it says which, as --app and --mic-follows do, and never in System.CommandLine's
+    /// words for a missing value.
+    /// </summary>
+    [Test]
+    public async Task Resolution_without_a_size_is_refused_in_ClassScribes_words()
+    {
+        AssertRefused(await RunAsync("camera-check", "--resolution"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--resolution needs a size after it, such as 720p" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--camera", "--resolution", "--output", Classes));
+        Assert.That(_line.Mistakes, Does.Contain("--resolution needs a size after it, such as 720p; it took the option --output instead"));
+        Assert.That(_line.Mistakes, Has.None.Contains("Required argument missing"));
+
+        CreateLine();
+        AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--output", Classes, "--camera", "--resolution"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "--resolution needs a size after it, such as 720p" }));
+    }
+
     /// <summary>drive signin takes the client file as a full path; without --client it signs in with the client kept.</summary>
     [Test]
     public async Task Drive_signin_takes_the_client_file_as_a_full_path()
