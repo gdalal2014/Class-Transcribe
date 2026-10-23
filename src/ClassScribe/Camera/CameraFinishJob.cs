@@ -36,6 +36,12 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     /// <summary>How often a progress line goes out while the writing goes on, even when the percent stands still, so that the starter's time limit never ends a slow but working job.</summary>
     public static readonly TimeSpan ProgressEvery = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// How many times the checked video is tried in its place, <see cref="LookEvery"/> apart, while another program holds the
+    /// older video or the new one open, as a scanner does for a moment, before the job fails with why.
+    /// </summary>
+    public const int RenameTries = 3;
+
     /// <summary>Ends the writing when the starter cancels, or its end of the lines closes.</summary>
     private readonly CancellationTokenSource _cancel = new();
 
@@ -149,13 +155,49 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
             return await FailAsync(files, $"The lesson's video did not pass its check ({problem})", kept: true);
         }
 
-        File.Move(files.LessonVideoPartial, files.LessonVideo, overwrite: true);
+        if (await PutInPlaceAsync(files) is { } held)
+        {
+            var partial = Path.GetFileName(files.LessonVideoPartial);
+            return await FailAsync(files, File.Exists(files.LessonVideo)
+                ? $"{Path.GetFileName(files.LessonVideo)}, the older video, is open in another program, such as a video player, so the new one, which passed its check, could not take its place ({held}). It stays as {partial} until the next making. Close it, then make the video again"
+                : $"The new video, which passed its check, could not be named {Path.GetFileName(files.LessonVideo)} ({held}): another program, such as a scanner, holds it. It stays as {partial} until the next making. Make the video again",
+                kept: true);
+        }
+
         var bytes = new FileInfo(files.LessonVideo).Length;
         await LogAsync("Information", string.Create(CultureInfo.InvariantCulture,
             $"{Path.GetFileName(files.LessonVideo)} passed its check: {Durations.Format(soundLength)}, picture and sound, a frame decoded at the start, at each of {plan.Joins.Count} {(plan.Joins.Count == 1 ? "join" : "joins")} and at the end"));
         await DealWithThePiecesAsync(files);
         await SendAsync(CameraProtocol.Made, new CameraMade(files.LessonVideo, Math.Round(soundLength.TotalSeconds, 3), bytes), CameraJson.Default.CameraMade);
         return CameraProtocol.DoneExitCode;
+    }
+
+    /// <summary>
+    /// Renames the checked <c>.partial</c> to the lesson's video, replacing an older one, trying <see cref="RenameTries"/>
+    /// times <see cref="LookEvery"/> apart while another program holds either file open (a player the older video, a
+    /// scanner either for a moment), with a line before each new try. Null once it is in place; otherwise Windows' reason,
+    /// the <c>.partial</c> left as it is.
+    /// </summary>
+    private async Task<string?> PutInPlaceAsync(RecordingFiles files)
+    {
+        for (var tries = 1; ; tries++)
+        {
+            try
+            {
+                File.Move(files.LessonVideoPartial, files.LessonVideo, overwrite: true);
+                return null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Deliberately not rethrown: a file another program holds open, as a player holds the older video, keeps the
+                // new one from its place; it is tried again a little later, and after the last try the caller fails the job
+                // with this reason, the checked video kept as its .partial, rather than ending the camera process unhandled.
+                if (tries >= RenameTries) return Words(ex);
+
+                await LogAsync("Debug", $"{Path.GetFileName(files.LessonVideo)} is open in another program; trying again in a second ({Words(ex)})");
+                await Task.Delay(LookEvery, time);
+            }
+        }
     }
 
     /// <summary>

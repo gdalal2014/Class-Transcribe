@@ -1660,7 +1660,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   camera process, `CameraFinishJob` refuses a recording without its `.wav` here or with a `.mp4.partial` being written,
   deletes a stale partial with a line, leaves an unreadable piece out with a warning, logs the plan, sends `progress`
   at each new percent or every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking), and on a pass renames
-  the partial and deals with the pieces: kept when the job's `KeepPieces` says the video goes to Drive (a line), else
+  the partial (`PutInPlaceAsync`: `RenameTries` 3, a second apart, while a player or scanner holds a file open; then failed
+  with why, the checked partial kept for the next making to delete, the older video and the pieces as they were) and deals
+  with the pieces: kept when the job's `KeepPieces` says the video goes to Drive (a line), else
   deleted with a line; a failure deletes the partial and keeps the pieces, with the free `finish-video` command; a cancel
   is 130. In the window or recorder, `LessonVideoMaker` (transient, `CameraServices`) starts the camera process with a
   finish job and gives a `LessonVideoResult` (`Made`, `Failed`, `Cancelled`; ended after `ProgressLimit` 2 min without a

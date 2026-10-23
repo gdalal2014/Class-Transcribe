@@ -187,6 +187,58 @@ public sealed class CameraFinishJobTests
         Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("a lesson's video"));
     }
 
+    /// <summary>
+    /// An older video that a player holds open cannot be replaced: the rename is tried <see cref="CameraFinishJob.RenameTries"/>
+    /// times, a second apart, then failed says why and how to make it again, free; the new video, which passed its check, is
+    /// kept as its .partial (the next making deletes it), the older video and the pieces stay, and the job ends with 1, never
+    /// with an exception out of the camera process.
+    /// </summary>
+    [Test]
+    public async Task An_older_video_a_player_holds_open_is_not_replaced_and_failed_says_why()
+    {
+        Piece(0);
+        File.WriteAllText(_files.LessonVideo, "the older video");
+
+        int exit;
+        CameraLinesSeen seen;
+        using (new FileStream(_files.LessonVideo, FileMode.Open, FileAccess.Read, FileShare.Read))
+            (exit, seen) = await RunAsync(Finish());
+
+        var failed = seen.Of<CameraFailed>().Single().Why;
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(failed, Does.StartWith(
+                $"{BaseName}.mp4, the older video, is open in another program, such as a video player, so the new one, which passed its check, could not take its place ("));
+            Assert.That(failed, Does.Contain($"Close it, then make the video again. The camera's pieces are kept. To make it again, free: "));
+            Assert.That(failed, Does.Contain($"finish-video \"{_files.Segment(1)}\""));
+            Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("the older video"));
+            Assert.That(File.Exists(_files.LessonVideoPartial), Is.True, "the checked video is kept as its .partial");
+            Assert.That(_files.FindCameraPieces(), Has.Count.EqualTo(1));
+            Assert.That(seen.Of<CameraMade>(), Is.Empty);
+            Assert.That(seen.Logs.Count(line => line.Contains("is open in another program; trying again in a second", StringComparison.Ordinal)), Is.EqualTo(CameraFinishJob.RenameTries - 1));
+        }
+    }
+
+    /// <summary>An older video held open only for a moment, as a scanner holds a file, is replaced once it is let go: the rename is tried again a second later.</summary>
+    [Test]
+    public async Task An_older_video_held_for_a_moment_is_replaced_once_let_go()
+    {
+        Piece(0);
+        File.WriteAllText(_files.LessonVideo, "the older video");
+        await using var scanner = new FileStream(_files.LessonVideo, FileMode.Open, FileAccess.Read, FileShare.Read);
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Finish());
+
+        await Wait.UntilAsync(() => seen.Logs.Any(line => line.Contains("trying again in a second", StringComparison.Ordinal)));
+        await scanner.DisposeAsync();
+        await _time.AdvanceUntilAsync(() => host.IsCompleted, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+
+        Assert.That(await host, Is.EqualTo(CameraProtocol.DoneExitCode));
+        Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("a lesson's video"));
+        Assert.That(File.Exists(_files.LessonVideoPartial), Is.False);
+    }
+
     /// <summary>A continued lesson whose first pieces were deleted takes the older video's picture before its first piece.</summary>
     [Test]
     public async Task A_continued_lesson_takes_the_older_video_before_its_first_piece()
