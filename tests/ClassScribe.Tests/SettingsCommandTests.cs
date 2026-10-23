@@ -88,7 +88,7 @@ public class SettingsCommandTests
         Run(new SettingsRequest.List(false));
         Run(new SettingsRequest.List(true));
 
-        Assert.That(Lines, Has.Member("Recording:MicrophoneFollows = chrome  (default auto; newer default: auto)"));
+        Assert.That(Lines, Has.Member("Recording:MicrophoneFollows = chrome  (default auto; newer default: auto (since 0.5.0))"));
         var row = JsonNode.Parse(Lines[^1])!.AsArray().Single(item => item!["key"]!.GetValue<string>() == "Recording:MicrophoneFollows")!;
         Assert.That(row["newerDefault"]!.GetValue<string>(), Is.EqualTo("auto"));
         Assert.That(row["value"]!.GetValue<string>(), Is.EqualTo("chrome"), "never changed by itself");

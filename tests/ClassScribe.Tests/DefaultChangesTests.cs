@@ -9,11 +9,11 @@ namespace ClassScribe.Tests;
 [TestFixture]
 public class DefaultChangesTests
 {
-    /// <summary>The first row is Recording:MicrophoneFollows, from chrome to auto (N9), without a version on a feature branch.</summary>
+    /// <summary>The first row is Recording:MicrophoneFollows, from chrome to auto (N9), dated 0.5.0 by that release's cut.</summary>
     [Test]
     public void The_first_row_is_the_followed_app_from_chrome_to_auto()
     {
-        Assert.That(DefaultChanges.Rows[0], Is.EqualTo(new DefaultChange("Recording:MicrophoneFollows", "chrome", "auto", "")));
+        Assert.That(DefaultChanges.Rows[0], Is.EqualTo(new DefaultChange("Recording:MicrophoneFollows", "chrome", "auto", "0.5.0")));
         Assert.That(new RecordingOptions().MicrophoneFollows, Is.EqualTo(DefaultChanges.Rows[0].NewDefault), "the code's default is the row's new one");
     }
 
@@ -47,11 +47,15 @@ public class DefaultChangesTests
         Assert.That(DefaultChanges.HeldIn(new Dictionary<string, string?> { ["Recording:FlushSeconds"] = "5" }, rows), Is.Empty);
     }
 
-    /// <summary>A row without a version, as on a feature branch, is described without one; the menu's line counts one or several.</summary>
+    /// <summary>
+    /// A dated row names its version; a row without one, as on a feature branch before its release is cut, is described
+    /// without it; the menu's line counts one or several.
+    /// </summary>
     [Test]
     public void The_words_name_the_newer_default_and_count_them()
     {
-        Assert.That(DefaultChanges.Describe(DefaultChanges.Rows[0]), Is.EqualTo("newer default: auto"));
+        Assert.That(DefaultChanges.Describe(DefaultChanges.Rows[0]), Is.EqualTo("newer default: auto (since 0.5.0)"));
+        Assert.That(DefaultChanges.Describe(new DefaultChange("Recording:FlushSeconds", "10", "7", "")), Is.EqualTo("newer default: 7"));
         Assert.That(DefaultChanges.HeaderLine(0), Is.Null);
         Assert.That(DefaultChanges.HeaderLine(1), Is.EqualTo("1 setting holds an older default; settings list shows it"));
         Assert.That(DefaultChanges.HeaderLine(2), Is.EqualTo("2 settings hold an older default; settings list shows them"));
