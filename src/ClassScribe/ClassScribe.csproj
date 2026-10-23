@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ClassScribe</RootNamespace>
     <AssemblyName>ClassScribe</AssemblyName>
+    <Version>0.4.0</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- The compiler then reports a public type or member without an XML summary (CS1591). -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

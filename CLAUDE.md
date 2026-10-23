@@ -306,7 +306,9 @@ advice after a format error (10 A).
 - The microphone gate (`MicrophoneGate`, pure) judges each microphone packet by the watch's looks on
   both sides of its stamp (`Write`, `Drop`, `Undecided`); `RecordingSession.SetGate` holds undecided
   packets, judges them again on `Changed`, every second and at the stop, and drops any held longer
-  than `LongestHold` (2 s). `ClassMicrophoneWatch` looks every 250 ms on its own MTA thread
+  than `LongestHold` (2 s); a packet that arrives while others are held waits behind them, so none
+  overtakes another (a look can land between two judgements, since the watch's thread records it
+  without the session's lock). `ClassMicrophoneWatch` looks every 250 ms on its own MTA thread
   ("ClassScribe microphone watch"), over every microphone every 10 s, and hands `WatchLook`s to the
   gate through `TrackSet`, which starts the watch at the session's first pick (a track that starts
   switched off still looks), follows it to another microphone, makes a last look before V arms and

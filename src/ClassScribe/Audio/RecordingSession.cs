@@ -572,6 +572,7 @@ public sealed class RecordingSession(
     /// Sets the gate that decides which packets of a track on the clock are written, or takes it away with null, which
     /// writes every packet at once, as without one. With a gate, a packet it cannot decide yet is held, and judged again
     /// when the gate says it has changed, when the next packet arrives, every second, and once more at the stop; a
+    /// packet that arrives while others are held waits behind them, so that the packets are written in their order; a
     /// packet it drops is not written, and its time is silence at its place, so positions do not move. A packet held
     /// longer than <see cref="LongestHold"/> is dropped. Only a track on the clock can have a gate.
     /// </summary>
@@ -848,8 +849,9 @@ public sealed class RecordingSession(
 
     /// <summary>
     /// Takes a packet for a track on the clock: notes its stamp as the recording's origin if it is the first of any track,
-    /// written or not; judges the packets held so far; then, with a gate, holds the packet while the gate cannot decide
-    /// it, drops it when the gate says so, and otherwise places it. Call with <see cref="_gate"/> held.
+    /// written or not; judges the packets held so far; then, with a gate, holds the packet while any packet before it is
+    /// still held or the gate cannot decide it, drops it when the gate says so, and otherwise places it. Call with
+    /// <see cref="_gate"/> held.
     /// </summary>
     private void TakeLocked(ReadOnlySpan<byte> mono, long? stamp, int sampleRate, bool audible, long now)
     {
@@ -861,7 +863,10 @@ public sealed class RecordingSession(
 
         if (_packetGate is { } gate)
         {
-            switch (gate.Judge(judged))
+            // A packet never overtakes one still held: it waits behind them and is judged with them, in order. The watch's
+            // thread records a look without this lock, so one can land between the judgement of the held packets and this
+            // one's; judged on its own, this packet would then be written first and the held ones trimmed away behind it.
+            switch (_held.Count > 0 ? GateVerdict.Undecided : gate.Judge(judged))
             {
                 case GateVerdict.Undecided:
                     _held.Add(new HeldPacket(mono.ToArray(), stamp, judged, arrival, sampleRate, audible));

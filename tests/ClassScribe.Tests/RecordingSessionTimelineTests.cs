@@ -1085,6 +1085,46 @@ public sealed class RecordingSessionTimelineTests
     }
 
     /// <summary>
+    /// A new packet never overtakes one the gate still holds, even when a look lands between their judgements, as the
+    /// watch's thread records its looks without the session's lock: the newcomer waits behind the held packet, and both are
+    /// written in order when they are judged again. Judged on its own, the newcomer was written first, with silence before
+    /// it, and the held packet then trimmed away behind it; that is how the four-hour soak lost stretches of the microphone
+    /// and shifted it past a mute when the computer was busy.
+    /// </summary>
+    [Test]
+    public void A_new_packet_never_overtakes_a_held_one_when_a_look_lands_between_their_judgements()
+    {
+        var capture = _provider.Enqueue(new FakeAudioCapture(Pcm48KMono));
+        var gate = new FakePacketGate();
+        using var session = CreateSession();
+        session.SetGate(gate);
+
+        session.Start(_files);
+        capture.Deliver(Packet(7, 100), Stamp(10));
+        gate.Answer(GateVerdict.Undecided);
+        capture.Deliver(Packet(8, 100), Stamp(10.1));
+        gate.Answer(stamp =>
+        {
+            // The held packet is judged again as the newcomer arrives, still undecided; a look lands right after, on the
+            // watch's thread, and decides every packet up to it.
+            if (stamp == Stamp(10.1)) gate.Answer(GateVerdict.Write);
+            return GateVerdict.Undecided;
+        });
+        capture.Deliver(Packet(9, 100), Stamp(10.2));
+        gate.RaiseChanged();                              // the look's own call, once the capture thread has let go of the session
+        var result = session.Stop(Seconds(0.3));
+
+        var samples = SamplesOf(result.SegmentPaths);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(samples, Has.Length.EqualTo(At(Seconds(0.3))));
+            Assert.That(samples[..4800], Is.All.EqualTo(7));
+            Assert.That(samples[4800..9600], Is.All.EqualTo(8), "the held packet is written at its place, not trimmed away behind the newcomer");
+            Assert.That(samples[9600..], Is.All.EqualTo(9));
+        }
+    }
+
+    /// <summary>
     /// The recording starts at the first packet of any track whether or not the gate writes it: a microphone packet the
     /// gate drops still sets the origin, so what the microphone heard before the class's first packet is not trimmed away
     /// once the class sets a later one, and the time until the first written packet is silence at its place.
