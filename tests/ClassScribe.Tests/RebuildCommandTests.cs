@@ -173,6 +173,24 @@ public class RebuildCommandTests
     }
 
     /// <summary>
+    /// A recording named by its glossary record (&lt;base&gt;.glossary.json) is that recording, rebuilt from its newest saved
+    /// answer, never the record taken for an answer of its own; a rebuild sends nothing and uses no glossary, so the record
+    /// is left as it was.
+    /// </summary>
+    [Test]
+    public async Task A_recording_named_by_its_glossary_record_is_rebuilt_from_its_answer()
+    {
+        var recording = WriteRecording(new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        SaveAnswer(recording, "The answer.");
+        File.WriteAllText(recording.Glossary, "{\"version\":1}");
+
+        Assert.That(await CreateCommand().RunAsync(recording.Glossary, open: false), Is.EqualTo(0));
+
+        Assert.That(File.ReadAllText(recording.Transcript(2)), Does.Contain("The answer."));
+        Assert.That(File.ReadAllText(recording.Glossary), Is.EqualTo("{\"version\":1}"));
+    }
+
+    /// <summary>
     /// A recording started later that has no saved answer yet, such as one recorded but not transcribed, is passed over
     /// for the newest that has one, and the log says so, so that the one rebuilt is not taken for it.
     /// </summary>

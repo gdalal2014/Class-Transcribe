@@ -189,9 +189,9 @@ public class ClassFoldersLayoutTests
     }
 
     /// <summary>
-    /// A start that recorded nothing, a false start, leaves only its log and perhaps its marks in the date folder. That is
-    /// no class (Gulzar decided this on 18 October): the day's real class goes into the same folder, not into "(2)", and
-    /// the false start's files stay as they are beside it.
+    /// A start that recorded nothing, a false start, leaves only its log, its glossary record (written as a run starts) and
+    /// perhaps its marks in the date folder. That is no class (Gulzar decided this on 18 October): the day's real class goes
+    /// into the same folder, not into "(2)", and the false start's files stay as they are beside it.
     /// </summary>
     [Test]
     public void A_date_folder_holding_only_the_log_and_marks_of_a_start_that_recorded_nothing_is_used()
@@ -200,6 +200,7 @@ public class ClassFoldersLayoutTests
         var falseStart = folders.CreateRecording("Mantiq");
         File.WriteAllText(falseStart.Log, "a run that ended before any audio still leaves its log");
         File.WriteAllText(falseStart.Marks, "00:00:00.000 ~ a mark");
+        File.WriteAllText(falseStart.Glossary, "{}");
 
         _time.Advance(TimeSpan.FromMinutes(5));
         var real = folders.CreateRecording("Mantiq");
@@ -207,7 +208,7 @@ public class ClassFoldersLayoutTests
         Assert.That(real.Folder, Is.EqualTo(falseStart.Folder));
         Assert.That(real.BaseName, Is.EqualTo("Mantiq_2026-10-17_14-09-42Z"));
         Assert.That(Directory.GetFiles(real.Folder).Select(Path.GetFileName),
-            Is.EquivalentTo(new[] { "Mantiq_2026-10-17_14-04-42Z.log", "Mantiq_2026-10-17_14-04-42Z.marks.txt" }));
+            Is.EquivalentTo(new[] { "Mantiq_2026-10-17_14-04-42Z.log", "Mantiq_2026-10-17_14-04-42Z.marks.txt", "Mantiq_2026-10-17_14-04-42Z.glossary.json" }));
     }
 
     /// <summary>

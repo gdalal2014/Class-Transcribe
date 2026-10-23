@@ -97,7 +97,7 @@ public sealed partial class RebuildCommand(
         var found = ClassFolders.RecordingFoldersIn(folder)
             .SelectMany(Directory.EnumerateFiles)
             .Select(file => (Folder: Path.GetDirectoryName(file)!, Match: FileOfARecording().Match(Path.GetFileName(file))))
-            .Where(file => file.Match.Success)
+            .Where(file => file.Match.Success && !file.Match.Groups["record"].Success)
             .ToList();
         var answered = found
             .Where(file => file.Match.Groups["answer"].Success && !file.Match.Groups["unread"].Success)
@@ -209,9 +209,11 @@ public sealed partial class RebuildCommand(
 
     /// <summary>
     /// The name of a file of a recording (see <see cref="RecordingFiles"/>): a segment (.wav, _partN.wav), the marks
-    /// (.marks.txt), a transcript (.md, (N).md) or an answer (.json, (N).json, and .unread.json for one kept as unread).
-    /// "base" is the recording's base name; "answer" is there for an answer, and "unread" for one kept as unread.
+    /// (.marks.txt), the glossary record (.glossary.json), a transcript (.md, (N).md) or an answer (.json, (N).json, and
+    /// .unread.json for one kept as unread). "base" is the recording's base name; "answer" is there for an answer, "unread"
+    /// for one kept as unread, and "record" for the glossary record, which names the recording but, like a log, is no sign
+    /// of one in a folder.
     /// </summary>
-    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?\.wav|\.marks\.txt|(?: \([0-9]{1,9}\))?(?:\.md|(?<unread>\.unread)?(?<answer>\.json)))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?\.wav|\.marks\.txt|(?<record>\.glossary\.json)|(?: \([0-9]{1,9}\))?(?:\.md|(?<unread>\.unread)?(?<answer>\.json)))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FileOfARecording();
 }
