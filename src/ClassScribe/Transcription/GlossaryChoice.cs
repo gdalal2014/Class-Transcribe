@@ -212,7 +212,7 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
         {
             return files.Resolve(value);
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException)
         {
             // Deliberately not rethrown: a value no path can hold names no file, and is warned about as one that is not
             // there; a glossary must never stop a recording.
