@@ -663,10 +663,14 @@ public sealed class RecordCommand(
             return;
         }
 
+        // A saved class says so after its name: "Mantiq" (saved class), or the class's own name when it differs from the course.
+        var saved = request.ClassName is not { } className ? ""
+            : className.Equals(files.Name, StringComparison.OrdinalIgnoreCase) ? " (saved class)"
+            : $" (the saved class \"{className}\")";
         if (offset > TimeSpan.Zero)
-            logger.LogInformation("Continuing \"{Name}\" as its next part ({BaseName}, {Length} recorded so far), in {Folder}", files.Name, files.BaseName, Durations.Format(offset), files.Folder);
+            logger.LogInformation("Continuing \"{Name}\"{Saved} as its next part ({BaseName}, {Length} recorded so far), in {Folder}", files.Name, saved, files.BaseName, Durations.Format(offset), files.Folder);
         else
-            logger.LogInformation("Recording \"{Name}\" to {Folder}", files.Name, files.Folder);
+            logger.LogInformation("Recording \"{Name}\"{Saved} to {Folder}", files.Name, saved, files.Folder);
 
         logger.LogInformation("Recording from {Source}", Describe(request.Source));
         logger.LogInformation("{Keys}{Microphone}. {Closing}",

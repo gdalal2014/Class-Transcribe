@@ -202,7 +202,7 @@ public class EndToEndTests
             ElevenLabs = new { BaseUrl = "http://localhost:9/", KeytermsFile = "", MaxAttempts = 1 },
             YouTube = new { OEmbedBaseUrl = "http://localhost:9/" }
         }));
-        return AppHost.Build(_settingsFolder.Path, Key, services => Extra(services, extra)
+        return AppHost.Build(new SettingsPlaces(_settingsFolder.Path, userFolder: null), Key, services => Extra(services, extra)
             .AddSingleton(_runtime.Folder)
             .AddSingleton<IGoogleCredentialStore>(_driveStore)
             .AddSingleton<IConsoleUi>(_ui)
@@ -250,6 +250,7 @@ public class EndToEndTests
     private RecorderHost Recorder() => new()
     {
         Folder = _runtime.Folder,
+        Places = new SettingsPlaces(_settingsFolder.Path, userFolder: null),
         ConfigureServices = services =>
         {
             services.Replace(ServiceDescriptor.Singleton<ILoopbackCaptureProvider>(_devices));

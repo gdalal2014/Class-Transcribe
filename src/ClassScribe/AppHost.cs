@@ -16,35 +16,38 @@ using Microsoft.Extensions.Logging.Console;
 namespace ClassScribe;
 
 /// <summary>
-/// Puts the app together and starts it: the settings from appsettings.json in the app's folder, once they have passed
-/// the check, with environment overrides; the API key from ELEVENLABS_API_KEY alone; the console log format; the
-/// services. The settings are read again and checked before each menu choice and each command (see
-/// <see cref="Commands.RunGate"/>). The recorder, started by a window to record one class in the background, is put
-/// together from the settings that window handed over instead (see <see cref="BuildRecorder"/>).
+/// Puts the app together and starts it: the settings from appsettings.json, the user's own copy when there is one and
+/// else the one in the app's folder (see <see cref="SettingsPlaces"/>), once they have passed the check, with environment
+/// overrides; the API key from ELEVENLABS_API_KEY alone; the console log format; the services. The settings are read again
+/// and checked before each menu choice and each command (see <see cref="Commands.RunGate"/>). The recorder, started by a
+/// window to record one class in the background, is put together from the settings that window handed over instead (see
+/// <see cref="BuildRecorder"/>).
 /// </summary>
 public static class AppHost
 {
     /// <summary>
-    /// Builds the host. appsettings.json in <paramref name="contentRoot"/> is read once here and checked; settings that
-    /// pass are used from the start, and when they do not, the defaults stand in until the file is fixed. A file that is
-    /// not valid JSON no longer stops the start: the menu's header shows what is wrong, and the gate before the first
-    /// choice or command says it again.
+    /// Builds the host. The appsettings.json that <paramref name="places"/> names is read once here and checked; settings
+    /// that pass are used from the start, and when they do not, the defaults stand in until the file is fixed. A file that
+    /// is not valid JSON no longer stops the start: the menu's header shows what is wrong, and the gate before the first
+    /// choice or command says it again. The app's content root is the program's folder, whichever file is read.
     /// <paramref name="apiKey"/> is the value of ELEVENLABS_API_KEY, or null when it is not set; it is the only key ever
     /// used. <paramref name="configureServices"/>, when given, changes the services last, as a test does to put stand-ins in place.
     /// </summary>
-    public static IHost Build(string contentRoot, string? apiKey, Action<IServiceCollection>? configureServices = null)
+    public static IHost Build(SettingsPlaces places, string? apiKey, Action<IServiceCollection>? configureServices = null)
     {
         // Without the host's defaults, it adds no settings sources of its own, so it never reads appsettings.json itself:
         // a file that is not valid JSON, or one another program holds, would otherwise stop the start, and a file the
         // host read would reach the settings unchecked. Nothing watches the file either.
-        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { ContentRootPath = contentRoot, DisableDefaults = true });
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { ContentRootPath = places.ProgramFolder, DisableDefaults = true });
 
-        // The settings, lowest first. appsettings.json comes in only through CheckedSettingsSource, which holds what last
-        // passed the check and never reads the disk: SettingsReloader reads the file and checks a staged copy before each
-        // menu choice and each command. Then environment variables, such as ElevenLabs__BaseUrl. Last the key from
-        // ELEVENLABS_API_KEY, the variable ElevenLabs' own samples use: it wins over every other source, so a key written
-        // into appsettings.json is never used; SettingsCheck warns about one.
+        // The settings, lowest first. The defaults that only the file used to hold (the Logging section), so that a file
+        // without them, or no file, logs as the shipped one does. Then appsettings.json, which comes in only through
+        // CheckedSettingsSource, which holds what last passed the check and never reads the disk: SettingsReloader reads the
+        // file and checks a staged copy before each menu choice and each command. Then environment variables, such as
+        // ElevenLabs__BaseUrl. Last the key from ELEVENLABS_API_KEY, the variable ElevenLabs' own samples use: it wins over
+        // every other source, so a key written into appsettings.json is never used; SettingsCheck warns about one.
         var accepted = new CheckedSettingsSource();
+        builder.Configuration.AddInMemoryCollection(DefaultSettings.Values);
         builder.Configuration.Sources.Add(accepted);
         builder.Configuration.AddEnvironmentVariables();
         builder.Configuration.AddApiKeyFromEnvironment(apiKey);
@@ -56,7 +59,7 @@ public static class AppHost
             .AddConsole(console => console.FormatterName = string.IsNullOrWhiteSpace(console.FormatterName) ? PlainConsoleFormatter.FormatterName : console.FormatterName)
             .AddConsoleFormatter<PlainConsoleFormatter, ConsoleFormatterOptions>();
 
-        builder.Services.AddClassScribe(builder.Configuration).AddSettingsReload(builder.Configuration, accepted, contentRoot);
+        builder.Services.AddClassScribe(builder.Configuration).AddSettingsReload(builder.Configuration, accepted, places);
         configureServices?.Invoke(builder.Services);
 
         // A per-run service taken outside a run's scope, or a service that cannot be made, is a mistake that shows at once.
@@ -64,6 +67,10 @@ public static class AppHost
         var host = builder.Build();
         try
         {
+            // Which file is read was decided once, as the places were made; the menu's header names it, and the log keeps it.
+            host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AppHost).FullName!)
+                .LogDebug("Reading the settings from {Path} ({Origin})", places.SettingsPath, places.Origin == SettingsOrigin.UserFolder ? "your own copy" : "the file beside the program");
+
             // The first checked read. The reloader keeps its verdict: what it finds wrong with the file is shown in the menu's
             // header, and said by the gate before the first choice or command.
             host.Services.GetRequiredService<SettingsReloader>().TryReload();
@@ -95,19 +102,20 @@ public static class AppHost
     /// guard against a build that differs from the window's: a value the check refuses throws an
     /// <see cref="InvalidOperationException"/> naming it. The recorder has no console, so every logger writes into
     /// <paramref name="log"/> alone, at the levels the snapshot's Logging section names; <paramref name="folder"/> is
-    /// ClassScribe's own folder, and <paramref name="time"/> the clock, the computer's unless given. The run's services are
-    /// those of a window, with the recorder's own in place of what differs there (see <see cref="AddRecorder"/>).
+    /// ClassScribe's own folder, <paramref name="places"/> where the glossary is looked for, the same answer as the window's
+    /// (see <see cref="SettingsPlaces"/>), and <paramref name="time"/> the clock, the computer's unless given. The run's
+    /// services are those of a window, with the recorder's own in place of what differs there (see <see cref="AddRecorder"/>).
     /// <paramref name="configureServices"/>, when given, changes the services last, as a test does.
     /// </summary>
-    public static IHost BuildRecorder(RecorderStart start, string? apiKey, RecorderLog log, RuntimeFolder folder, TimeProvider? time = null,
+    public static IHost BuildRecorder(RecorderStart start, string? apiKey, RecorderLog log, RuntimeFolder folder, SettingsPlaces places, TimeProvider? time = null,
         Action<IServiceCollection>? configureServices = null)
     {
-        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { ContentRootPath = AppContext.BaseDirectory, DisableDefaults = true });
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { ContentRootPath = places.ProgramFolder, DisableDefaults = true });
         builder.Configuration.AddInMemoryCollection(start.Settings);
         builder.Configuration.AddApiKeyFromEnvironment(apiKey);
         builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
 
-        builder.Services.AddClassScribe(builder.Configuration).AddRecorder(log, folder, time ?? TimeProvider.System);
+        builder.Services.AddClassScribe(builder.Configuration).AddRecorder(log, folder, places, time ?? TimeProvider.System);
         configureServices?.Invoke(builder.Services);
 
         // The window's services that a recorder never uses, such as the settings gate, need what only the window registers,
@@ -140,16 +148,25 @@ public static class AppHost
         await services.GetRequiredService<App>().RunAsync(args);
 
     /// <summary>
-    /// Puts the recorder's own services in place of the window's: the clock, the log every logger writes to and ClassScribe's
-    /// own folder as given; the link's console, whose keys come from the windows; no window signals, since a recorder has no
-    /// window; for each run, the link's status sink, which sends the states to the windows and the alerts, and the recorder's
-    /// result shower; and, for the process, the server, the alerts that bring a window back, and the starter of that window.
+    /// Sends every console log line to standard error, as settings and class do with --json, so that standard output holds
+    /// the JSON alone (layout-config 1.8). Program passes it to <see cref="Build"/> as the services' last change.
     /// </summary>
-    private static IServiceCollection AddRecorder(this IServiceCollection services, RecorderLog log, RuntimeFolder folder, TimeProvider time)
+    public static void LogToStandardError(IServiceCollection services) =>
+        services.Configure<ConsoleLoggerOptions>(console => console.LogToStandardErrorThreshold = LogLevel.Trace);
+
+    /// <summary>
+    /// Puts the recorder's own services in place of the window's: the clock, the log every logger writes to, ClassScribe's
+    /// own folder and the places of the settings and the glossary as given; the link's console, whose keys come from the
+    /// windows; no window signals, since a recorder has no window; for each run, the link's status sink, which sends the
+    /// states to the windows and the alerts, and the recorder's result shower; and, for the process, the server, the alerts
+    /// that bring a window back, and the starter of that window.
+    /// </summary>
+    private static IServiceCollection AddRecorder(this IServiceCollection services, RecorderLog log, RuntimeFolder folder, SettingsPlaces places, TimeProvider time)
     {
         services.Replace(ServiceDescriptor.Singleton(time));
         services.Replace(ServiceDescriptor.Singleton(log));
         services.Replace(ServiceDescriptor.Singleton(folder));
+        services.AddSingleton(places);
         services.Replace(ServiceDescriptor.Singleton<IConsoleUi, LinkConsoleUi>());
         services.Replace(ServiceDescriptor.Singleton<IWindowSignals, NoWindowSignals>());
         services.Replace(ServiceDescriptor.Scoped<IRecorderStatusSink, LinkStatusSink>());
@@ -167,9 +184,10 @@ public static class AppHost
     /// <summary>
     /// Explains in plain words why the app could not be put together: one line per exception in the chain, and no stack
     /// trace. For a file that is not valid JSON it gives the line, counted from 1 as an editor counts, and says how to
-    /// write a path, the usual cause.
+    /// write a path, the usual cause. For a configuration error it names the settings file that was read, as
+    /// <paramref name="places"/> decided it.
     /// </summary>
-    public static string DescribeFailure(Exception failure, string contentRoot)
+    public static string DescribeFailure(Exception failure, SettingsPlaces places)
     {
         var chain = new List<Exception>();
         for (var exception = failure; exception is not null; exception = exception.InnerException) chain.Add(exception);
@@ -181,7 +199,7 @@ public static class AppHost
         if (chain.Any(exception => exception is JsonException))
             text.AppendLine().Append(SettingsReloader.JsonPathAdvice);
         else if (chain.Any(exception => exception.Message.Contains("configuration", StringComparison.OrdinalIgnoreCase)))
-            text.AppendLine().Append($"Check the settings in {Path.Combine(contentRoot, SettingsFile.FileName)}.");
+            text.AppendLine().Append($"Check the settings in {places.SettingsPath}.");
 
         return text.ToString();
     }

@@ -32,6 +32,37 @@ public class SettingsCheckTests
         Assert.That(Warnings([]), Is.Empty);
     }
 
+    /// <summary>
+    /// Each problem names the settings it is about (amendment 4): the one its sentence starts with, a list's entry by its
+    /// place, a log level by its path, and for a channel in both YouTube lists both lists, so that a recording can drop
+    /// exactly those and keep the rest. The sentences are those of <see cref="SettingsCheck.FindProblems"/>.
+    /// </summary>
+    [Test]
+    public void Each_problem_names_its_settings()
+    {
+        var settings = Settings(new()
+        {
+            ["Recording:FlushSeconds"] = "0",
+            ["Recording:KeepScreenOn"] = "Sometimes",
+            ["YouTube:MayDownloadChannels:0"] = "@shared",
+            ["YouTube:CourseChannels:0"] = "@shared",
+            ["YouTube:CourseChannels:1"] = "not a channel",
+            ["Logging:LogLevel:Default"] = "Loud"
+        });
+
+        var problems = new SettingsCheck().FindProblemsByKey(settings);
+
+        Assert.That(problems.Select(problem => string.Join(" + ", problem.Keys)), Is.EquivalentTo(new[]
+        {
+            "Recording:KeepScreenOn",
+            "Recording:FlushSeconds",
+            "YouTube:CourseChannels:1",
+            "YouTube:MayDownloadChannels + YouTube:CourseChannels",
+            "Logging:LogLevel:Default"
+        }));
+        Assert.That(problems.Select(problem => problem.Text), Is.EqualTo(new SettingsCheck().FindProblems(settings)));
+    }
+
     /// <summary>A value that cannot be read as what the setting needs is reported with the setting's name, the value and what is expected.</summary>
     [TestCase("Transcript:ParagraphPauseSeconds", "1,5", "a number written with a dot")]
     [TestCase("Recording:KeepUploadFile", "no", "true or false")]
@@ -197,7 +228,7 @@ public class SettingsCheckTests
             Assert.That(recording.Mode, Is.EqualTo(RecordingMode.Class));
             Assert.That(recording.Microphone, Is.Empty);
             Assert.That(recording.MicrophoneProcessing, Is.EqualTo(MicrophoneProcessing.Raw));
-            Assert.That(recording.MicrophoneFollows, Is.EqualTo("chrome"));
+            Assert.That(recording.MicrophoneFollows, Is.EqualTo("auto"), "N9: any app that holds the microphone, not one laptop's browser");
             Assert.That(recording.ClassAppMute, Is.EqualTo(ClassAppMute.Unknown));
             Assert.That(transcript.ShowGapsLongerThanSeconds, Is.EqualTo(60));
             Assert.That(Problems([]), Is.Empty);

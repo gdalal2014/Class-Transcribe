@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Reflection;
 using System.Text;
 using ClassScribe.Audio.Microphones;
 
@@ -82,7 +81,7 @@ public sealed class MicCheckLog : IDisposable
         var sign = started.Offset < TimeSpan.Zero ? "-" : "+";
         return
         [
-            $"ClassScribe microphone check (build {Build()}): watches what the apps on this computer do with the microphone.",
+            $"ClassScribe microphone check (build {BuildInfo.Build}): watches what the apps on this computer do with the microphone.",
             $"Started {started.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} local time (UTC{sign}{started.Offset.Duration().ToString(@"hh\:mm", CultureInfo.InvariantCulture)}), " +
             $"Windows {Environment.OSVersion.Version}, ClassScribe's own process id {processId}.",
             "It only reads Windows' lists of microphones and their sessions, and Windows' microphone usage record. It never opens a microphone, records no sound and sends nothing anywhere.",
@@ -136,14 +135,5 @@ public sealed class MicCheckLog : IDisposable
 
         _disposed = true;
         _file.Dispose();
-    }
-
-    /// <summary>ClassScribe's build, as the assembly names it: its informational version, with the commit when the build has one.</summary>
-    private static string Build()
-    {
-        var assembly = typeof(MicCheckLog).Assembly;
-        return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-            ?? assembly.GetName().Version?.ToString(3)
-            ?? "unknown";
     }
 }

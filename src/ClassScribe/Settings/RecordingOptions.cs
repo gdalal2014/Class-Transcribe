@@ -43,11 +43,15 @@ public sealed class RecordingOptions
     /// <summary>Configuration section name.</summary>
     public const string SectionName = "Recording";
 
+    /// <summary>The recordings folder by default, as the shipped settings write it: a ClassScribe folder in the user profile.</summary>
+    public const string DefaultOutputFolder = @"%USERPROFILE%\ClassScribe";
+
     /// <summary>
     /// Folder that receives one sub-folder per class and per transcribed file. Environment variables
-    /// such as %USERPROFILE% are expanded. Empty means a ClassScribe folder in the user profile.
+    /// such as %USERPROFILE% are expanded. Empty means a ClassScribe folder in the user profile too, the default written
+    /// out (layout-config 1.1), so that the shipped file and the user's full copy bind to the code's own default.
     /// </summary>
-    public string OutputFolder { get; init; } = "";
+    public string OutputFolder { get; init; } = DefaultOutputFolder;
 
     /// <summary>
     /// Part of the name of the output device to record, such as "Pixel Buds". Empty means whichever
@@ -148,13 +152,13 @@ public sealed class RecordingOptions
 
     /// <summary>
     /// With the class and your microphone, when the class is recorded from a device: the app whose microphone use the
-    /// microphone track follows, by part of its process name in any case, chrome unless changed. Your voice is recorded
-    /// only while that app has the microphone open and taking sound. "auto" follows any app that holds the recorded
-    /// microphone; "none" records whenever V is on. In app mode the app recorded with --app or Recording:App is followed,
-    /// and this setting is not read; --mic-follows and menu choice 7 can name another for a run. Empty, or naming
-    /// ClassScribe itself, is refused when ClassScribe starts (see <see cref="SettingsCheck"/>).
+    /// microphone track follows, by part of its process name in any case, such as chrome. Your voice is recorded only while
+    /// that app has the microphone open and taking sound. "auto", the default (N9: it was chrome, which fits one laptop only),
+    /// follows any app that holds the recorded microphone; "none" records whenever V is on. In app mode the app recorded
+    /// with --app or Recording:App is followed, and this setting is not read; --mic-follows, a saved class and menu choice 7
+    /// can name another for a run. Empty, or naming ClassScribe itself, is refused (see <see cref="SettingsCheck"/>).
     /// </summary>
-    public string MicrophoneFollows { get; init; } = "chrome";
+    public string MicrophoneFollows { get; init; } = FollowRule.AnyWord;
 
     /// <summary>
     /// Whether the class app lets go of the microphone when you mute in it: <see cref="Audio.Microphones.ClassAppMute.Visible"/>

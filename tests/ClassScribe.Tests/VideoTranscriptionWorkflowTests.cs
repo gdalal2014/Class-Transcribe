@@ -47,7 +47,7 @@ public class VideoTranscriptionWorkflowTests
         return new TranscriptionWorkflow(
             Mocks.AudioPreparer().Object,
             _client.Object,
-            new KeytermLoader(NullLogger<KeytermLoader>.Instance),
+            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions { IncludeTimestamps = false })),
             new ClassFolders(recording, ZonedClock.Eastern(new ManualTimeProvider(Downloaded)), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),

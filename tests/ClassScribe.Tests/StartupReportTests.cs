@@ -410,19 +410,31 @@ public class StartupReportTests
         Assert.That(_ui.Screen, Does.Not.Contain("C  continue"));
     }
 
-    /// <summary>The settings are read again and checked before C or T runs; settings that cannot be used run nothing and leave the run to report again.</summary>
+    /// <summary>
+    /// The settings are read again and checked before T runs; settings that cannot be used run nothing and leave the run to
+    /// report again. C continues a class, which a refused file never stops (build-plan amendment 4): it runs without the
+    /// setting the check refuses.
+    /// </summary>
     [Test]
-    public async Task C_and_T_run_only_once_the_settings_pass_the_check()
+    public async Task T_runs_only_once_the_settings_pass_the_check_and_C_runs_without_what_they_refuse()
     {
-        WriteRun(WriteRecording());
+        var files = WriteRecording();
+        WriteRun(files, RunState.Transcribing);
         _settings.Write("{ \"Recording\": { \"FlushSeconds\": \"abc\" } }");
-        _ui.Type('c');
+        _ui.Type('t');
 
         var choice = await Report().ShowAsync(interactive: true);
 
         Assert.That(choice, Is.Null);
         Assert.That(Run().Seen, Is.False);
         _commands.VerifyNoOtherCalls();
+
+        WriteRun(files);
+        _ui.Type('c');
+        var continued = await Report().ShowAsync(interactive: true);
+
+        Assert.That(continued, Is.EqualTo(new StartupChoice(RunId, StartupAction.Continue)));
+        _commands.Verify(commands => commands.RecordAsync(It.IsAny<RecordRequest>(), StartOrigin.StartupReport), Times.Once);
     }
 
     /// <summary>A transcription that was interrupted is reported: its audio is complete, T transcribes it, and a new try may be billed.</summary>

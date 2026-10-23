@@ -6,6 +6,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.DependencyInjection;
@@ -91,6 +92,7 @@ public partial class RecorderHostTests
     private RecorderHost Host() => new()
     {
         Folder = _runtime.Folder,
+        Places = new SettingsPlaces(AppContext.BaseDirectory, userFolder: null),
         Time = _time,
         ConfigureServices = services =>
         {
@@ -294,8 +296,8 @@ public partial class RecorderHostTests
 
         Assert.That(File.Exists(_runtime.Journal.RequestFile(request.RunId)), Is.False, "taken once");
         var whileRecording = RunFile(request.RunId);
-        Assert.That((whileRecording.State, whileRecording.Home, whileRecording.Pipe, whileRecording.ProcessId, whileRecording.Request),
-            Is.EqualTo((RunState.Recording, RunHome.Separate, LinkProtocol.PipeNameFor(request.RunId), Environment.ProcessId, request)));
+        Assert.That((whileRecording.State, whileRecording.Home, whileRecording.Pipe, whileRecording.ProcessId, whileRecording.Build, whileRecording.Request),
+            Is.EqualTo((RunState.Recording, RunHome.Separate, LinkProtocol.PipeNameFor(request.RunId), Environment.ProcessId, BuildInfo.Build, request)));
         Assert.That(_server!.Windows, Is.Zero, "nobody is attached");
         var dateFolder = ClassFolders.DateFolderName(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(TestRuns.Start, _time.LocalTimeZone).DateTime));
         Assert.That(recording.Files!.Folder, Is.EqualTo(Path.Combine(_folder.Path, "Kalam", dateFolder)),

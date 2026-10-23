@@ -8,7 +8,8 @@ namespace ClassScribe;
 /// help and ends with exit code 2 before anything else happens. A command then runs only once the settings, read again,
 /// have passed the check (see <see cref="RunGate"/>), and after the report at the start has been printed (see
 /// <see cref="IStartupReport"/>). Help needs neither; the menu reads the settings before each choice and shows the report
-/// itself; and showing a recording in progress is never held up by the settings.
+/// itself; showing a recording in progress is never held up by the settings; and settings and class, commands of their own
+/// kind (<see cref="CommandKind.Settings"/>), run without either, since they must be able to fix a file the gate refuses.
 /// </summary>
 public sealed class App(CommandLineTree commandLine, RunGate gate, IStartupReport report, ILogger<App> logger)
 {
@@ -29,9 +30,11 @@ public sealed class App(CommandLineTree commandLine, RunGate gate, IStartupRepor
             var outcome = commandLine.Parse(commandLine.Tidy(args));
             if (outcome is not { Parsed: { } parsed, ExitCode: null }) return outcome.ExitCode ?? CommandLineTree.Mistake;
 
-            if (commandLine.KindOf(parsed) == CommandKind.Command)
+            var kind = commandLine.KindOf(parsed);
+            if (kind is CommandKind.Command or CommandKind.Recording)
             {
-                if (!gate.TryOpen(GateUse.Command)) return RefusedBySettings;
+                // A recording runs whatever the file says, without the settings the check refuses (amendment 4).
+                if (!gate.TryOpen(kind == CommandKind.Recording ? GateUse.Recording : GateUse.Command)) return RefusedBySettings;
 
                 await report.ShowAsync(interactive: false);
             }

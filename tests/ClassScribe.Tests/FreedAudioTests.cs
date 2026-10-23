@@ -52,7 +52,7 @@ public class FreedAudioTests
 
     /// <summary>The workflow over the world's class folders, with an upload that must never be made.</summary>
     private TranscriptionWorkflow Workflow(ClassFolders folders) =>
-        new(_preparer.Object, _client.Object, new KeytermLoader(NullLogger<KeytermLoader>.Instance), new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
+        new(_preparer.Object, _client.Object, new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance), new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders, new ClassMarks(NullLogger<ClassMarks>.Instance), TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test" }), _world.Recording,
             new TranscriptionProgress(), new UsageReport(new FakeElevenLabsAccount(), _world.Time, NullLogger<UsageReport>.Instance), NullLogger<TranscriptionWorkflow>.Instance);
 
@@ -145,7 +145,7 @@ public class FreedAudioTests
         commands.Setup(c => c.RebuildAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
         using var settingsFolder = new TempFolder();
         var settings = new TestSettings(settingsFolder.Path);
-        var menu = new MenuCommand(commands.Object, new NoStartupReport(), _ui, settings.Gate(), settings.File, _world.ClassFolders(), new FakeCaptureProvider(),
+        var menu = new MenuCommand(commands.Object, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions()), _world.ClassFolders(), new FakeCaptureProvider(),
             new SourceChoice(TestOptions.Create(new RecordingOptions())), new RecordingNamePrompt(_ui), new Mock<IDesktop>().Object, ZonedTimeProvider.EasternSummer,
             NullLogger<MenuCommand>.Instance);
         _ui.Type('3', '1', 'r', 'q');
@@ -171,7 +171,7 @@ public class FreedAudioTests
         commands.Setup(c => c.RebuildAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
         using var settingsFolder = new TempFolder();
         var settings = new TestSettings(settingsFolder.Path);
-        var menu = new MenuCommand(commands.Object, new NoStartupReport(), _ui, settings.Gate(), settings.File, _world.ClassFolders(), new FakeCaptureProvider(),
+        var menu = new MenuCommand(commands.Object, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions()), _world.ClassFolders(), new FakeCaptureProvider(),
             new SourceChoice(TestOptions.Create(new RecordingOptions())), new RecordingNamePrompt(_ui), new Mock<IDesktop>().Object, ZonedTimeProvider.EasternSummer,
             NullLogger<MenuCommand>.Instance);
         _ui.TypeLine(Path.Combine(_world.Recordings.Path, "Mantiq"));

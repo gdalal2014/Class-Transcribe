@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using ClassScribe.Commands;
+using ClassScribe.Settings;
 using Moq;
 
 namespace ClassScribe.Tests;
@@ -89,11 +90,36 @@ public class AppTests
     }
 
     /// <summary>
+    /// A refused settings file never stops a recording (build-plan amendment 4): record and record-only run, with the report
+    /// first, keeping every value that passes and leaving out the one the check refuses, which the first lines name with the
+    /// value used in its place; a file that is not valid JSON gives the defaults and the command line, and says so.
+    /// </summary>
+    [TestCase("record", "Kalam", "--device", "auto", "--output", @"D:\Classes")]
+    [TestCase("record-only", "Kalam", "--app", "chrome")]
+    public async Task A_recording_runs_without_the_settings_the_check_refuses(params string[] args)
+    {
+        _settings.Write("""{ "Recording": { "FlushSeconds": "five", "SilenceWarningSeconds": 30 } }""");
+
+        Assert.That(await RunAsync(args), Is.EqualTo(0));
+
+        Assert.That(_order, Is.EqualTo(new[] { "report", "record" }));
+        Assert.That(_gateLog.Problems[0], Is.EqualTo($"Recording:FlushSeconds is \"five\" in {_settings.File.Path}, which the check refuses; this recording uses the default, \"5\", in its place."));
+        Assert.That(_settings.Configuration["Recording:SilenceWarningSeconds"], Is.EqualTo("30"), "what passes is kept");
+        Assert.That(_settings.Configuration["Recording:FlushSeconds"], Is.Null, "what fails is left out");
+        var fix = $"Fix the settings in {_settings.File.Path}; until then this recording goes on without them, and other choices and commands wait";
+        Assert.That(_gateLog.Problems[^1], Is.EqualTo(fix), "the last line says what to do");
+
+        _settings.Write("{ not json");
+        _gateLog = new RecordingLogger<RunGate>();
+        Assert.That(await RunAsync(args), Is.EqualTo(0));
+        Assert.That(_gateLog.Problems, Has.Some.StartsWith($"Nothing of {_settings.File.Path} could be taken, so this recording uses the settings ClassScribe read last"));
+        Assert.That(_gateLog.Problems[^1], Is.EqualTo(fix));
+    }
+
+    /// <summary>
     /// The settings are read and checked before each command. While they cannot be used, the command does not run, nor
     /// does the report at the start, and the exit code is 1; the log says what is wrong and that nothing was started.
     /// </summary>
-    [TestCase("record", "Kalam", "--device", "auto", "--output", @"D:\Classes")]
-    [TestCase("record-only", "Kalam", "--app", "chrome", "--output", @"D:\Classes")]
     [TestCase("transcribe", @"C:\Classes\Kalam")]
     [TestCase("transcribe", @"C:\Classes\Kalam", "--again")]
     [TestCase("rebuild", @"C:\Classes\Kalam")]
@@ -125,8 +151,8 @@ public class AppTests
     }
 
     /// <summary>
-    /// A mistake on the command line is reported first, with exit code 2, before the settings are read; help needs no
-    /// settings at all. Neither runs the report at the start.
+    /// A mistake on the command line is reported first, with exit code 2, before the settings are read; help and the
+    /// version need no settings at all. None of them runs the report at the start.
     /// </summary>
     [TestCase(2, "frobnicate")]
     [TestCase(2, "record")]
@@ -135,6 +161,7 @@ public class AppTests
     [TestCase(0, "--help")]
     [TestCase(0, "help")]
     [TestCase(0, "record", "--help")]
+    [TestCase(0, "--version")]
     public async Task Mistakes_and_help_come_before_the_settings(int exitCode, params string[] args)
     {
         BreakTheSettings();
@@ -144,6 +171,28 @@ public class AppTests
         Assert.That(_gateLog.Messages, Is.Empty, "the settings were not read");
         _commands.VerifyNoOtherCalls();
         _report.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// N5's hint is given even while a setting outside Classes keeps the file from the settings in force, which is all the
+    /// first read gives before the gate reads the file for a recording: record with a saved class's name and no source is a
+    /// mistake, exit 2, that names --class from the classes the file holds, as record --class would record them (a recording
+    /// drops only the setting refused).
+    /// </summary>
+    [Test]
+    public async Task A_saved_class_is_pointed_at_class_while_another_setting_is_refused()
+    {
+        _settings.Write("""{ "Recording": { "FlushSeconds": 0 }, "Classes": { "Mantiq": { "Course": "Mantiq", "App": "chrome" } } }""");
+        Assert.That(_settings.Reloader.TryReload().Usable, Is.False);
+        Assert.That(new SavedClasses(_settings.Configuration).Find("Mantiq"), Is.Null, "the settings in force hold none of the file's values");
+        _ui = new FakeConsoleUi();
+        _line = new TestCommandLine(_commands.Object, _ui, _settings, _folder.Path, gate: _settings.Gate(_gateLog),
+            classes: new SavedClasses(_settings.Configuration, _settings.File, _settings.Reloader));
+
+        Assert.That(await new App(_line.Tree, _line.Gate, _report.Object, _log).RunAsync(["record", "mantiq"]).WaitAsync(TimeSpan.FromSeconds(15)), Is.EqualTo(2));
+
+        Assert.That(_line.Mistakes, Has.Member("mantiq is a saved class: ClassScribe record --class \"Mantiq\""));
+        _commands.VerifyNoOtherCalls();
     }
 
     /// <summary>
@@ -159,6 +208,25 @@ public class AppTests
 
         _commands.Verify(c => c.AttachAsync("20261015-230002Z-1f3a9c07", true), Times.Once);
         Assert.That(_gateLog.Messages, Is.Empty, "the settings were not read");
+        _report.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// settings is a command of its own kind (layout-config 1.8): it must be able to fix a file the gate refuses, so neither
+    /// the gate nor the report at the start runs before it, and it runs with a broken file.
+    /// </summary>
+    [TestCase("settings", "list")]
+    [TestCase("settings", "set", "Recording:FlushSeconds", "5")]
+    [TestCase("SETTINGS", "reset", "--all")]
+    public async Task Settings_runs_without_the_gate_and_the_report(params string[] args)
+    {
+        BreakTheSettings();
+        _commands.Setup(c => c.SettingsAsync(It.IsAny<SettingsRequest>())).Callback(() => _order.Add("settings")).ReturnsAsync(0);
+
+        Assert.That(await RunAsync(args), Is.EqualTo(0));
+
+        Assert.That(_order, Is.EqualTo(new[] { "settings" }));
+        Assert.That(_gateLog.Messages, Is.Empty, "the settings were not read by the gate");
         _report.VerifyNoOtherCalls();
     }
 
@@ -238,13 +306,13 @@ public class AppTests
     [Test]
     public async Task A_fixed_file_counts_for_the_next_command()
     {
-        string[] record = ["record", "Kalam", "--device", "auto", "--output", @"D:\Classes"];
+        string[] transcribe = ["transcribe", @"C:\Classes\Kalam"];
         BreakTheSettings();
-        Assert.That(await RunAsync(record), Is.EqualTo(1));
+        Assert.That(await RunAsync(transcribe), Is.EqualTo(1));
         _settings.Write("""{ "Recording": { "FlushSeconds": 5 } }""");
 
-        Assert.That(await RunAsync(record), Is.EqualTo(0));
-        _commands.Verify(c => c.RecordAsync(It.Is<RecordRequest>(request => request.Name == "Kalam" && request.Transcribe), StartOrigin.CommandLine), Times.Once);
+        Assert.That(await RunAsync(transcribe), Is.EqualTo(0));
+        _commands.Verify(c => c.TranscribeAsync(FromCommandLine(@"C:\Classes\Kalam", true, false)), Times.Once);
     }
 
     /// <summary>A failure becomes exit code 1 with the reason logged, and a cancel exit code 130.</summary>

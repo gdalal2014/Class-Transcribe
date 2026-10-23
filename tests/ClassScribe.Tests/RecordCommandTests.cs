@@ -163,7 +163,7 @@ public partial class RecordCommandTests
         var workflow = new TranscriptionWorkflow(
             new AudioPreparer(NullLogger<AudioPreparer>.Instance),
             _client.Object,
-            new KeytermLoader(NullLogger<KeytermLoader>.Instance),
+            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             marks,
@@ -543,6 +543,23 @@ public partial class RecordCommandTests
         }));
     }
 
+    /// <summary>
+    /// A saved class's run says so in its first line (layout-config 4.1): "(saved class)" after a course that is the class's
+    /// own name, in any case, and the class's name when it differs from the course.
+    /// </summary>
+    [TestCase("Kalam", " (saved class)")]
+    [TestCase("kalam", " (saved class)")]
+    [TestCase("Kalam (Zoom app)", " (the saved class \"Kalam (Zoom app)\")")]
+    public async Task A_saved_classs_run_says_so_in_its_first_line(string className, string saved)
+    {
+        var run = CreateCommand().RunAsync(Request(transcribe: false) with { ClassName = className });
+        await Wait.UntilAsync(() => _capture.Started);
+        _signals.RequestStop();
+        await run;
+
+        Assert.That(_log.Messages[0], Is.EqualTo($"Recording \"Kalam\"{saved} to {KalamFolder()}"));
+    }
+
     /// <summary>The sources a run can be asked to record from the command line, each with the start line that names it.</summary>
     private static IEnumerable<TestCaseData> SourcesNamedAtTheStart()
     {
@@ -721,7 +738,8 @@ public partial class RecordCommandTests
         Assert.That(whileRecording.State, Is.EqualTo(RunState.Recording));
         Assert.That((whileRecording.RunId, whileRecording.Home, whileRecording.Pipe, whileRecording.BaseName, whileRecording.Folder),
             Is.EqualTo((request.RunId, RunHome.InWindow, (string?)null, files.BaseName, files.Folder)));
-        Assert.That((whileRecording.ProcessId, whileRecording.Protocol, whileRecording.Request), Is.EqualTo((Environment.ProcessId, LinkProtocol.Version, request)));
+        Assert.That((whileRecording.ProcessId, whileRecording.Protocol, whileRecording.Build, whileRecording.Request),
+            Is.EqualTo((Environment.ProcessId, LinkProtocol.Version, BuildInfo.Build, request)));
         Assert.That(stateDuringUpload, Is.EqualTo(RunState.Transcribing));
 
         var finished = RunFile();
@@ -2030,7 +2048,7 @@ public partial class RecordCommandTests
     public void A_run_resolves_in_a_scope_of_its_own_with_what_it_needs_in_this_window()
     {
         File.WriteAllText(_folder.File("appsettings.json"), "{}");
-        using var app = AppHost.Build(_folder.Path, "dummy-key-for-a-local-test", services => services
+        using var app = AppHost.Build(new SettingsPlaces(_folder.Path, userFolder: null), "dummy-key-for-a-local-test", services => services
             .AddSingleton<ILoopbackCaptureProvider>(_provider)
             .AddSingleton(_runtime.Folder)                               // never the real %LOCALAPPDATA%\ClassScribe
             .AddSingleton(new RoamingFolder(_folder.File("Roaming"))));  // nor the real %APPDATA%\ClassScribe

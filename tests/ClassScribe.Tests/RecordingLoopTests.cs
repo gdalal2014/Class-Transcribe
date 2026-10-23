@@ -1241,7 +1241,7 @@ public partial class RecordingLoopTests
     public void The_loop_resolves_in_a_run_scope_from_the_apps_services()
     {
         File.WriteAllText(_folder.File("appsettings.json"), "{}");
-        using var app = AppHost.Build(_folder.Path, "dummy-key-for-a-local-test", services => services
+        using var app = AppHost.Build(new SettingsPlaces(_folder.Path, userFolder: null), "dummy-key-for-a-local-test", services => services
             .AddSingleton<ILoopbackCaptureProvider>(_provider)
             .AddSingleton(_runtime.Folder)   // never the real %LOCALAPPDATA%\ClassScribe
             .AddSingleton<IFreeSpace, FreeSpace>()

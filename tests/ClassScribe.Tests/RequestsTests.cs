@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -98,6 +99,23 @@ public class RequestsTests
         var json = JsonSerializer.Serialize(request, RecorderJson.Default.RecordRequest);
 
         Assert.That(JsonSerializer.Deserialize(json, RecorderJson.Default.RecordRequest), Is.EqualTo(request));
+    }
+
+    /// <summary>
+    /// The saved class a run was started as travels with it as classname (layout-config 4.1), read back as written; a run
+    /// started from its own options writes none, so its files are as before, and a file without one reads with none.
+    /// </summary>
+    [Test]
+    public void A_saved_classs_name_round_trips_and_is_written_only_when_set()
+    {
+        var request = Request(new SourcePlan(RecordingMode.Class, new ClassSource.App("chrome"), null)) with { ClassName = "Mantiq (Chrome)" };
+
+        var json = JsonSerializer.Serialize(request, RecorderJson.Default.RecordRequest);
+
+        Assert.That(JsonNode.Parse(json)!["className"]!.GetValue<string>(), Is.EqualTo("Mantiq (Chrome)"));
+        Assert.That(JsonSerializer.Deserialize(json, RecorderJson.Default.RecordRequest), Is.EqualTo(request));
+        Assert.That(JsonSerializer.Serialize(request with { ClassName = null }, RecorderJson.Default.RecordRequest), Does.Not.Contain("className"));
+        Assert.That(JsonSerializer.Deserialize(RequestJson("""{ "kind": "automatic" }"""), RecorderJson.Default.RecordRequest)!.ClassName, Is.Null);
     }
 
     /// <summary>
@@ -527,7 +545,7 @@ public class RequestsTests
     {
         File.WriteAllText(_folder.File("appsettings.json"), "{}");
         var played = new PlayedRuns { StartExitCode = 130 };
-        using var app = AppHost.Build(_folder.Path, "dummy-key-for-a-local-test", services => services
+        using var app = AppHost.Build(new SettingsPlaces(_folder.Path, userFolder: null), "dummy-key-for-a-local-test", services => services
             .AddSingleton(_runtime.Folder)
             .AddScoped<IRecordStarter>(provider => new FakeRecordStarter(played, provider)));
         var runner = app.Services.GetRequiredService<ICommandRunner>();

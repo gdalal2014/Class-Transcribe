@@ -807,8 +807,8 @@ public class CommandLineTreeTests
     // ---- Mistakes: named, all at once, with that command's help and exit code 2, and nothing asked ----
 
     /// <summary>
-    /// record without its name, its source and --output names all three in one run, in the order they go, with record's
-    /// help, exit code 2 and no question, even with someone at the keyboard.
+    /// record without its name and its source names both in one run, in the order they go, with record's help, exit code 2
+    /// and no question, even with someone at the keyboard. --output may be left out (N6).
     /// </summary>
     [TestCase("record")]
     [TestCase("record-only")]
@@ -821,8 +821,7 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[]
         {
             $"{command} needs a name, right after the word {command}: ClassScribe {command} \"Kalam\" ...",
-            $"{command} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person",
-            $"{command} needs --output \"<folder>\", the folder the recording goes to"
+            $"{command} needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person"
         }));
         Assert.That(_line.Output.ToString(), Does.Contain("--device").And.Contain("--minutes").And.Not.Contain("Commands:"), "the help is record's own");
     }
@@ -830,8 +829,6 @@ public class CommandLineTreeTests
     /// <summary>Each piece, missing on its own, is named on its own.</summary>
     [TestCase(new[] { "record", "--device", "auto", "--output", @"D:\Classes" }, "record needs a name, right after the word record: ClassScribe record \"Kalam\" ...")]
     [TestCase(new[] { "record", "Kalam", "--output", @"D:\Classes" }, "record needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person")]
-    [TestCase(new[] { "record", "Kalam", "--app", "chrome" }, "record needs --output \"<folder>\", the folder the recording goes to")]
-    [TestCase(new[] { "record", "Kalam", "--in-person" }, "record needs --output \"<folder>\", the folder the recording goes to")]
     public async Task A_single_missing_piece_is_named(string[] args, string mistake)
     {
         AssertRefused(await RunAsync(args));
@@ -940,7 +937,6 @@ public class CommandLineTreeTests
         {
             "record needs a name, right after the word record: ClassScribe record \"Kalam\" ...",
             "record needs a source: --device \"<part of its name>\", --device auto, --app <process> or --in-person",
-            "record needs --output \"<folder>\", the folder the recording goes to",
             "--minutes takes a number of minutes written with a dot, such as 1.5"
         }));
     }
@@ -1171,9 +1167,40 @@ public class CommandLineTreeTests
         Assert.That(help, Does.Contain("Examples:").And.Contain("ELEVENLABS_API_KEY"));
     }
 
+    /// <summary>The help of the app as a whole opens with the build, the version and the commit, before the usage.</summary>
+    [Test]
+    public async Task The_help_of_the_app_starts_with_the_build()
+    {
+        Assert.That(await RunAsync("--help"), Is.EqualTo(0));
+
+        var help = Regex.Replace(_line.Output.ToString(), @"\s+", " ");
+        var build = help.IndexOf($"ClassScribe {BuildInfo.Describe()} records the sound your computer plays during a class", StringComparison.Ordinal);
+        Assert.That(build, Is.GreaterThanOrEqualTo(0), "the first line names the build");
+        Assert.That(build, Is.LessThan(help.IndexOf("Usage:", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// --version, in any case, writes the informational version as the project stamped it (the version, a plus sign and
+    /// the commit) on one line with exit code 0. Nothing runs and nothing is asked, so it needs no keyboard either.
+    /// </summary>
+    [TestCase("--version", true)]
+    [TestCase("--Version", true)]
+    [TestCase("--version", false)]
+    public async Task Version_prints_the_informational_version(string ask, bool interactive)
+    {
+        CreateLine(interactive);
+
+        Assert.That(await RunAsync(ask), Is.EqualTo(0));
+
+        Assert.That(_line.Output.ToString(), Is.EqualTo(BuildInfo.InformationalVersion + Environment.NewLine));
+        Assert.That(_line.Mistakes, Is.Empty);
+        Assert.That(_ui.Screen, Is.Empty, "no menu, nothing asked");
+        _commands.VerifyNoOtherCalls();
+    }
+
     // ---- What the app does around a command ----
 
-    /// <summary>App opens the settings gate and prints the report at the start only for commands; help, the menu and attach need neither.</summary>
+    /// <summary>App opens the settings gate and prints the report at the start only for commands; help, the version, the menu and attach need neither.</summary>
     [Test]
     public void Each_command_line_says_what_it_needs()
     {
@@ -1181,17 +1208,18 @@ public class CommandLineTreeTests
 
         Assert.That(_line.KindOf("--help"), Is.EqualTo(CommandKind.Help));
         Assert.That(_line.KindOf("record", "--help"), Is.EqualTo(CommandKind.Help));
+        Assert.That(_line.KindOf("--version"), Is.EqualTo(CommandKind.Version));
         Assert.That(_line.KindOf(), Is.EqualTo(CommandKind.Menu));
         Assert.That(_line.KindOf("attach"), Is.EqualTo(CommandKind.Attach));
         Assert.That(_line.KindOf("attach", "--alert", "20261015-230002Z-1f3a9c07"), Is.EqualTo(CommandKind.Attach));
-        Assert.That(_line.KindOf("record", "Kalam", "--device", "auto", "--output", Classes), Is.EqualTo(CommandKind.Command));
-        Assert.That(_line.KindOf("record-only", "Kalam", "--app", "chrome", "--output", Classes), Is.EqualTo(CommandKind.Command));
+        Assert.That(_line.KindOf("record", "Kalam", "--device", "auto", "--output", Classes), Is.EqualTo(CommandKind.Recording), "a refused file never stops a recording");
+        Assert.That(_line.KindOf("record-only", "Kalam", "--app", "chrome", "--output", Classes), Is.EqualTo(CommandKind.Recording));
         Assert.That(_line.KindOf("transcribe", @"C:\Classes\Kalam"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("rebuild", @"C:\Classes\Kalam"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("list"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("devices"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("mic-check", "--seconds", "5"), Is.EqualTo(CommandKind.Command), "the log goes under Recording:OutputFolder, so the settings are read first");
-        Assert.That(_line.KindOf("record", "Kalam", "--in-person", "--output", Classes), Is.EqualTo(CommandKind.Command));
+        Assert.That(_line.KindOf("record", "Kalam", "--in-person", "--output", Classes), Is.EqualTo(CommandKind.Recording));
         Assert.That(_line.KindOf("drive", "status"), Is.EqualTo(CommandKind.Command), "the Drive settings are read first");
         Assert.That(_line.KindOf("drive", "signin"), Is.EqualTo(CommandKind.Command));
         Assert.That(_line.KindOf("drive", "signin", "--help"), Is.EqualTo(CommandKind.Help));

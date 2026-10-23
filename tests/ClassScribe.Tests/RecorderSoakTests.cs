@@ -44,6 +44,18 @@ public sealed class RecorderSoakTests
     private const short ClassLevel = 300;
     private const short MicrophoneLevel = 500;
 
+    /// <summary>
+    /// The microphone's level in a packet stamped after chrome let go of the microphone: the gate must drop every such
+    /// packet, so the track must never hold this level, wherever the placer would have put it.
+    /// </summary>
+    private const short AwayLevel = 501;
+
+    /// <summary>
+    /// How far after a change the microphone's audio from before it may still lie: the placer appends a packet up to its
+    /// tolerance from its stamp's position, and the packet that straddles the change holds a packet's length after it.
+    /// </summary>
+    private static readonly TimeSpan PlacedLate = TrackPlacer.Tolerance + PacketLength;
+
     /// <summary>The tone at a mark: 1 kHz for 50 ms at half scale, added to the track's level.</summary>
     private static readonly short[] MarkTone = TestAudio.Tone(Rate, seconds: 0.05, frequency: 1000, amplitude: 0.5);
 
@@ -176,6 +188,7 @@ public sealed class RecorderSoakTests
         private int _toneLeft;
         private Track _toneTrack;
         private bool _chromeListening = true;
+        private long _awaySince = long.MaxValue;
         private bool _paused;
 
         /// <summary>Now on the test's clock, in the units packets are stamped in.</summary>
@@ -387,10 +400,13 @@ public sealed class RecorderSoakTests
             }
         }
 
-        /// <summary>A packet of <paramref name="track"/> stamped at <paramref name="stamp"/>: its level, with the mark's tone on top where one is due.</summary>
+        /// <summary>
+        /// A packet of <paramref name="track"/> stamped at <paramref name="stamp"/>: its level, the microphone's own level for
+        /// one stamped after chrome let go of the microphone, with the mark's tone on top where one is due.
+        /// </summary>
         private byte[] Packet(Track track, long stamp)
         {
-            var level = track == Track.Main ? ClassLevel : MicrophoneLevel;
+            var level = track == Track.Main ? ClassLevel : stamp >= _awaySince ? AwayLevel : MicrophoneLevel;
             var samples = new short[(int)At(PacketLength)];
             System.Array.Fill(samples, level);
             if (_pendingMark == track)
@@ -419,10 +435,14 @@ public sealed class RecorderSoakTests
             else fixture._sessions.SetSessions(TheArray.Id);
         }
 
-        /// <summary>Chrome listens, or lets go of the microphone: noted at the clock's position, then set for the watch's next look.</summary>
+        /// <summary>
+        /// Chrome listens, or lets go of the microphone: noted at the clock's position, and when it lets go, the stamp from
+        /// which the microphone's packets carry <see cref="AwayLevel"/>; then set for the watch's next look.
+        /// </summary>
         private void ChromeListens(bool listening)
         {
             _chromeListening = listening;
+            _awaySince = listening ? long.MaxValue : Now;
             _listening.Add(new Change(_clock.Now(), listening));
             SetChromeSessions();
         }
@@ -560,9 +580,11 @@ public sealed class RecorderSoakTests
 
         /// <summary>
         /// Where the run says the microphone was surely written, the files hold its level (99 percent of the samples: the
-        /// rest are the drift corrections' silences and the tones); where it says the microphone was surely not written,
-        /// the files hold exact zeros; the class holds its level wherever it was surely written; and the drift was
-        /// corrected in the second half, which shows as stretches of silence of a correction's length and no longer.
+        /// rest are the drift corrections' silences and the tones); nothing stamped after chrome let go of the microphone
+        /// is anywhere in the files; where the run says the microphone was surely not written, from the placer's tolerance
+        /// after the change (audio from before it may lie that late), the files hold exact zeros; the class holds its level
+        /// wherever it was surely written; and the drift was corrected in the second half, which shows as stretches of
+        /// silence of a correction's length and no longer.
         /// </summary>
         private void CheckStretches(JoinedSamples theClass, JoinedSamples microphone)
         {
@@ -572,9 +594,10 @@ public sealed class RecorderSoakTests
             var written = Subtract(Intersect(
                 Trim(Where(_listening, on: true, microphoneLength), Settled, Settled),
                 Trim(Where(_microphoneOn, on: true, microphoneLength), Settled, Settled)), TrackInterruptions());
-            var zero = Trim(Where(_listening, on: false, microphoneLength), TimeSpan.FromMilliseconds(10), Edge)
-                .Concat(Trim(Where(_microphoneOn, on: false, microphoneLength), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(10)))
+            var zero = Trim(Where(_listening, on: false, microphoneLength), PlacedLate, Edge)
+                .Concat(Trim(Where(_microphoneOn, on: false, microphoneLength), PlacedLate, TimeSpan.FromMilliseconds(10)))
                 .ToList();
+            var (_, away) = Count(microphone, [new Stretch(TimeSpan.Zero, microphoneLength)], sample => sample == AwayLevel);
             var classWritten = Subtract(Subtract([new Stretch(TimeSpan.Zero, classLength)], TrackInterruptions()),
                 [.. _switches.Select(moved => new Stretch(moved - TimeSpan.FromMilliseconds(500), moved + TimeSpan.FromSeconds(20)))]);
             var secondHalf = _continues.Count > 0 ? _continues[0] + TimeSpan.FromSeconds(5) : microphoneLength;
@@ -587,6 +610,7 @@ public sealed class RecorderSoakTests
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(settled, Is.Not.Empty);
+                Assert.That(away, Is.Zero, $"{away} samples of packets stamped after chrome let go of the microphone were written");
                 Assert.That(zeroViolations, Is.Zero, $"{zeroViolations} of {zeroSamples} samples hold something from the microphone while chrome was not listening or V was off");
                 Assert.That(microphoneSamples, Is.GreaterThan(At(length / 4)), "most of the run has the microphone written");
                 Assert.That((double)microphoneAtLevel / microphoneSamples, Is.GreaterThanOrEqualTo(0.99), "your voice is written while chrome listens and V is on");

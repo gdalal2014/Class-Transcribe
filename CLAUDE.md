@@ -154,7 +154,10 @@ advice after a format error (10 A).
   folders' files (names, sizes and times) before and after a full run and compare the lists, rather
   than expecting them empty; a test that wrote there is a bug. Leave the inside of `video-browser` out
   of the listing once it exists (it holds his Google sign-in), and check that no `youtube` or
-  `video-browser` folder appeared there during the run.
+  `video-browser` folder appeared there during the run. `%APPDATA%\ClassScribe\appsettings.json` is
+  Gulzar's own settings file once he has made a change: list `%APPDATA%\ClassScribe` too, and never
+  change his settings by hand or from a manual run; such a run sets `CLASSSCRIBE_SETTINGS_FOLDER` to
+  a temporary folder first (the menu then names it), and tests use `SettingsFileFixtures`.
 
 ## Conventions
 
@@ -190,11 +193,14 @@ advice after a format error (10 A).
   (`AddYouTube`, after `AddDrive`), `DesktopServices`, `CommandServices`,
   and last `Commands/WindowServices.cs`, the window's side of a run in the background, which
   replaces the stand-in `NoStartupReport`), called from `ServiceCollectionExtensions.AddClassScribe`;
-  `AppHost` adds the settings reload (`SettingsServices.AddSettingsReload`), since it builds the
-  configuration the reload works on. `AppHost.Build` validates scopes and every registration
+  `AppHost` adds the settings reload (`SettingsServices.AddSettingsReload`: the places, the file, the
+  reloader and the one `SettingsWriter`), since it builds the configuration the reload works on;
+  `AddSettings` registers `SavedClasses` and `IOutputFolderFacts` beside `SettingsCheck`, and
+  `CommandServices` the settings and class commands, `CommandOutput`, and menus C and S
+  (`ClassesMenu`, `SettingsMenu`, per run). `AppHost.Build` validates scopes and every registration
   (`ValidateScopes`, `ValidateOnBuild`), so a per-run service taken outside a run's scope, or one
-  that cannot be made, fails at once. `AppHost.BuildRecorder(start, apiKey, log, folder, time,
-  configureServices)` builds the recorder's host from the same registrations plus `AddRecorder`
+  that cannot be made, fails at once. `AppHost.BuildRecorder(start, apiKey, log, folder, places,
+  time, configureServices)` builds the recorder's host from the same registrations plus `AddRecorder`
   (the link's console, no window signals, `LinkStatusSink`, `RecorderResultShower`, the server, the
   alerts and the process starter in place of the window's), from the request's settings snapshot and
   the key alone: no appsettings.json, no environment source, no console logger, scopes validated but
@@ -212,7 +218,9 @@ advice after a format error (10 A).
   the browser's process id and start time, position, count, batch id, and the defaulted
   `ChannelHandle`, `Tool`, `StartSeconds`) is last, defaults to null and is written only when set
   (`[JsonIgnore(WhenWritingNull)]`), so a class's run and request files are byte for byte as before;
-  a run with it is a video's (`RunView.IsVideo`) and never a class. Its end causes are new
+  a run with it is a video's (`RunView.IsVideo`) and never a class. `RecordRequest.ClassName`, after
+  it, names the saved class a run was started from (null otherwise, written only when set); it only
+  names the class in the run's first line. Its end causes are new
   `RunEndCause` strings (`VideoClosed`, `VideoEnded`, `ClassStarted`, `VideoSilent`, `NothingPlayed`,
   `VideoLimit`), and its class source is `ClassSource.App("chrome")`, so no new source kind or stored
   enum value reaches a run file. `StartOrigin.VideoBatch` (never stored) is a batch's start of one of
@@ -359,8 +367,10 @@ advice after a format error (10 A).
   class app's microphone; the gate is armed at the start only for `ClassAppMute.Visible` or
   `FollowRule.None`.
 - TDD with NUnit and Moq: write the failing test first. Run `dotnet test` before handing code over.
-  For the real host with stand-ins, use `AppHost.Build(contentRoot, apiKey, configureServices)`;
-  `configureServices` runs last. `TestDoubles.cs` has `TestOptions<T>` (one object for `IOptions`,
+  For the real host with stand-ins, use `AppHost.Build(places, apiKey, configureServices)`, with
+  `new SettingsPlaces(<temporary folder>, userFolder: null)` or a `SettingsFileFixtures`' places as
+  `places`, never `SettingsPlaces.ForThisUser`; `configureServices` runs last. `TestDoubles.cs` has
+  `TestOptions<T>` (one object for `IOptions`,
   `IOptionsSnapshot` and `IOptionsMonitor`; `Set` fires `OnChange`) and `TestSettings` (a real gate
   over a temporary `appsettings.json`). Write hours of audio with `WavSegmentWriter` at 10 Hz, so
   the files stay under a megabyte. Every test that builds the app with `AppHost.Build` and runs a
@@ -397,8 +407,10 @@ advice after a format error (10 A).
   the commands built by hand, and `GoogleOrElse` routes an app's every HTTP client to `FakeGoogle` for
   googleapis.com and to another handler, such as the ElevenLabs stub, for the rest (`EndToEndTests`).
   `RecorderHostDriveTests.cs` is a part of `RecorderHostTests` (partial) that signs the real recorder
-  host in to `FakeGoogle` through `SignedInToDrive`. The recorder's seams for tests are `RecorderHost { Folder, Time, ConfigureServices }` and
-  `AppHost.BuildRecorder(..., configureServices)`. Never set the real console title, write a
+  host in to `FakeGoogle` through `SignedInToDrive`. The recorder's seams for tests are
+  `RecorderHost { Folder, Places, Time, ConfigureServices }` (`Places` is required: a test gives its
+  own temporary places) and `AppHost.BuildRecorder(start, apiKey, log, folder, places, time,
+  configureServices)`. Never set the real console title, write a
   sequence to the real console, flash a visible window, or read the console in a recorder. Two
   NUnit pitfalls: `Does.Contain`, `Does.StartWith` and `Does.EndWith` compare with the current
   culture, where ICU ignores control characters, so check those ordinally
@@ -560,6 +572,8 @@ dotnet run --project src/ClassScribe -- transcribe "<path>" --again    # one wit
 dotnet run --project src/ClassScribe -- rebuild "C:\path\to\folder-or-file"      # free, from the saved .json; --no-open
 dotnet run --project src/ClassScribe -- list                           # the recordings, newest first; --output
 dotnet run --project src/ClassScribe -- devices                        # the devices and apps with sound
+dotnet run --project src/ClassScribe -- settings list                  # every setting; set a CLASSSCRIBE_SETTINGS_FOLDER first, so his real settings stay as they are
+dotnet run --project src/ClassScribe -- class list                     # the saved classes; class add|set|rename|remove change his file: ask first
 dotnet run --project src/ClassScribe -- drive status                   # the Google sign-in; asks Google (ask Gulzar first)
 dotnet run --project src/ClassScribe -- drive signin --client "<file>" # a real Google sign-in in the browser: Gulzar's to make
 dotnet run --project src/ClassScribe -- drive signout                  # revoke, forget the token, keep the client
@@ -597,8 +611,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   of its class and of the queue (step 8, below), while the next class may already record. A YouTube
   video recorded as it plays is a recorder's run like a class's (under `dotnet run`, in the window, as
   a class is); its Chrome window is started by the batch's window, never by the hidden recorder.
-- `record` and `record-only` need the name, a source (`--device "<part>"`, `--device auto`,
-  `--app <process>` or `--in-person ["<microphone>"]`) and `--output`; `--mic ["<microphone>"]`
+- `record` and `record-only` need the name and a source (`--device "<part>"`, `--device auto`,
+  `--app <process>` or `--in-person ["<microphone>"]`), or `--class "<saved class>"` with options over
+  the class's own in groups (`RecordClassAsync`, `ClassChoices`); a saved class's name without a
+  source is pointed at `--class` (N5; the validator runs before the gate's read for a recording, so
+  `SavedClasses.FindInFile` looks in the file as it is now when the settings in force hold no such
+  class). `--output` is optional for them and for `youtube` (N6:
+  `OutputRoot`, the class's own folder, else `Recording:OutputFolder` as the settings in force say
+  it). `--mic ["<microphone>"]`
   adds the microphone beside `--device` or `--app`, and `--mic-follows <app>|auto|none` names the
   app it follows (only with `--mic`, never `--in-person`, never ClassScribe itself; parsed with
   `FollowRule.TryParse`, the one parser `SettingsCheck` and the menu use too). One validator names
@@ -724,8 +744,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   microphone and pin the camera's rules; merged into `develop` on 22 October, 4,180. From the
   camera's basics, the camera recorded grew on `feature/camera-record` to 4,194 (slice 7: `ClockState`,
   the pieces' files, the record job and the sink writer, the camera track, the run's camera, its soak
-  and the end-to-end lesson), and 4,218 after the review's ten fixes to it. Merged into `develop` on
-  22 October, the count is 4,303, all passing. The uploads by themselves were tested in `DriveAutoUploadTests`
+  and the end-to-end lesson), and 4,218 after the review's ten fixes to it; merged into `develop` on
+  22 October, 4,303. From the camera's basics at 4,012 (`2b64a66`), settings and saved classes grew on
+  `feature/settings-classes` to 4,228 (the build shown everywhere, the user's own settings folder, the
+  writer and its full copy, `settings` and `class`, `record --class`, `--output` optional, the
+  recording that drops refused settings, menus C and S, the folder warnings), and 4,245 at its head
+  (the review's fixes and the soak's check by its stamps). Merged into `develop` on 22 October, with
+  `Recording:CameraOffsets` made a map of the catalog, the count is 4,538, all passing. The uploads by
+  themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
   `DriveQueueReportTests`,
@@ -763,7 +789,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   three minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
   2 min 17 s for 3,395 later that day, 3 min 55 s for YouTube's 3,875 on 18 October, 3 min 7 s for
   3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, 3 min 4 s for 4,180
-  with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, plus the build).
+  with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, 3 min 32 s for 4,538 with
+  settings and saved classes, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -888,9 +915,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   up, signed out, another upload holding the lock, a recording being recorded, Google out of reach,
   Drive full, a file refused) or a path that names no recording, and `drive free-space` when any
   recording kept its audio or Drive could not be asked; 2 a mistake on the command line, named with that
-  command's help (a missing name, source or `--output`, two sources, `--mic` with `--in-person`,
+  command's help (a missing name or source, a saved class's name without `--class`, an unknown or unusable saved class, two sources, `--mic` with `--in-person`,
   `--mic-follows` without `--mic`, a bad value, an unknown word, a path that is not there, `drive`
-  alone, `--client` without a file, `drive free-space` without `--yes` or a path); 130 cancelled (Esc
+  alone, `--client` without a file, `drive free-space` without `--yes` or a path; for `settings` and `class`, an unknown setting or class, the key, a value the check refuses, and `class show` of an unusable class or while the file is missing, while 1 is a file that is not JSON, has comments of its own, is missing (but for `class show`), cannot be written or keeps changing); 130 cancelled (Esc
   during the sign-in's wait included, and Ctrl+C during `drive upload`, which leaves it to go on
   where it stopped, or `drive free-space`; nothing reads Esc during those two, although
   `CommandLineTree`'s help for `drive upload` says "Esc or Ctrl+C stops it"). An upload after a run
@@ -1022,18 +1049,58 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   from `EnqueueFor(StubHttpHandler.SubscriptionPath, ...)` (a subscription request never takes an
   upload's answer, so the read beside an upload cannot steal it), and `FakeElevenLabsAccount` stands in
   for the reader where the client is mocked.
-- Settings are in `src/ClassScribe/appsettings.json`, read from the exe's folder (under `dotnet run`,
-  the copy in `bin\Debug\net10.0-windows10.0.19041.0`; the menu names it and warns when the project's file is newer).
+- Settings (build-plan step 1, layout-config slice 1, as camera-first adapts them): the user's own
+  file is `%APPDATA%\ClassScribe\appsettings.json` (`SettingsPlaces`, decided at every read by
+  `Current()`: the user's file when it is there; else, once `%LOCALAPPDATA%\ClassScribe\settings-home.txt`
+  marks that it was made, the Missing state, which reads the defaults beside the program, says so
+  (`DescribeMissing`) and refuses every change; else the shipped `src/ClassScribe/appsettings.json`
+  beside the exe, the template, under `dotnet run` the copy in `bin\Debug\net10.0-windows10.0.19041.0`,
+  where the menu warns when the project's file is newer). `CLASSSCRIBE_SETTINGS_FOLDER` names another
+  user folder, for dry runs, and the menu says so. `SettingsWriter` is the one writer of that file
+  (registered in `AddSettingsReload`): every change (menu S and C, S after choices 6 and 7, `settings
+  set|reset|open|fill`, `class add|set|rename|remove`) goes through `Change`, under
+  `%LOCALAPPDATA%\ClassScribe\settings.lock` (`FileShare.None`, 2 s), from a fresh read, checked by the
+  reloader's own staging before it is written (temp file and move, the file before kept as
+  `appsettings.previous.json`), then reloaded. The first change writes a full copy of every setting
+  (`SettingsCatalog`, by reflection over the options classes in declaration order, plus
+  `Logging:LogLevel` as a map), under a three-line `//` header, and the marker; it never writes the
+  key (`ApiKeyRefused`; one a hand edit put in the file is taken out of it and of the copy before,
+  `ApiKeyTakenOut`, and reset --all keeps no copy of a file that is not JSON and mentions one,
+  `ApiKeyNotKept`) and refuses a file with comments of its own (`CommentsOfItsOwn`: any comment after
+  the opening brace, and before it any that is not a line of a header in `KnownHeaders`, in order,
+  written as a line comment; a later build that rewords the header adds the old one there). Keys a
+  newer build wrote are kept; every later change adds the settings the file lacks at their defaults
+  and says so with the build's version (`AddedLines`), and `settings fill` does that alone (refused
+  with exit 1 while the user's file is missing). A changed default
+  needs a row in `DefaultChanges.Rows` (old, new, version), which `settings list` and the menu's header
+  show for a file holding the old one (`Recording:MicrophoneFollows`, `chrome` to `auto`, is the
+  first). Saved classes are `Classes:<name>:<field>` in the same file (`SavedClasses`, a singleton
+  reading `IConfiguration` at each use; `ClassFields.All` in order; unknown fields kept; each class
+  checked on its own, so an unusable one never holds up the rest or the file); `ClassChoices` applies
+  the command line's or the menu's answers in groups. Menu C's E takes its Enter answers from the
+  class, or for an unusable one from its raw fields (`ClassesMenu.Kept.FromFields`), so Enter through
+  every question keeps them; a folder typed in menus S and C is resolved by `ClassFolders.RootFor`,
+  a relative one from the user profile, as `Recording:OutputFolder` is. `settings` and `class` run without the gate
+  (`CommandKind.Settings`), so a refused file can be fixed with them.
   `RunGate` reads the file again before each menu choice and each command (`SettingsReloader`): a
   staged copy is checked by `SettingsCheck`, and only values that pass reach the live settings,
   through `CheckedSettingsSource` and a reload; nothing watches the file. A refused file keeps the
-  last accepted values: the menu shows the problems and refuses choices (the menu comes back), a
-  command exits 1. It does not stop the start: the first checked read in `AppHost.Build` leaves the
-  defaults in place. A file gone after it was accepted is refused the same way. A new setting needs
-  its check in `SettingsCheck` and a row in the README. Environment overrides such as
+  last accepted values: the menu shows the problems and refuses choices other than recordings (the
+  menu comes back), a command exits 1. A recording (`GateUse.Recording`: menu 1, 2 and C, the report's
+  C, `record`, `record-only`; `CommandKind.Recording`) is never refused: it drops each refused key
+  and keeps the rest (`SettingsVerdict.Dropped`, logged with the value used in its place), or, for a
+  file that is not JSON or cannot be read, keeps the settings read last, or the defaults
+  (`SettingsVerdict.Kept`). It does not stop the start: the first checked read in `AppHost.Build`
+  leaves the defaults in place. A file gone after it was accepted is refused the same way. A new
+  setting needs its check in `SettingsCheck` and a row in the README (the catalog finds it by
+  itself). Tests never touch the real settings: `SettingsFileFixtures` (`TestDoubles.Settings.cs`)
+  gives program, user and state folders in temporary folders, and `FakeOutputFolderFacts` stands in
+  for the folders' facts. Environment overrides such as
   `ElevenLabs__BaseUrl` work; one that fails the check stops the start, since it cannot be fixed
-  while ClassScribe runs. Warnings (a key in the settings, an output folder inside OneDrive) are
-  given once per process. `SettingsReloader.Snapshot` gives the Recording, ElevenLabs (never the
+  while ClassScribe runs. Warnings are given once per process: a key in the settings, and a
+  recordings folder (`Recording:OutputFolder` or a class's `OutputFolder`) inside OneDrive, Google
+  Drive for desktop or Dropbox, at a drive's root, the user folder itself, or holding `AppData` or
+  `Windows` (`SettingsCheck.FolderWarnings`, over `IOutputFolderFacts`). `SettingsReloader.Snapshot` gives the Recording, ElevenLabs (never the
   key), Transcript, Drive (no secret is ever a setting), YouTube and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
   the recorder in the request file, and `RunJournal.WriteRequest` leaves the key out should it ever
   be in it. A recording that is running keeps the settings it started with. The microphone's
@@ -1043,16 +1110,20 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   the class app, so no command-line option), plus `Transcript:ShowGapsLongerThanSeconds` (0 or more).
   The camera's settings (camera-first step 11) are `Recording:CameraResolution` (`720p`; `480p`, `720p`, `1080p` in any
   case or `WxH`, checked by `CameraSize.TryParse`, the one parser `--resolution` and menu choice 7 use too; amendment 39)
-  and `Recording:WakeCameraMicrophone` (false, a yes or no: the webcam hold, see "The webcam hold" below;
-  turned on for one ClassScribe through its environment, `Recording__WakeCameraMicrophone=true`, which the window's
-  settings snapshot carries to the recorder, until a settings file of the user's own exists), and `Recording:CameraOffsets`
+  and `Recording:WakeCameraMicrophone` (false, a yes or no: the webcam hold, see "The webcam hold" below; set in the
+  user's own file with `settings set`, or for one ClassScribe through its environment, `Recording__WakeCameraMicrophone=true`,
+  which the window's settings snapshot carries to the recorder), and `Recording:CameraOffsets`
   (`{}`: a camera's name part to the milliseconds its picture is moved against the sound, the longest part in the
   camera's name applying, `CameraOffsets.For`; each part 1 to 200 characters without control characters or a colon, each
   figure a whole number from -1000 to 1000; checked by `SettingsCheck.CheckWholeNumberMap` before the bind, so a value that
   is no whole number is a problem in words, not a binder's exception; resolved by `TrackSetFactory` from the run's
   snapshot into the camera track's start; `Recording__CameraOffsets__OBSBOT=-60` sets one for a ClassScribe's environment,
-  as the kit does for the long checks). Amendment 25's `settings set Recording:CameraOffsets:<camera>` waits for step 1's
-  settings writer (camera-first step 12 point 1). New choices are new keys, not new values of an existing enum (amendment 5): an older build
+  as the kit does for the long checks). `Recording:CameraOffsets` is a map of `SettingsCatalog` (amendment 25, as
+  `Logging:LogLevel` is, its entries whole numbers and none by default): `settings set Recording:CameraOffsets:<camera> <ms>`
+  sets an offset, `settings reset` takes it out, the full copy writes the map empty (`SettingsWriter.AddMissing`), and
+  each problem with an offset names that entry's own key (`Found.AddAbout`), so a recording leaves out only the offsets
+  the check refuses, a name part with a space included. New choices are new keys, not new values of an existing enum
+  (amendment 5): an older build
   refuses a value it does not know, and a key it does not know it passes over.
   The cost line's settings are `ElevenLabs:PricePerHourUsd` (0.22) and
   `ElevenLabs:KeytermsPricePerHourUsd` (0.05), each from 0 to 100 dollars an hour, and
@@ -1632,8 +1703,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   each area's `<Area>Services.cs`), `Durations`, `PlainConsoleFormatter`.
 - `src/ClassScribe/Settings`: the options classes (`YouTubeOptions` among them, with `IsChannel` and
   `Expanded`), `ApiKeyFromEnvironment`, `SettingsCheck` (types, enums, ranges and paths, lists, the
-  Logging section, the warnings), and the reload: `SettingsFile`, `CheckedSettingsSource`,
-  `SettingsReloader` and `SettingsServices`.
+  Logging section, the warnings, keyed problems for the recording's drop), `OutputFolderFacts` (the
+  folders' facts the warnings use), the places (`SettingsPlaces`: the user's folder, the program's,
+  the marker, the Missing state), the reload (`SettingsFile`, `CheckedSettingsSource`,
+  `SettingsReloader`, `StagedSettings`), the writer (`SettingsWriter`, `SettingsDocument`,
+  `SettingsCatalog`, `DefaultChanges`), the saved classes (`SavedClasses`, `ClassChoices`) and
+  `SettingsServices`.
 - `src/ClassScribe/Desktop`: keeping the laptop awake (`IPowerRequests`, `IPowerSource` and
   `StayAwake`, all in `IPowerRequests.cs`), the computer's clocks (`ISystemTimes`), the window's
   title, taskbar and flash (`IWindowSignals`, `TitleText`, `WindowStatusSink`), starting processes
@@ -1800,7 +1875,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   and `IAudioOnDrive.cs` (`AudioOnDrive`, `IAudioOnDrive`, `NoAudioOnDrive`: what the lists and commands
   know of audio kept on Drive alone; `ClassFolders` takes it as an optional last argument).
 - `src/ClassScribe/Commands`: the menu, the command line (`CommandLineTree` on System.CommandLine,
-  `App`, `CommandLine` for the commands printed for later), the contracts (`Requests.cs`:
+  with `CommandLineTree.Settings.cs` and `CommandLineTree.Classes.cs`; `App`, `CommandLine` for the
+  commands printed for later), `settings` (`SettingsCommand`, `SettingsRequest`, `CommandOutput`,
+  `SettingRow`) and `class` (`ClassCommand`, `ClassRequest`), menus C (`ClassesMenu`) and S
+  (`SettingsMenu`), the contracts (`Requests.cs`:
   `RecordRequest`, `SourcePlan`, `ClassSource`, `ContinueChoice`, `StartOrigin`, `RunIds`;
   `StarterContracts.cs`: `ViewMode`, `ViewEnd`, `IRunViewer`, `IRecordStarter`, `IRecordRun`,
   `IStartupReport`, `IResultShower`; `RecorderState.cs`), the `record` run (`RecordCommand` as the

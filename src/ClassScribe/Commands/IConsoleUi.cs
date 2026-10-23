@@ -146,6 +146,20 @@ public sealed class ConsoleUi : IConsoleUi, IDisposable
     }
 
     /// <summary>
+    /// For settings and class, whose output a script reads through a pipe (layout-config 1.8): when standard output is
+    /// redirected, it is written in UTF-8 without a byte-order mark rather than in the console's code page, in which
+    /// Ṣughrā would arrive as ?. Only the writer changes, never the console's code page, which the window shares with the
+    /// shell. Call it before anything writes to the console, as <see cref="UseUnicode"/>.
+    /// </summary>
+    public static void UseUtf8WhenRedirected()
+    {
+        if (Console.IsOutputRedirected) Console.SetOut(Utf8Writer(Console.OpenStandardOutput()));
+    }
+
+    /// <summary>A writer of <paramref name="stream"/> in UTF-8 without a byte-order mark, which flushes each write.</summary>
+    public static TextWriter Utf8Writer(Stream stream) => new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = true };
+
+    /// <summary>
     /// True when this process is the only one attached to its console. The window was then opened for
     /// it, by a double-click or a file dropped on the exe, and disappears as soon as the process ends.
     /// </summary>

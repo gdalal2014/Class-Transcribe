@@ -2,6 +2,7 @@ using ClassScribe.Recorder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Commands;
 
@@ -46,17 +47,29 @@ public static class CommandServices
         services.AddTransient<DriveCommand>();
         services.AddTransient<DriveUploadCommand>();
 
+        // The commands of their own kind, settings and class, which answer on standard output and say what is wrong on
+        // standard error, read at the moment the output is made, so that a UTF-8 writer Program put in place for redirected
+        // output is the one used. The window alone has the settings writer they need; a recorder never resolves them.
+        services.AddSingleton(_ => new CommandOutput(Console.Out, Console.Error));
+        services.AddTransient<SettingsCommand>();
+        services.AddTransient<ClassCommand>();
+        services.AddTransient<ClassesMenu>();
+        services.AddTransient<SettingsMenu>();
+
         // Reports nothing until the real report at the start is registered; added only when no report is there yet.
         services.TryAddSingleton<IStartupReport, NoStartupReport>();
 
-        // The command line writes its help to standard output and its mistakes to standard error, as a script expects.
+        // The command line writes its help to standard output and its mistakes to standard error, as a script expects; it
+        // reads the saved classes and the recordings folder as a command runs.
         services.AddTransient(provider => new CommandLineTree(
             provider.GetRequiredService<ICommandRunner>(),
             provider.GetRequiredService<MenuCommand>(),
             provider.GetRequiredService<IConsoleUi>(),
             provider.GetRequiredService<TimeProvider>(),
             Console.Out,
-            Console.Error));
+            Console.Error,
+            provider.GetRequiredService<Settings.SavedClasses>(),
+            provider.GetRequiredService<IOptionsMonitor<Settings.RecordingOptions>>()));
         services.AddTransient<App>();
         return services;
     }

@@ -20,27 +20,34 @@ public static class SettingsServices
         services.Configure<TranscriptOptions>(configuration.GetSection(TranscriptOptions.SectionName));
         services.Configure<DriveOptions>(configuration.GetSection(DriveOptions.SectionName));
         services.Configure<YouTubeOptions>(configuration.GetSection(YouTubeOptions.SectionName));
+        services.AddSingleton<IOutputFolderFacts>(_ => new OutputFolderFacts());
         services.AddSingleton<SettingsCheck>();
+
+        // The saved classes, read from the settings in force at each use, as the gate last accepted them.
+        services.AddSingleton<SavedClasses>();
         return services;
     }
 
     /// <summary>
-    /// Adds the settings file in <paramref name="contentRoot"/> and what reads it again into <paramref name="configuration"/>,
-    /// through <paramref name="accepted"/>, which must be one of its sources. AppHost adds them, since it builds that configuration.
+    /// Adds <paramref name="places"/>, the settings file they name, what reads it again into <paramref name="configuration"/>,
+    /// through <paramref name="accepted"/>, which must be one of its sources, and the one writer of the user's file, which
+    /// reloads through it. AppHost adds them, since it builds that configuration; a recorder never writes the settings.
     /// </summary>
-    public static IServiceCollection AddSettingsReload(this IServiceCollection services, ConfigurationManager configuration, CheckedSettingsSource accepted, string contentRoot)
+    public static IServiceCollection AddSettingsReload(this IServiceCollection services, ConfigurationManager configuration, CheckedSettingsSource accepted, SettingsPlaces places)
     {
         if (!configuration.Sources.Contains(accepted))
             throw new InvalidOperationException("The settings to reload must take appsettings.json through the CheckedSettingsSource given; see AppHost.Build.");
 
         services.AddSingleton(accepted);
-        services.AddSingleton(provider => new SettingsFile(contentRoot, provider.GetRequiredService<ILogger<SettingsFile>>()));
+        services.AddSingleton(places);
+        services.AddSingleton(provider => new SettingsFile(places, provider.GetRequiredService<ILogger<SettingsFile>>()));
         services.AddSingleton(provider => new SettingsReloader(
             configuration,
             accepted,
             provider.GetRequiredService<SettingsFile>(),
             provider.GetRequiredService<SettingsCheck>(),
             provider.GetRequiredService<ILogger<SettingsReloader>>()));
+        services.AddSingleton<SettingsWriter>();
         return services;
     }
 }

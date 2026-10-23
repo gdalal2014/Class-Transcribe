@@ -254,7 +254,7 @@ public sealed class VideoBatch(
             var accountLine = request.Transcribe ? await batch.AccountLineAsync(stopping.Token) : null;
             var (longest, setting) = Longest();
             var courseFolder = Path.Combine(ClassFolders.RootFor(request.OutputRoot), ClassFolders.SafeName(request.Name));
-            var glossary = keyterms.Load(KeytermLoader.ResolvePath(elevenLabs.Value.KeytermsFile)).Count;
+            var glossary = keyterms.Load(keyterms.ResolvePath(elevenLabs.Value.KeytermsFile)).Count;
             foreach (var line in VideoPlan.Lines(videos, request.Name, courseFolder, request.Transcribe, glossary, elevenLabs.Value, accountLine, longest, setting))
                 ui.WriteLine(line);
 

@@ -23,8 +23,12 @@ namespace ClassScribe.Commands;
 /// <param name="recording">The run's recording settings.</param>
 /// <param name="ui">The window the questions are asked in.</param>
 /// <param name="cameras">Lists the cameras, for the camera question in person; null asks no camera question.</param>
+/// <param name="writer">
+/// Saves the pick as the default when S is pressed after it (layout-config 1.8): Recording:Mode, the microphone, the app
+/// it follows and the picture's size, as picked; null names the settings that would keep it instead, as before.
+/// </param>
 public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice choice, SettingsFile settings, IOptionsSnapshot<RecordingOptions> recording, IConsoleUi ui,
-    ICameraProvider? cameras = null)
+    ICameraProvider? cameras = null, SettingsWriter? writer = null)
 {
     /// <summary>What the menu says once a camera is picked: it is no setting, and each start asks first.</summary>
     public const string CameraIsAsked = "The camera is no setting: it holds until ClassScribe is closed, and each start from the menu asks first (Enter records with the camera; S records the sound only).";
@@ -47,7 +51,8 @@ public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice
         if (mode == RecordingMode.Class)
         {
             choice.PickMicrophone(RecordingMode.Class, namePart: null, follows: null);
-            ui.WriteLine($"{Pinned()} To keep that, set Recording:Mode to \"{RecordingMode.Class}\" in {settings.Path}.");
+            if (writer is null) ui.WriteLine($"{Pinned()} To keep that, set Recording:Mode to \"{RecordingMode.Class}\" in {settings.Path}.");
+            else await OfferToSaveAsync(RecordingMode.Class, picked: null, follows: null, size: null);
             return 0;
         }
 
@@ -86,9 +91,29 @@ public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice
         }
 
         choice.PickMicrophone(mode, picked?.Name, follows, camera, size);
-        ui.WriteLine($"{Pinned()} To keep that, {Keep(mode, picked, follows, fromSettings, size)} in {settings.Path}.");
+        if (writer is null) ui.WriteLine($"{Pinned()} To keep that, {Keep(mode, picked, follows, fromSettings, size)} in {settings.Path}.");
         if (camera is not null) ui.WriteLine(CameraIsAsked);
+        if (writer is not null) await OfferToSaveAsync(mode, picked, follows, size);
         return 0;
+    }
+
+    /// <summary>
+    /// After the pick (layout-config 1.8): says what is recorded now, and S keeps it as the default, through the writer:
+    /// Recording:Mode, Recording:Microphone when one was picked, Recording:MicrophoneFollows when an app was, and
+    /// Recording:CameraResolution when a size was; the camera itself is no setting. Any other key uses it until ClassScribe
+    /// is closed.
+    /// </summary>
+    private async Task OfferToSaveAsync(RecordingMode mode, Microphone? picked, FollowRule? follows, CameraSize? size)
+    {
+        ui.WriteLine(Pinned());
+        ui.WriteLine($"Press S to keep this as the default (saved in {writer!.FilePath}), or any other key to use it until ClassScribe is closed.");
+        if ((await ui.ReadKeyAsync(CancellationToken.None))?.Key != ConsoleKey.S) return;
+
+        List<(string Name, string[] Values)> saved = [("Recording:Mode", [mode.ToString()])];
+        if (picked is not null) saved.Add(("Recording:Microphone", [picked.Name]));
+        if (follows is not null) saved.Add(("Recording:MicrophoneFollows", [follows.Word]));
+        if (size is not null) saved.Add(("Recording:CameraResolution", [size.Text]));
+        writer.SetAll(saved);
     }
 
     /// <summary>

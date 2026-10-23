@@ -5,6 +5,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Link;
+using ClassScribe.Settings;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,6 +60,13 @@ public sealed class RecorderHost
     }
 
     private RuntimeFolder? _folder;
+
+    /// <summary>
+    /// Where the glossary is looked for: the user's folder when it holds a settings file, else the program's, the same
+    /// answer as the window's (see <see cref="SettingsPlaces"/>). Program gives the places for this user; a test gives its
+    /// own, so that no test looks into the real user folder.
+    /// </summary>
+    public required SettingsPlaces Places { get; init; }
 
     /// <summary>The clock the recorder runs on: the computer's, unless a test gives another.</summary>
     public TimeProvider Time { get; init; } = TimeProvider.System;
@@ -121,7 +129,7 @@ public sealed class RecorderHost
             return UnreadableRequestExitCode;
         }
 
-        logger.LogInformation("ClassScribe's recorder started for run {RunId}, as process {ProcessId} of build {Build}, in {Folder}", runId, Environment.ProcessId, LinkProtocol.Build, Folder.Root);
+        logger.LogInformation("ClassScribe's recorder started for run {RunId}, as process {ProcessId} of build {Build}, in {Folder}", runId, Environment.ProcessId, BuildInfo.Build, Folder.Root);
         var journal = new RunJournal(Folder, Liveness(bootstrap), Time, bootstrap.CreateLogger<RunJournal>());
 
         // 1. The request, taken once.
@@ -158,7 +166,7 @@ public sealed class RecorderHost
         IHost host;
         try
         {
-            host = AppHost.BuildRecorder(new RecorderStart(runId, request, settings), apiKey, log, Folder, Time, ConfigureServices);
+            host = AppHost.BuildRecorder(new RecorderStart(runId, request, settings), apiKey, log, Folder, Places, Time, ConfigureServices);
         }
         catch (Exception ex)
         {
@@ -367,7 +375,7 @@ public sealed class RecorderHost
         var now = Time.GetUtcNow();
         using var process = Process.GetCurrentProcess();
         return new RunRecord(RunRecord.CurrentVersion, runId, process.Id, new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero),
-            Environment.ProcessPath ?? AppContext.BaseDirectory, LinkProtocol.Build, LinkProtocol.Version, pipe, RunHome.Separate, request, BaseName: null, Folder: null,
+            Environment.ProcessPath ?? AppContext.BaseDirectory, BuildInfo.Build, LinkProtocol.Version, pipe, RunHome.Separate, request, BaseName: null, Folder: null,
             RunState.Starting, now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
     }
 

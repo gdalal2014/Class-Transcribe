@@ -502,7 +502,7 @@ public sealed class RunBookkeeping(
         var now = time.GetUtcNow();
         var (processId, processStartedUtc) = ThisProcess();
         var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, processId, processStartedUtc, Environment.ProcessPath ?? AppContext.BaseDirectory,
-            LinkProtocol.Build, LinkProtocol.Version, current?.PipeName, current?.Home ?? RunHome.InWindow, request, files.BaseName, files.Folder,
+            BuildInfo.Build, LinkProtocol.Version, current?.PipeName, current?.Home ?? RunHome.InWindow, request, files.BaseName, files.Folder,
             RunState.Recording, now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
         RunHandle run;
         try
