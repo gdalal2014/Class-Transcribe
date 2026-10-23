@@ -295,7 +295,8 @@ never counted as waiting; it goes up once it has stopped.
   then transcribed.`). N adds a class: L starts from the Lesson video preset (in person, with a
   camera), Enter answers each question; then the name, the course, what it records (A an app, D an
   output device, W whatever device the class plays on, P in person), your microphone and the app it
-  follows, the recordings folder and whether to transcribe. E and a number changes a class, with its
+  follows, the recordings folder, whether to transcribe, and its own glossary last (a file's path, N
+  for none, `-` for `ElevenLabs:KeytermsFile`'s; see [The glossary](#the-glossary)). E and a number changes a class, with its
   own answers for Enter; for a class that cannot be used it says why first, and Enter keeps each
   field as the file holds it, so a field the questions do not ask about is emptied with `ClassScribe
   class set "<name>" --clear <field>` or changed in the file (S, then O). D and a number removes it
@@ -788,6 +789,7 @@ and every file of a recording carries the name and the time the recording starte
             Mantiq_2026-10-17_14-04-42Z_part2.mic.wav  the microphone's next file, after a microphone change, a failure or 1500 MB
             Mantiq_2026-10-17_14-04-42Z.marks.txt    the marks set with M, and ClassScribe's own notes, if any
             Mantiq_2026-10-17_14-04-42Z.log          everything the recording's runs logged
+            Mantiq_2026-10-17_14-04-42Z.glossary.json  the glossary decided as it started, and what each transcript sent
             Mantiq_2026-10-17_14-04-42Z.md           the transcript
             Mantiq_2026-10-17_14-04-42Z.json         the full ElevenLabs response, with word timings
             Mantiq_2026-10-17_14-04-42Z.upload.wav   the 16 kHz copy that is uploaded, while it is needed
@@ -815,7 +817,7 @@ Eastern time that starts at 21:30 on 17 October goes to `2026-10-17`, although i
 `2026-10-18_01-30-00Z`. A second, separate class of the same name that day goes to
 `2026-10-17 (2)`, a third to `(3)`, and so on. A date folder counts as taken only when it holds a
 class: a recording's audio, a camera's piece, a transcript or ElevenLabs' answer, or a recording whose
-audio is on Google Drive alone. One that is empty, holds only the `.log` and marks of a start that recorded
+audio is on Google Drive alone. One that is empty, holds only the `.log`, `.glossary.json` and marks of a start that recorded
 nothing, or holds only your own files (the class's PDFs and slides, say), is used as it is, and
 those files stay where they are. A class that runs past midnight stays
 in the folder it started in, and a recording continued as its next part (C, `--continue`, or after
@@ -935,8 +937,8 @@ Your own things live in `%APPDATA%\ClassScribe`, which roams with your Windows a
 %APPDATA%\ClassScribe\
     appsettings.json                 your settings: a full copy of every setting, made at your first change
     appsettings.previous.json        the file as it was before ClassScribe's last change to it
-    keyterms.txt                     a glossary of your own, if you put one here; beside your settings file, it
-                                     wins over the one shipped beside the program
+    keyterms-islamic-sciences.txt    a glossary of your own, if you keep one here, named in your settings
+                                     (see [The glossary](#the-glossary)); ClassScribe ships none
     google-drive.dat                 the Google Drive sign-in (below)
 ```
 
@@ -990,7 +992,7 @@ In short: `record "<name>" SOURCE [--output "<folder>"] [--mic ["<microphone>"] 
 [--camera ["<camera>"] [--resolution <size>]] [--minutes <n>] [--no-open] [--continue | --new]` (`--camera` only
 with `--in-person`; refused before anything records only when a camera set-up line refuses the camera), or `record --class "<saved class>" ["<name>"]`
 with any of those options over the class's own, `record-only` with the same options,
-`transcribe <path> [--output "<folder>"] [--again] [--no-open]`, `rebuild <path> [--no-open]`,
+`transcribe <path> [--output "<folder>"] [--again] [--keyterms "<file>" | --keyterms none] [--no-open]`, `rebuild <path> [--no-open]`,
 `finish-video <path> [--no-open]` (see [The lesson's video](#the-lessons-video)), `list [--output "<folder>"]`, `devices`, `mic-check [--seconds <n>] [--log-folder "<folder>"]`,
 `camera-check ["<camera>"] [--resolution <size>]`, `drive signin [--client "<file>"]`, `drive signout`, `drive status`, `drive upload ["<path>"]`,
 `drive free-space "<path>" --yes`,
@@ -1098,6 +1100,7 @@ and the free `rebuild` command (see [Google Drive](#google-drive)); given its co
 | `--continue` | `record`, `record-only` | Continues, as its next part, the recording of that name that stopped within `Recording:ContinueWithinMinutes` without a transcript; when there is none, says so and starts a new one. |
 | `--new` | `record`, `record-only` | Starts a new recording without a word about one that could be continued. Not with `--continue`. |
 | `--again` | `transcribe` | Transcribes a recording that already has a transcript or a paid answer. This is billed again. |
+| `--keyterms "<file>"` | `transcribe` | Sends this glossary with this transcript, instead of the one decided when the recording started; `--keyterms none` sends none. A relative path is taken from where you type the command, and `%APPDATA%` works. A file that is not there is a mistake on the command line (exit code 2), before anything is sent. The recording's `.glossary.json` notes it, and keeps what was decided (see [The glossary](#the-glossary)). Not with `rebuild`, which sends nothing. |
 | `--no-open` | `record`, `record-only`, `transcribe`, `rebuild`, `finish-video`, `youtube` | Opens nothing at the end, whatever `Recording:OpenFolderWhenDone` and `Recording:OpenTranscriptWhenDone` say. Without it, `youtube` opens the course's folder once at the end, as `Recording:OpenFolderWhenDone` says, and never a transcript. |
 | `--seconds <n>` | `mic-check` | Stops the check by itself after that many seconds, a whole number from 1 to 86400 (a day), such as `600`. Without it, Q or Ctrl+C stops it. |
 | `--log-folder "<folder>"` | `mic-check` | Puts the check's log there, instead of the `mic-check` folder under `Recording:OutputFolder`. |
@@ -1278,7 +1281,8 @@ For a recording whose paid answer is kept without a transcript (`answer kept`), 
 out. An answer ClassScribe set aside as `.unread.json`, because it could not be read or saved in its
 place, is used only when you give `rebuild` that very file: given the recording, `rebuild` names it
 and gives the command. The words are ElevenLabs' answer as it was: to use a changed glossary, the
-recording has to be transcribed again, which is billed again.
+recording has to be transcribed again, which is billed again (`transcribe <path> --again`, with
+`--keyterms "<file>"` for another glossary than the one decided when it started).
 
 ### Google Drive
 
@@ -2345,29 +2349,98 @@ the result. `tools\dry-run\README.md` says what it does and what it checks.
 
 ## The glossary
 
-`keyterms.txt` (next to the app) lists terms ElevenLabs should spell as written, one per line.
-It ships with a starter list for an Ashʿarī kalām class in IJMES transliteration. Technical terms,
-school names among them, are fully transliterated. Names of people and titles of books follow IJMES
-in leaving out macrons and dots while keeping ʿayn and hamza, as in `al-Ghazali` and
-`al-Iqtisad fi al-Iʿtiqad`
-([IJMES guide](https://www.cambridge.org/core/journals/international-journal-of-middle-east-studies/information/author-resources/ijmes-translation-and-transliteration-guide)).
-Edit it freely:
+A glossary is a text file of terms ElevenLabs should spell as written, one per line, sent with the
+audio as its keyterms. ClassScribe ships none, and sends none until your settings name one: a new
+install transcribes without a glossary. To make one:
 
+- one term per line; lines starting with `#` are comments, and blank lines are passed over
 - up to 1000 terms, each under 50 characters and at most 5 words, without `< > { } [ ] \`
 - parts joined by a hyphen, a dash, a slash or another mark count as separate words: `Ahl al-Sunna`
   is three, and `Ahl al-Sunna wa-l-Jamāʿa` is six, one too many. Apostrophes, ʿayn and hamza stay
   inside their word.
 - a term that breaks a rule is skipped, with a warning that says why; the others are still sent
-- lines starting with `#` are comments
+- a term repeated, in any letter case, is sent once
 - if a term keeps coming out wrong, try a plainer spelling of it
 
-An update of ClassScribe replaces the `keyterms.txt` beside the program. To keep a glossary of your
-own, copy it to `%APPDATA%\ClassScribe\keyterms.txt`, beside your settings file: once your settings
-file is there, ClassScribe takes the glossary from that folder when it holds one, and from beside the
-program otherwise. A glossary in neither place is reported with both places.
+Keep it in your settings folder, `%APPDATA%\ClassScribe`, where an update never touches it, and name
+it once:
 
-After changing the glossary you can transcribe an old recording again (menu choice 3, then Y).
-That is billed as a new transcription.
+```powershell
+ClassScribe settings set ElevenLabs:KeytermsFile "%APPDATA%\ClassScribe\keyterms-islamic-sciences.txt"
+```
+
+Environment variables such as `%APPDATA%` work, and quotes around the path are ignored. A relative
+path is taken from the settings folder and from nowhere else, never from beside the app. An edit to
+the file counts from the next recording's start: no build and no update.
+
+A saved class can name a glossary of its own, or none: `ClassScribe class set "Mantiq" --keyterms
+"%APPDATA%\ClassScribe\mantiq.txt"`, `--keyterms none`, or the last question of menu C, E (Enter
+keeps it, N for none, `-` for `ElevenLabs:KeytermsFile`'s). `class set "Mantiq" --clear keyterms`
+takes it away again. A class's glossary that is not there is named in the menu's header and at the
+run's start; it never keeps the class from recording.
+
+**Which glossary a recording takes** is decided once, as it starts, and kept beside it in
+`<base>.glossary.json`, so that a transcript made later, or a new try, sends what the first one
+sent, even after the settings changed. The order:
+
+1. a glossary given to the command: `transcribe <path> --keyterms "<file>"`, or `--keyterms none`
+   (this transcript only; its entry in `.glossary.json` says so);
+2. the recording's own `.glossary.json`, when it has one;
+3. the saved class the run was started as (`record --class`, menu C), when it names one;
+4. a saved class whose course is the recording's name, when it names one, for a start by name too
+   (`record "Mantiq" ...`), and for a recording transcribed later; when classes of that course name
+   different glossaries, the next step decides, with a warning that names them;
+5. `ElevenLabs:KeytermsFile`;
+6. none.
+
+A recording made before this version has no `.glossary.json`: steps 4 to 6 decide at its first
+transcription, and write it then. `rebuild` sends nothing and uses no glossary.
+
+One line says which glossary, as a run starts and again before each upload:
+
+```text
+Glossary: keyterms-islamic-sciences.txt (ElevenLabs:KeytermsFile), 94 terms
+Glossary: mantiq.txt (the saved class "Mantiq"), 40 terms
+No glossary: ElevenLabs:KeytermsFile is empty
+Glossary: keyterms-islamic-sciences.txt, as decided when this recording started (94 terms then, 94 now)
+```
+
+When the file changed since the recording started, it is sent as it is now, and the line says
+`changed since: 94 terms then, 97 now`. When it is gone, the glossary is decided again by steps 3 to
+6, with a warning that names the missing file. A glossary that is not there, or cannot be read,
+never stops a recording or costs a transcript: the transcript is made without its terms, and the
+warning says so. The upload line still counts the terms sent: `Uploading ... with 94 keyterms`.
+
+The `.glossary.json` beside a recording looks like this, one `sent` entry per transcript, and goes
+to Google Drive with the recording's other files:
+
+```json
+{
+  "version": 1,
+  "decided": {
+    "setting": "%APPDATA%\\ClassScribe\\keyterms-islamic-sciences.txt",
+    "path": "C:\\Users\\you\\AppData\\Roaming\\ClassScribe\\keyterms-islamic-sciences.txt",
+    "from": "ElevenLabs:KeytermsFile",
+    "terms": 94,
+    "sha256": "58659e75...",
+    "utc": "2026-11-01T14:04:42+00:00"
+  },
+  "sent": [
+    { "copy": 1, "path": "C:\\Users\\you\\AppData\\Roaming\\ClassScribe\\keyterms-islamic-sciences.txt", "terms": 94, "sha256": "58659e75...", "utc": "2026-11-01T16:31:07+00:00", "from": "as decided when this recording started" }
+  ]
+}
+```
+
+The repository keeps an example, `examples\glossary\keyterms-islamic-sciences.txt`: a list for the
+Islamic sciences in IJMES transliteration. Technical terms, school names among them, are fully
+transliterated. Names of people and titles of books follow IJMES in leaving out macrons and dots
+while keeping ʿayn and hamza, as in `al-Ghazali` and `al-Iqtisad fi al-Iʿtiqad`
+([IJMES guide](https://www.cambridge.org/core/journals/international-journal-of-middle-east-studies/information/author-resources/ijmes-translation-and-transliteration-guide)).
+It is never built or published; copy it into your settings folder to use it.
+
+After changing the glossary you can transcribe an old recording with it: `transcribe <path> --again
+--keyterms "<file>"`, or menu choice 3, then Y, which sends the glossary decided when the recording
+started. That is billed as a new transcription.
 
 ## Settings
 
@@ -2481,7 +2554,7 @@ The ones you are most likely to change:
 | `Recording:StopAfterHours` | 9 | The safety stop, with a warning 15 minutes before, because ElevenLabs takes at most 10 hours in one file. 0 turns it off; at most 9.5. |
 | `ElevenLabs:LanguageCode` | empty | Empty lets ElevenLabs detect the language. |
 | `ElevenLabs:NoVerbatim` | false | Drop filler words and false starts. |
-| `ElevenLabs:KeytermsFile` | `keyterms.txt` | The glossary. A relative path is taken from the app's folder; environment variables work, and quotes are ignored. Empty sends no glossary. |
+| `ElevenLabs:KeytermsFile` | `""` | The glossary of every recording no saved class names one for (see [The glossary](#the-glossary)): none by default, since ClassScribe ships none. Name a glossary of your own, such as `%APPDATA%\ClassScribe\keyterms-islamic-sciences.txt`, most easily with `settings set`, which writes it into the file as JSON needs it. Environment variables work, and quotes are ignored; a relative path is taken from your settings folder, never from beside the app. Empty, or `none`, sends no glossary. The default changed: a file that still holds `keyterms.txt`, the glossary earlier versions shipped, is pointed out by `settings list` (`newer default: ""`), and that name now finds no file. |
 | `ElevenLabs:TimeoutMinutes` | 60 | The least time one try is given: the upload, the transcription and the whole answer. A longer recording gets more; see [How long an upload may take](#how-long-an-upload-may-take). From 1 to 1440. |
 | `ElevenLabs:SlowestUploadMbps` | 1 | The slowest upload speed, in megabits per second, that the time limit allows for. If your line uploads more slowly, set it a little below that speed. From 0.1 to 1000. |
 | `ElevenLabs:PricePerHourUsd` | 0.22 | The API price of an hour of audio, in US dollars, for the estimate logged after each transcript: Scribe v2 on [ElevenLabs' API price list](https://elevenlabs.io/pricing/api). 0 logs the audio's length without a price. From 0 to 100. See [Cost and privacy](#cost-and-privacy). |
@@ -2568,8 +2641,8 @@ whatever the file holds, so a file the check refuses can be fixed with them.
 
 A saved class keeps everything a class needs under a name: its course (the recording's name, which
 names its folder and files), what it records, your microphone and the app it follows, its own
-recordings folder, whether it is transcribed, and for a lesson in the room the camera and the
-picture's size. Start one from menu C, by typing its name or course in menu choices 1 and 2, or
+recordings folder, whether it is transcribed, its own glossary, and for a lesson in the room the
+camera and the picture's size. Start one from menu C, by typing its name or course in menu choices 1 and 2, or
 from PowerShell:
 
 ```powershell
@@ -2579,6 +2652,7 @@ ClassScribe class add "Lesson" --in-person --camera "OBSBOT" --resolution 720p
 ClassScribe class list                                     # each class, with what it records or why it cannot be used
 ClassScribe class show "Mantiq"                            # its fields, what it records and its command; --json too
 ClassScribe class set "Mantiq" --output "D:\Classes"       # change fields; --clear output empties one
+ClassScribe class set "Mantiq" --keyterms "%APPDATA%\ClassScribe\mantiq.txt"   # its own glossary; none for none, --clear keyterms for the setting's
 ClassScribe class rename "Mantiq" "Mantiq (Chrome)"        # its course, folders, files and Drive stay as they are
 ClassScribe class remove "Mantiq"                          # no recording is touched
 ClassScribe record --class "Mantiq"                        # record it as saved
@@ -2587,8 +2661,10 @@ ClassScribe record --class "Mantiq"                        # record it as saved
 Classes are saved in your settings file under `Classes`, by name, each with the fields `Course`,
 `Mode` (`Class`, `ClassAndMicrophone` or `Microphone`, in person), `App` or `Device` (neither: the
 device the class plays on), `Microphone`, `MicrophoneFollows`, `OutputFolder`, `Transcribe` (true
-unless `false`), `Camera` (part of a camera's name, or `auto` for a USB camera, else the built-in one)
-and `CameraResolution`; a field a later build adds is kept as it is. `class add` without `--course`
+unless `false`), `Camera` (part of a camera's name, or `auto` for a USB camera, else the built-in one),
+`CameraResolution` and `KeytermsFile` (the class's own glossary, or `none`; `ElevenLabs:KeytermsFile`
+when empty; a file that is not there is named in the menu's header and at the run's start, and never
+makes the class unusable); a field a later build adds is kept as it is. `class add` without `--course`
 takes the class's name as its course. Names are matched exactly, in any letter case, and must be
 usable as a folder's name, at most 80 characters. A class that cannot be used, such as one with both
 `App` and `Device`, is named in the menu's header with why, `class show` ends with exit code 2 for
@@ -2643,9 +2719,10 @@ upload cannot close it over the result.
 
 The published app keeps your settings in `%APPDATA%\ClassScribe\appsettings.json`, made at your
 first change, and never in its own folder, so publishing again never changes them (see
-[Settings](#settings)). The `appsettings.json` and `keyterms.txt` beside `ClassScribe.exe` are the
-shipped defaults and glossary, which a publish replaces; a `keyterms.txt` of your own goes beside
-your settings file (see [The glossary](#the-glossary)).
+[Settings](#settings)). The `appsettings.json` beside `ClassScribe.exe` holds the shipped defaults,
+which a publish replaces. No glossary is shipped, and none beside `ClassScribe.exe` is ever read,
+not even a `keyterms.txt` an older version left there: keep your glossary in your settings folder
+and name it in your settings (see [The glossary](#the-glossary)).
 
 Do not publish as a single `.exe` (`-p:PublishSingleFile=true`): Bitdefender has quarantined
 single-file builds of ClassScribe as `Gen:Variant.Yogi.67941`, a false positive, while the folder
@@ -3022,7 +3099,15 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Copy ... of the transcript of ... was taken at that moment; saving the next one instead` | Another ClassScribe window saved a transcript of the same recording at the same moment. Each is kept, under its own number; nothing to do. |
 | `The header of ... says it holds ..., but the file goes on to ...` | The file comes from a recorder that stopped without finishing it. ClassScribe reads all of it; nothing to do. |
 | `Skipping keyterm on line ...` | That term breaks a rule of [the glossary](#the-glossary), so it was not sent; the message says which rule. |
-| `No glossary at ...` | `keyterms.txt` is not where `ElevenLabs:KeytermsFile` points. Keep it next to the app, or correct the setting. |
+| `No glossary at ... (ElevenLabs:KeytermsFile), so the transcript is made without its terms` | The glossary your settings name is not there. Put the file there, or name another with the `settings set` command the line gives. A relative name is taken from your settings folder, never from beside the app, so a `keyterms.txt` an older version left there is not read. |
+| `No glossary at ... (the saved class "..."), so the transcript is made without its terms` | The class's own glossary is not there. Put the file there, or name another with the `class set ... --keyterms` command the line gives; `--clear keyterms` gives the class `ElevenLabs:KeytermsFile`'s instead. The class records all the same. |
+| `No glossary: ElevenLabs:KeytermsFile is empty` | No glossary is named, so none is sent: ClassScribe ships none. To send yours, name it (see [The glossary](#the-glossary)). `... says none` means the setting, the class or `--keyterms` was set to `none` on purpose. |
+| `Glossary: ..., as decided when this recording started (... then, ... now)` | A transcript made later sends the glossary decided as the recording started, kept in its `.glossary.json`, whatever the settings say now. To send another for one transcript, give `transcribe <path> --keyterms "<file>"`. |
+| `Glossary: ..., as decided when this recording started; changed since: ... then, ... now` | The glossary was edited after the recording started, and is sent as it is now; the numbers are its terms then and now. |
+| `The glossary decided when this recording started, ..., is not there now, so the glossary is decided again` | The file was moved or deleted since the recording started. The next line says which glossary is sent instead (a saved class of the course, `ElevenLabs:KeytermsFile`, or none); put the file back for the next try to send it. |
+| `The saved classes "..." and "..." record ... with different glossaries (...), so ElevenLabs:KeytermsFile decides` | Two classes of one course name different glossaries, and the recording was started by its name, not by `--class`, so ClassScribe cannot tell which is meant. Start it with `record --class "<name>"` or menu C, or give the classes one glossary. |
+| `WARNING  The saved class "..." names the glossary ..., which is not there; its transcripts are made without its terms until it is.` | The menu's header names a class whose own glossary is missing. The class can still be used. Put the file there, or change the class's glossary (menu C, E, or `class set ... --keyterms`). |
+| `The glossary record ... could not be read (...)`, `Could not write the glossary record ... (...)` | The recording's `.glossary.json` is damaged, or its folder would not take it. The glossary is decided again, a damaged record is left as it is, and nothing else is affected. |
 
 ### Making a transcript again
 
@@ -3198,8 +3283,9 @@ src/ClassScribe/
     Recorder/         the background recorder: its host, run files, lock, logs, the watch for times
                       when ClassScribe did not run, and the window it brings back by itself
     Link/             the named pipe between the recorder and the windows that show its run
-    Transcription/    ElevenLabs client (Refit), glossary, transcript layout, the upload's time limit,
-                      the cost estimate and the account's credits after a transcript
+    Transcription/    ElevenLabs client (Refit), the glossary (its term rules, its files, the one resolver
+                      that decides a recording's glossary, and the recording's .glossary.json), transcript
+                      layout, the upload's time limit, the cost estimate and the account's credits after a transcript
     Drive/            Google Drive: the sign-in (PKCE, the listener on 127.0.0.1, the browser), the
                       client file, the encrypted store, the access tokens, Google's OAuth and Drive
                       clients (Refit), ClassScribe's folders in My Drive, the resumable uploads, the
@@ -3222,6 +3308,7 @@ src/ClassScribe/
                       settings check before each
 tests/ClassScribe.Tests/    NUnit and Moq
 tools/dry-run/      the dry-run kit: Start-DryRun.cmd, the stand-in for ElevenLabs, the test player
+examples/glossary/  an example glossary of the Islamic sciences, never built or published
 ```
 
 In the tests, the transcription service, the upload preparation, the command runner and the desktop
@@ -3258,5 +3345,5 @@ a stand-in `ClassScribe.exe` that records nothing and runs the whole dry run wit
 folders. No test ever starts ClassScribe itself, records, opens a device or a microphone, plays a
 sound, opens a browser, runs yt-dlp, or sends anything to ElevenLabs, Google or YouTube, and none
 reads or writes the real `%APPDATA%\ClassScribe`, `%LOCALAPPDATA%\ClassScribe` or
-`%USERPROFILE%\ClassScribe`. The suite holds 4,538 tests and takes about four minutes; a test
+`%USERPROFILE%\ClassScribe`. The suite holds 4,610 tests and takes about four minutes; a test
 run that hangs is stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).
