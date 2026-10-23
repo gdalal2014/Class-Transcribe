@@ -82,6 +82,44 @@ public sealed class LessonVideoDriveTests
         Assert.That(_world.Manifests().Read(_lesson)!.File($"{b}.mp4")!.Seconds, Is.Null, "a video is not measured as a .wav is");
     }
 
+    /// <summary>
+    /// The video goes up streamed from its file, never read into memory: before each of its pieces the file is still held open,
+    /// as media is while it goes up, so that nothing writes to it meanwhile; a text file is read whole first and let go.
+    /// </summary>
+    [Test]
+    public async Task The_video_goes_up_streamed_from_its_file()
+    {
+        LessonVideos(on: true);
+        var b = _lesson.BaseName;
+        List<bool> heldBeforeEachPiece = [];
+
+        var result = await _world.RecordingUpload().UploadAsync(_lesson, _ =>
+        {
+            if (Started().LastOrDefault() == $"{b}.mp4") heldBeforeEachPiece.Add(HeldOpen(_lesson.LessonVideo));
+            return Task.CompletedTask;
+        }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.That(result.Outcome, Is.EqualTo(RecordingOutcome.Done));
+        Assert.That(heldBeforeEachPiece, Has.Count.EqualTo(4), "a look before each of the video's four pieces");
+        Assert.That(heldBeforeEachPiece, Has.All.True, "the video is read from its file as it goes up");
+        Assert.That(HeldOpen(_lesson.LessonVideo), Is.False, "let go once it is up");
+    }
+
+    /// <summary>True when another handle holds the file at <paramref name="path"/> open in a way that keeps it from being written now.</summary>
+    private static bool HeldOpen(string path)
+    {
+        try
+        {
+            using var writer = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+            return false;
+        }
+        catch (IOException)
+        {
+            // A sharing violation: the upload holds it open for reading only, which is what this looks for.
+            return true;
+        }
+    }
+
     /// <summary>Drive:Upload WithoutAudio keeps the video off Drive too, since it holds the same sound.</summary>
     [Test]
     public async Task Without_audio_the_video_stays_too()

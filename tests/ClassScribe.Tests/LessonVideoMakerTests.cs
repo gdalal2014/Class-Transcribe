@@ -157,6 +157,38 @@ public sealed class LessonVideoMakerTests
         Assert.That(starter.Started.Single().Process.Killed, Is.True);
     }
 
+    /// <summary>
+    /// Each progress line gives the camera process two minutes more: lines 90 seconds apart keep a slow video going for six
+    /// minutes, well past the two, and it is made, never ended for being silent.
+    /// </summary>
+    [Test]
+    public async Task Each_progress_line_gives_the_process_two_minutes_more()
+    {
+        var starter = new FakeCameraProcessStarter { PlayEach = true };
+        var percents = new System.Collections.Concurrent.ConcurrentQueue<int>();
+        var making = new LessonVideoMaker(starter, _time, _logs).MakeAsync(_files, keepPieces: false, CancellationToken.None, percents.Enqueue);
+        await Wait.UntilAsync(() => starter.Played.Count == 1 && starter.Played[0].Job is not null);
+        var played = starter.Played[0];
+
+        for (var percent = 10; percent <= 40; percent += 10)
+        {
+            _time.Advance(TimeSpan.FromSeconds(90));
+            await played.ProgressAsync(percent);
+            await Wait.UntilAsync(() => percents.Contains(percent) || making.IsCompleted);
+        }
+
+        Assert.That(making.IsCompleted, Is.False, "six minutes, with a progress line every 90 seconds");
+        Assert.That(played.Process.Killed, Is.False);
+
+        await played.MadeAsync(_files.LessonVideo, 2, 1234);
+        await played.Process.EndAsync(CameraProtocol.DoneExitCode);
+        await _time.AdvanceUntilAsync(() => making.IsCompleted, TimeSpan.FromSeconds(1), timeoutSeconds: 30);
+
+        var result = await making;
+        Assert.That(result.Outcome, Is.EqualTo(LessonVideoOutcome.Made));
+        Assert.That(percents, Is.EqualTo(new[] { 10, 20, 30, 40 }));
+    }
+
     /// <summary>A camera process Windows does not start is a video not made, said with why and how to make it later.</summary>
     [Test]
     public async Task A_process_that_does_not_start_is_a_video_not_made()

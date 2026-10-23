@@ -95,6 +95,41 @@ public partial class RecordCommandTests
         Assert.That(media.Written, Has.Count.EqualTo(1));
     }
 
+    /// <summary>
+    /// With a transcript to make, the transcript saved first and the video still being made, the outcome waits for the video:
+    /// no outcome is written and the laptop stays awake until the video is done, so that the recorder never ends, ending the
+    /// camera process, while the video is made.
+    /// </summary>
+    [Test]
+    public async Task A_lesson_s_outcome_waits_for_its_video_after_the_transcript_is_saved()
+    {
+        var (media, starter, logs) = LessonVideoParts();
+        using var gate = new ManualResetEventSlim();
+        media.HoldWrite = gate;
+        var recordings = new FakeRecordingFactory();
+        var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: true));
+        await Wait.UntilAsync(() => recording.Started);
+        WriteTheLesson(recording);
+
+        _signals.RequestStop();
+        await Wait.UntilAsync(() => _log.Messages.Any(message => message.StartsWith("Transcript saved to", StringComparison.Ordinal)));
+        await Task.Delay(200);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(media.Writing, Is.True, "the video is still being made");
+            Assert.That(run.IsCompleted, Is.False);
+            Assert.That(RunFile().Outcome, Is.Null, "the outcome waits for the video");
+            Assert.That(_power.Holding, Is.True, "the laptop is kept awake while the video is made");
+        }
+
+        gate.Set();
+        Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(30)), Is.EqualTo(0));
+        Assert.That(RunFile().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+        Assert.That(_power.Holding, Is.False);
+    }
+
     /// <summary>Ctrl+C after the stop cancels the video with the transcript: the run ends cancelled, and the pieces are kept for finish-video.</summary>
     [Test]
     public async Task Ctrl_C_after_the_stop_cancels_the_video_with_the_transcript()
