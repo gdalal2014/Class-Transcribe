@@ -1,6 +1,7 @@
 using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
@@ -47,10 +48,15 @@ public sealed class RecordCommand(
     TimeProvider time,
     ILogger<RecordCommand> logger,
     VideoPlayback? video = null,
-    IVideoYield? yield = null) : IRecordRun
+    IVideoYield? yield = null,
+    LessonVideoMaker? lessonVideos = null,
+    LessonVideoDrive? lessonDrive = null) : IRecordRun
 {
     /// <summary>True once a class asked this video's run to give way (see <see cref="IVideoYield"/>).</summary>
     private volatile bool _yielded;
+
+    /// <summary>A lesson's video being made beside its transcript, once its sound has stopped; null for a run without the camera, or before.</summary>
+    private Task<LessonVideoResult>? _lessonVideo;
 
     /// <summary>How a video's recording ended, when the run itself knows better than its cause, as when its window was gone before it began.</summary>
     private string? _videoEnded;
@@ -166,6 +172,11 @@ public sealed class RecordCommand(
             EndTheVideo(request, files);
             if (windows.Ended) return EndedByWindows(files);
 
+            // A lesson with the camera is complete once its sound has stopped: its run file says Transcribing from now, record-only
+            // included, while its video is made (and its transcript), so that Drive and transcribe wait, the next class may
+            // start, and a crash meanwhile is not taken for a recording that ended unexpectedly (teach-video 6.9).
+            if (request.Source.Camera is not null) bookkeeping.Run?.SetState(RunState.Transcribing);
+
             return await FinishAsync(request, files, offset, summary, stopping, audio.GetSnapshot().Main.Source,
                 microphone, (audio as IMicrophoneRecording)?.Follows);
         }
@@ -213,6 +224,9 @@ public sealed class RecordCommand(
                 request.Transcribe && HasKey() ? "goes on to the transcript" : "is kept");
         }
 
+        // A lesson's video is made beside the transcript, in a camera process of its own; the run's outcome waits for it.
+        StartTheLessonVideo(request, files);
+
         var command = CommandLine.Transcribe(files.Segment(1));
         if (!request.Transcribe)
         {
@@ -222,6 +236,7 @@ public sealed class RecordCommand(
             {
                 if (!continued)
                 {
+                    await WaitForTheLessonVideoAsync();
                     return NothingRecorded(request, files, stopping, request.Video is { } nothing
                         ? $"Nothing played in ClassScribe's video window, so nothing of \"{TitleOf(nothing)}\" was kept to transcribe"
                         : $"Nothing audible was captured from \"{source}\". {WhatToCheck}");
@@ -231,6 +246,7 @@ public sealed class RecordCommand(
             }
 
             // 9. Record only.
+            await WaitForTheLessonVideoAsync();
             var kept = request.Video is { } recorded
                 ? $"The recording of \"{TitleOf(recorded)}\" is in {files.Folder}."
                 : $"The recording is in {files.Folder}. To transcribe it later, choose 3 in the menu, or run: {command}";
@@ -241,6 +257,7 @@ public sealed class RecordCommand(
 
         if (!HasKey())
         {
+            await WaitForTheLessonVideoAsync();
             var noKey =
                 $"Set {ElevenLabsOptions.ApiKeyVariable} and open a new terminal (in VS Code, quit every VS Code window and start it again; a new terminal inside it keeps the old settings). Then start ClassScribe and choose 3 in the menu, or run: {command}";
             logger.LogWarning("{Message}", noKey);
@@ -250,6 +267,38 @@ public sealed class RecordCommand(
 
         // 10. The transcript, from every part of the recording on disk.
         return await TranscribeAsync(request, files, stopping, source, command);
+    }
+
+    /// <summary>
+    /// Starts making a lesson's video once its sound has stopped (teach-video 6.9), beside the transcript: for a run with the
+    /// camera whose camera wrote a piece, through a camera process of its own (see <see cref="LessonVideoMaker"/>), its
+    /// pieces kept for Google Drive only when the video goes there (see <see cref="LessonVideoDrive.KeepsPieces"/>). A first
+    /// Ctrl+C after the stop cancels it with the transcript. A lesson whose camera wrote no piece says so; the menu and
+    /// finish-video have nothing to make then either.
+    /// </summary>
+    private void StartTheLessonVideo(RecordRequest request, RecordingFiles files)
+    {
+        if (request.Source.Camera is null || lessonVideos is null) return;
+
+        if (files.FindCameraPieces().Count == 0)
+        {
+            logger.LogWarning("The camera wrote no picture in this lesson, so it has no video to make; the sound is kept");
+            return;
+        }
+
+        _lessonVideo = lessonVideos.MakeAsync(files, lessonDrive?.KeepsPieces ?? false, signals.Cancellation);
+    }
+
+    /// <summary>
+    /// Waits for the lesson's video, when one is being made, before the run's outcome is written, so that the end can say what
+    /// became of it (the maker says it); the laptop is kept awake meanwhile, as the run holds it until it returns.
+    /// </summary>
+    private async Task WaitForTheLessonVideoAsync()
+    {
+        if (_lessonVideo is not { } making) return;
+
+        _lessonVideo = null;
+        await making;
     }
 
     /// <summary>What to check when nothing audible reached a recording.</summary>
@@ -302,6 +351,7 @@ public sealed class RecordCommand(
             logger.LogInformation("Press Ctrl+C to cancel the upload. The recording is kept either way");
             var saved = await workflow.TranscribeRecordingAsync(files, signals.Cancellation);
             logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
+            await WaitForTheLessonVideoAsync();
             End(request, stopping, RecorderPhase.Done,
                 new RunOutcome(OutcomeKind.Transcribed, 0, $"Transcript saved to {saved.TranscriptPath}", saved.TranscriptPath, files.Folder, RetryCommand: null));
 
@@ -312,6 +362,7 @@ public sealed class RecordCommand(
         }
         catch (OperationCanceledException)
         {
+            await WaitForTheLessonVideoAsync();
             var cancelled = $"The transcription was cancelled. The recording is in {files.Folder}. To transcribe it later, choose 3 in the menu, or run: {command}";
             logger.LogWarning("{Message}", cancelled);
             End(request, stopping, RecorderPhase.Cancelled, new RunOutcome(OutcomeKind.Cancelled, 130, cancelled, TranscriptPath: null, files.Folder, command));
@@ -320,6 +371,7 @@ public sealed class RecordCommand(
         catch (NoAudioException)
         {
             // No hint to try again: a new try would find the same silence.
+            await WaitForTheLessonVideoAsync();
             var silent = $"Nothing audible was captured from \"{source}\", so nothing was sent to ElevenLabs, and trying again would find the same silence. {WhatToCheck}";
             logger.LogWarning("{Message}", silent);
             End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.NothingRecorded, 1, silent, TranscriptPath: null, files.Folder, RetryCommand: null));
@@ -329,6 +381,7 @@ public sealed class RecordCommand(
         {
             // No hint to try again: a new try would be refused for the same length. The error itself says how to send the
             // recording in pieces.
+            await WaitForTheLessonVideoAsync();
             var tooLong = $"The audio is safe in {files.Folder}. It is longer than ElevenLabs takes in one file, so trying again as it is would be refused the same way";
             logger.LogWarning("{Message}", tooLong);
             End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.TranscriptFailed, 1, tooLong, TranscriptPath: null, files.Folder, RetryCommand: null));
@@ -336,6 +389,7 @@ public sealed class RecordCommand(
         }
         catch (Exception ex)
         {
+            await WaitForTheLessonVideoAsync();
             var (failed, retry) = DescribeFailure(ex, files, command);
             End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.TranscriptFailed, 1, failed, TranscriptPath: null, files.Folder, retry));
             throw;
@@ -673,6 +727,9 @@ public sealed class RecordCommand(
             logger.LogInformation("Recording \"{Name}\"{Saved} to {Folder}", files.Name, saved, files.Folder);
 
         logger.LogInformation("Recording from {Source}", Describe(request.Source));
+
+        // A lesson's video and Google Drive (N19 C): where it goes, and how to send lesson videos there while they stay here.
+        if (request.Source.Camera is not null && lessonDrive?.StartLine() is { } whereItGoes) logger.LogInformation("{Line}", whereItGoes);
         logger.LogInformation("{Keys}{Microphone}. {Closing}",
             request.Transcribe
                 ? "Press Q twice (or Ctrl+C twice) to stop and transcribe, P to pause or resume, M to mark a moment"

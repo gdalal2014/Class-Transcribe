@@ -79,7 +79,7 @@ public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore st
         var waiting = queue.Queued();
         if (waiting.Count == 0) return "nothing waits now";
 
-        var bytes = waiting.Sum(manifest => UploadManifests.OnDisk(manifest.Recording).Bytes);
+        var bytes = waiting.Sum(manifest => queue.OnDisk(manifest.Recording).Bytes);
         return $"{(waiting.Count == 1 ? "1 recording" : $"{waiting.Count} recordings")}, {DriveCommand.Size(bytes)}";
     }
 

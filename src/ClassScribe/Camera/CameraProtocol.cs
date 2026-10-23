@@ -15,13 +15,14 @@ namespace ClassScribe.Camera;
 /// <see cref="Problem"/>, <see cref="Piece"/>, <see cref="Progress"/>, <see cref="Made"/> or <see cref="Failed"/>, and
 /// <see cref="Log"/> lines, which the starter writes into its own log under the category Camera. Its exit codes are
 /// internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. It takes the hold, check and record jobs, opening the
-/// camera only shared; a finish job is answered with <see cref="Failed"/>, and ends with 4. Version 2 defined the clock
-/// line's body (<see cref="Audio.Timeline.ClockState"/>) and took the record job.
+/// camera only shared, and the finish job, which opens no camera. Version 2 defined the clock line's body
+/// (<see cref="Audio.Timeline.ClockState"/>) and took the record job; version 3 (slice 8) takes the finish job, with
+/// <see cref="CameraJob.KeepPieces"/>, its <see cref="Progress"/> lines at least every ten seconds, and <see cref="Made"/>.
 /// </summary>
 public static class CameraProtocol
 {
     /// <summary>The version of the lines this build speaks; a job of another version is not taken.</summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>What makes ClassScribe a camera process, followed by the job's id.</summary>
     public const string ProcessSwitch = "--camera-process";
@@ -133,15 +134,23 @@ public enum CameraJobKind
 /// <param name="StartSeconds">Where on the run's clock a record job's piece begins, in seconds.</param>
 /// <param name="StillPath">Where a check job saves its one picture.</param>
 /// <param name="SoftwareEncoder">True for a record job to use Windows' software encoder from the start, as after the hardware encoder failed in this run.</param>
+/// <param name="KeepPieces">
+/// True for a finish job to keep the camera's pieces once the video has passed its check, since the video goes to Google
+/// Drive and free-space deletes them once it is safe there (amendment 47); false, the default, deletes them then.
+/// </param>
 public sealed record CameraJob(int Protocol, CameraJobKind Kind, string? CameraId = null, string? CameraName = null, string? Resolution = null,
-    int OffsetMilliseconds = 0, string? Folder = null, string? BaseName = null, double StartSeconds = 0, string? StillPath = null, bool SoftwareEncoder = false);
+    int OffsetMilliseconds = 0, string? Folder = null, string? BaseName = null, double StartSeconds = 0, string? StillPath = null, bool SoftwareEncoder = false,
+    bool KeepPieces = false);
 
 /// <summary>The body of a line that needs none (<see cref="CameraProtocol.Off"/>, <see cref="CameraProtocol.On"/>, <see cref="CameraProtocol.Cancel"/>): an empty object.</summary>
 public sealed record CameraEmpty;
 
-/// <summary>Stop a record job at <paramref name="EndSeconds"/> on the run's clock, the last frame lasting to it, and make the lesson's video after it when <paramref name="MakeVideo"/>.</summary>
+/// <summary>Stop a record job at <paramref name="EndSeconds"/> on the run's clock, the last frame lasting to it.</summary>
 /// <param name="EndSeconds">The end position on the run's clock, in seconds: where the sound tracks end.</param>
-/// <param name="MakeVideo">True to make the lesson's video once the piece is finished.</param>
+/// <param name="MakeVideo">
+/// Kept for the line's shape and passed over: the lesson's video is made by a finish job of a camera process of its own,
+/// started once the record job's piece is finished, the same job finish-video and the report's V start.
+/// </param>
 public sealed record CameraStop(double EndSeconds, bool MakeVideo = false);
 
 /// <summary>The camera opened: what it records.</summary>

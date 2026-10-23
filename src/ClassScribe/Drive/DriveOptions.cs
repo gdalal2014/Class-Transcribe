@@ -53,6 +53,15 @@ public sealed class DriveOptions
     public DriveUploadScope Upload { get; init; } = DriveUploadScope.Everything;
 
     /// <summary>
+    /// True to send a lesson's finished video (<c>&lt;base&gt;.mp4</c>) to Drive with the rest of its recording, last, while
+    /// <see cref="Upload"/> sends audio, since the video holds the same sound; its camera's pieces then stay on this laptop
+    /// until free-space finds the video safe on Drive. False, the default (Gulzar's answer N19 C: a teacher's free 15 GB fills
+    /// in about six hours of 720p), keeps lesson videos on this laptop, and their pieces are deleted once the video passes its
+    /// check. A new key rather than a new value of <see cref="Upload"/>, which an older build would refuse (amendment 5).
+    /// </summary>
+    public bool LessonVideos { get; init; }
+
+    /// <summary>
     /// The size of each piece sent to Drive, in MiB, from 1 to 256: a piece lost to a dropped connection costs at most this
     /// much, and memory stays flat whatever the size of the file. Always a multiple of the 256 KiB Drive asks for.
     /// </summary>

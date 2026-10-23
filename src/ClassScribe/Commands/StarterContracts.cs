@@ -84,7 +84,10 @@ public enum StartupAction
     Forget,
 
     /// <summary>U: upload what waits to go up to Google Drive now.</summary>
-    Upload
+    Upload,
+
+    /// <summary>V: make a lesson's video now, free, from its camera pieces and its sound (teach-video 6.9).</summary>
+    MakeVideo
 }
 
 /// <summary>What was chosen in the report at the start.</summary>

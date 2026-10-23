@@ -37,8 +37,26 @@ namespace ClassScribe.Storage;
 /// The YouTube video it is the recording of, from its source file (see <see cref="RecordingFiles.Source"/>); null for a
 /// class's recording, and for a video's whose source file cannot be read.
 /// </param>
+/// <param name="LessonVideo">What its files say of a lesson's finished video (see <see cref="ClassFolders.LessonVideoStateOf"/>): none for a recording without the camera.</param>
 public sealed record RecordedClass(RecordingFiles Files, DateTime LastRecordedUtc, TimeSpan Length, bool HasTranscript, string? KeptAnswer, bool BeingWritten,
-    int Parts = 1, bool HasMicrophone = false, AudioOnDrive? OnDrive = null, VideoSource? Video = null);
+    int Parts = 1, bool HasMicrophone = false, AudioOnDrive? OnDrive = null, VideoSource? Video = null, LessonVideoState LessonVideo = LessonVideoState.None);
+
+/// <summary>
+/// What a recording's files say of a lesson's finished video (teach-video 6.9 and 6.15): decided from the files alone, so that
+/// one rule covers a crash, a session Windows ended, a cancel, a time limit, a failure and a record-only lesson. A camera's
+/// piece or a video's <c>.partial</c> held open for writing is never counted.
+/// </summary>
+public enum LessonVideoState
+{
+    /// <summary>No camera's piece and no finished video: a recording without the camera.</summary>
+    None,
+
+    /// <summary>The finished video is there, and no piece is newer than it.</summary>
+    Made,
+
+    /// <summary>Pieces and no finished video, or a piece newer than the video, as a continued lesson's: its video is still to be made.</summary>
+    NotMade
+}
 
 /// <summary>
 /// A recording that a new run of the same name may continue as its next part, because it stopped recently with neither a
@@ -490,14 +508,39 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
     /// <summary>
     /// True while the recording is being recorded, in this window or another: a recorder still writes the newest
-    /// segment of one of its tracks, or a camera process its newest piece. Each holds that file open for writing and lets
-    /// others read it, so the file then opens for reading only when others may go on writing to it. A file that does not
-    /// open for reading at all is held by another program, such as a scanner, not by a recorder: that does not count, and
-    /// transcribing the recording reports the real reason.
+    /// segment of one of its tracks, or a camera process its newest piece or the lesson's video (see
+    /// <see cref="IsLessonVideoBeingMade"/>). Each holds that file open for writing and lets others read it, so the file then
+    /// opens for reading only when others may go on writing to it. A file that does not open for reading at all is held by
+    /// another program, such as a scanner, not by a recorder: that does not count, and transcribing the recording reports
+    /// the real reason.
     /// </summary>
     public static bool IsBeingWritten(RecordingFiles files) =>
         IsNewestHeldForWriting(files.FindSegments()) || IsNewestHeldForWriting(files.FindSegments(Track.Microphone))
-        || IsNewestHeldForWriting([.. files.FindCameraPieces().Select(piece => piece.Path)]);
+        || IsNewestHeldForWriting([.. files.FindCameraPieces().Select(piece => piece.Path)]) || IsLessonVideoBeingMade(files);
+
+    /// <summary>
+    /// True while a camera process makes the lesson's video: it holds the video's <see cref="RecordingFiles.LessonVideoPartial"/>
+    /// open for writing, others allowed to read it. A <c>.partial</c> a crash left, which nothing holds, does not count.
+    /// </summary>
+    public static bool IsLessonVideoBeingMade(RecordingFiles files) =>
+        File.Exists(files.LessonVideoPartial) && IsNewestHeldForWriting([files.LessonVideoPartial]);
+
+    /// <summary>
+    /// What the files of <paramref name="files"/> say of the lesson's finished video (see <see cref="LessonVideoState"/>): its
+    /// camera's pieces, the newest left out while a camera process still writes it, against its finished video. Made when
+    /// the video is there and no piece is newer; not made when pieces are there without it, or one is newer; none without
+    /// either. A video's <c>.partial</c> is no video.
+    /// </summary>
+    public static LessonVideoState LessonVideoStateOf(RecordingFiles files)
+    {
+        var pieces = files.FindCameraPieces().Select(piece => piece.Path).ToList();
+        if (IsNewestHeldForWriting(pieces)) pieces.RemoveAt(pieces.Count - 1);
+
+        var video = new FileInfo(files.LessonVideo);
+        if (!video.Exists) return pieces.Count > 0 ? LessonVideoState.NotMade : LessonVideoState.None;
+
+        return pieces.Any(piece => File.GetLastWriteTimeUtc(piece) > video.LastWriteTimeUtc) ? LessonVideoState.NotMade : LessonVideoState.Made;
+    }
 
     /// <summary>
     /// The length of a segment, worked out from its size the way the preparer reads it: to the end of the
@@ -596,9 +639,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// <summary>
     /// True when <paramref name="file"/> shows that a class was recorded: a file of a recording (see
     /// <see cref="RecordingFiles.TryParse"/>) that is its audio on either track, a transcript or an answer from ElevenLabs,
-    /// or a log or marks of a recording whose audio is on Google Drive alone (see <see cref="IAudioOnDrive"/>). A log and
-    /// marks alone, as a start that recorded nothing leaves, an upload copy, and a YouTube video's source file, which a video
-    /// whose fetching failed leaves, show no class.
+    /// a camera's piece or a lesson's finished video, or a log or marks of a recording whose audio is on Google Drive alone
+    /// (see <see cref="IAudioOnDrive"/>). A log and marks alone, as a start that recorded nothing leaves, an upload copy, a
+    /// lesson video's .partial, and a YouTube video's source file, which a video whose fetching failed leaves, show no class.
     /// </summary>
     private bool IsClass(string file)
     {
@@ -608,6 +651,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         var trace = kind.Equals(".log", StringComparison.OrdinalIgnoreCase)
             || kind.Equals(".marks.txt", StringComparison.OrdinalIgnoreCase)
             || kind.Equals(".upload.wav", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals(".mp4.partial", StringComparison.OrdinalIgnoreCase)
             || kind.Equals(".source.json", StringComparison.OrdinalIgnoreCase);
         return !trace || _onDrive.Find(files) is not null;
     }
@@ -846,24 +890,25 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// Describes a recording from its files: its length and when it was last written to from the segments of both its
     /// tracks, whether it has a transcript, the newest answer paid for but kept without one, beside it or, when its own
     /// folder would not take it, in the recordings folder <paramref name="root"/>, whether it is being recorded now, the
-    /// parts it was made in, and whether it has the microphone's track. A recording whose audio is all on Google Drive
-    /// alone takes its length from what was measured when the audio went up, and counts as last written at its end. A YouTube
-    /// video's recording carries its source (see <see cref="VideoOf"/>).
+    /// parts it was made in, whether it has the microphone's track, and what its files say of a lesson's video. A recording
+    /// whose audio is all on Google Drive alone takes its length from what was measured when the audio went up, and counts
+    /// as last written at its end. A YouTube video's recording carries its source (see <see cref="VideoOf"/>).
     /// </summary>
     private RecordedClass Describe(RecordingFiles files, string root)
     {
         var main = files.FindSegments();
         var microphone = files.FindSegments(Track.Microphone);
+        var lessonVideo = LessonVideoStateOf(files);
         if (main.Count == 0 && microphone.Count == 0 && _onDrive.Find(files) is { AllOfIt: true } onDrive)
         {
             var ended = (files.StartedUtc ?? DateTimeOffset.UnixEpoch) + onDrive.Length;
             return new RecordedClass(files, ended.UtcDateTime, onDrive.Length, files.HasTranscript, KeptAnswerOf(files, root), BeingWritten: false,
-                ClassMarks.PartsOf(files), onDrive.HasMicrophone, onDrive, VideoOf(files));
+                ClassMarks.PartsOf(files), onDrive.HasMicrophone, onDrive, VideoOf(files), lessonVideo);
         }
 
         return new RecordedClass(files, LastWritten(main.Concat(microphone)).UtcDateTime, LongestTrack(main, microphone), files.HasTranscript,
             KeptAnswerOf(files, root), IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone), ClassMarks.PartsOf(files), microphone.Count > 0,
-            Video: VideoOf(files));
+            Video: VideoOf(files), LessonVideo: lessonVideo);
     }
 
     /// <summary>

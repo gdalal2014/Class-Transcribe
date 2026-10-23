@@ -67,10 +67,11 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
     /// What sets a recording apart besides its name, start and length, as the list and the menu's choice 3 note it: the
     /// date folder of a later class of its day ("in 2026-10-17 (2)"), which tells it from the day's first class and says
     /// where to find it; the parts it was made in when there were more than one ("2 parts"); "class + microphone" when
-    /// your microphone was recorded with the class; and "audio on Drive" when its audio is on Google Drive alone, freed
-    /// from this laptop once checked there. A YouTube video's recording is first named by the video's title and how its
-    /// audio was obtained ("The creed, part 1" (YouTube, downloaded)), so that a batch's videos in one date folder are told
-    /// apart.
+    /// your microphone was recorded with the class; "lesson video", or "lesson video not made yet" while a lesson's camera
+    /// pieces wait to be joined with its sound (see <see cref="ClassFolders.LessonVideoStateOf"/>); and "audio on Drive"
+    /// when its audio is on Google Drive alone, freed from this laptop once checked there. A YouTube video's recording is
+    /// first named by the video's title and how its audio was obtained ("The creed, part 1" (YouTube, downloaded)), so that
+    /// a batch's videos in one date folder are told apart.
     /// </summary>
     internal static IEnumerable<string> NotesOf(RecordedClass recorded)
     {
@@ -78,8 +79,16 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
         if (ClassFolders.LaterClassOfItsDay(recorded.Files.Folder) is { } dateFolder) yield return $"in {dateFolder}";
         if (recorded.Parts > 1) yield return $"{recorded.Parts} parts";
         if (recorded.HasMicrophone) yield return "class + microphone";
+        if (recorded.LessonVideo == LessonVideoState.Made) yield return LessonVideoMadeNote;
+        if (recorded.LessonVideo == LessonVideoState.NotMade) yield return LessonVideoNotMadeNote;
         if (recorded.OnDrive is not null) yield return "audio on Drive";
     }
+
+    /// <summary>The note of a lesson whose finished video is there.</summary>
+    public const string LessonVideoMadeNote = "lesson video";
+
+    /// <summary>The note of a lesson whose camera pieces wait to be joined with its sound.</summary>
+    public const string LessonVideoNotMadeNote = "lesson video not made yet";
 
     /// <summary>
     /// True when <paramref name="run"/> records, or recorded, <paramref name="files"/>: its run file names the same

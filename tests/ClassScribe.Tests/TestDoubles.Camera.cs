@@ -962,6 +962,14 @@ public sealed class PlayedCameraProcess
         Process.ProcessEnd.SendAsync(CameraProtocol.Status, new CameraStatus(frames, dropped, capturing ? 0 : 4, dark, framesPerSecond, capturing), CameraJson.Default.CameraStatus,
             CancellationToken.None);
 
+    /// <summary>Sends a finish job's progress line: <paramref name="percent"/> of the video made.</summary>
+    public ValueTask ProgressAsync(int percent) =>
+        Process.ProcessEnd.SendAsync(CameraProtocol.Progress, new CameraProgress(percent), CameraJson.Default.CameraProgress, CancellationToken.None);
+
+    /// <summary>Sends a finish job's made line: the video at <paramref name="path"/>, <paramref name="lengthSeconds"/> long and <paramref name="bytes"/> in size.</summary>
+    public ValueTask MadeAsync(string path, double lengthSeconds, long bytes) =>
+        Process.ProcessEnd.SendAsync(CameraProtocol.Made, new CameraMade(path, lengthSeconds, bytes), CameraJson.Default.CameraMade, CancellationToken.None);
+
     /// <summary>Sends failed with <paramref name="why"/>.</summary>
     public ValueTask FailedAsync(string why) =>
         Process.ProcessEnd.SendAsync(CameraProtocol.Failed, new CameraFailed(why), CameraJson.Default.CameraFailed, CancellationToken.None);

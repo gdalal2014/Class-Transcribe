@@ -28,6 +28,13 @@ public interface ICommandRunner
     Task<int> RebuildAsync(string path, bool open);
 
     /// <summary>
+    /// Makes a lesson's video again, for free, from its camera pieces and its sound (see <see cref="FinishVideoCommand"/>):
+    /// finish-video, menu choice 3's V and the report's V. A lesson a live run records, transcribes or finishes is refused.
+    /// Returns the exit code.
+    /// </summary>
+    Task<int> FinishVideoAsync(FinishVideoRequest request);
+
+    /// <summary>
     /// Lists every recording under <paramref name="outputRoot"/>, or under Recording:OutputFolder when it is null, newest
     /// first, with the runs in the background. Returns the exit code.
     /// </summary>
@@ -176,6 +183,26 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     {
         await using var scope = scopes.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<RebuildCommand>().RunAsync(path, open);
+    }
+
+    /// <summary>
+    /// Makes a lesson's video again with the finish-video command, in a scope of its own, unless a live run records the
+    /// lesson, or transcribes it or makes its video now, in the background or in another window: that is said, and the exit
+    /// code is 1.
+    /// </summary>
+    public async Task<int> FinishVideoAsync(FinishVideoRequest request)
+    {
+        Require<FinishVideoCommand>("Making a lesson's video is not part of this build yet.");
+        await using var scope = scopes.CreateAsyncScope();
+        if (BusyWith(scope.ServiceProvider, request.Path) is { } busy)
+        {
+            logger.LogError(busy.Run.IsTranscribingNow
+                ? "{Recording} is being transcribed, or its video made, now; it appears in {Folder} once it is done"
+                : "{Recording} is being recorded now; make its video once it has stopped", busy.Files.BaseName, busy.Files.Folder);
+            return 1;
+        }
+
+        return await scope.ServiceProvider.GetRequiredService<FinishVideoCommand>().RunAsync(request);
     }
 
     /// <summary>Lists the recordings with the list command, in a scope of its own. Returns the exit code.</summary>
@@ -338,7 +365,9 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     /// </summary>
     internal static string InAnotherWindow(RunRecord run) =>
         run.State == RunState.Transcribing
-            ? $"\"{run.Request.Name}\" is being transcribed in another ClassScribe window (process {run.ProcessId}), which shows it"
+            ? LessonRuns.OnlyItsVideoLeft(run)
+                ? $"\"{run.Request.Name}\" is having its lesson video made in another ClassScribe window (process {run.ProcessId}), which shows it"
+                : $"\"{run.Request.Name}\" is being transcribed in another ClassScribe window (process {run.ProcessId}), which shows it"
             : $"\"{run.Request.Name}\" is being recorded in another ClassScribe window (process {run.ProcessId}), which shows it; closing that window ends the recording";
 
     /// <summary>

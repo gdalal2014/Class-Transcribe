@@ -29,8 +29,9 @@ public sealed record PassResult(IReadOnlyList<RecordingUploadResult> Recordings,
 /// processes, under the upload lock (<see cref="DriveUploadLock"/>): a pass that finds it held leaves its recordings in the
 /// queue, which the holder takes before it lets go, even one it was uploading as they were queued, which it takes once more
 /// (see <see cref="UploadManifest.TimesQueued"/>). The laptop is kept awake while the
-/// pass runs (<see cref="StayAwake.UploadingReason"/>), and while a class records, in this window or in the background, the
-/// pass waits between pieces, looking every 30 seconds, so the class's own sound and microphone are not held up; it never
+/// pass runs (<see cref="StayAwake.UploadingReason"/>), and while a class records, or is transcribed or has its lesson video
+/// made, in this window or in the background, the pass waits between pieces, looking every 30 seconds, so the class's own
+/// sound and microphone, and its transcript's upload, are not held up; it never
 /// looks at recording.lock. Google out of reach after asking again, a full Drive or a sign-in that has gone ends the pass,
 /// with what waits and how it goes up (after the next class too, while Drive:Enabled is on); a cancel leaves everything
 /// waiting, to go on where it stopped. One per run.
@@ -154,24 +155,38 @@ public sealed class DriveUploadPass(
     }
 
     /// <summary>
-    /// Waits, before a piece goes, while a class records, in this window or in the background, as its run file says: the
-    /// pause is said once, and so is the going on. It looks every 30 seconds, and never at recording.lock.
+    /// Waits, before a piece goes, while a class records, or is transcribed or has its lesson video made (Gulzar's answer
+    /// N13: the transcript's own upload then has the connection to itself), in this window or in the background, as its run
+    /// file says: the pause is said once, and so is the going on. It looks every 30 seconds, and never at recording.lock. The
+    /// run that uploads has its outcome by then, so it never waits for itself.
     /// </summary>
     private async Task PauseWhileRecordingAsync(CancellationToken cancellationToken)
     {
         string? pausedFor = null;
-        while (journal.List().FirstOrDefault(run => run.IsRecordingNow) is { } run)
+        var transcribed = false;
+        while (HoldingUp() is { } run)
         {
+            transcribed = run.IsTranscribingNow;
             if (pausedFor is null)
             {
                 pausedFor = run.Record.Request.Name;
-                logger.LogInformation("Google Drive: paused while \"{Name}\" records", pausedFor);
+                if (transcribed) logger.LogInformation("Google Drive: paused while \"{Name}\" is transcribed", pausedFor);
+                else logger.LogInformation("Google Drive: paused while \"{Name}\" records", pausedFor);
             }
 
             await Task.Delay(PausePoll, time, cancellationToken);
         }
 
-        if (pausedFor is not null) logger.LogInformation("Google Drive: going on, now that \"{Name}\" has stopped recording", pausedFor);
+        if (pausedFor is null) return;
+        if (transcribed) logger.LogInformation("Google Drive: going on, now that \"{Name}\" is done", pausedFor);
+        else logger.LogInformation("Google Drive: going on, now that \"{Name}\" has stopped recording", pausedFor);
+    }
+
+    /// <summary>The run the pass waits for now: one that records first, else one that is transcribed or has its lesson video made; null when none.</summary>
+    private RunView? HoldingUp()
+    {
+        var runs = journal.List();
+        return runs.FirstOrDefault(run => run.IsRecordingNow) ?? runs.FirstOrDefault(run => run.IsTranscribingNow);
     }
 
     /// <summary>True when <paramref name="manifest"/>'s next try is due now.</summary>

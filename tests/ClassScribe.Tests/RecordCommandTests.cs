@@ -138,13 +138,14 @@ public partial class RecordCommandTests
     /// <paramref name="time"/>. The run's states go to <see cref="_status"/> unless <paramref name="status"/> takes them.
     /// The run's bookkeeping is kept in <see cref="_bookkeeping"/>, standing for the run's scope; its handlers for the end of
     /// the process or the session wait for the log as long as <paramref name="handlerLogPatience"/> says, or as long as the
-    /// app's do.
+    /// app's do. A lesson's video is made by <paramref name="lessonVideos"/>, with what Drive makes of it from
+    /// <paramref name="lessonDrive"/>, when given.
     /// </summary>
     private RecordCommand CreateCommand(
         string apiKey = "test-key", TimeProvider? time = null, bool openWhenDone = false, string? outputFolder = null, KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
         bool blockShutdown = true, IRecordingFactory? recordings = null, RuntimeFolder? runtimeFolder = null, ILogger<RecordCommand>? logger = null,
         IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown, YouTube.VideoPlayback? video = null,
-        IVideoYield? yield = null)
+        IVideoYield? yield = null, Camera.LessonVideoMaker? lessonVideos = null, Drive.LessonVideoDrive? lessonDrive = null)
     {
         time ??= TimeProvider.System;
         var recording = TestOptions.Create(new RecordingOptions
@@ -197,7 +198,7 @@ public partial class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance, video),
-            loop, workflow, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield);
+            loop, workflow, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
     }
 
     /// <summary>

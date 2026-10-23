@@ -103,15 +103,21 @@ public sealed class DriveQueueReport(IGoogleCredentialStore store, UploadManifes
     private static string Recordings(int count) => count == 1 ? "1 recording waits" : $"{count} recordings wait";
 
     /// <summary>The size of the recordings' files on this laptop, the upload copy left out.</summary>
-    private static long Bytes(IEnumerable<UploadManifest> waiting) => waiting.Sum(manifest => UploadManifests.OnDisk(manifest.Recording).Bytes);
+    private long Bytes(IEnumerable<UploadManifest> waiting) => waiting.Sum(manifest => OnDisk(manifest.Recording).Bytes);
+
+    /// <summary>
+    /// How many files of <paramref name="files"/> wait on this laptop to go up and their size (see
+    /// <see cref="UploadManifests.OnDisk"/>), a lesson's finished video counted only with Drive:LessonVideos on, as it is now.
+    /// </summary>
+    public (int Count, long Bytes) OnDisk(Storage.RecordingFiles files) => UploadManifests.OnDisk(files, options.CurrentValue.LessonVideos);
 
     /// <summary>
     /// " (41%)": how much of the recording uploading now Drive has, against its files on this laptop, never 100% before it is
     /// done; empty when nothing of it is on this laptop to measure.
     /// </summary>
-    private static string Percent(UploadManifest uploading)
+    private string Percent(UploadManifest uploading)
     {
-        var total = UploadManifests.OnDisk(uploading.Recording).Bytes;
+        var total = OnDisk(uploading.Recording).Bytes;
         if (total == 0) return "";
 
         var percent = (int)Math.Min(99, uploading.BytesOnDrive * 100 / total);

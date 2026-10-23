@@ -509,11 +509,36 @@ public sealed class MenuCommand(
             ui.WriteLine($"  {i + 1}  {recorded.Files.BaseName}  {Durations.Format(recorded.Length)}{notes}  {TranscriptState(recorded)}");
         }
 
-        ui.WriteLine("Press a recording's number to transcribe it, or Esc to go back.");
-        if (await ReadNumberAsync(recordings.Count) is not { } index) return;
+        // V, beside the numbers, makes a lesson's video (teach-video 1.4 and 6.9), free, when a recording listed is a lesson's.
+        var lessons = recordings.Any(recorded => recorded.LessonVideo != LessonVideoState.None);
+        ui.WriteLine(lessons
+            ? "Press a recording's number to transcribe it, V then a lesson's number to make its video (free), or Esc to go back."
+            : "Press a recording's number to transcribe it, or Esc to go back.");
+        if (await ReadNumberAsync(recordings.Count, lessons) is not { } picked) return;
 
-        var chosen = recordings[index];
+        if (picked.Video)
+        {
+            await MakeTheLessonVideoAsync(recordings[picked.Index]);
+            return;
+        }
+
+        var chosen = recordings[picked.Index];
         await TranscribeRecordingAsync(chosen, chosen.Files.Segment(1));
+    }
+
+    /// <summary>
+    /// Choice 3's V: makes the lesson's video of <paramref name="recorded"/> through the runner, as finish-video does, by one of
+    /// its files; a recording without the camera has none to make, which is said.
+    /// </summary>
+    private async Task MakeTheLessonVideoAsync(RecordedClass recorded)
+    {
+        if (recorded.LessonVideo == LessonVideoState.None)
+        {
+            ui.WriteLine($"{recorded.Files.BaseName} was recorded without the camera, so it has no video to make.");
+            return;
+        }
+
+        await commands.FinishVideoAsync(new FinishVideoRequest(recorded.Files.FindSegments().FirstOrDefault() ?? recorded.Files.FindSegments(Track.Microphone).FirstOrDefault() ?? recorded.Files.Folder));
     }
 
     /// <summary>
@@ -620,13 +645,25 @@ public sealed class MenuCommand(
     private sealed record BilledAgain(string Question, string? RebuildFrom);
 
     /// <summary>Waits for a digit from 1 to <paramref name="count"/> and returns its index; null for Esc, Q or Ctrl+C.</summary>
-    private async Task<int?> ReadNumberAsync(int count)
+    private async Task<int?> ReadNumberAsync(int count) => await ReadNumberAsync(count, video: false) is { } picked ? picked.Index : null;
+
+    /// <summary>
+    /// Waits for a digit from 1 to <paramref name="count"/>, or, when <paramref name="video"/>, for V and then a digit, and
+    /// returns the index and whether V came first; null for Esc, Q or Ctrl+C.
+    /// </summary>
+    private async Task<(int Index, bool Video)?> ReadNumberAsync(int count, bool video)
     {
+        var withV = false;
         while (true)
         {
             var key = await ui.ReadKeyAsync(CancellationToken.None);
             if (key is not { } pressed || pressed.Key == ConsoleKey.Escape || IsQuit(pressed)) return null;
-            if (pressed.KeyChar is >= '1' and <= '9' && pressed.KeyChar - '1' < count) return pressed.KeyChar - '1';
+            if (pressed.KeyChar is >= '1' and <= '9' && pressed.KeyChar - '1' < count) return (pressed.KeyChar - '1', withV);
+            if (video && !withV && pressed.Key == ConsoleKey.V)
+            {
+                withV = true;
+                ui.WriteLine("Press the lesson's number to make its video, or Esc to go back.");
+            }
         }
     }
 

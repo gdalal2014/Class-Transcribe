@@ -88,6 +88,9 @@ public static class StayAwake
     /// </summary>
     public const string VideosReason = "ClassScribe is working through YouTube videos";
 
+    /// <summary>The reason Windows shows, in powercfg /requests, for the request finish-video and the Vs hold while a lesson's video is made.</summary>
+    public const string LessonVideoReason = "ClassScribe is making a lesson's video";
+
     /// <summary>
     /// The laptop awake and ClassScribe running, always; the screen as <paramref name="screen"/> says: with
     /// <see cref="KeepScreenOn.OnBattery"/> while <paramref name="power"/> says the laptop runs on battery, which is

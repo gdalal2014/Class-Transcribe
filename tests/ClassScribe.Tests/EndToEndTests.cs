@@ -163,15 +163,21 @@ public class EndToEndTests
         _videoBrowsers = new FakeVideoBrowsers(_starts, _runtime.Processes);
         _videoProcesses = new FakeProcessTree();
 
-        // A lesson's camera process is the real camera host, run in this process over the test's camera and piece writer.
+        // A lesson's camera process is the real camera host, run in this process over the test's camera, piece writer and the
+        // media work of the lesson's video.
         _cameraCaptures = new FakeCameraCaptureFactory();
         _pieceWriters = new FakePieceWriterFactory();
+        _lessonMedia = new FakeLessonVideoMedia();
         _cameraStarts = new FakeCameraProcessStarter
         {
             Run = async (process, jobId) =>
-                process.Exited(await new Camera.CameraHost { Captures = _cameraCaptures, Writers = _pieceWriters }.RunAsync(jobId, process.ProcessStream, process.ProcessStream))
+                process.Exited(await new Camera.CameraHost { Captures = _cameraCaptures, Writers = _pieceWriters, Media = _lessonMedia }
+                    .RunAsync(jobId, process.ProcessStream, process.ProcessStream))
         };
     }
+
+    /// <summary>The media work of a lesson's video in the recorder's camera processes, played by the test.</summary>
+    private FakeLessonVideoMedia _lessonMedia = null!;
 
     /// <summary>Stops the pumps, waits for every recorder to end, closes the connections and deletes the folders; a file left open fails the deletion, which is the point.</summary>
     [TearDown]
@@ -496,8 +502,10 @@ public class EndToEndTests
     /// A lesson with the camera from the command line (slice 7): record-only in person with --camera records the microphone
     /// in the background, and beside it the camera's picture, through the real camera track and the real camera process's
     /// record job over the test's camera and piece writer: the start names the camera, its size and its encoder; each frame
-    /// is written into the lesson's one piece in its folder; at Q twice the sound is finished, then the piece; and the
-    /// request kept the camera with the picture's size the window resolved.
+    /// is written into the lesson's one piece in its folder; at Q twice the sound is finished, then the piece; then (slice 8)
+    /// the recorder makes the lesson's video through a camera process's finish job, with the media work played by the test,
+    /// says it, and deletes the piece once the video passed its check, Drive not being set up; and the request kept the
+    /// camera with the picture's size the window resolved.
     /// </summary>
     [Test]
     public async Task A_lesson_with_the_camera_records_its_picture_beside_the_sound()
@@ -532,7 +540,10 @@ public class EndToEndTests
         var writer = _pieceWriters.Made.Single();
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(Directory.GetFiles(folder, "*.cam.mp4"), Is.EqualTo(new[] { writer.Path }));
+            Assert.That(_lessonMedia.Written.Single().Slices.Select(slice => slice.Path), Is.EqualTo(new[] { writer.Path }), "the lesson's video made from its piece");
+            Assert.That(Directory.GetFiles(folder, "*.mp4").Select(Path.GetFileName), Is.EqualTo(new[] { Path.GetFileName(writer.Path).Replace(".cam.mp4", ".mp4", StringComparison.Ordinal) }),
+                "the video, and its piece deleted once it passed its check");
+            Assert.That(Shown("The lesson's video: "), Is.GreaterThanOrEqualTo(1));
             Assert.That(writer.Samples.Count(sample => !sample.Black), Is.GreaterThan(15), "the frames written into the piece");
             Assert.That(writer.FinishedAt, Is.Not.Null);
             Assert.That(run.Request.Source.Camera, Is.EqualTo(new CameraChoice("OBSBOT", "720p")));

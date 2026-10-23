@@ -17,7 +17,8 @@ namespace ClassScribe.Storage;
 /// <remarks>
 /// A lesson recorded with the camera also has the camera's pieces (see <see cref="CameraPiece"/>): fragmented, video-only
 /// MP4 files, one for each camera process that recorded it. They count as a sign of a class, are held while written, and
-/// never go to Google Drive themselves.
+/// never go to Google Drive themselves. Once they are joined with the sound, the lesson's finished video is
+/// <see cref="LessonVideo"/>, made first as <see cref="LessonVideoPartial"/> and renamed only once it has passed its check.
 /// </remarks>
 /// <param name="Folder">The folder holding the recording's files.</param>
 /// <param name="BaseName">The name and time stamp every file name starts with.</param>
@@ -58,6 +59,18 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     public string Upload => Path.Combine(Folder, $"{BaseName}.upload.wav");
 
     /// <summary>
+    /// The lesson's finished video (teach-video 6.9): the picture of the camera's pieces joined with the sound of the .wav
+    /// tracks, mixed as the upload is, under the recording's own name, so that players pair it with the transcript.
+    /// </summary>
+    public string LessonVideo => Path.Combine(Folder, $"{BaseName}.mp4");
+
+    /// <summary>
+    /// The lesson's video while it is being made: renamed to <see cref="LessonVideo"/> once it has passed its check, and
+    /// deleted when it fails it or is cancelled. One a crash left, which nothing holds open, is deleted by the next making.
+    /// </summary>
+    public string LessonVideoPartial => Path.Combine(Folder, $"{BaseName}.mp4.partial");
+
+    /// <summary>
     /// A YouTube video's source file: the video's title and link and how its audio was obtained (see
     /// <see cref="YouTube.VideoSource"/>). Only a video's recording has one; it is never an answer or a transcript.
     /// </summary>
@@ -84,7 +97,8 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
 
     /// <summary>
     /// The recording any of its files belongs to, by the file's name: a segment of either track, the marks, the log, the
-    /// upload copy, a video's source file, or any copy of its transcript or of ElevenLabs' answer, an answer kept as unread included. Null for
+    /// upload copy, a video's source file, any copy of its transcript or of ElevenLabs' answer, an answer kept as unread
+    /// included, a camera's piece, or the lesson's video, finished or being made. Null for
     /// any other file, such as one without a time stamp in its name. Whether the recording's audio is still there is for
     /// the caller to look at (see <see cref="FindSegments"/>).
     /// </summary>
@@ -212,6 +226,14 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
         return new TimeSpan(0, Part("hours"), Part("minutes"), Part("seconds"), Part("milliseconds"));
     }
 
+    /// <summary>True when <paramref name="path"/> names a recording's finished lesson video, <c>&lt;base&gt;.mp4</c>; a piece or a <c>.partial</c> is not one.</summary>
+    public static bool IsLessonVideo(string path) =>
+        TryParse(path) is { } files && Path.GetFileName(path)[files.BaseName.Length..].Equals(".mp4", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when <paramref name="path"/> names a recording's lesson video while it is being made, <c>&lt;base&gt;.mp4.partial</c>.</summary>
+    public static bool IsUnfinishedLessonVideo(string path) =>
+        TryParse(path) is { } files && Path.GetFileName(path)[files.BaseName.Length..].Equals(".mp4.partial", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>What a segment file's name ends in on <paramref name="track"/>: .wav on the main track, .mic.wav on the microphone's.</summary>
     private static string Extension(Track track) => track == Track.Microphone ? ".mic.wav" : ".wav";
 
@@ -234,9 +256,10 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     /// The name of any file of a recording: the base name with its time stamp, then a segment of either track (.wav,
     /// _partN.wav, .mic.wav, _partN.mic.wav), the upload copy (.upload.wav), the marks (.marks.txt), the log (.log), a
     /// video's source file (.source.json), a copy of the transcript or of the answer (.md, .json, .unread.json, each with
-    /// " (N)" before it from the second copy), or a camera's piece (.cam.mp4, .cam@hh-mm-ss.fff.mp4).
+    /// " (N)" before it from the second copy), a camera's piece (.cam.mp4, .cam@hh-mm-ss.fff.mp4), or the lesson's video
+    /// (.mp4, and .mp4.partial while it is being made).
     /// </summary>
-    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|\.source\.json|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json)|\.cam(?:@[0-9]{2}-[0-5][0-9]-[0-5][0-9]\.[0-9]{3})?\.mp4)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|\.source\.json|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json)|\.cam(?:@[0-9]{2}-[0-5][0-9]-[0-5][0-9]\.[0-9]{3})?\.mp4|\.mp4(?:\.partial)?)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FileOfARecording();
 
     /// <summary>The time stamp at the end of a base name.</summary>

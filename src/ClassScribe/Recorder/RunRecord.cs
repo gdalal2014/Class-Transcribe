@@ -26,7 +26,12 @@ public enum RunState
     /// <summary>Stopping: closing the capture and finishing the files. A run file in this state whose process is gone ended unexpectedly.</summary>
     Stopping,
 
-    /// <summary>The recording is complete and being transcribed. A run file in this state whose process is gone had its transcription interrupted.</summary>
+    /// <summary>
+    /// The recording is complete, and is being transcribed or its lesson video made: a lesson with the camera is in this state
+    /// from the stop of its sound, record-only included, until its video is made (teach-video 6.9), with no state of its own,
+    /// which an older window could not read. A run file in this state whose process is gone had its transcription, or its
+    /// video's making, interrupted.
+    /// </summary>
     Transcribing,
 
     /// <summary>Over; the outcome says how it ended.</summary>

@@ -76,6 +76,26 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
     /// <summary>The logger, for the reader of a track's segments, which reports the ones it skips.</summary>
     private ILogger<AudioPreparer> Logger => logger;
 
+    /// <summary>
+    /// Opens the sound of a lesson's video (teach-video 6.9): the tracks mixed as the upload is, the class's and your
+    /// microphone's summed from their common start without gain, or the main track alone when the microphone's never rose
+    /// above <see cref="MicrophoneSoundThreshold"/> (<see cref="MixedSound.MicrophoneLeftOut"/>), but mono at
+    /// <paramref name="sampleRate"/> rather than 16 kHz, read as it is asked for, so that nothing of it is written to disk.
+    /// Damaged segments are skipped with a warning, as for the upload.
+    /// </summary>
+    /// <param name="tracks">The segments of each track, in the order they are joined.</param>
+    /// <param name="sampleRate">The rate of the samples read, such as 48,000 for the video's AAC.</param>
+    /// <param name="cancellationToken">Checked after every second of the microphone's sound check.</param>
+    public MixedSound OpenMix(UploadTracks tracks, int sampleRate, CancellationToken cancellationToken)
+    {
+        IReadOnlySet<string> unreadable = new HashSet<string>();
+        var leftOut = tracks.Microphone.Count > 0 && !HeardAnything(tracks.Microphone, out unreadable, cancellationToken);
+        var main = new TrackSamples(this, tracks.Main, sampleRate);
+        // As for the upload, the microphone's files the sound check found unreadable are passed over without a second word.
+        var microphone = tracks.Microphone.Count > 0 && !leftOut ? new TrackSamples(this, tracks.Microphone, sampleRate, unreadable) : null;
+        return new MixedSound(main, microphone, sampleRate, leftOut);
+    }
+
     /// <inheritdoc />
     public void Prepare(UploadTracks tracks, string outputPath, CancellationToken cancellationToken)
     {
@@ -91,7 +111,7 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
         {
             using var writer = new WavSegmentWriter(outputPath, TargetSampleRate);
             created = true;
-            using var track = new TrackSamples(this, wavPaths, mono16Khz: true);
+            using var track = new TrackSamples(this, wavPaths, TargetSampleRate);
             var samples = new float[TargetSampleRate];
             var bytes = new byte[samples.Length * 2];
             var audible = false;
@@ -152,10 +172,10 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
 
             using var writer = new WavSegmentWriter(outputPath, TargetSampleRate);
             created = true;
-            using var main = new TrackSamples(this, tracks.Main, mono16Khz: true);
+            using var main = new TrackSamples(this, tracks.Main, TargetSampleRate);
             // The sound check has already reported the microphone files it could not read; they are passed over here
             // without a word, so that one damaged file is named once in the log, not twice.
-            using var microphone = new TrackSamples(this, tracks.Microphone, mono16Khz: true, reported: unreadable);
+            using var microphone = new TrackSamples(this, tracks.Microphone, TargetSampleRate, reported: unreadable);
             var samples = new float[TargetSampleRate];
             var voice = new float[TargetSampleRate];
             var bytes = new byte[samples.Length * 2];
@@ -203,7 +223,7 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
     {
         // NAudio reads a 16-bit sample as its value over 32,768, so for the recorder's own files the threshold is exact.
         const float threshold = MicrophoneSoundThreshold / 32768f;
-        using var track = new TrackSamples(this, microphone, mono16Khz: false);
+        using var track = new TrackSamples(this, microphone, sampleRate: null);
         unreadable = track.Skipped;
         var samples = new float[TargetSampleRate];
         while (true)
@@ -268,12 +288,13 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
 
     /// <summary>
     /// The audio of one track as one stream of samples: its segments opened one after the other as they are read, each
-    /// converted to 16 kHz mono, or left at its own rate and channels for the sound check, with empty files passed over
-    /// and damaged ones skipped with a warning, so that one damaged part costs the transcript of none of the others.
-    /// A segment in <paramref name="reported"/> was found unreadable by an earlier pass over the same track and is
-    /// skipped without opening it or warning again.
+    /// converted to mono at <paramref name="sampleRate"/> (16 kHz for the upload, 48 kHz for a lesson's video), or left at
+    /// its own rate and channels for the sound check when that is null, with empty files passed over and damaged ones
+    /// skipped with a warning, so that one damaged part costs the transcript of none of the others. A segment in
+    /// <paramref name="reported"/> was found unreadable by an earlier pass over the same track and is skipped without
+    /// opening it or warning again.
     /// </summary>
-    private sealed class TrackSamples(AudioPreparer preparer, IReadOnlyList<string> segments, bool mono16Khz, IReadOnlySet<string>? reported = null) : IDisposable
+    internal sealed class TrackSamples(AudioPreparer preparer, IReadOnlyList<string> segments, int? sampleRate, IReadOnlySet<string>? reported = null) : IDisposable
     {
         private readonly HashSet<string> _skipped = [];
         private int _next;
@@ -326,7 +347,7 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
                     if (file.Length == 0) continue;   // nothing was ever written to it: empty, not damaged
 
                     var wave = preparer.OpenWave(file, path);
-                    _source = mono16Khz ? ToMono16Khz(wave) : new FiniteSamples(wave.ToSampleProvider());
+                    _source = sampleRate is { } rate ? ToMono(wave, rate) : new FiniteSamples(wave.ToSampleProvider());
                     _file = file;
                     opened = true;
                     return true;
@@ -444,17 +465,70 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
     }
 
     /// <summary>
-    /// Wraps a WAV stream so it yields mono samples at the target rate: damaged samples made safe, all channels
-    /// mixed together, and the rate converted with a windowed-sinc filter.
+    /// Wraps a WAV stream so it yields mono samples at <paramref name="sampleRate"/>: damaged samples made safe, all channels
+    /// mixed together, and the rate converted with a windowed-sinc filter when it differs.
     /// </summary>
-    private static ISampleProvider ToMono16Khz(WaveStream wave)
+    private static ISampleProvider ToMono(WaveStream wave, int sampleRate)
     {
         ISampleProvider source = new FiniteSamples(wave.ToSampleProvider());
         if (source.WaveFormat.Channels > 1) source = new MonoDownmix(source);
 
-        return source.WaveFormat.SampleRate == TargetSampleRate
+        return source.WaveFormat.SampleRate == sampleRate
             ? source
-            : new SincResampler(source, TargetSampleRate);
+            : new SincResampler(source, sampleRate);
+    }
+}
+
+/// <summary>
+/// The sound of a lesson's video as it is read (see <see cref="AudioPreparer.OpenMix"/>): mono samples at
+/// <see cref="SampleRate"/>, the main track and your microphone's summed from their common start without gain, the one that
+/// ends first padded with silence until the other ends, each sample between -1 and 1 (the sum clamped at full scale).
+/// </summary>
+public sealed class MixedSound : IDisposable
+{
+    /// <summary>The main track's samples.</summary>
+    private readonly AudioPreparer.TrackSamples _main;
+
+    /// <summary>Your microphone's samples; null when the recording has none, or they stayed silent.</summary>
+    private readonly AudioPreparer.TrackSamples? _microphone;
+
+    /// <summary>The microphone's samples of a read, summed into the main track's.</summary>
+    private float[] _voice = [];
+
+    /// <summary>The mix of <paramref name="main"/> and <paramref name="microphone"/>, at <paramref name="sampleRate"/>.</summary>
+    internal MixedSound(AudioPreparer.TrackSamples main, AudioPreparer.TrackSamples? microphone, int sampleRate, bool microphoneLeftOut)
+    {
+        _main = main;
+        _microphone = microphone;
+        SampleRate = sampleRate;
+        MicrophoneLeftOut = microphoneLeftOut;
+    }
+
+    /// <summary>The samples a second.</summary>
+    public int SampleRate { get; }
+
+    /// <summary>True when the recording has your microphone's track but it never rose above the threshold, so only the main track is heard.</summary>
+    public bool MicrophoneLeftOut { get; }
+
+    /// <summary>Reads the next samples into <paramref name="buffer"/> and returns how many: fewer only at the end, and none after it.</summary>
+    public int Read(float[] buffer)
+    {
+        var fromMain = _main.Read(buffer);
+        if (_microphone is null) return fromMain;
+
+        if (_voice.Length != buffer.Length) _voice = new float[buffer.Length];
+        var fromMicrophone = _microphone.Read(_voice);
+        var count = Math.Max(fromMain, fromMicrophone);
+        Array.Clear(buffer, fromMain, count - fromMain);
+        for (var i = 0; i < count; i++) buffer[i] = Math.Clamp(buffer[i] + (i < fromMicrophone ? _voice[i] : 0f), -1f, 1f);
+        return count;
+    }
+
+    /// <summary>Closes the tracks' files.</summary>
+    public void Dispose()
+    {
+        _main.Dispose();
+        _microphone?.Dispose();
     }
 }
 

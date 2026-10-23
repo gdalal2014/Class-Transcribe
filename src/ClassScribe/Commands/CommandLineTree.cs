@@ -66,6 +66,7 @@ public enum CommandKind
 /// ClassScribe class list [--json] | show "&lt;name&gt;" [--json] | add "&lt;name&gt;" ... | set "&lt;name&gt;" ... | rename "&lt;name&gt;" "&lt;new&gt;" | remove "&lt;name&gt;"
 /// ClassScribe transcribe &lt;path&gt; [--output "&lt;folder&gt;"] [--no-open] [--again]
 /// ClassScribe rebuild &lt;path&gt; [--no-open]
+/// ClassScribe finish-video &lt;path&gt; [--no-open]       a lesson's video made again, free, from its pieces and its sound
 /// ClassScribe list [--output "&lt;folder&gt;"]
 /// ClassScribe devices
 /// ClassScribe mic-check [--seconds &lt;n&gt;] [--log-folder "&lt;folder&gt;"]
@@ -282,6 +283,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(RecordCommand("record-only", transcribe: false, optionNames, examples));
         root.Add(TranscribeCommand(optionNames, examples));
         root.Add(RebuildCommand(examples));
+        root.Add(FinishVideoCommand(examples));
         root.Add(ListCommand(optionNames, examples));
         root.Add(DevicesCommand(examples));
         root.Add(MicCheckCommand(optionNames, examples));
@@ -906,6 +908,25 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         return command;
     }
 
+    /// <summary>finish-video: a lesson, by its folder or one of its files, made into its video again, for free, with --no-open; a path that is not there is a mistake.</summary>
+    private Command FinishVideoCommand(Dictionary<Command, string> examples)
+    {
+        var path = new Argument<string>("path") { Description = "A lesson's folder (its newest lesson with the camera is meant) or one of its files." };
+        var noOpen = new Option<bool>("--no-open") { Description = "Open nothing at the end." };
+
+        var command = new Command("finish-video", "Make a lesson's video again, for free, from its camera pieces and its sound; nothing is uploaded or billed.") { path, noOpen };
+        command.Validators.Add(result =>
+        {
+            if (TokenOf(result.GetResult(path)) is not { } given || string.IsNullOrWhiteSpace(given))
+                result.AddError("finish-video needs a path: a lesson's folder or one of its files, such as ClassScribe finish-video \"D:\\Classes\\Tajwid\"");
+            else if (PathProblem(given) is { } problem)
+                result.AddError(problem);
+        });
+        command.SetAction(parsed => commands.FinishVideoAsync(new FinishVideoRequest(Path.GetFullPath(parsed.GetValue(path)!), Open: !parsed.GetValue(noOpen))));
+        examples[command] = FinishVideoExamples;
+        return command;
+    }
+
     /// <summary>list: the recordings under the folder --output names, or under Recording:OutputFolder.</summary>
     private Command ListCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
     {
@@ -1201,6 +1222,16 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
           ClassScribe rebuild "D:\Classes\Kalam\Kalam_2026-10-15_23-00-02Z.json" --no-open
 
         Nothing is uploaded and nothing is billed; the new transcript is saved beside the others, which are kept.
+        """;
+
+    /// <summary>The examples and notes under the help of finish-video.</summary>
+    private const string FinishVideoExamples = """
+        Examples:
+          ClassScribe finish-video "D:\Classes\Tajwid"
+          ClassScribe finish-video "D:\Classes\Tajwid\2026-10-19\Tajwid_2026-10-19_14-00-02Z.wav" --no-open
+
+        Nothing is uploaded and nothing is billed. The lesson's camera pieces and its .wav files must be on this laptop; the
+        older video is replaced only once the new one has passed its check.
         """;
 
     /// <summary>The examples under the help of list.</summary>
