@@ -30,6 +30,7 @@ public static class CommandServices
         services.AddRun();
         services.AddTransient<TranscribeCommand>();
         services.AddTransient<RebuildCommand>();
+        services.AddTransient<FinishVideoCommand>();
         services.AddSingleton<ICommandRunner, CommandRunner>();
         services.AddSingleton<RecordingNamePrompt>();
         services.AddTransient<MenuCommand>();
