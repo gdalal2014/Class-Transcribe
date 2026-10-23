@@ -214,11 +214,14 @@ public sealed class DeviceCheckListingTests
     }
 
     /// <summary>
-    /// A session whose state or process Windows does not give, as with one being torn down during the look, is left
-    /// out with a Debug line, and the other apps are still listed: one such session must not fail the whole look.
+    /// A session whose state Windows does not give, as with one being torn down during the look, still names its process
+    /// when Windows gives that: its app is listed all the same, since its process is what a recording of it captures. A
+    /// session whose process Windows does not give is left out. Each is noted with a Debug line and in the listing's
+    /// unread sessions, with the call that failed, and the other apps are still listed: one such session must not fail
+    /// the whole look.
     /// </summary>
     [Test]
-    public void A_session_whose_state_or_process_cannot_be_read_is_left_out_and_the_others_are_listed()
+    public void A_session_whose_state_or_process_cannot_be_read_is_noted_and_the_others_are_listed()
     {
         var processes = new Dictionary<int, string> { [5150] = "chrome", [6000] = "Zoom", [7000] = "Teams" };
         var speakers = new FakeOutputDevice(SpeakersId, 0.5f,
@@ -227,16 +230,125 @@ public sealed class DeviceCheckListingTests
             new FakeAudioSession(5150, 0.3f));
         using var provider = Provider(() => new FakeDeviceEnumerator(speakers), processes.GetValueOrDefault);
 
-        var apps = provider.GetPlayingApps();
+        var listing = provider.GetPlayingAppsListing();
 
         Assert.Multiple(() =>
         {
-            Assert.That(apps, Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
+            Assert.That(listing.Apps, Is.EqualTo(new[] { new PlayingApp(6000, "Zoom", "Speakers", 0.9f, SpeakersId), new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
+            Assert.That(listing.Unread, Is.EqualTo(new[]
+            {
+                new UnreadAudioSession("Speakers", "Zoom", Reason("GetState", FakeResults.DeviceInvalidated)),
+                new UnreadAudioSession("Speakers", null, Reason("GetProcessId", FakeResults.DeviceInvalidated))
+            }));
             Assert.That(_log.At(LogLevel.Debug), Is.EqualTo(new[]
             {
-                "Left out an audio session whose state Windows did not give (0x88890004)",
+                "Could not read the state of Zoom's audio session (0x88890004); Zoom is listed all the same",
                 "Left out an audio session whose process Windows did not give (0x88890004)"
             }));
+            Assert.That(provider.GetPlayingApps(), Is.EqualTo(listing.Apps), "the apps alone, as the listing has them");
+        });
+    }
+
+    /// <summary>
+    /// As with the Zoom app in a meeting on 18 October, a session that answers E_INVALIDARG to a call the listing makes
+    /// of it, its state, its process, or the listing's own call that hands it out, is noted with a Debug line that gives
+    /// the result, and in the listing's unread sessions with the call, and every other app is listed. A session whose
+    /// state alone could not be read keeps its app listed by its process. It used to reach the caller as an
+    /// ArgumentException, which no catch expected, so the whole look failed. Whatever was handed out is released, and only
+    /// the enumerator is kept.
+    /// </summary>
+    [TestCase("GetState", true)]
+    [TestCase("GetProcessId", false)]
+    [TestCase("GetSession", false)]
+    public void A_session_that_answers_E_INVALIDARG_is_noted_and_the_other_apps_are_listed(string call, bool zoomListed)
+    {
+        var ledger = new FakeComLedger();
+        var processes = new Dictionary<int, string> { [5150] = "chrome", [6000] = "Zoom" };
+        var zoom = call switch
+        {
+            "GetState" => new FakeAudioSession(6000, 0.9f) { StateFailure = FakeResults.InvalidArgument },
+            "GetProcessId" => new FakeAudioSession(6000, 0.9f) { ProcessIdFailure = FakeResults.InvalidArgument },
+            _ => new FakeAudioSession(6000, 0.9f) { HandOutFailure = FakeResults.InvalidArgument }
+        };
+        var speakers = new FakeOutputDevice(SpeakersId, 0.5f, zoom, new FakeAudioSession(5150, 0.3f)) { Ledger = ledger };
+        var provider = new WasapiLoopbackCaptureProvider(_log, () => ledger.HandOut(new FakeDeviceEnumerator(speakers) { Ledger = ledger }),
+            DeviceName, processes.GetValueOrDefault, ledger.Release);
+        _log.Clear();
+
+        var listing = provider.GetPlayingAppsListing();
+        var heldBetweenListings = ledger.Unreleased;
+        provider.Dispose();
+
+        var chrome = new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId);
+        Assert.Multiple(() =>
+        {
+            Assert.That(listing.Apps, Is.EqualTo(zoomListed ? new[] { new PlayingApp(6000, "Zoom", "Speakers", 0.9f, SpeakersId), chrome } : [chrome]));
+            Assert.That(listing.Unread, Is.EqualTo(new[] { new UnreadAudioSession("Speakers", zoomListed ? "Zoom" : null, Reason(call, FakeResults.InvalidArgument)) }));
+            Assert.That(_log.At(LogLevel.Debug), Has.Exactly(1).Matches<string>(line => line.Contains("audio session", StringComparison.Ordinal) && line.Contains("(0x80070057)")));
+            Assert.That(_log.Messages, Has.Count.EqualTo(1), "a Debug line alone: the look comes once a second");
+            Assert.That(heldBetweenListings, Is.EqualTo(new[] { "FakeDeviceEnumerator x1" }), "held between listings");
+            Assert.That(ledger.Unreleased, Is.Empty, "held after Dispose");
+            Assert.That(ledger.OverReleased, Is.Empty, "released without being held");
+        });
+    }
+
+    /// <summary>The words the listing gives for <paramref name="call"/> failing with <paramref name="result"/>: the call, Windows' words and the result.</summary>
+    private static string Reason(string call, int result) => AudioFailures.Describe(CoreAudio.Failure(result, call));
+
+    /// <summary>
+    /// A session whose level meter answers E_INVALIDARG reads as silence, as a meter that fails always did, and its app is
+    /// still listed: recording an app goes through the app's process, never through its meter.
+    /// </summary>
+    [Test]
+    public void A_session_whose_meter_answers_E_INVALIDARG_is_listed_at_silence()
+    {
+        var processes = new Dictionary<int, string> { [5150] = "chrome", [6000] = "Zoom" };
+        var speakers = new FakeOutputDevice(SpeakersId, 0.5f,
+            new FakeAudioSession(6000, 0.9f) { PeakFailure = FakeResults.InvalidArgument }, new FakeAudioSession(5150, 0.3f));
+        using var provider = Provider(() => new FakeDeviceEnumerator(speakers), processes.GetValueOrDefault);
+
+        Assert.That(provider.GetPlayingApps(), Is.EquivalentTo(new[]
+        {
+            new PlayingApp(6000, "Zoom", "Speakers", 0f, SpeakersId),
+            new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId)
+        }));
+        Assert.That(_log.At(LogLevel.Debug), Has.Some.StartsWith("Could not read the level of an app's sound"));
+    }
+
+    /// <summary>
+    /// A device that answers E_INVALIDARG costs only what it was asked for: asked for its level meter, or by its meter, it
+    /// is listed at silence; asked for its sessions, its own apps are left out with a Debug line, and the other devices'
+    /// apps are listed.
+    /// </summary>
+    [Test]
+    public void A_device_that_answers_E_INVALIDARG_costs_only_its_own_level_or_its_own_apps()
+    {
+        var processes = new Dictionary<int, string> { [5150] = "chrome", [6000] = "Zoom" };
+        var speakers = new FakeOutputDevice(SpeakersId, 0.5f, new FakeAudioSession(5150, 0.3f)) { MeterActivationFailure = FakeResults.InvalidArgument };
+        var headphones = new FakeOutputDevice(HeadphonesId, 0.25f, new FakeAudioSession(6000, 0.9f))
+        {
+            MeterFailure = FakeResults.InvalidArgument,
+            SessionManagerFailure = FakeResults.InvalidArgument
+        };
+        using var provider = Provider(() => new FakeDeviceEnumerator(speakers, headphones) { DefaultId = SpeakersId }, processes.GetValueOrDefault);
+        _log.Clear();
+
+        var devices = provider.GetOutputDevices();
+        var listing = provider.GetPlayingAppsListing();
+        var apps = listing.Apps;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(devices, Is.EqualTo(new[]
+            {
+                new OutputDevice(SpeakersId, "Speakers", IsDefault: true, Level: 0),
+                new OutputDevice(HeadphonesId, "Headphones", IsDefault: false, Level: 0)
+            }));
+            Assert.That(apps, Is.EqualTo(new[] { new PlayingApp(5150, "chrome", "Speakers", 0.3f, SpeakersId) }));
+            Assert.That(listing.Unread, Is.EqualTo(new[] { new UnreadAudioSession("Headphones", null, Reason("Activate", FakeResults.InvalidArgument), WholeDevice: true) }),
+                "the device whose sessions could not be listed, with the call");
+            Assert.That(_log.At(LogLevel.Debug), Has.Exactly(1).Matches<string>(line => line.Contains("\"Headphones\"") && line.Contains("(0x80070057)")), "the device whose apps were left out");
+            Assert.That(_log.At(LogLevel.Information).Concat(_log.At(LogLevel.Warning)), Is.Empty);
         });
     }
 
@@ -376,7 +488,7 @@ public sealed class DeviceCheckListingTests
     }
 
     /// <summary>
-    /// A listing that fails part way, here at a device whose sessions cannot be read, still releases what it was
+    /// A listing that fails part way, here at a device whose identifier cannot be read, still releases what it was
     /// handed. Only the enumerator is kept, through any number of failed listings, until Dispose.
     /// </summary>
     [Test]
@@ -384,7 +496,7 @@ public sealed class DeviceCheckListingTests
     {
         var ledger = new FakeComLedger();
         var speakers = new FakeOutputDevice(SpeakersId, 0.5f, new FakeAudioSession(5150, 0.3f)) { Ledger = ledger };
-        var broken = new FakeOutputDevice(HeadphonesId) { Ledger = ledger, SessionManagerFailure = FakeResults.DeviceInvalidated };
+        var broken = new FakeOutputDevice(HeadphonesId) { Ledger = ledger, IdFailure = FakeResults.DeviceInvalidated };
         var provider = new WasapiLoopbackCaptureProvider(_log, () => ledger.HandOut(new FakeDeviceEnumerator(speakers, broken) { Ledger = ledger }),
             DeviceName, _ => "chrome", ledger.Release);
 

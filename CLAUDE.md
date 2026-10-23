@@ -283,7 +283,26 @@ advice after a format error (10 A).
   before `Initialize` (never NAudio's `IAudioClient2`), falling back to Default when the endpoint
   does not offer it, Windows refuses it, or a stream failed to open with it before (remembered per
   endpoint for the process). Method order in these declarations is checked against the IDLs, and
-  setters are declared only to keep that order.
+  setters are declared only to keep that order. `CoreAudio.Check` throws a `COMException` carrying
+  the result for every failed result, never .NET's mapped types (E_INVALIDARG became an
+  ArgumentException that stopped `devices` with the Zoom app in a meeting on 18 October); NAudio's
+  calls still map, so the places that turn a failed look into a listing that says so
+  (`RecordingMonitor.ClassDevice`, `BluetoothMicrophoneWatch.LookNow`, `WasapiMicrophoneSessions`,
+  `DevicesCommand.Read`) catch `AudioFailures.IsFailedResult`. `CoreAudio.Check` takes the checked
+  expression (`CallerArgumentExpression`) and notes the call in the exception (`AudioFailures.CallKey`),
+  so `AudioFailures.Describe` says `GetState: The parameter is incorrect. (0x80070057)`. In the apps
+  with sound (`GetPlayingAppsListing`, a `PlayingAppsListing` with its `UnreadAudioSession`s) a
+  session whose state cannot be read keeps its app listed when Windows names its process; any other
+  session that cannot be read, or a device whose sessions cannot be listed, is left out, noted among
+  the unread and with a Debug line, and `CaptureChooser.ChooseApp` does not say a recorded app "has
+  closed" while an unread session may be its. `WasapiMicrophoneSessions` reads each session's process
+  first, so a listing's `Unread` (`UnreadCaptureSession`: process, name, state as far as read; null
+  when the list itself failed) and its problem (`session 2 of 3 (Zoom, pid 9090) not readable:
+  GetState: ...`) say whose it was; `ClassMicrophoneWatch` ignores another app's unread session, and
+  judges the followed app's own stateless one by the usage record (in use: Yes, closed: No, nothing
+  said or found on another microphone: Unknown). `devices` prints every unread part with
+  `Could not be read now:` and ends with `Not everything could be read from Windows just now`, exit 0.
+  `FailedAudioCallTests` plays E_INVALIDARG through the real readers, following chrome and zoom.
 - Time every interval on the steady clock (`TimeProvider.GetTimestamp` and `GetElapsedTime`), never
   the time of day, so a change of the Windows clock neither stretches nor shortens it. In tests,
   `ManualTimeProvider.Advance` moves both clocks and `StepWallClock` only the time of day; a test that
@@ -667,7 +686,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   its 3 Explicit `DryRunKit` tests about half a minute); YouTube reached 3,670 after its slice 1 (the
   download path), 3,819 after slice 2 (recording as it plays), and 3,875 after the review's repairs
   to them. With both merged into `develop` (step 0) the count is 3,900, all passing, in about
-  three minutes. The uploads by themselves were tested in `DriveAutoUploadTests`
+  three minutes; 3,901 with 0.4.0's microphone timing fix, and 3,960 with the Zoom fix (step 0b)
+  merged on 22 October. The uploads by themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
   `DriveQueueReportTests`,
@@ -704,11 +724,13 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
   three minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
   2 min 17 s for 3,395 later that day, 3 min 55 s for YouTube's 3,875 on 18 October, 3 min 7 s for
-  3,900 with both merged on 22 October, plus the build). `[CancelAfter]` cannot
+  3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, plus the build). `[CancelAfter]` cannot
   interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
-  passed alone and in the next full run; run it again before suspecting a change.
+  passed alone and in the next full run; and once, under load, a 5-second wait in
+  `RecordingSessionTests.A_new_failure_after_the_session_recovered_is_reported_at_once` (22 October),
+  which passed alone and in the next full run. Run such a test again before suspecting a change.
 - The two `AudioDevice` tests in `WindowsCaptureTests` are `[Explicit]`: they open the laptop's real
   output devices (listening only), so run them only when the user is not in a class or an audio test.
 - Publish as a folder, as above, never single-file: Bitdefender quarantined single-file builds

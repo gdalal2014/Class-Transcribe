@@ -477,6 +477,10 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
     private readonly Dictionary<int, PlayingApp> _apps = [];
     private readonly Dictionary<string, Queue<FakeAudioCapture>> _queued = [];
     private readonly List<FakeAudioCapture> _created = [];
+
+    /// <summary>What the apps listing could not read, as <see cref="SetUnread"/> set it.</summary>
+    private IReadOnlyList<UnreadAudioSession> _unread = [];
+
     private string? _defaultDeviceId;
     private int _failedCreations;
     private int _deviceQueries;
@@ -644,12 +648,24 @@ public sealed class FakeCaptureProvider : ILoopbackCaptureProvider
         lock (_gate) return [.. _connected.Select(id => new OutputDevice(id, id, id == _defaultDeviceId, _levels.GetValueOrDefault(id), _heardInTheRoom.Contains(id)))];
     }
 
+    /// <summary>
+    /// Sets what the apps listing could not read from now on, as Windows' listing notes a session it could not read in
+    /// full; none clears it.
+    /// </summary>
+    public void SetUnread(params UnreadAudioSession[] unread)
+    {
+        lock (_gate) _unread = [.. unread];
+    }
+
     /// <inheritdoc />
-    public IReadOnlyList<PlayingApp> GetPlayingApps()
+    public IReadOnlyList<PlayingApp> GetPlayingApps() => GetPlayingAppsListing().Apps;
+
+    /// <inheritdoc />
+    public PlayingAppsListing GetPlayingAppsListing()
     {
         Interlocked.Increment(ref _deviceQueries);
         if (Volatile.Read(ref _listingFailure) is { } failure) throw failure;
-        lock (_gate) return [.. _apps.Values];
+        lock (_gate) return new PlayingAppsListing([.. _apps.Values], _unread);
     }
 
     /// <inheritdoc />

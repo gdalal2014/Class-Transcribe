@@ -13,7 +13,11 @@ public enum AppListening
     /// <summary>At least one of its sessions on the microphone is active: it is taking sound, whether or not it does anything with it.</summary>
     Yes,
 
-    /// <summary>The sessions could not all be read, so nothing is known.</summary>
+    /// <summary>
+    /// The sessions could not all be read, and what could not be read may be the app's, so nothing is known: the list
+    /// itself, a session whose process could not be read, or the app's own session whose state Windows would not give
+    /// while its usage record says nothing of it.
+    /// </summary>
     Unknown
 }
 
@@ -58,6 +62,16 @@ public enum MicrophoneRoles
 public sealed record CaptureSession(string Key, string EndpointId, int ProcessId, string? ImageName, bool SystemSounds, CaptureSessionState State,
     bool? SessionMuted);
 
+/// <summary>
+/// A session on a microphone that one look could not read in full, with what was read of it before the call that failed:
+/// its process, read first so that a session whose other calls fail is still known by whose it is, then its state. The
+/// watch reads it to tell whether what could not be read concerns the followed app at all.
+/// </summary>
+/// <param name="ProcessId">The process that has the session; 0 for a session that spans processes; null when not even that could be read.</param>
+/// <param name="ImageName">The process's program without .exe, such as Zoom; null when the process could not be read or named.</param>
+/// <param name="State">The session's state, when it was read before the call that failed; null otherwise.</param>
+public sealed record UnreadCaptureSession(int? ProcessId, string? ImageName, CaptureSessionState? State);
+
 /// <summary>What one look read about one microphone: the microphone itself, and every app's session on it.</summary>
 /// <param name="EndpointId">The identifier Windows gave the microphone.</param>
 /// <param name="Name">The name Windows shows for it; the identifier when the name could not be read.</param>
@@ -69,9 +83,14 @@ public sealed record CaptureSession(string Key, string EndpointId, int ProcessId
 /// True when every session on it was read, so that an app missing from <paramref name="Sessions"/> has no session; false
 /// when one or more could not be read, or the list could not be read at all.
 /// </param>
-/// <param name="Problem">What could not be read, in words with the result codes, or null when everything was.</param>
+/// <param name="Problem">What could not be read, in words with the calls that failed and their result codes, or null when everything was.</param>
+/// <param name="Unread">
+/// While <paramref name="Complete"/> is false: the sessions that could not be read in full, with what was read of each,
+/// when the list of sessions itself was read; null when it was not, so that what is missing is not known. Nothing is
+/// unread from a complete listing, whatever this holds.
+/// </param>
 public sealed record MicrophoneSessionListing(string EndpointId, string Name, MicrophoneRoles DefaultFor, bool? MutedInWindows, int? VolumePercent,
-    IReadOnlyList<CaptureSession> Sessions, bool Complete, string? Problem);
+    IReadOnlyList<CaptureSession> Sessions, bool Complete, string? Problem, IReadOnlyList<UnreadCaptureSession>? Unread = null);
 
 /// <summary>What one look read about every active microphone at once: each microphone's listing, or why the list could not be read.</summary>
 /// <param name="Listings">Every active microphone with its sessions; empty when the list could not be read, and when no microphone is active.</param>
@@ -128,7 +147,10 @@ public sealed record UsageRecordListing(string? Access, string? DesktopAccess, I
 /// <summary>
 /// Reads Windows' record of which apps used the microphone and when: the record behind Settings, Privacy and security,
 /// Microphone, Recent activity. It is per app, not per microphone, and Microsoft says desktop apps may be missing from it,
-/// so it corroborates the sessions and names apps, and never decides anything on its own.
+/// so it corroborates the sessions and names apps, and never decides anything on its own. The one place it weighs more:
+/// when the followed app has a session on the recorded microphone whose state Windows will not give, as the Zoom app's
+/// in a meeting may, and the app was not found taking sound from another microphone, the record's word that the app
+/// uses the microphone now, or has closed it, stands in for that session's state.
 /// </summary>
 public interface IMicrophoneUsageRecord
 {
@@ -206,6 +228,9 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
 
     private bool _recordProblemLogged;
     private bool _lookProblemLogged;
+
+    /// <summary>True once it has been said that Windows' usage record decides for the followed app's unreadable session, until that session can be read again.</summary>
+    private bool _recordDecidesLogged;
     private Thread? _thread;
     private CancellationTokenSource? _stopping;
     private Exception? _failure;
@@ -377,11 +402,29 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
             FollowRule.Any => apps,
             _ => []
         };
-        var active = followed.Where(session => session.State == CaptureSessionState.Active).ToList();
-        var holds = followed.Any(session => session.State != CaptureSessionState.Expired);
-        var listening = active.Count > 0 ? AppListening.Yes : mine.Complete ? AppListening.No : AppListening.Unknown;
-        NoteProblem(mine, listening);
-        var listeningApps = apps.Where(session => session.State == CaptureSessionState.Active)
+        var active = followed.Where(session => session.State == CaptureSessionState.Active).Select(session => (session.ProcessId, session.ImageName)).ToList();
+
+        // The sessions that could not be read in full and may be the followed app's; null when what is missing is not known.
+        var unread = UnreadOfFollowed(mine);
+        if (unread is not null) active.AddRange(unread.Where(session => session.State == CaptureSessionState.Active).Select(session => (session.ProcessId!.Value, session.ImageName)));
+        var stateless = unread?.Where(session => session.State is null).ToList() ?? [];
+        var holds = followed.Any(session => session.State != CaptureSessionState.Expired) || stateless.Count > 0 ||
+            unread?.Any(session => session.State is CaptureSessionState.Active or CaptureSessionState.Inactive) == true;
+
+        // The followed app's own session whose state Windows would not give, as the Zoom app's in a meeting may: Windows'
+        // usage record stands in for its state, unless the app was found listening on another microphone, which would
+        // explain the record's word as well. A record that says nothing of the app leaves nothing known.
+        var usage = ReadUsage();
+        var byRecord = active.Count == 0 && stateless.Count > 0 && rule is FollowRule.Named && _otherMicrophone is null && usage is not null;
+        var listening = active.Count > 0 ? AppListening.Yes
+            : unread is null ? AppListening.Unknown
+            : stateless.Count == 0 ? AppListening.No
+            : byRecord ? (usage == true ? AppListening.Yes : AppListening.No)
+            : AppListening.Unknown;
+        if (byRecord && listening == AppListening.Yes) active.AddRange(stateless.Select(session => (session.ProcessId!.Value, session.ImageName)));
+        NoteProblem(mine, listening, byRecord, stateless.Count > 0);
+        var listeningApps = apps.Where(session => session.State == CaptureSessionState.Active).Select(session => (session.ProcessId, session.ImageName))
+            .Concat(active)
             .Select(session => session.ImageName ?? $"process {session.ProcessId}")
             .Distinct()
             .ToList();
@@ -395,26 +438,60 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
 
         var other = active.Count == 0 ? _otherMicrophone : null;
         return new WatchLook(timestamp, listening, mine.MutedInWindows, listeningApps, other?.Name, mine.Problem,
-            holds, processAlive, ReadUsage(), mine.Name, other?.Id);
+            holds, processAlive, usage, mine.Name, other?.Id);
     }
 
     /// <summary>True when the session is the followed app's, by the process's name.</summary>
     private static bool IsFollowed(CaptureSession session, FollowRule.Named named) => session.ImageName is { } name && named.Matches(name);
 
     /// <summary>
-    /// Logs, once until it clears, what a look could not read about the microphone although it read enough of the
-    /// sessions to know whether the app is listening: the mute in Windows, most likely, which then counts as off. A look
-    /// that knows nothing is not logged here: the gate reports it, with the reason, once that has lasted a second.
+    /// The sessions on the recorded microphone that could not be read in full and are, or may be, the followed app's:
+    /// none when the listing is complete, or when each of them is known by its process to be another app's, ClassScribe's
+    /// own, or no single process's; null when what could not be read is not known (the list itself, or a session whose
+    /// process could not be read), since any app may hide there. A session whose process was named but not its program
+    /// counts as another's, as a session read in full without a name does.
     /// </summary>
-    private void NoteProblem(MicrophoneSessionListing mine, AppListening listening)
+    private List<UnreadCaptureSession>? UnreadOfFollowed(MicrophoneSessionListing listing)
     {
+        if (listing.Complete) return [];
+        if (listing.Unread is not { } unread || unread.Any(session => session.ProcessId is null)) return null;
+
+        return [.. unread.Where(session => session.ProcessId > 0 && !own.IsOwn(session.ProcessId.Value, session.ImageName) && rule switch
+        {
+            FollowRule.Named named => session.ImageName is { } name && named.Matches(name),
+            FollowRule.Any => true,
+            _ => false
+        })];
+    }
+
+    /// <summary>
+    /// Logs, once until it clears, what a look could not read about the microphone although it read enough of the
+    /// sessions to know whether the app is listening: the mute in Windows, most likely, which then counts as off, or
+    /// another app's session. A look that knows nothing is not logged here: the gate reports it, with the reason, once
+    /// that has lasted a second. When the followed app's own session could not be read (<paramref name="followedUnread"/>)
+    /// and Windows' usage record decides instead (<paramref name="byRecord"/>), that is said once, until the session can
+    /// be read again.
+    /// </summary>
+    private void NoteProblem(MicrophoneSessionListing mine, AppListening listening, bool byRecord, bool followedUnread)
+    {
+        if (!followedUnread)
+        {
+            _recordDecidesLogged = false;
+        }
+        else if (byRecord && !_recordDecidesLogged)
+        {
+            _recordDecidesLogged = true;
+            logger.LogInformation("Windows would not give the state of {App}'s session on \"{Name}\" ({Problem}); until it does, Windows' microphone usage record says whether {Followed} is listening",
+                AppWords, mine.Name, mine.Problem ?? "no reason given", AppWords);
+        }
+
         if (mine.Problem is not { } problem)
         {
             _lookProblemLogged = false;
             return;
         }
 
-        if (listening == AppListening.Unknown || _lookProblemLogged) return;
+        if (listening == AppListening.Unknown || followedUnread || _lookProblemLogged) return;
 
         _lookProblemLogged = true;
         logger.LogInformation("The microphone watch could not read everything about \"{Name}\" ({Problem}); the sessions it read decide, and a mute in Windows it cannot read counts as off",
@@ -447,6 +524,9 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
         var entries = listing.Apps.Where(entry => entry.HasUsage && named.Matches(entry.ProcessName)).ToList();
         return entries.Count == 0 ? null : entries.Any(entry => entry.InUse);
     }
+
+    /// <summary>The followed app by name, or "an app" when any app is followed, as the gate words it.</summary>
+    private string AppWords => rule is FollowRule.Named named ? named.NamePart : "an app";
 
     /// <summary>The followed app in words for the log.</summary>
     private string FollowedWords => rule switch

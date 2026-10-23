@@ -131,6 +131,35 @@ public sealed class MicrophoneListingTests
     }
 
     /// <summary>
+    /// E_INVALIDARG, which .NET's own mapping made an ArgumentException that the provider's catches did not expect, as with
+    /// the Zoom app in a meeting on 18 October, costs only its own microphone: one whose property store answers it is left
+    /// out of the listing, and one whose endpoint volume answers it has its mute unknown, each with a Debug line.
+    /// </summary>
+    [Test]
+    public void A_microphone_that_answers_E_INVALIDARG_costs_only_itself()
+    {
+        var badStore = LaptopEndpoints.Obsbot();
+        badStore.Store.Failure = FakeResults.InvalidArgument;
+        var badVolume = new FakeCaptureEndpoint("{invalid}", "Microphone (USB)", "USB") { VolumeFailure = FakeResults.InvalidArgument, Muted = true };
+        using var provider = Provider(new FakeMicrophoneEnumerator(LaptopEndpoints.Array(), badStore, badVolume) { DefaultId = LaptopEndpoints.ArrayId });
+
+        var microphones = provider.GetMicrophones();
+        var muted = provider.IsMuted("{invalid}");
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(microphones.Select(microphone => microphone.Id), Is.EqualTo(new[] { LaptopEndpoints.ArrayId, "{invalid}" }));
+            Assert.That(muted, Is.Null);
+            Assert.That(_log.Entries.Where(entry => entry.Level == LogLevel.Debug).Select(entry => entry.Message), Is.SupersetOf(new[]
+            {
+                "Left out a microphone whose properties Windows did not give (0x80070057)",
+                "Could not read whether the microphone {invalid} is muted (0x80070057)"
+            }));
+            Assert.That(_log.Problems, Is.Empty);
+        }
+    }
+
+    /// <summary>
     /// Whether a microphone is muted in Windows is read from its endpoint volume, the one object asked of it, and only
     /// read: the fake fails the test if anything is set or any notification registered.
     /// </summary>
@@ -160,8 +189,7 @@ public sealed class MicrophoneListingTests
     /// <summary>
     /// The mute is not known for a microphone Windows no longer lists, for one whose endpoint volume cannot be made, for
     /// one whose endpoint volume will not answer, and for one that offers no endpoint volume at all (E_NOINTERFACE, which
-    /// reaches the provider as an InvalidCastException rather than a COMException): each reads as null, noted at Debug,
-    /// never as unmuted.
+    /// reaches the provider as a COMException like any failed result): each reads as null, noted at Debug, never as unmuted.
     /// </summary>
     [Test]
     public void The_mute_is_unknown_for_a_microphone_that_is_gone_or_will_not_answer()

@@ -123,10 +123,32 @@ internal static class CoreAudio
         return strings;
     }
 
-    /// <summary>Throws the exception that matches a failed result, such as a <see cref="COMException"/>; does nothing for a success.</summary>
-    public static void Check(int result)
+    /// <summary>
+    /// Throws a <see cref="COMException"/> that carries a failed result, whatever the result; does nothing for a success,
+    /// S_FALSE and the other results above zero included. .NET's own mapping (<see cref="Marshal.ThrowExceptionForHR(int)"/>)
+    /// is not used, because it makes exceptions of other types of some results, ArgumentException of E_INVALIDARG,
+    /// InvalidCastException of E_NOINTERFACE, OutOfMemoryException of E_OUTOFMEMORY and so on, which the readers' catches
+    /// did not expect: with the Zoom app in a meeting on 18 October, an E_INVALIDARG stopped the devices command, and
+    /// would have stopped the watch on the class app's microphone for the rest of a run. The exception notes which call
+    /// answered (<see cref="AudioFailures.CallOf"/>), named from <paramref name="expression"/>, the checked expression as
+    /// the compiler gives it, so that a listing that says it could not read something says which call failed.
+    /// </summary>
+    public static void Check(int result, [CallerArgumentExpression(nameof(result))] string? expression = null)
     {
-        if (result < 0) Marshal.ThrowExceptionForHR(result);
+        if (result < 0) throw Failure(result, AudioFailures.CallName(expression));
+    }
+
+    /// <summary>
+    /// The <see cref="COMException"/> for a failed <paramref name="result"/>: the one .NET makes when it makes a
+    /// COMException of the result, so that the messages of the results it knows stay as they were, and otherwise one with
+    /// Windows' own words for the result, such as "The parameter is incorrect." for E_INVALIDARG. <paramref name="call"/>,
+    /// the name of the call that answered, such as GetState, is noted in it when given (<see cref="AudioFailures.CallKey"/>).
+    /// </summary>
+    internal static COMException Failure(int result, string? call = null)
+    {
+        var failure = Marshal.GetExceptionForHR(result) as COMException ?? new COMException(Marshal.GetPInvokeErrorMessage(result), result);
+        if (call is not null) failure.Data[AudioFailures.CallKey] = call;
+        return failure;
     }
 
     /// <summary>

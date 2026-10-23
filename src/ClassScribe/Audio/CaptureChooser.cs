@@ -41,6 +41,12 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
     /// <summary>True once the recorded app's closing has been said, until the app has sound open again.</summary>
     private bool _closedSaid;
 
+    /// <summary>True once the recorded app's absence beside a session that could not be read has been said, until the app has sound open again.</summary>
+    private bool _unlistedSaid;
+
+    /// <summary>True once that absence has been said in this run, after which it is said at Debug.</summary>
+    private bool _unlistedEverSaid;
+
     /// <summary>
     /// A chooser for what <paramref name="choice"/> names at this moment, as a run's request would take it, without a log.
     /// Kept for the record command's tests, which still make their session this way; to be removed once they make it from
@@ -92,7 +98,8 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
 
         if (IsApp)
         {
-            var app = ChooseApp(provider.GetPlayingApps(), recordedId);
+            var listing = provider.GetPlayingAppsListing();
+            var app = ChooseApp(listing.Apps, recordedId, listing.Unread);
             RecordedLevel = app?.Level;
             return app is null ? null : CaptureTarget.ForApp(app);
         }
@@ -148,9 +155,12 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
     /// playing loudest. Null when no process of the app has sound open, or no app is to be recorded. When the app was
     /// being recorded (<paramref name="recordedId"/> is set) and no process of it has sound open any more, it has closed:
     /// that is said once, and again only after the app has had sound open in between. The capture already open is left
-    /// to record its silence until the app plays again.
+    /// to record its silence until the app plays again. But when the listing could not read a session that may be the
+    /// app's (<paramref name="unread"/>: one whose app Windows did not name, or named as this one), the app has not been
+    /// seen to close: no warning is given, and the reason is said once per stretch, at Information the first time in the
+    /// run and at Debug after, since a session that keeps failing may come and go all class.
     /// </summary>
-    public PlayingApp? ChooseApp(IReadOnlyList<PlayingApp> apps, string? recordedId)
+    public PlayingApp? ChooseApp(IReadOnlyList<PlayingApp> apps, string? recordedId, IReadOnlyList<UnreadAudioSession>? unread = null)
     {
         if (source is not ClassSource.App { ProcessName: var name }) return null;
 
@@ -163,15 +173,39 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
         if (matching.Count > 0)
         {
             _closedSaid = false;
+            _unlistedSaid = false;
         }
-        else if (recordedId is not null && !_closedSaid)
+        else if (recordedId is not null)
         {
-            _closedSaid = true;
-            logger.LogWarning("\"{App}\" has closed; recording silence until it plays again", name);
+            var maybeIts = (unread ?? []).Where(session => session.ProcessName is null || Matches(session.ProcessName, name)).ToList();
+            if (maybeIts.Count > 0)
+            {
+                NoteUnlisted(name, maybeIts);
+            }
+            else if (!_closedSaid)
+            {
+                _closedSaid = true;
+                logger.LogWarning("\"{App}\" has closed; recording silence until it plays again", name);
+            }
         }
 
         return matching.FirstOrDefault(app => CaptureTarget.ForApp(app).Id == recordedId)
             ?? matching.OrderByDescending(app => app.Level).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Says, once per stretch, that the recorded app <paramref name="name"/> is missing from the list beside sessions that
+    /// could not be read and may be its (<paramref name="maybeIts"/>): at Information the first time in the run, at Debug after.
+    /// </summary>
+    private void NoteUnlisted(string name, List<UnreadAudioSession> maybeIts)
+    {
+        if (_unlistedSaid) return;
+
+        _unlistedSaid = true;
+        var level = _unlistedEverSaid ? LogLevel.Debug : LogLevel.Information;
+        _unlistedEverSaid = true;
+        logger.Log(level, "\"{App}\" is not among the apps with sound at this look, but ClassScribe could not read {Unread}, which may be its; its capture goes on",
+            name, string.Join("; ", maybeIts.Select(session => session.Describe())));
     }
 
     /// <summary>

@@ -20,6 +20,12 @@ internal static class FakeResults
 
     /// <summary>AUDCLNT_E_DEVICE_INVALIDATED: the device has gone, as when it is unplugged during a look.</summary>
     public const int DeviceInvalidated = unchecked((int)0x88890004);
+
+    /// <summary>
+    /// E_INVALIDARG, "the parameter is incorrect": what one of Windows' audio calls answered while the Zoom app was in a
+    /// meeting on 18 October, which .NET's own mapping turns into an ArgumentException.
+    /// </summary>
+    public const int InvalidArgument = unchecked((int)0x80070057);
 }
 
 /// <summary>
@@ -152,8 +158,14 @@ internal sealed class FakeOutputDevice(string id, float level = 0, params FakeAu
     /// <summary>When not 0, the HRESULT its level meter answers with, as the meter of a device that has just gone would.</summary>
     public int MeterFailure { get; init; }
 
+    /// <summary>When not 0, the HRESULT asking for its level meter answers with.</summary>
+    public int MeterActivationFailure { get; init; }
+
     /// <summary>When not 0, the HRESULT asking for its session manager answers with.</summary>
     public int SessionManagerFailure { get; init; }
+
+    /// <summary>When not 0, the HRESULT asking for its identifier answers with.</summary>
+    public int IdFailure { get; init; }
 
     /// <summary>The account of the meters and session managers it hands out, or null to keep none.</summary>
     public FakeComLedger? Ledger { get; init; }
@@ -164,6 +176,8 @@ internal sealed class FakeOutputDevice(string id, float level = 0, params FakeAu
         instance = null!;
         if (interfaceId == typeof(IAudioMeterInformationRaw).GUID)
         {
+            if (MeterActivationFailure != 0) return MeterActivationFailure;
+
             instance = FakeComLedger.Track(Ledger, new FakeMeter(level, MeterFailure));
             return FakeResults.Ok;
         }
@@ -189,8 +203,8 @@ internal sealed class FakeOutputDevice(string id, float level = 0, params FakeAu
     /// <inheritdoc />
     public int GetId(out string id)
     {
-        id = Id;
-        return FakeResults.Ok;
+        id = IdFailure == 0 ? Id : null!;
+        return IdFailure == 0 ? FakeResults.Ok : IdFailure;
     }
 
     /// <inheritdoc />
@@ -248,8 +262,12 @@ internal sealed class FakeSessionList(IReadOnlyList<FakeAudioSession> sessions, 
     }
 
     /// <inheritdoc />
+    /// <remarks>A session with a <see cref="FakeAudioSession.HandOutFailure"/> is not handed out: the listing answers with that failure for it.</remarks>
     public int GetSession(int index, out object session)
     {
+        session = null!;
+        if (sessions[index].HandOutFailure is not 0 and var failure) return failure;
+
         session = FakeComLedger.Track(ledger, sessions[index]);
         return FakeResults.Ok;
     }
@@ -270,6 +288,12 @@ internal sealed class FakeAudioSession(int processId, float level, int state = 1
     /// <summary>When not 0, the HRESULT asking for its process answers with.</summary>
     public int ProcessIdFailure { get; init; }
 
+    /// <summary>When not 0, the HRESULT its level meter answers with.</summary>
+    public int PeakFailure { get; init; }
+
+    /// <summary>When not 0, the HRESULT the session listing answers with when asked for this session, which is then not handed out.</summary>
+    public int HandOutFailure { get; init; }
+
     /// <inheritdoc />
     public int GetState(out int value)
     {
@@ -287,8 +311,8 @@ internal sealed class FakeAudioSession(int processId, float level, int state = 1
     /// <inheritdoc />
     public int GetPeakValue(out float peak)
     {
-        peak = level;
-        return FakeResults.Ok;
+        peak = PeakFailure == 0 ? level : 0;
+        return PeakFailure == 0 ? FakeResults.Ok : PeakFailure;
     }
 
     /// <inheritdoc />

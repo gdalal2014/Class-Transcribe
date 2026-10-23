@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Recorder;
@@ -1185,12 +1184,12 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
 
             return (main.Source, outputs.GetOutputDevices().FirstOrDefault(candidate => candidate.Name == main.Source)?.HeardInTheRoom ?? false, null);
         }
-        catch (Exception ex) when (ex is COMException or InvalidOperationException)
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex) || ex is InvalidOperationException)
         {
             // Deliberately not rethrown: the echo check only words a warning, and a look at Windows' lists that fails, as
-            // while its audio service restarts, must not keep the other checks, the heartbeat and the state from the
-            // window. The failure goes back to the caller, which gives it a Debug line once per stretch (NoteTheListing),
-            // and this check looks again at the next look.
+            // while its audio service restarts, or with any failed result, as with the Zoom app in a meeting on 18 October,
+            // must not keep the other checks, the heartbeat and the state from the window. The failure goes back to the
+            // caller, which gives it a Debug line once per stretch (NoteTheListing), and this check looks again at the next look.
             return (null, false, ex.Message);
         }
     }

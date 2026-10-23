@@ -153,6 +153,150 @@ public class ClassMicrophoneWatchTests
         Assert.That(_watch.LookNow().Listening, Is.EqualTo(AppListening.Yes));
     }
 
+    /// <summary>
+    /// A session that could not be read in full, but whose process was read, concerns only that process: following chrome,
+    /// the Zoom app's unreadable session, ClassScribe's own and one of no single process leave chrome's listening known, so
+    /// that chrome holding the microphone without listening is no, and no reason to drop everything as unreadable. The
+    /// problem is still handed on with the look.
+    /// </summary>
+    [Test]
+    public void A_session_of_another_app_that_cannot_be_read_leaves_the_followed_app_known()
+    {
+        _sessions.Set(WithUnread([Laptop.Session(Laptop.ArrayId, Laptop.ChromeUtility, CaptureSessionState.Inactive)],
+            new UnreadCaptureSession(Laptop.Zoom, "Zoom", null), new UnreadCaptureSession(Laptop.OwnProcess, "ClassScribe", null), new UnreadCaptureSession(0, null, null)));
+
+        var muted = _watch.LookNow();
+
+        _sessions.Set(WithUnread([Laptop.Session(Laptop.ArrayId, Laptop.ChromeUtility)], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null)));
+        var listening = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(muted.Listening, Is.EqualTo(AppListening.No));
+            Assert.That(muted.Holds, Is.True);
+            Assert.That(muted.Problem, Is.EqualTo(ZoomUnread));
+            Assert.That(listening.Listening, Is.EqualTo(AppListening.Yes));
+            Assert.That(_log.Problems, Is.Empty);
+        });
+    }
+
+    /// <summary>A session that could not be read at all, its process included, may be the followed app's: nothing is known unless the app was found listening.</summary>
+    [Test]
+    public void A_session_whose_process_cannot_be_read_leaves_nothing_known()
+    {
+        _sessions.Set(WithUnread([Laptop.Session(Laptop.ArrayId, Laptop.ChromeUtility, CaptureSessionState.Inactive)], new UnreadCaptureSession(null, null, null)));
+
+        Assert.That(_watch.LookNow().Listening, Is.EqualTo(AppListening.Unknown));
+    }
+
+    /// <summary>Following any app, another app's session that could not be read leaves nothing known: it may be listening.</summary>
+    [Test]
+    public void Following_any_app_another_apps_unread_session_leaves_nothing_known()
+    {
+        Make(new FollowRule.Any());
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null)));
+
+        var look = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(look.Listening, Is.EqualTo(AppListening.Unknown));
+            Assert.That(look.UsageInUse, Is.Null, "no one app to look up in the record");
+        });
+    }
+
+    /// <summary>The followed app's session whose instance identifier could not be read, but whose state was, is judged by that state.</summary>
+    [TestCase(CaptureSessionState.Active, AppListening.Yes, true)]
+    [TestCase(CaptureSessionState.Inactive, AppListening.No, true)]
+    [TestCase(CaptureSessionState.Expired, AppListening.No, false)]
+    public void The_followed_apps_unread_session_whose_state_was_read_is_judged_by_it(CaptureSessionState state, AppListening listening, bool holds)
+    {
+        Make(new FollowRule.Named("zoom"));
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", state)));
+
+        var look = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(look.Listening, Is.EqualTo(listening));
+            Assert.That(look.Holds, Is.EqualTo(holds));
+            Assert.That(look.ListeningApps, Is.EqualTo(listening == AppListening.Yes ? new[] { "Zoom" } : []));
+        });
+    }
+
+    /// <summary>
+    /// When the followed app's own session on the recorded microphone cannot be read beyond its process, as with the Zoom
+    /// app in a meeting on 18 October, Windows' usage record stands in for its state: the app using the microphone now is
+    /// listening, the app having closed it is not, and a record that says nothing of the app leaves nothing known, which
+    /// the gate reports as unreadable. That the record decides is said once, at Information, until the session can be read again.
+    /// </summary>
+    [Test]
+    public void The_followed_apps_own_unread_session_is_judged_by_the_usage_record()
+    {
+        Make(new FollowRule.Named("zoom"));
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null)));
+
+        var nothingSaid = _watch.LookNow();
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: true));
+        var inUse = _watch.LookNow();
+        var stillInUse = _watch.LookNow();
+        _record.Entries[0] = FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: false);
+        var closed = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(nothingSaid.Listening, Is.EqualTo(AppListening.Unknown));
+            Assert.That(nothingSaid.Problem, Is.EqualTo(ZoomUnread), "the gate's words for the unreadable state name the session");
+            Assert.That(inUse.Listening, Is.EqualTo(AppListening.Yes));
+            Assert.That(inUse.Holds, Is.True);
+            Assert.That(inUse.UsageInUse, Is.True);
+            Assert.That(inUse.ListeningApps, Is.EqualTo(new[] { "Zoom" }));
+            Assert.That(stillInUse.Listening, Is.EqualTo(AppListening.Yes));
+            Assert.That(closed.Listening, Is.EqualTo(AppListening.No));
+            Assert.That(closed.Holds, Is.True);
+            Assert.That(_log.Entries.Where(entry => entry.Level >= LogLevel.Information).Select(entry => entry.Message), Is.EqualTo(new[]
+            {
+                $"Windows would not give the state of zoom's session on \"{Laptop.ArrayName}\" ({ZoomUnread}); until it does, Windows' microphone usage record says whether zoom is listening"
+            }), "said once, when the record first decides");
+        });
+
+        _sessions.Set(Laptop.Listing(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.Zoom)));
+        _watch.LookNow();
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null)));
+        _watch.LookNow();
+
+        Assert.That(_log.Entries.Count(entry => entry.Level == LogLevel.Information), Is.EqualTo(2), "said again once the session had been read");
+    }
+
+    /// <summary>
+    /// The usage record is per app, not per microphone: while the followed app was found taking sound from another
+    /// microphone, the record's word that it uses a microphone is explained by that one, so it does not stand in for the
+    /// unread session on the recorded microphone, and nothing is known of it.
+    /// </summary>
+    [Test]
+    public void The_usage_record_does_not_decide_while_the_app_listens_on_another_microphone()
+    {
+        Make(new FollowRule.Named("zoom"));
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: true));
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null)));
+        _sessions.SetSessions(Laptop.ObsbotId, Laptop.Session(Laptop.ObsbotId, Laptop.Zoom));
+
+        var look = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(look.Listening, Is.EqualTo(AppListening.Unknown));
+            Assert.That(look.OtherMicrophoneId, Is.EqualTo(Laptop.ObsbotId), "the chooser moves the recording to the app's microphone");
+        });
+    }
+
+    /// <summary>What the sessions reader says of the Zoom app's session on the array whose state Windows would not give.</summary>
+    private const string ZoomUnread = "session 2 of 2 (Zoom, pid 9090) not readable: GetState: The parameter is incorrect. (0x80070057)";
+
+    /// <summary>The array's listing with <paramref name="sessions"/> read and <paramref name="unread"/> not read in full, with the Zoom app's session's words as its problem.</summary>
+    private static MicrophoneSessionListing WithUnread(CaptureSession[] sessions, params UnreadCaptureSession[] unread) =>
+        Laptop.Listing(Laptop.ArrayId, sessions) with { Complete = false, Problem = ZoomUnread, Unread = unread };
+
     /// <summary>A microphone that is not connected gives an unknown look, with the reason, and no mute.</summary>
     [Test]
     public void A_microphone_that_is_not_connected_gives_an_unknown_look()

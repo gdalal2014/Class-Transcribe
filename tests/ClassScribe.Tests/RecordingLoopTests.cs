@@ -44,6 +44,7 @@ public class RecordingLoopTests
     private FakeStatusSink _status = null!;
     private FakeFreeSpace _space = null!;
     private FakeRegistryValues _registry = null!;
+    private FakeMicrophoneProvider _microphones = null!;
     private RecordingLogger<RecordingLoop> _log = null!;
     private RecordingFiles _files = null!;
     private RecordRequest _request = null!;
@@ -74,6 +75,7 @@ public class RecordingLoopTests
         _registry = new FakeRegistryValues()
             .Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "0")
             .Set(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue, 3);
+        _microphones = new FakeMicrophoneProvider();
         _log = new RecordingLogger<RecordingLoop>();
         _files = new RecordingFiles(_folder.Path, "Kalam_2026-10-15_23-00-02Z");
         var runId = TestRuns.Id();
@@ -106,13 +108,14 @@ public class RecordingLoopTests
 
     /// <summary>
     /// The loop under test, with the checks made once a second on the test's clocks, free space and <paramref name="settings"/>,
-    /// a registry with Vantage off and ducking set to Do nothing, and the simulated output devices.
+    /// a registry with Vantage off and ducking set to Do nothing, the simulated output devices, and the simulated
+    /// microphones for the Bluetooth check.
     /// </summary>
     private RecordingLoop CreateLoop(TestOptions<RecordingOptions> settings, IUserSignals signals) =>
         new(_ui, signals, new ClassMarks(NullLogger<ClassMarks>.Instance),
             new RecordingMonitor(new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance), _space, settings,
                 new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _provider,
-                new BluetoothMicrophoneWatch(new FakeMicrophoneSessions(), new FakeMicrophoneProvider(), new FakeOwnProcesses(), _time, NullLogger<BluetoothMicrophoneWatch>.Instance), _time),
+                new BluetoothMicrophoneWatch(new FakeMicrophoneSessions(), _microphones, new FakeOwnProcesses(), _time, NullLogger<BluetoothMicrophoneWatch>.Instance), _time),
             _status, _time, _log);
 
     /// <summary>
@@ -1008,6 +1011,36 @@ public class RecordingLoopTests
         recording.Advance(TimeSpan.FromSeconds(3));
         await StopAsync();
         Assert.That(_run.Current.Position, Is.EqualTo(TimeSpan.FromSeconds(23)), "the position at the stop");
+    }
+
+    /// <summary>
+    /// The Zoom crash of 18 October, in the loop: every look at Windows' lists fails with E_INVALIDARG as .NET's own mapping
+    /// gives it, an ArgumentException, the output devices' for the echo check every second and the microphones' for the
+    /// Bluetooth check every 10 seconds, in the seconds the heartbeat is due. The second's work still reaches the heartbeat
+    /// and the state: the run file says where the recording is every 10 seconds, the window gets a state every second, and
+    /// no second's work fails.
+    /// </summary>
+    [Test]
+    public async Task The_heartbeat_and_the_state_go_on_while_every_look_at_Windows_lists_fails()
+    {
+        var invalid = new ArgumentException("Value does not fall within the expected range.");
+        _provider.FailListings(invalid);
+        _microphones.ListingFailure = invalid;
+        var recording = new FakeRecording(hasMicrophone: true);
+        await RunAsync(recording, request: _request with { Source = new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null)) });
+        var published = _status.Count;
+
+        for (var second = 1; second <= 20; second++)
+        {
+            recording.Advance(TimeSpan.FromSeconds(1));
+            await TickAsync();
+        }
+
+        Assert.That((_run.Current.HeartbeatUtc, _run.Current.Position), Is.EqualTo((TestRuns.Start.AddSeconds(20), TimeSpan.FromSeconds(20))));
+        Assert.That(_status.Count - published, Is.EqualTo(20), "a state every second");
+        Assert.That(_microphones.Listings, Is.EqualTo(3), "the Bluetooth check looked at the start and every 10 seconds");
+        Assert.That(_log.Problems, Is.Empty, "no second's work failed");
+        Assert.That(_loop!.IsCompleted, Is.False, "still recording");
     }
 
     /// <summary>

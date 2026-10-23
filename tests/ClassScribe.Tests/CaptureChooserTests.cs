@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
+using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;
 
@@ -368,6 +369,60 @@ public class CaptureChooserTests
         Assert.That(saidOnce, Is.EqualTo(1), "said once, not at every look");
         Assert.That(back, Is.EqualTo(Chrome));
         Assert.That(_log.Problems.Count(problem => problem == ChromeClosed), Is.EqualTo(2), "closing again is news again");
+    }
+
+    /// <summary>
+    /// A recorded app missing from the list while the listing could not read a session that may be its, one whose app
+    /// Windows did not name, has not been seen to close: no warning is given, nothing is picked, so the capture already
+    /// open goes on, and the reason is said once at Information, then at Debug for later stretches of the run. A session
+    /// named as another app's is no reason: then the app has closed, and that is said as before.
+    /// </summary>
+    [Test]
+    public void An_app_missing_beside_a_session_that_could_not_be_read_is_not_said_to_have_closed()
+    {
+        var chooser = Chooser(new ClassSource.App("chrome"));
+        var recorded = CaptureTarget.ForApp(Chrome).Id;
+        UnreadAudioSession[] unnamed = [new("Speakers", null, "GetSession: The parameter is incorrect. (0x80070057)")];
+        UnreadAudioSession[] edges = [new("Speakers", "msedge", "GetState: The parameter is incorrect. (0x80070057)")];
+        const string note = "\"chrome\" is not among the apps with sound at this look, but ClassScribe could not read an audio session on \"Speakers\" " +
+            "(GetSession: The parameter is incorrect. (0x80070057)), which may be its; its capture goes on";
+
+        chooser.ChooseApp([Chrome], recorded);
+        var unread = chooser.ChooseApp([Edge], recorded, unnamed);
+        var stillUnread = chooser.ChooseApp([Edge], recorded, unnamed);
+        var afterUnread = _log.Entries.ToList();
+        var closed = chooser.ChooseApp([Edge], recorded, edges);
+        chooser.ChooseApp([Chrome], recorded);
+        chooser.ChooseApp([Edge], recorded, unnamed);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(unread, Is.Null, "nothing to move to: the open capture stays");
+            Assert.That(stillUnread, Is.Null);
+            Assert.That(afterUnread, Is.EqualTo(new[] { (LogLevel.Information, note) }), "said once, and no warning");
+            Assert.That(closed, Is.Null);
+            Assert.That(_log.Problems, Is.EqualTo(new[] { ChromeClosed }), "a session named as another app's leaves the closing said");
+            Assert.That(_log.Entries[^1], Is.EqualTo((LogLevel.Debug, note)), "a later stretch of the run at Debug");
+        });
+    }
+
+    /// <summary>A look at the apps reads the listing, so that what it could not read reaches the choice of the app.</summary>
+    [Test]
+    public void A_look_at_the_apps_hands_on_what_the_listing_could_not_read()
+    {
+        var chooser = Chooser(new ClassSource.App("chrome"));
+        var provider = new FakeCaptureProvider();
+        provider.ConnectDevice("Speakers");
+        provider.SetUnread(new UnreadAudioSession("Speakers", null, "GetSession: The parameter is incorrect. (0x80070057)"));
+
+        var pick = chooser.Choose(provider, recordedId: CaptureTarget.ForApp(Chrome).Id, sinceRecordedSound: null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pick, Is.Null);
+            Assert.That(_log.Problems, Is.Empty, "not said to have closed");
+            Assert.That(provider.DeviceQueries, Is.EqualTo(1), "one listing per look");
+        });
     }
 
     /// <summary>

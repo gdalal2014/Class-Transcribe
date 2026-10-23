@@ -143,8 +143,9 @@ public sealed class WasapiMicrophoneProvider : IMicrophoneProvider, IMMNotificat
             // Deliberately not rethrown: the answer asked for is whether the microphone is muted, and when Windows will
             // not say, as while its audio service restarts or when the microphone's endpoint volume cannot be made, the
             // answer is that it is not known, which the caller words as such; it never stands for "not muted". An
-            // endpoint that offers no endpoint volume answers E_NOINTERFACE, which Check turns into an
-            // InvalidCastException rather than a COMException, which is why it is caught beside it.
+            // endpoint that offers no endpoint volume answers E_NOINTERFACE, which Check throws as a COMException like
+            // any failed result; an object that will not be cast to the endpoint volume is an InvalidCastException,
+            // which is why that is caught beside it.
             _logger.LogDebug(ex, "Could not read whether the microphone {Id} is muted (0x{Code:X8})", id, ex.HResult);
             return null;
         }

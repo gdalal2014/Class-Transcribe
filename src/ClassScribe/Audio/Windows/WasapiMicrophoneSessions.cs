@@ -91,15 +91,15 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
                     _release(device);
                 }
             }
-            catch (Exception ex) when (ex is COMException or InvalidCastException)
+            catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
             {
                 // Deliberately not rethrown: the watch looks four times a second and must keep looking. A look that fails is a
                 // listing that says why, which the gate reads as nothing known, and the next look tries again with a new
                 // enumerator, because a restart of Windows' audio service leaves the old one stale. Noted at Debug: four
                 // warnings a second would drown the log, and the gate reports the sessions as unreadable itself.
-                _logger.LogDebug(ex, "Could not read the sessions on the microphone {EndpointId} ({Reason})", endpointId, Describe(ex));
+                _logger.LogDebug(ex, "Could not read the sessions on the microphone {EndpointId} ({Reason})", endpointId, AudioFailures.Describe(ex));
                 DropEnumerator();
-                return Unread(endpointId, Describe(ex));
+                return Unread(endpointId, AudioFailures.Describe(ex));
             }
         }
     }
@@ -136,13 +136,13 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
 
                 return new MicrophoneListings(listings, null);
             }
-            catch (Exception ex) when (ex is COMException or InvalidCastException)
+            catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
             {
                 // Deliberately not rethrown: as in Read, the look must go on; no listings, with the reason, say that nothing
                 // could be read, which the microphone check reports as one ERROR line rather than as every microphone gone.
-                _logger.LogDebug(ex, "Could not list the microphones and their sessions ({Reason})", Describe(ex));
+                _logger.LogDebug(ex, "Could not list the microphones and their sessions ({Reason})", AudioFailures.Describe(ex));
                 DropEnumerator();
-                return new MicrophoneListings([], Describe(ex));
+                return new MicrophoneListings([], AudioFailures.Describe(ex));
             }
             finally
             {
@@ -203,9 +203,9 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
         var name = ReadName(device, problems) ?? id;
         var (muted, volume) = ReadVolume(device, problems);
         var sessions = new List<CaptureSession>();
-        var complete = ReadSessions(device, id, sessions, processNames, problems);
-        return new MicrophoneSessionListing(id, name, defaults.GetValueOrDefault(id), muted, volume, sessions, complete,
-            problems.Count == 0 ? null : string.Join("; ", problems));
+        var unread = ReadSessions(device, id, sessions, processNames, problems);
+        return new MicrophoneSessionListing(id, name, defaults.GetValueOrDefault(id), muted, volume, sessions, unread is { Count: 0 },
+            problems.Count == 0 ? null : string.Join("; ", problems), unread);
     }
 
     /// <summary>The name Windows shows for the microphone, or null, with the reason noted, when it cannot be read.</summary>
@@ -215,10 +215,10 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
         {
             return _readName(device);
         }
-        catch (Exception ex) when (ex is COMException or InvalidCastException)
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
         {
             // Deliberately not rethrown: the identifier stands in for the name, and the reason is in the listing.
-            problems.Add("name not readable: " + Describe(ex));
+            problems.Add("name not readable: " + AudioFailures.Describe(ex));
             return null;
         }
     }
@@ -259,11 +259,11 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
 
             return (muted, percent);
         }
-        catch (Exception ex) when (ex is COMException or InvalidCastException)
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
         {
             // Deliberately not rethrown: the mute reads as unknown, which the gate takes as not muted, and the sessions,
             // which are the safety, are still read; the reason is in the listing.
-            problems.Add("endpoint volume not available: " + Describe(ex));
+            problems.Add("endpoint volume not available: " + AudioFailures.Describe(ex));
             return (null, null);
         }
         finally
@@ -273,10 +273,13 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
     }
 
     /// <summary>
-    /// Adds every session on the microphone to <paramref name="sessions"/>. Returns false when any could not be read, so
-    /// that an app missing from the list is not taken for one that has let go of the microphone.
+    /// Adds every session on the microphone to <paramref name="sessions"/>, and returns those that could not be read in
+    /// full, with what was read of each: none when every session was read. Null when the list of sessions itself could
+    /// not be read, so that what is missing is not known. Either way an app missing from the sessions is not taken for one
+    /// that has let go of the microphone, unless what could not be read is known to be another's.
     /// </summary>
-    private bool ReadSessions(IMMDeviceRaw device, string endpointId, List<CaptureSession> sessions, Dictionary<int, string?> processNames, List<string> problems)
+    private List<UnreadCaptureSession>? ReadSessions(IMMDeviceRaw device, string endpointId, List<CaptureSession> sessions, Dictionary<int, string?> processNames,
+        List<string> problems)
     {
         object? activated = null;
         IAudioSessionEnumeratorRaw? list = null;
@@ -286,21 +289,28 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
             CoreAudio.Check(device.Activate(ref interfaceId, CoreAudio.AllContexts, IntPtr.Zero, out activated));
             CoreAudio.Check(((IAudioSessionManager2Raw)activated).GetSessionEnumerator(out list));
             CoreAudio.Check(list.GetCount(out var count));
-            var complete = true;
+            var unread = new List<UnreadCaptureSession>();
             for (var index = 0; index < count; index++)
             {
                 object? session = null;
+                var read = new SessionRead();
                 try
                 {
                     CoreAudio.Check(list.GetSession(index, out session));
-                    sessions.Add(ReadSession(session, endpointId, processNames));
+                    sessions.Add(ReadSession(session, endpointId, processNames, read));
                 }
-                catch (Exception ex) when (ex is COMException or InvalidCastException)
+                catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
                 {
-                    // Deliberately not rethrown: a session being torn down during the look must not cost the others; the
-                    // listing says it is incomplete, so the gate takes nothing for granted from it.
-                    problems.Add($"session {index + 1} of {count} not readable: {Describe(ex)}");
-                    complete = false;
+                    // Deliberately not rethrown: a session being torn down during the look, or one that answers E_INVALIDARG
+                    // as the Zoom app's did in a meeting on 18 October, must not cost the others. The listing names it with
+                    // what was read of it, its process first, so that the watch can tell whether it concerns the followed
+                    // app, and takes nothing for granted from it when it may. Noted at Debug, with the failure, since the
+                    // watch reads four times a second.
+                    var whose = Whose(read);
+                    problems.Add($"session {index + 1} of {count}{whose} not readable: {AudioFailures.Describe(ex)}");
+                    unread.Add(new UnreadCaptureSession(read.ProcessId, read.ImageName, read.State));
+                    _logger.LogDebug(ex, "Could not read session {Index} of {Count} on the microphone {EndpointId}{Whose} ({Reason})",
+                        index + 1, count, endpointId, whose, AudioFailures.Describe(ex));
                 }
                 finally
                 {
@@ -308,13 +318,13 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
                 }
             }
 
-            return complete;
+            return unread;
         }
-        catch (Exception ex) when (ex is COMException or InvalidCastException)
+        catch (Exception ex) when (AudioFailures.IsFailedResult(ex))
         {
             // Deliberately not rethrown: the microphone's mute is still worth having; the listing says the sessions could not be read.
-            problems.Add("sessions not readable: " + Describe(ex));
-            return false;
+            problems.Add("sessions not readable: " + AudioFailures.Describe(ex));
+            return null;
         }
         finally
         {
@@ -324,32 +334,54 @@ public sealed class WasapiMicrophoneSessions : IMicrophoneSessions, IDisposable
     }
 
     /// <summary>
-    /// Reads one session: its instance identifier, state and process, whether it is Windows' system sounds, and through
-    /// ISimpleAudioVolume, asked of the same object, its own mute. The process is named once per read, however many
-    /// sessions it has. The caller releases the object.
+    /// Reads one session: its process first, named once per read however many sessions it has, then its state, its
+    /// instance identifier, whether it is Windows' system sounds, and through ISimpleAudioVolume, asked of the same object,
+    /// its own mute. What it has read is noted in <paramref name="read"/> as it goes, so that a session whose later calls
+    /// fail is still known by whose it is. The caller releases the object.
     /// </summary>
-    private CaptureSession ReadSession(object session, string endpointId, Dictionary<int, string?> processNames)
+    private CaptureSession ReadSession(object session, string endpointId, Dictionary<int, string?> processNames, SessionRead read)
     {
         var control = (IAudioSessionControl2WholeRaw)session;
-        CoreAudio.Check(control.GetSessionInstanceIdentifier(out var key));
-        CoreAudio.Check(control.GetState(out var state));
 
         // A success above zero (AUDCLNT_S_NO_SINGLE_PROCESS) with a process id of 0 is a session that spans processes.
         CoreAudio.Check(control.GetProcessId(out var processId));
+        var id = unchecked((int)processId);
+        read.ProcessId = id;
+        string? name = null;
+        if (id > 0 && !processNames.TryGetValue(id, out name)) processNames[id] = name = _names.Describe(id)?.Name;
+        read.ImageName = name;
+
+        CoreAudio.Check(control.GetState(out var state));
+        read.State = (CaptureSessionState)state;
+        CoreAudio.Check(control.GetSessionInstanceIdentifier(out var key));
         var systemSounds = control.IsSystemSoundsSession() == 0;
 
         bool? muted = null;
         if (session is ISimpleAudioVolumeRaw simple && simple.GetMute(out var mutedValue) >= 0) muted = mutedValue != 0;
 
-        var id = unchecked((int)processId);
-        string? name = null;
-        if (id > 0 && !processNames.TryGetValue(id, out name)) processNames[id] = name = _names.Describe(id)?.Name;
-
-        return new CaptureSession(key, endpointId, id, name, systemSounds, (CaptureSessionState)state, muted);
+        return new CaptureSession(key, endpointId, id, name, systemSounds, read.State.Value, muted);
     }
 
-    /// <summary>A failure in words for a listing: Windows' words and the result code.</summary>
-    private static string Describe(Exception exception) => $"{exception.Message.Trim()} (0x{exception.HResult:X8})";
+    /// <summary>Whose a session that could not be read is, in words for the listing's problem: " (Zoom, pid 9090)", " (pid 9090)", " (no single process)", or nothing when its process could not be read.</summary>
+    private static string Whose(SessionRead read) => read.ProcessId switch
+    {
+        null => "",
+        0 => " (no single process)",
+        var id => read.ImageName is { } name ? $" ({name}, pid {id})" : $" (pid {id})"
+    };
+
+    /// <summary>What has been read of one session so far: its process, the process's program, and its state, each null until read.</summary>
+    private sealed class SessionRead
+    {
+        /// <summary>The session's process; 0 for one that spans processes.</summary>
+        public int? ProcessId { get; set; }
+
+        /// <summary>The process's program without .exe; null when it could not be named, or for a session of no single process.</summary>
+        public string? ImageName { get; set; }
+
+        /// <summary>The session's state.</summary>
+        public CaptureSessionState? State { get; set; }
+    }
 }
 
 /// <summary>
