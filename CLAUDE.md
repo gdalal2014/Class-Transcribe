@@ -6,7 +6,8 @@ app's sound through process loopback. It can record the user's microphone beside
 second track on the same clock, written only while the class app is listening on that microphone
 and Windows is not muting it, and mixed into the class's track at upload; or the microphone alone,
 for a class in a room, and then, for a lesson video, the camera's picture beside it, shared, into pieces on the same
-clock, written by a camera process of its own (the finished lesson video comes in a later slice). The recording runs in a separate recorder process
+clock, written by a camera process of its own, and joined after the stop with the sound into the lesson's finished video,
+`<base>.mp4`, by another camera process's finish job. The recording runs in a separate recorder process
 (`ClassScribe.exe --recorder <run id>`), which the window shows through a named pipe, so closing
 the window does not end a class. When stopped, it sends the recording to ElevenLabs Scribe v2 with
 a glossary of Arabic terms and saves a Markdown transcript and ElevenLabs' JSON answer beside the
@@ -146,7 +147,10 @@ advice after a format error (10 A).
   (the probe fix's rule 6: it checks that Windows still refuses before InitializeAsync what the fake refuses). The lesson's
   pieces are written by Media Foundation's sink writer, which opens no device: `MediaFoundationPieceWriterTests`
   (WindowsMedia, run with the suite) encode generated frames with the software encoder into a temporary folder and read
-  them back. Every other test of the picture uses `FakePieceWriter` and `FakeCameraCapture`.
+  them back. Every other test of the picture uses `FakePieceWriter` and `FakeCameraCapture`. The lesson's finished video
+  is made by Media Foundation too, opening no device: `LessonVideoMediaTests` (WindowsMedia) join pieces the real piece
+  writer made, with a `.wav` beside them, in a temporary folder; every other test of it plays the media work with
+  `FakeLessonVideoMedia` (`TestDoubles.LessonVideo.cs`).
 - Tests never read or write the real `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` or
   `%USERPROFILE%\ClassScribe`: temporary folders only (`TestRuntime`, `TempFolder`). The real
   `%LOCALAPPDATA%\ClassScribe` holds the run files and logs of real classes now, and
@@ -574,6 +578,7 @@ dotnet run --project src/ClassScribe -- camera-check "OBSBOT"                   
 dotnet run --project src/ClassScribe -- transcribe "C:\path\to\folder-or-file"   # --no-open opens nothing; --output for a file
 dotnet run --project src/ClassScribe -- transcribe "<path>" --again    # one with a transcript; billed again
 dotnet run --project src/ClassScribe -- rebuild "C:\path\to\folder-or-file"      # free, from the saved .json; --no-open
+dotnet run --project src/ClassScribe -- finish-video "C:\path\to\lesson"         # a lesson's video made again, free, from its pieces; --no-open
 dotnet run --project src/ClassScribe -- list                           # the recordings, newest first; --output
 dotnet run --project src/ClassScribe -- devices                        # the devices and apps with sound
 dotnet run --project src/ClassScribe -- settings list                  # every setting; set a CLASSSCRIBE_SETTINGS_FOLDER first, so his real settings stay as they are
@@ -754,7 +759,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   writer and its full copy, `settings` and `class`, `record --class`, `--output` optional, the
   recording that drops refused settings, menus C and S, the folder warnings), and 4,245 at its head
   (the review's fixes and the soak's check by its stamps). Merged into `develop` on 22 October, with
-  `Recording:CameraOffsets` made a map of the catalog, the count is 4,538, all passing. The uploads by
+  `Recording:CameraOffsets` made a map of the catalog, the count is 4,538, all passing. From there the lesson's video
+  (step 13, slice 8) grew on `feature/lesson-video` to 4,651, all passing, in about four minutes. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -1137,7 +1143,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   http only to a loopback address, for a stub), `Drive:Upload` (`Everything` or `WithoutAudio`, by
   name), `Drive:ChunkMegabytes` (8; from 1 to 256 MiB) and `Drive:Enabled` (true: each class goes
   into the queue as its run starts and up after it, and a transcript made later sends its new files;
-  false: nothing is queued or sent by itself, only 9 and `drive upload` upload). The YouTube section
+  false: nothing is queued or sent by itself, only 9 and `drive upload` upload) and `Drive:LessonVideos` (false: a
+  lesson's `<base>.mp4` stays on this laptop; true sends it too, with `Drive:Upload` `Everything`). The YouTube section
   (`YouTubeOptions`, `SettingsCheck.CheckYouTube`): `YouTube:YtDlpPath` and `YouTube:BrowserPath`
   (empty finds the program; else a full path to an `.exe` that is there, environment variables
   expanded, quotes ignored: `CheckExe`), `YouTube:MayDownloadChannels` and `YouTube:CourseChannels`
@@ -1206,7 +1213,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   says `Another ClassScribe is uploading to Google Drive; ... waits and goes up after it`; never
   `recording.lock`); `StayAwake.UploadingReason` held for the pass; before each piece it waits,
   polling the run journal every 30 s, while any run records (`Google Drive: paused while "Kalam"
-  records`); Google out of reach after retries, Drive full, a sign-in gone or a manifest that cannot
+  records`) or, after that, transcribes or makes its lesson video (N13: `paused while "Kalam" is transcribed`); Google out of reach after retries, Drive full, a sign-in gone or a manifest that cannot
   be written (`UploadNotTrackedException`, thrown by the run's `Save` in words of its own, never taken
   for a file that could not be read) ends the pass, a file or folder Drive refuses keeps that
   recording waiting. `RecordingUpload`: busy when a live run records or transcribes it or
@@ -1267,7 +1274,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   afresh, and Drive asked now for a copy outside the trash with the same size and MD5; any failure
   keeps all of that recording's audio; then the files are deleted (nothing else, nothing on Drive),
   `FreedUtc` and the length kept in the manifest as it is then (read again, so a queue written
-  meanwhile stays), and `Freed <size> on this laptop: ...` said. Menu choice 4 with a folder asks
+  meanwhile stays), and `Freed <size> on this laptop: ...` said. A lesson's camera pieces, kept for a video bound for
+  Drive, are freed the same way once its `.mp4` is verified there (`FreePiecesAsync`; the video stays here too). Menu choice 4 with a folder asks
   about the recording transcribe would take, a newer freed one included (`MenuCommand.RecordingAt`,
   as `TranscribeCommand.TranscribeFolderAsync`). The
   rest of the app reads freed audio through `IAudioOnDrive` (`Storage`, `DriveCopies` from the
@@ -1521,8 +1529,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   standard output, as lines of UTF-8 JSON through `LineChannel` over a `JoinedStream` of the two pipes. Version 2 (slice 7)
   defined the `clock` line's body (`ClockState`), the empty body of `off`, `on` and `cancel` (`CameraEmpty`,
   `CameraLines.SendSignalAsync`), `CameraJob.SoftwareEncoder`, `CameraStatus.FramesPerSecond` and `Capturing` (defaulted),
-  and `CameraProblemKind.NoPicture`. Three jobs are taken, each on a `CameraThread`: the record job (`CameraRecordJob`, "The
-  lesson's picture" below), and in `Camera/CameraJobs.cs` the hold (`CameraHoldJob`: the camera opened shared, nothing
+  and `CameraProblemKind.NoPicture`; version 3 (slice 8) added `CameraJob.KeepPieces` (defaulted) for the finish job. Four
+  jobs are taken, each on a `CameraThread`: the record job (`CameraRecordJob`, "The lesson's picture" below), the finish
+  job (`CameraFinishJob`, "The lesson's video" below), and in `Camera/CameraJobs.cs` the hold (`CameraHoldJob`: the camera opened shared, nothing
   converted; a `status` at the first frame of each open and once a second, with the frames and the seconds since the last;
   a refused open said once per cause as a `problem` through `CameraProblems.ForFailedOpen` (E_ACCESSDENIED as privacy or a
   security program, a sharing violation or busy as another app, a camera not listed or not connected) and tried again
@@ -1530,8 +1539,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `cancel` or closed end lets the camera go and ends it with 0; a starter found gone on a send ends it too) and the check
   (`CameraCheckJob`: the camera opened at the job's size, each call sent as a `log` line, a failed required call at
   Warning, `opened`, then a `status` with the frames over `CameraHost.CheckFor` (5 s), let go; 0 with frames, else `failed`
-  and 1). A hold, check or record job naming no camera is not taken. A finish job (the lesson's video, slice 8) is answered
-  with a log line and `failed` (`CameraHost.FinishNotBuilt`), opens nothing, and exits 4; no job within `JobPatience` (30 s), a first line that is no
+  and 1). A hold, check or record job naming no camera is not taken, nor a finish job naming no recording (`failed`, 4); no job within `JobPatience` (30 s), a first line that is no
   job, a job without a body or with one that is not an object, or a job of another `CameraProtocol.Version`, is not taken
   either, with why in `failed`; it never throws. Its exit codes are internal: 0 done, 1 failed, 4 a job it cannot take,
   130 cancelled. `ICameraProcessStarter` (`CameraProcessStarter`, registered in `CameraServices`, used by the webcam hold,
@@ -1629,7 +1637,50 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   real track set, camera recorder and camera host: each mark's bright frame where its click is in the sound, through a
   pause, a cut sleep and a lost camera; and a stop whose sound takes two seconds, the piece still ending with the sound) and
   `EndToEndTests.A_lesson_with_the_camera_records_its_picture_beside_the_sound`.
-  The lesson's finished video (`finish`, `finish-video`, the report's V) is slice 8.
+- The lesson's video (teach-video slice 8 as camera-first adapts it; build-plan step 13, amendments 5, 47 and 53, answers
+  N13, N18 and N19): after the stop, a lesson with the camera's pieces is joined with its sound into `<base>.mp4`
+  (`RecordingFiles.LessonVideo`), written as `<base>.mp4.partial` (`LessonVideoPartial`), checked, then renamed. The plan
+  is pure (`Camera/LessonVideo.cs`): `VideoSourceFacts` (size, the H.264 sequence header, length) per piece, an older
+  `<base>.mp4` first when the first piece starts after 0 (a continued lesson), `LessonVideoPlan.Make` slicing each source
+  up to the next one's start and the last to the sound's end; any two sources whose sequence headers or sizes differ make
+  the whole picture encoded again (`EncodeAgain`, `WhyEncodeAgain`, at the newest piece's size), else the picture is passed
+  through as it is; `FramesToCheck` is the first frame, the frames either side of every join (`BeforeAJoin` 33 ms) and the
+  last, and `LessonVideoCheck` allows `Tolerance` (100 ms) on the length. The media work is behind `ILessonVideoMedia`
+  (`Describe`, `Write`, `Check`); `MediaFoundationLessonVideo` (`Camera/Windows`) is the real one: a plain MP4
+  (MFTranscodeContainerType_MPEG4, the moov after the mdat, since Windows passes over MOOV_BEFORE_MDAT), passthrough with
+  the input type as the output type and only IDR pictures kept as clean points (`H264Pictures.HoldsIdr`; the software
+  encoder marks I pictures that are not IDR, and a seek to one decodes nothing), or a re-encode through the source
+  reader's video processing to NV12 and the software encoder with `PieceSettings`; the sound is the lesson's mix
+  (`AudioPreparer.OpenMix` as `MixedSound`, the microphone left out when silent, as at upload) at 48 kHz as AAC-LC mono
+  128 kbit/s, interleaved by time; the check seeks to each frame to check and decodes it, and reads the length. In the
+  camera process, `CameraFinishJob` refuses a recording without its `.wav` here or with a `.mp4.partial` being written,
+  deletes a stale partial with a line, leaves an unreadable piece out with a warning, logs the plan, sends `progress`
+  at each new percent or every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking), and on a pass renames
+  the partial and deals with the pieces: kept when the job's `KeepPieces` says the video goes to Drive (a line), else
+  deleted with a line; a failure deletes the partial and keeps the pieces, with the free `finish-video` command; a cancel
+  is 130. In the window or recorder, `LessonVideoMaker` (transient, `CameraServices`) starts the camera process with a
+  finish job and gives a `LessonVideoResult` (`Made`, `Failed`, `Cancelled`; ended after `ProgressLimit` 2 min without a
+  line, `CancelWait` 15 s, `SendLimit` 5 s, `DisposeWait` 5 s) and says the end (`MadeLine`: watch it before publishing).
+  `RecordCommand` sets the run file to `Transcribing` at a camera run's stop (the state now covers the video's making),
+  starts the video beside the transcription (`StartTheLessonVideo`; no pieces is a warning) with
+  `LessonVideoDrive.KeepsPieces`, and waits for it on every end; the first lesson's start line says how to turn on
+  `Drive:LessonVideos` (`LessonVideoDrive.StartLine`). `finish-video <path> [--no-open]` (`FinishVideoCommand`,
+  `ICommandRunner.FinishVideoAsync`) makes it again, free, decided from the files alone (`ClassFolders.LessonVideoStateOf`:
+  `None`, `Made`, `NotMade` when a piece is newer than the video or there is none), refusing a lesson being recorded or
+  made, one without pieces, and one whose sound is on Drive only (`SoundOnDriveOnly`), with keep-awake
+  (`StayAwake.LessonVideoReason`), then Drive's upload of that recording. The start-up report offers V after an outcome
+  whose video was not made (`LessonRuns`, `StartupAction.MakeVideo`, T only when the recording can be transcribed); menu
+  choice 3 notes `lesson video` or `lesson video not made yet` (as `list` does) and takes V before a number. Drive:
+  `Drive:LessonVideos` (false) sends `<base>.mp4` last, streamed as `video/mp4` with a line of its size and time, never
+  the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`); the pass also waits while a class is
+  transcribed (N13); `LocalAudioFreer.FreePiecesAsync` deletes the pieces once the video is verified on Drive. There is no
+  `folders.lock` or `MoveJournal` on develop, so `finish-video` and V check neither. Fakes: `FakeLessonVideoMedia`
+  (`TestDoubles.LessonVideo.cs`: `Holds`, `Unreadable`, `HoldWrite`, `WriteFailure`, `CheckAnswer`, `Written`, `Checks`,
+  the sound's samples). Tests: `LessonVideoPlanTests`, `LessonVideoFilesTests`, `CameraFinishJobTests` (the real host over
+  the fake media on the manual clock), `LessonVideoMakerTests`, `LessonVideoMediaTests` (WindowsMedia: pieces from the
+  real piece writer, a size change encoded again, a continued lesson, IDR-only sync samples, the check's failures),
+  `LessonVideoDriveTests`, `RecordCommandTests.LessonVideo.cs`, `FinishVideoCommandTests`, `FinishVideoCommandLineTests`,
+  `StartupReportTests.LessonVideo.cs`, and the lesson's EndToEnd run.
 - The webcam hold (`Camera/WebcamHold.cs`; camera-first 3.4 as amended on 21 October, behind
   `Recording:WakeCameraMicrophone`, off by default): `TrackSetFactory` gives each microphone track a `WebcamHold` from
   `WebcamHolds` (registered in `CameraServices`; optional, so a factory without it has no webcam). At each pick
@@ -1791,6 +1842,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   camera, never a built-in camera and never by the computer's own container `Cameras.ThisComputer`; `WebcamOf`, never a
   virtual camera either, for the hold and the zeros rules), `CameraRoute.cs` (the shared open and its call log),
   `CameraThread.cs`, `CameraJobs.cs` (the hold and check jobs, `CameraProblems`), `CameraRecordJob.cs` (the record job),
+  `CameraFinishJob.cs` (the finish job: the lesson's video), `LessonVideo.cs` (`VideoSourceFacts`, `LessonVideoPlan`,
+  `LessonVideoCheck`, `ILessonVideoMedia`), `LessonVideoMaker.cs` (the starter's side of the finish job),
   `CameraPieces.cs` (`PieceSettings`, `IPieceWriter`, `IPieceWriterFactory`, `ICameraFrame`, `CameraPicture`,
   `FramePlacer`, `FrameQueue`), `CameraRecorder.cs` (`ICameraRecorder`, `CameraRecorder`, `ICameraTrack`,
   `CameraTrackStart`, `CameraTrackState`, `CameraConcern`, `CameraOffsets`, `CameraRecorderNotBuilt`), `CameraTrack.cs`
@@ -1798,6 +1851,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `WebcamHolds`, `WebcamState`), `Windows/WindowsCameraCapture.cs` (the real MediaCapture),
   `Windows/WindowsCameraFrame.cs` (a frame's pixels copied out, `MemoryBufferBytes`), `Windows/MediaFoundationPieceWriter.cs`
   (the piece writer and its factory, `VideoGuids`, `FileStreamAsIStream`),
+  `Windows/MediaFoundationLessonVideo.cs` (the lesson video's media work, `H264Pictures`, `LessonVideoGuids`),
   `Windows/WindowsCameraProvider.cs` (WinRT's `DeviceInformation.FindAllAsync` with `System.Devices.ContainerId` and
   `MediaFrameSourceGroup.FindAllAsync`, which open nothing; Windows older than 10.0.19041 and a list Windows will not give,
   whatever exception WinRT maps its HRESULT to, answer with a `CameraList` that says why, and only the caller's own cancel
@@ -1845,7 +1899,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ResumableUpload`), `UploadManifest.cs` (`UploadState`, `UploadSession`, `ManifestFile`,
   `UploadManifest`, `UploadJson`, `UploadManifests`), `DriveUploadLock`, `RecordingUpload`
   (`RecordingOutcome`, `RecordingUploadResult`), `DriveUploadPass` (`PassResult`),
-  `LocalAudioFreer` (`FreedAudio`), `DriveCopies` (the `IAudioOnDrive` of `Storage`),
+  `LocalAudioFreer` (`FreedAudio`), `LessonVideoDrive` (whether a lesson's video goes to Drive, the start line),
+  `DriveCopies` (the `IAudioOnDrive` of `Storage`),
   `DriveAutoUpload.cs` (`IDriveAutoUpload`, `DriveAutoUpload`: the queue at a run's start and the
   upload after it, and after a transcript made later), `DriveQueueReport.cs` (`DriveWaiting`,
   `DriveQueueReport`: the menu's header line and the report's), `DriveRoom.cs` (`IDriveRoom`,
@@ -1891,7 +1946,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   keep-awake and the end handlers, with `RunContext`, `RunContextSlot` and `ICrashWarnings`,
   `WindowResultShower`), the starter (`RecordStarter`, `RecorderLauncher`, `ContinueQuestion`), the
   view of a background run (`RecorderView`, `AttachCommand`), the report at the start
-  (`StartupReport`), `transcribe`, `rebuild`, `list` and `devices` (output devices, apps with sound,
+  (`StartupReport`, with `LessonRuns` for a lesson's video), `transcribe`, `rebuild`, `finish-video`
+  (`FinishVideoCommand`), `list` and `devices` (output devices, apps with sound,
   then the microphones with which apps hold them, from `Lazy<IMicrophoneProvider>` and
   `Lazy<IMicrophoneSessions>`), `MicrophoneMenu.cs` (menu choice 7: W, I or N, the microphone, the
   follow question), `MicCheckCommand.cs` (the microphone check's loop), `YouTubeCommand.cs`

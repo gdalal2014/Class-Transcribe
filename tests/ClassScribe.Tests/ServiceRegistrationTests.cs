@@ -280,6 +280,23 @@ public class ServiceRegistrationTests
         Assert.That(Directory.Exists(Path.Combine(_runtime.Folder.Root, "drive")), Is.False, "nothing is made by resolving them");
     }
 
+    /// <summary>
+    /// A lesson's video (slice 8): finish-video resolves in a run's scope, with the maker and what Drive makes of a lesson's
+    /// video, one per run; resolving them starts no camera process and opens nothing.
+    /// </summary>
+    [Test]
+    public void The_lesson_video_s_parts_resolve_in_a_run()
+    {
+        using var app = BuildApp([]);
+        using var scope = app.Services.CreateScope();
+        var run = scope.ServiceProvider;
+
+        Assert.That(run.GetRequiredService<FinishVideoCommand>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<Camera.LessonVideoMaker>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<LessonVideoDrive>(), Is.SameAs(run.GetRequiredService<LessonVideoDrive>()), "one per run");
+        Assert.That(run.GetRequiredService<LessonVideoDrive>().KeepsPieces, Is.False, "Drive not set up, and lesson videos off by default");
+    }
+
     /// <summary>Without settings for it, the Drive section has its defaults: the ClassScribe folder, and Google's own addresses.</summary>
     [Test]
     public void The_Drive_section_has_its_defaults()
