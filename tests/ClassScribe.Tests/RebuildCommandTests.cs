@@ -190,6 +190,33 @@ public class RebuildCommandTests
     }
 
     /// <summary>
+    /// A start that recorded nothing leaves only its log and its glossary record, which name a recording but are no sign of
+    /// one in a folder: the folder is rebuilt from its older recording without a word about the newer, and a folder that holds
+    /// nothing else has no recording to rebuild.
+    /// </summary>
+    [Test]
+    public async Task A_start_that_left_only_its_log_and_glossary_record_is_no_recording_in_a_folder()
+    {
+        var answered = WriteRecording(new DateTimeOffset(2026, 10, 7, 19, 30, 0, TimeSpan.Zero));
+        SaveAnswer(answered, "Answered.");
+        var nothing = RecordingFiles.ForNew(_class, "Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        File.WriteAllText(nothing.Log, "Recording \"Kalam\"");
+        File.WriteAllText(nothing.Glossary, "{\"version\":1}");
+        var alone = _folder.File("Fiqh");
+        var trace = RecordingFiles.ForNew(alone, "Fiqh", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        Directory.CreateDirectory(alone);
+        File.WriteAllText(trace.Log, "Recording \"Fiqh\"");
+        File.WriteAllText(trace.Glossary, "{\"version\":1}");
+
+        Assert.That(await CreateCommand().RunAsync(_class, open: false), Is.EqualTo(0));
+        Assert.That(await CreateCommand().RunAsync(alone, open: false), Is.EqualTo(1));
+
+        Assert.That(File.ReadAllText(answered.Transcript(2)), Does.Contain("Answered."));
+        Assert.That(_log.Messages.Where(message => message.Contains(nothing.BaseName, StringComparison.Ordinal)), Is.Empty, "the newer start is not named");
+        Assert.That(_log.Problems, Is.EqualTo(new[] { $"There is no ClassScribe recording in {alone}" }));
+    }
+
+    /// <summary>
     /// A recording started later that has no saved answer yet, such as one recorded but not transcribed, is passed over
     /// for the newest that has one, and the log says so, so that the one rebuilt is not taken for it.
     /// </summary>

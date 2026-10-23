@@ -177,6 +177,27 @@ public partial class RecordStarterTests
             Is.EqualTo(new[] { new GlossaryPick("setting.txt", Path.Combine(_settingsFolder.Path, "setting.txt"), "ElevenLabs:KeytermsFile"), handedOn }));
     }
 
+    /// <summary>
+    /// Step 3 comes before step 4: a run started as one of two classes of a course that name different glossaries takes the
+    /// glossary of the class it was started as, not ElevenLabs:KeytermsFile's, which the course alone would give.
+    /// </summary>
+    [Test]
+    public async Task A_run_started_as_one_of_two_classes_of_a_course_takes_that_classs_glossary()
+    {
+        _glossary = TestGlossaries.Choice(TestOptions.Create(new ElevenLabsOptions { KeytermsFile = "setting.txt" }), new SettingsPlaces(_settingsFolder.Path, userFolder: null),
+            classes: TestGlossaries.Classes(new Dictionary<string, string?>
+            {
+                ["Classes:Mantiq (Chrome):Course"] = "Mantiq", ["Classes:Mantiq (Chrome):App"] = "chrome", ["Classes:Mantiq (Chrome):KeytermsFile"] = "chrome.txt",
+                ["Classes:Mantiq (Zoom app):Course"] = "Mantiq", ["Classes:Mantiq (Zoom app):App"] = "zoom", ["Classes:Mantiq (Zoom app):KeytermsFile"] = "zoom.txt"
+            }));
+        _viewer.Then(Ends(_recorder, Transcribed));
+
+        await RunAsync(Request("Mantiq") with { ClassName = "Mantiq (Zoom app)" });
+
+        Assert.That(_recorder.Runs.Single().Request!.Glossary,
+            Is.EqualTo(new GlossaryPick("zoom.txt", Path.Combine(_settingsFolder.Path, "zoom.txt"), "the saved class \"Mantiq (Zoom app)\"", "Mantiq (Zoom app)")));
+    }
+
     /// <summary>A request to record "Kalam" into the recordings folder and transcribe it, with neither --continue nor --new.</summary>
     private RecordRequest Request(string name = "Kalam") =>
         TestRuns.Request(RunId, name) with { OutputRoot = _recordings.Path, Continue = ContinueChoice.Ask };

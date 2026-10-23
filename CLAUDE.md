@@ -2113,7 +2113,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `RecordingFilesTests`, `SavedClassesTests`, `ClassCommandTests`, `ClassCommandLineTests`,
   `ClassesMenuTests`, `CommandLineTreeTests`, `RequestsTests`, `RecordStarterTests`,
   `RecordCommandTests`, `RecorderHostTests`, `TranscriptionWorkflowTests`, `DefaultChangesTests`,
-  `MenuSettingsTests`, `DownloadBatchTests`, `DryRunScriptTests` and `DryRunWholeTests`;
+  `MenuSettingsTests`, `DownloadBatchTests`, `VideoBatchTests` and `YouTubeMenuTests` (the plans' prices
+  with a course's glossary), `TranscribeCommandTests` (`--keyterms` reaching the upload),
+  `RebuildCommandTests`, `DryRunScriptTests` and `DryRunWholeTests`;
   `TestGlossaries.Choice` builds the resolver for tests that build the workflow by hand (over
   `FailingGlossaryFiles` for an error nobody expects), and `TestGlossaries.Classes` the saved classes. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
   guard. The test project sees ClassScribe's internals (`InternalsVisibleTo` in `CoreAudioInterop.cs`).
