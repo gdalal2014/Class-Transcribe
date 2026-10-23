@@ -85,6 +85,7 @@ public class SettingsCheckTests
     [TestCase("Recording:ClassAppMute", "Maybe", "Visible, Invisible or Unknown")]
     [TestCase("Transcript:ShowGapsLongerThanSeconds", "1 minute", "a whole number")]
     [TestCase("Drive:Enabled", "after the class", "true or false")]
+    [TestCase("Drive:LessonVideos", "on", "true or false")]
     public void A_value_that_cannot_be_read_is_reported_by_its_setting(string setting, string value, string expected)
     {
         var problems = Problems(new() { [setting] = value });

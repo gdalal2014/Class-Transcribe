@@ -21,7 +21,9 @@ public sealed record FreedAudio(RecordingFiles Files, IReadOnlyList<string> Dele
 /// part of its audio by mistake; one that fails is named with why, and nothing of that recording is deleted. Never its
 /// transcripts, ElevenLabs' answers, its marks or its log, nor any other file in its folder, and never a recording being
 /// recorded or transcribed. Nothing on Drive is touched: the copies there stay as they are. The manifest notes what was freed,
-/// so the recording counts as done and safe on Drive, never as waiting. One per run.
+/// so the recording counts as done and safe on Drive, never as waiting. A lesson's camera pieces go too once its finished
+/// video's copy on Drive is checked the same way (amendment 47: they are kept for Drive only while the video goes there),
+/// never the finished video itself. One per run.
 /// </summary>
 public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, TimeProvider time, ILogger<LocalAudioFreer> logger)
 {
@@ -30,15 +32,23 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
 
     /// <summary>
     /// Deletes the audio of <paramref name="files"/> from this laptop once every file of it is checked against its copy on
-    /// Drive, and says what it freed, or why it freed nothing. A failure to reach Drive is thrown, with nothing deleted.
+    /// Drive, then a lesson's camera pieces once its video's copy is (see <see cref="FreePiecesAsync"/>), and says what it
+    /// freed, or why it freed nothing. A failure to reach Drive is thrown, with nothing more deleted.
     /// </summary>
     public async Task<FreedAudio> FreeAsync(RecordingFiles files, CancellationToken cancellationToken)
     {
         if (uploads.Busy(files) is { } busy) return Refuse(files, $"{files.BaseName} {busy}, so none of its audio was deleted.");
         if (UploadCopyInUse(files)) return Refuse(files, $"{files.BaseName} is being transcribed now, so none of its audio was deleted.");
 
-        var audio = files.FindSegments().Concat(files.FindSegments(Track.Microphone)).ToList();
         var manifest = manifests.Read(files);
+        var freed = await FreeAudioAsync(files, manifest, cancellationToken);
+        return manifest is null ? freed : await FreePiecesAsync(files, freed, cancellationToken);
+    }
+
+    /// <summary>The audio's part of <see cref="FreeAsync"/>: its .wav files deleted once each is checked against its copy on Drive.</summary>
+    private async Task<FreedAudio> FreeAudioAsync(RecordingFiles files, UploadManifest? manifest, CancellationToken cancellationToken)
+    {
+        var audio = files.FindSegments().Concat(files.FindSegments(Track.Microphone)).ToList();
         if (audio.Count == 0)
         {
             logger.LogInformation("{Recording} has no audio on this laptop to delete{Where}", files.BaseName,
@@ -110,6 +120,64 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         }
 
         return new FreedAudio(files, deleted, bytes, failure);
+    }
+
+    /// <summary>
+    /// A lesson's camera pieces after its audio: deleted once its finished video, <see cref="RecordingFiles.LessonVideo"/>,
+    /// is on Drive, checked when it went up and checked again now as each .wav is (its MD5 worked out afresh, Drive's copy
+    /// outside the trash with the same size and MD5); otherwise they stay, the only other copy of the picture, which is said
+    /// when the video's copy fails the check. Never the finished video. What it deletes is added to <paramref name="freed"/>.
+    /// </summary>
+    private async Task<FreedAudio> FreePiecesAsync(RecordingFiles files, FreedAudio freed, CancellationToken cancellationToken)
+    {
+        var pieces = files.FindCameraPieces().Select(piece => piece.Path).ToList();
+        if (pieces.Count == 0) return freed;
+
+        var video = Path.GetFileName(files.LessonVideo);
+        var manifest = manifests.Read(files);
+        if (manifest?.File(video) is not { IsVerified: true } entry || !File.Exists(files.LessonVideo))
+        {
+            logger.LogDebug("The camera's pieces of {Recording} stay on this laptop: its lesson video is not on Google Drive", files.BaseName);
+            return freed;
+        }
+
+        if (await CheckAsync(files.LessonVideo, video, entry, cancellationToken) is { } problem)
+        {
+            var kept = $"The camera's pieces of {files.BaseName} stay: {problem}";
+            logger.LogWarning("{Problem}", kept);
+            return freed with { Problem = freed.Problem ?? kept };
+        }
+
+        List<string> deleted = [];
+        long bytes = 0;
+        string? failure = null;
+        foreach (var piece in pieces)
+        {
+            var size = new FileInfo(piece).Length;
+            try
+            {
+                File.Delete(piece);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Deliberately not rethrown: a piece that cannot be deleted now stays, beside the video Drive has; the others go,
+                // and this says which stayed and why.
+                failure ??= $"{Path.GetFileName(piece)} could not be deleted ({ex.Message.TrimEnd('.')}); it stays on this laptop";
+                logger.LogWarning("{Problem}", failure);
+                continue;
+            }
+
+            deleted.Add(Path.GetFileName(piece));
+            bytes += size;
+        }
+
+        if (deleted.Count > 0)
+        {
+            logger.LogInformation("Freed the camera's {Count} of {Recording} ({Size}): its lesson video is on Google Drive, checked, in {Location}; the video stays here too",
+                deleted.Count == 1 ? "1 piece" : $"{deleted.Count} pieces", files.BaseName, DriveCommand.Size(bytes), manifest.DriveLocation);
+        }
+
+        return freed with { Deleted = [.. freed.Deleted, .. deleted], Bytes = freed.Bytes + bytes, Problem = freed.Problem ?? failure };
     }
 
     /// <summary>

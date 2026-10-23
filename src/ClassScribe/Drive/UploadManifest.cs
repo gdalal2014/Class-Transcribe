@@ -331,18 +331,20 @@ public sealed class UploadManifests(RuntimeFolder runtime, TimeProvider time, IL
     }
 
     /// <summary>
-    /// How many files of <paramref name="files"/> are on this laptop and how large they are together, the upload copy and the
-    /// camera's pieces left out, as a waiting recording is described: neither ever goes to Drive. None when its folder is
-    /// not there.
+    /// How many files of <paramref name="files"/> are on this laptop and how large they are together, the upload copy, the
+    /// camera's pieces and a lesson video's .partial left out, as a waiting recording is described: none of them ever goes
+    /// to Drive; and the lesson's finished video too unless <paramref name="withLessonVideo"/>, as Drive:LessonVideos says.
+    /// None when its folder is not there.
     /// </summary>
-    public static (int Count, long Bytes) OnDisk(RecordingFiles files)
+    public static (int Count, long Bytes) OnDisk(RecordingFiles files, bool withLessonVideo = false)
     {
         if (!Directory.Exists(files.Folder)) return (0, 0);
 
         var sizes = Directory.EnumerateFiles(files.Folder, $"{files.BaseName}*")
             .Where(path => string.Equals(RecordingFiles.TryParse(path)?.BaseName, files.BaseName, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(Path.GetFileName(path), Path.GetFileName(files.Upload), StringComparison.OrdinalIgnoreCase)
-                && !RecordingFiles.IsCameraPiece(path))
+                && !RecordingFiles.IsCameraPiece(path) && !RecordingFiles.IsUnfinishedLessonVideo(path)
+                && (withLessonVideo || !RecordingFiles.IsLessonVideo(path)))
             .Select(path => new FileInfo(path).Length)
             .ToList();
         return (sizes.Count, sizes.Sum());

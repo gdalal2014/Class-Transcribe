@@ -51,7 +51,8 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 /// <see cref="ClassFolders.DriveLevelsOf"/>): every file <see cref="RecordingFiles.TryParse"/> takes for one of its own, but
 /// the temporary upload copy, and with Drive:Upload WithoutAudio not its .wav files; files in the folder that are not the
 /// recording's, such as the class's PDFs, are never touched. In this order: the transcripts, ElevenLabs' answers, the
-/// marks, the class's audio, the microphone's, and the log last. Each file's MD5 is worked out once and kept in the manifest
+/// marks, the class's audio, the microphone's, the log, and last a lesson's finished video, only with Drive:LessonVideos on
+/// (see <see cref="SendsLessonVideo"/>), streamed as the audio is; never the camera's pieces. Each file's MD5 is worked out once and kept in the manifest
 /// (<see cref="UploadManifests"/>) with its size and the time it was last written, and after its last piece the copy on
 /// Drive is checked against Drive's own size and MD5; one that differs is sent again once, as a new revision. A file already
 /// checked goes up no more; a text file that has grown since (a log, the marks, an answer laid out anew) goes up as a new
@@ -221,10 +222,14 @@ public sealed partial class RecordingUpload(
     {
         var live = runs.FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && ListCommand.IsRunOf(run.Record, files));
         if (live is { IsTranscribingNow: true }) return "is being transcribed now";
+        if (live is null && ClassFolders.IsLessonVideoBeingMade(files)) return LessonVideoBeingMade;
         if (live is not null || ClassFolders.IsBeingWritten(files)) return "is being recorded now";
 
         return null;
     }
+
+    /// <summary>Why a lesson waits while a camera process makes its video, as finish-video does from a window with no run file.</summary>
+    public const string LessonVideoBeingMade = "is having its lesson video made now";
 
     /// <summary>
     /// True when the audio of <paramref name="files"/> goes up: for a class's recording as Drive:Upload says, for a YouTube
@@ -236,44 +241,74 @@ public sealed partial class RecordingUpload(
     /// <summary>
     /// The files of <paramref name="files"/> that go up, in the order they go: every file of the recording but the upload
     /// copy and the camera's pieces, a video's source file included, and none of its .wav files when its audio does not go
-    /// up (see <see cref="SendsAudio"/>). The camera's pieces never go to Drive themselves (camera-first step 12): each is a
-    /// video file of up to gigabytes, read whole by an upload, and only the lesson's finished video may go. Files in its
-    /// folder that are not its own are left out.
+    /// up (see <see cref="SendsAudio"/>). The camera's pieces never go to Drive themselves (camera-first step 12), nor a
+    /// lesson video's .partial; the lesson's finished video goes, last, only with Drive:LessonVideos on and its audio going
+    /// up, since it holds the same sound (see <see cref="SendsLessonVideo"/>). Files in its folder that are not its own are
+    /// left out.
     /// </summary>
     public IReadOnlyList<string> FilesToUpload(RecordingFiles files)
     {
         if (!Directory.Exists(files.Folder)) return [];
 
         var withoutAudio = !SendsAudio(files);
+        var withVideo = SendsLessonVideo(files);
         return
         [
             .. Directory.EnumerateFiles(files.Folder, $"{files.BaseName}*")
                 .Where(path => string.Equals(RecordingFiles.TryParse(path)?.BaseName, files.BaseName, StringComparison.OrdinalIgnoreCase))
                 .Where(path => !string.Equals(Path.GetFileName(path), Path.GetFileName(files.Upload), StringComparison.OrdinalIgnoreCase))
-                .Where(path => !RecordingFiles.IsCameraPiece(path))
+                .Where(path => !RecordingFiles.IsCameraPiece(path) && !RecordingFiles.IsUnfinishedLessonVideo(path))
+                .Where(path => withVideo || !RecordingFiles.IsLessonVideo(path))
                 .Where(path => !withoutAudio || !IsAudio(path))
                 .OrderBy(path => OrderOf(Path.GetFileName(path), files.BaseName))
                 .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
         ];
     }
 
+    /// <summary>
+    /// True when a lesson's finished video goes up with <paramref name="files"/>: Drive:LessonVideos is on (off by default,
+    /// Gulzar's answer N19 C) and the recording's audio goes up, as the video holds the same sound.
+    /// </summary>
+    public bool SendsLessonVideo(RecordingFiles files) => options.Value.LessonVideos && SendsAudio(files);
+
     /// <summary>True for a file of audio: a segment of either track.</summary>
     public static bool IsAudio(string path) => path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True for a file of media, which goes up streamed from the file as it is, never read into memory, and never as a
+    /// revision: a segment of either track, or a lesson's finished video, of up to gigabytes.
+    /// </summary>
+    public static bool IsMedia(string path) => IsAudio(path) || path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The type Drive is told a file has, by its name; never a Google Docs type, so Drive keeps the bytes as they are.</summary>
     public static string ContentTypeOf(string name) =>
         Path.GetExtension(name).ToLowerInvariant() switch
         {
             ".wav" => "audio/wav",
+            ".mp4" => "video/mp4",
             ".md" => "text/markdown",
             ".json" => "application/json",
             _ => "text/plain"
         };
 
     /// <summary>
+    /// The line said as a lesson's video of <paramref name="bytes"/> begins to go up: its size, and, once this upload has a
+    /// speed from the recording's earlier files (<paramref name="bytesPerSecond"/>), about how long it takes at that speed,
+    /// in whole minutes and at least one.
+    /// </summary>
+    public static string SendingTheVideo(long bytes, double? bytesPerSecond)
+    {
+        var line = $"Sending the lesson's video ({DriveCommand.Size(bytes)}) to Google Drive";
+        if (bytesPerSecond is not > 0) return $"{line}.";
+
+        var minutes = Math.Max(1, (int)Math.Round(bytes / bytesPerSecond.Value / 60, MidpointRounding.AwayFromZero));
+        return string.Create(CultureInfo.InvariantCulture, $"{line}; at this connection's speed so far, about {minutes} minute{(minutes == 1 ? "" : "s")}.");
+    }
+
+    /// <summary>
     /// Where a file of the recording <paramref name="baseName"/> named <paramref name="name"/> comes in the order of the
-    /// upload: first the transcripts, then the answers, the marks, the class's audio, the microphone's, and the log last;
-    /// within each, the copies and parts in their order.
+    /// upload: first the transcripts, then the answers, the marks, the class's audio, the microphone's, the log, and a
+    /// lesson's video last, so that the small, useful files are there first; within each, the copies and parts in their order.
     /// </summary>
     private static (int Group, int Number) OrderOf(string name, string baseName)
     {
@@ -286,6 +321,7 @@ public sealed partial class RecordingUpload(
             ".marks.txt" => 2,
             var r when r.EndsWith(".mic.wav", StringComparison.Ordinal) => 4,
             var r when r.EndsWith(".wav", StringComparison.Ordinal) => 3,
+            ".mp4" => 6,
             _ => 5
         };
         return (group, number);
@@ -329,6 +365,15 @@ public sealed partial class RecordingUpload(
         private readonly int _queuedAtStart = started.TimesQueued;
         private readonly List<ManifestFile> _entries = [];
         private IReadOnlyList<DriveFile>? _children;
+
+        /// <summary>The bytes this upload has sent so far, for the speed a lesson's video is said to go up at.</summary>
+        private long _sentBytes;
+
+        /// <summary>How long this upload has spent sending them, on the steady clock.</summary>
+        private TimeSpan _sendingTime;
+
+        /// <summary>The bytes a second this upload has reached on the recording's files so far; null before any time was spent sending.</summary>
+        private double? SpeedSoFar() => _sendingTime > TimeSpan.Zero && _sentBytes > 0 ? _sentBytes / _sendingTime.TotalSeconds : null;
 
         /// <summary>True when the recording was put in the queue again since this upload began, as by another ClassScribe.</summary>
         private bool QueuedAgain => _manifest.TimesQueued > _queuedAtStart;
@@ -375,6 +420,8 @@ public sealed partial class RecordingUpload(
                     owner.FlushTheLog();
                     said = true;
                 }
+
+                if (RecordingFiles.IsLessonVideo(path)) owner.Logger.LogInformation("{Line}", SendingTheVideo(new FileInfo(path).Length, SpeedSoFar()));
 
                 try
                 {
@@ -465,20 +512,24 @@ public sealed partial class RecordingUpload(
         {
             var name = Path.GetFileName(path);
             var audio = IsAudio(path);
+            var media = IsMedia(path);
             var entry = Entry(name);
             var lastWrite = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
-            await using var content = await OpenAsync(path, name, audio, cancellationToken);
+            await using var content = await OpenAsync(path, name, media, cancellationToken);
             var size = content.Length;
             var md5 = entry.Md5 is { } known && entry.Size == size && entry.LastWriteUtc == lastWrite ? known : await Md5Async(content, cancellationToken);
             var seconds = audio ? entry.Seconds is { } measured && entry.Size == size ? measured : ClassFolders.MeasureSegment(path).TotalSeconds : (double?)null;
             entry = Put(entry with { Size = size, LastWriteUtc = lastWrite, Md5 = md5, Seconds = seconds, FreedUtc = null });
 
-            if (await TargetOfAsync(entry, name, audio, location, cancellationToken) is not { } target)
+            if (await TargetOfAsync(entry, name, media, location, cancellationToken) is not { } target)
                 return Entry(name).InSync ? FileOutcome.AlreadyThere : FileOutcome.LeftOut;
 
             var source = new UploadSource(content, size, md5, ContentTypeOf(name));
             var watch = new FileWatch(this, name, size, beforePiece, owner.Time, owner.Logger);
+            var sending = owner.Time.GetTimestamp();
             var made = await owner.Upload.SendAsync(source, target, entry.Session, watch, cancellationToken);
+            _sentBytes += size;
+            _sendingTime += owner.Time.GetElapsedTime(sending);
             var copy = await CheckAsync(made, name, cancellationToken);
             if (!Matches(copy, size, md5))
             {
@@ -505,13 +556,14 @@ public sealed partial class RecordingUpload(
         /// the copy in the trash left as it is. ClassScribe's own copy whose check failed last time is asked about again:
         /// adopted when it matches now, otherwise sent again as a new revision of itself, as it was never a good copy. Without
         /// either, the folder on Drive is looked through for a copy of the same name, which is adopted when it is the same.
+        /// Media (<paramref name="media"/>: audio, or a lesson's video) is never sent as a revision.
         /// </summary>
-        private async Task<UploadTarget?> TargetOfAsync(ManifestFile entry, string name, bool audio, DriveFolderPath location, CancellationToken cancellationToken)
+        private async Task<UploadTarget?> TargetOfAsync(ManifestFile entry, string name, bool media, DriveFolderPath location, CancellationToken cancellationToken)
         {
             if (entry.IsVerified)
             {
                 if (entry.InSync) return null;
-                if (audio || entry.Size <= entry.DriveSize)
+                if (media || entry.Size <= entry.DriveSize)
                 {
                     owner.Logger.LogWarning("{Name} on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown goes up again, as a new revision. The copy on Drive stays as it is", name);
                     return null;
@@ -541,7 +593,7 @@ public sealed partial class RecordingUpload(
             }
 
             if (named.FirstOrDefault() is not { } other) return new UploadTarget(name, location.Folder.Id, null);
-            if (!audio && entry.Size > (other.Size ?? long.MaxValue)) return new UploadTarget(name, null, other.Id);
+            if (!media && entry.Size > (other.Size ?? long.MaxValue)) return new UploadTarget(name, null, other.Id);
 
             owner.Logger.LogWarning("A different {Name} is already in {Location} on Google Drive; ClassScribe never replaces it, so this one did not go up", name, location.Location);
             return null;
@@ -558,15 +610,16 @@ public sealed partial class RecordingUpload(
             copy is { Trashed: not true } && copy.Size == size && string.Equals(copy.Md5Checksum, md5, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
-        /// The bytes of the file to send: audio opened as it is, so that no recorder can write to it meanwhile, and a text
-        /// file read whole into memory at once, which never holds up the writer of a log or of the marks. Another program
-        /// holding the file open for writing, as a recorder does, keeps it from being read now.
+        /// The bytes of the file to send: media (audio, or a lesson's video of up to gigabytes) opened as it is and streamed
+        /// from the file, so that no recorder can write to it meanwhile and nothing of it is held in memory, and a text file
+        /// read whole into memory at once, which never holds up the writer of a log or of the marks. Another program holding
+        /// the file open for writing, as a recorder does, keeps it from being read now.
         /// </summary>
-        private static async Task<Stream> OpenAsync(string path, string name, bool audio, CancellationToken cancellationToken)
+        private static async Task<Stream> OpenAsync(string path, string name, bool media, CancellationToken cancellationToken)
         {
             try
             {
-                if (audio) return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, bufferSize: 1, FileOptions.Asynchronous);
+                if (media) return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, bufferSize: 1, FileOptions.Asynchronous);
 
                 await using var text = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1, FileOptions.Asynchronous);
                 var snapshot = new MemoryStream();

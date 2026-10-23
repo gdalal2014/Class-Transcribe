@@ -346,11 +346,15 @@ public class DriveUploadPassTests
         Assert.That(_world.Manifests().Waiting(), Is.Empty);
     }
 
-    /// <summary>A recording still being transcribed when the pass is through waits for the next pass; the pass ends all the same.</summary>
+    /// <summary>
+    /// A recording still being written when the pass is through, as by a recorder without a run file, waits for the next
+    /// pass; the pass ends all the same. (A recording a live run transcribes holds the whole pass up instead, Gulzar's answer
+    /// N13: see <see cref="LessonVideoDriveTests.The_pass_waits_while_a_class_is_transcribed"/>.)
+    /// </summary>
     [Test]
     public async Task A_recording_still_busy_waits_and_the_pass_ends()
     {
-        TranscribingNow(_mantiq);
+        using var written = new FileStream(_mantiq.Segment(1), FileMode.Open, FileAccess.Write, FileShare.Read);
 
         var result = await RunAsync([_mantiq, _kalam]);
 

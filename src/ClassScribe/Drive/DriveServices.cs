@@ -70,6 +70,9 @@ public static class DriveServices
         services.AddTransient(provider => new Lazy<DriveUploadPass>(provider.GetRequiredService<DriveUploadPass>));
         services.AddScoped<IDriveAutoUpload, DriveAutoUpload>();
 
+        // What becomes of a lesson's video and its camera pieces with Drive, as the run's settings have it.
+        services.AddScoped<LessonVideoDrive>();
+
         // Drive's room, for a YouTube batch's plan when the videos' audio goes up: the client is made only when Drive is asked.
         services.AddTransient(provider => new Lazy<DriveClient>(provider.GetRequiredService<DriveClient>));
         services.AddTransient<IDriveRoom, DriveRoom>();

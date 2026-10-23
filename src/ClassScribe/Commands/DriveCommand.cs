@@ -117,7 +117,7 @@ public sealed class DriveCommand(GoogleSignIn signIn, IGoogleCredentialStore sto
 
         foreach (var manifest in waiting)
         {
-            var (count, bytes) = UploadManifests.OnDisk(manifest.Recording);
+            var (count, bytes) = UploadManifests.OnDisk(manifest.Recording, options.Value.LessonVideos);
             var tried = manifest.LastTriedUtc is { } last
                 ? $"last try {TimeZoneInfo.ConvertTime(last, time.LocalTimeZone).ToString(TryFormat, CultureInfo.InvariantCulture)}{(manifest.LastError is { } error ? $": {error}" : "")}"
                 : "not tried yet";
