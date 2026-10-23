@@ -73,11 +73,10 @@ public class TranscribeCommandTests
         var workflow = new TranscriptionWorkflow(
             _preparer.Object,
             _client.Object,
-            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
+            TestGlossaries.Choice(elevenLabs),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
-            elevenLabs,
             recording,
             new TranscriptionProgress(),
             usage,

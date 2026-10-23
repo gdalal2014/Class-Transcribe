@@ -334,8 +334,10 @@ public class ServiceRegistrationTests
         using (var scope = app.Services.CreateScope()) Assert.That(scope.ServiceProvider.GetRequiredService<ClassesMenu>(), Is.Not.Null, "menu C, in a run's scope");
         using (var scope = app.Services.CreateScope()) Assert.That(scope.ServiceProvider.GetRequiredService<SettingsMenu>(), Is.Not.Null, "menu S, in a run's scope");
         Assert.That(app.Services.GetRequiredService<SavedClasses>(), Is.SameAs(app.Services.GetRequiredService<SavedClasses>()), "the saved classes, one for the process");
-        Assert.That(app.Services.GetRequiredService<KeytermLoader>().ResolvePath("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
-        Assert.That(recorder.Services.GetRequiredService<KeytermLoader>().ResolvePath("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
+        Assert.That(app.Services.GetRequiredService<IGlossaryFiles>().Resolve("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
+        Assert.That(recorder.Services.GetRequiredService<IGlossaryFiles>().Resolve("keyterms.txt"), Is.EqualTo(_folder.File("keyterms.txt")));
+        using (var scope = app.Services.CreateScope()) Assert.That(scope.ServiceProvider.GetRequiredService<GlossaryChoice>(), Is.Not.Null, "the glossary's resolver, in a run's scope");
+        using (var scope = recorder.Services.CreateScope()) Assert.That(scope.ServiceProvider.GetRequiredService<GlossaryChoice>(), Is.Not.Null, "and in a recorder's");
         Assert.That(new[] { window.UserFolder, background.UserFolder },
             Has.All.Matches<string?>(folder => folder is null || !folder.StartsWith(real, StringComparison.OrdinalIgnoreCase)), "no test container points at the real user folder");
     }

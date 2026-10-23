@@ -35,7 +35,7 @@ public sealed class DownloadBatch(
     IDriveRoom driveRoom,
     IDriveAutoUpload drive,
     IFreeSpace freeSpace,
-    KeytermLoader keyterms,
+    GlossaryChoice glossaries,
     IConsoleUi ui,
     IOptionsSnapshot<YouTubeOptions> youTube,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
@@ -108,7 +108,7 @@ public sealed class DownloadBatch(
             if (video.Info is { } info) video.Verdict = guard.Judge(info, request.AllowUnlisted);
         }
 
-        var glossary = keyterms.Load(keyterms.ResolvePath(elevenLabs.Value.KeytermsFile)).Count;
+        var glossary = glossaries.TermsFor(request.Name);
         var accountLine = request.Transcribe ? await batch.AccountLineAsync(cancellationToken) : null;
         var (audioBytes, stagingBytes) = DownloadPlan.BytesOf([.. videos.Where(video => video.IsReady)]);
         var room = Room(request.OutputRoot, audioBytes, stagingBytes);

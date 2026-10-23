@@ -410,7 +410,8 @@ public class EndToEndTests
             Assert.That((run.State, run.Outcome?.Kind, run.Outcome?.TranscriptPath, run.Seen, run.Home),
                 Is.EqualTo((RunState.Finished, OutcomeKind.Transcribed, transcript, true, RunHome.Separate)));
             Assert.That(run.Request, Is.EqualTo(new RecordRequest(run.RunId, "Kalam", Transcribe: true, new SourcePlan(RecordingMode.Class, new ClassSource.Automatic(), null),
-                _recordings.Path, ContinueChoice.New, ContinueBaseName: null, Minutes: null, Open: true)), "the request the menu made, with the starter's decision not to continue");
+                _recordings.Path, ContinueChoice.New, ContinueBaseName: null, Minutes: null, Open: true, Glossary: new Transcription.GlossaryPick("", "", "ElevenLabs:KeytermsFile"))),
+                "the request the menu made, with the starter's decisions: not to continue, and no glossary, as the settings name none");
             Assert.That(File.Exists(_runtime.Journal.RequestFile(run.RunId)), Is.False, "the recorder took its request");
             Assert.That(_elevenLabs.Requests.Where(request => request.Method == HttpMethod.Post).Select(request => request.ApiKey), Is.EqualTo(new[] { Key }), "one upload, with the dummy key");
             Assert.That(_elevenLabs.Requests.Where(request => request.Method == HttpMethod.Get).Select(request => request.ApiKey), Is.EqualTo(new[] { Key }),
@@ -488,10 +489,10 @@ public class EndToEndTests
         var b = Path.GetFileNameWithoutExtension(Directory.GetFiles(folder, "*.md").Single());
         var onDrive = _google.FolderAt($"Kalam/{Path.GetFileName(folder)}");
         Assert.That(onDrive, Is.Not.Null, "ClassScribe > Kalam > the date folder");
-        Assert.That(_google.FilesIn(onDrive!.Id).Select(file => file.Name), Is.EquivalentTo(new[] { $"{b}.md", $"{b}.json", $"{b}.wav", $"{b}.log" }));
+        Assert.That(_google.FilesIn(onDrive!.Id).Select(file => file.Name), Is.EquivalentTo(new[] { $"{b}.md", $"{b}.json", $"{b}.glossary.json", $"{b}.wav", $"{b}.log" }));
         foreach (var file in _google.FilesIn(onDrive.Id).Where(file => file.Name != $"{b}.log"))
             Assert.That(file.Content, Is.EqualTo(File.ReadAllBytes(Path.Combine(folder, file.Name))), file.Name);
-        var lastLine = $"{b} is on Google Drive: My Drive > ClassScribe > Kalam > {Path.GetFileName(folder)} (4 files,";
+        var lastLine = $"{b} is on Google Drive: My Drive > ClassScribe > Kalam > {Path.GetFileName(folder)} (5 files,";
         Assert.That(System.Text.Encoding.UTF8.GetString(_google.FilesIn(onDrive.Id).Single(file => file.Name == $"{b}.log").Content), Does.Contain(lastLine));
         Assert.That(File.ReadAllText(Path.Combine(folder, $"{b}.log")), Does.Contain(lastLine));
         Assert.That(_google.Destructive, Is.Empty);

@@ -98,8 +98,8 @@ public partial class RecorderHostTests
         Assert.That(endSeenAtTheFirstRequest, Is.True, "the window had the end, and had left, before Google was asked anything");
         var files = recording.Files;
         var b = files.BaseName;
-        Assert.That(OnDrive(files), Is.EquivalentTo(new[] { $"{b}.md", $"{b}.json", $"{b}.wav", $"{b}.log" }));
-        var lastLine = $"{b} is on Google Drive: My Drive > ClassScribe > Kalam > {Path.GetFileName(files.Folder)} (4 files,";
+        Assert.That(OnDrive(files), Is.EquivalentTo(new[] { $"{b}.md", $"{b}.json", $"{b}.glossary.json", $"{b}.wav", $"{b}.log" }));
+        var lastLine = $"{b} is on Google Drive: My Drive > ClassScribe > Kalam > {Path.GetFileName(files.Folder)} (5 files,";
         var driveLog = Encoding.UTF8.GetString(google.Files.Single(file => file.Name == $"{b}.log").Content);
         Assert.That(driveLog, Does.Contain(lastLine), "the last line went up in the log");
         Assert.That(driveLog, Does.Contain("Transcript saved to"), "the log of the class went up whole");
@@ -119,7 +119,7 @@ public partial class RecorderHostTests
         Assert.That(exitCode, Is.EqualTo(0));
         Assert.That(RunFile(request.RunId).Outcome?.Kind, Is.EqualTo(OutcomeKind.Recorded));
         var b = recording.Files!.BaseName;
-        Assert.That(OnDrive(recording.Files), Is.EquivalentTo(new[] { $"{b}.wav", $"{b}.log" }));
+        Assert.That(OnDrive(recording.Files), Is.EquivalentTo(new[] { $"{b}.glossary.json", $"{b}.wav", $"{b}.log" }));
         Assert.That(Manifests().Read(recording.Files)!.State, Is.EqualTo(UploadState.Done));
     }
 

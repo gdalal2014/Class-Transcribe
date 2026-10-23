@@ -67,11 +67,10 @@ public class RebuildCommandTests
         var workflow = new TranscriptionWorkflow(
             _preparer.Object,
             _client.Object,
-            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
+            TestGlossaries.Choice(TestOptions.Create(new ElevenLabsOptions { ApiKey = "" })),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
-            TestOptions.Create(new ElevenLabsOptions { ApiKey = "" }),
             recording,
             new TranscriptionProgress(),
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),

@@ -3,6 +3,7 @@ using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using ClassScribe.Transcription;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -49,8 +50,13 @@ namespace ClassScribe.Commands;
 /// refusals, and the menu's Enter or S; null where none is registered, and a run with a camera is then refused as this build
 /// refuses it, so that no class starts with a half-built camera.
 /// </param>
+/// <param name="glossary">
+/// Decides the run's glossary before it starts, for the request to carry (see <see cref="RecordRequest.Glossary"/>); null where
+/// none is registered, and the run then decides it by the settings it has.
+/// </param>
 public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher, IRunViewer viewer, ContinueQuestion question, SettingsReloader settings,
-    IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null, CameraStart? camera = null) : IRecordStarter
+    IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null, CameraStart? camera = null,
+    GlossaryChoice? glossary = null) : IRecordStarter
 {
     /// <summary>How long a class waits for a YouTube video's run it asked to give way.</summary>
     public static readonly TimeSpan YieldPatience = TimeSpan.FromSeconds(30);
@@ -121,8 +127,17 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
             return 0;
         }
 
-        return await DriveAsync(new Step.Launch(decided), origin);
+        return await DriveAsync(new Step.Launch(WithGlossary(decided)), origin);
     }
+
+    /// <summary>
+    /// <paramref name="request"/> with the run's glossary, decided here, where the saved classes are, before the run starts in
+    /// either home (architecture 8.2, item 7): the saved class it was started as, a saved class of its course, or
+    /// ElevenLabs:KeytermsFile (see <see cref="GlossaryChoice.ForRun"/>). A recorder's settings hold no saved classes, so the
+    /// request carries it there. A request that carries one already, as a lost recorder's does when it is continued, keeps it.
+    /// </summary>
+    private RecordRequest WithGlossary(RecordRequest request) =>
+        request.Glossary is not null || glossary is null ? request : request with { Glossary = glossary.ForRun(request.Name, request.ClassName) };
 
     /// <summary>A run with a camera where no camera start is registered: refused as this build refuses it, before anything records.</summary>
     private CameraDecision NoCamera()

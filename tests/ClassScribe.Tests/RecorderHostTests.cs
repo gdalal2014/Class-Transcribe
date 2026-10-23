@@ -133,12 +133,12 @@ public partial class RecorderHostTests
 
     /// <summary>
     /// A request to record Kalam from the device the class plays on into the test's folder, written as the window writes it
-    /// before it starts the recorder, with <paramref name="settings"/> or the usual snapshot.
+    /// before it starts the recorder, with <paramref name="settings"/> or the usual snapshot, and the glossary the window decided, when given.
     /// </summary>
-    private RecordRequest WriteRequest(bool transcribe = false, bool open = true, Dictionary<string, string?>? settings = null)
+    private RecordRequest WriteRequest(bool transcribe = false, bool open = true, Dictionary<string, string?>? settings = null, GlossaryPick? glossary = null)
     {
         var request = new RecordRequest(RunIds.New(_time.GetUtcNow()), "Kalam", transcribe, new SourcePlan(RecordingMode.Class, new ClassSource.Automatic(), Microphone: null),
-            _folder.Path, ContinueChoice.New, ContinueBaseName: null, Minutes: null, open);
+            _folder.Path, ContinueChoice.New, ContinueBaseName: null, Minutes: null, open, Glossary: glossary);
         _runtime.Journal.WriteRequest(request, settings ?? Snapshot());
         _runId = request.RunId;
         return request;
@@ -625,5 +625,33 @@ public partial class RecorderHostTests
         Assert.That(saved, Is.GreaterThanOrEqualTo(0), "the saved line is in the recorder's log");
         Assert.That(charged, Is.GreaterThan(saved), "the credits charged come last");
         Assert.That(_account.Reads, Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// A recorder writes the recording's glossary record from the glossary its request carries, which the window decided where
+    /// the saved classes are, says it in its log, and sends it with the transcript, though its own settings name none
+    /// (architecture 8.2, item 7).
+    /// </summary>
+    [Test]
+    public async Task The_recorder_writes_the_record_from_the_request_and_sends_its_glossary()
+    {
+        var glossary = _folder.File("mantiq.txt");
+        File.WriteAllLines(glossary, ["kalām", "manṭiq"]);
+        var sent = new List<IReadOnlyList<string>>();
+        _client.Setup(Calls.AnyTranscription).Callback((string _, IReadOnlyList<string> terms, CancellationToken _) => sent.Add(terms)).ReturnsAsync(Mocks.Transcript);
+        var request = WriteRequest(transcribe: true, glossary: new GlossaryPick("mantiq.txt", glossary, "the saved class \"Mantiq\"", "Mantiq"));
+        var run = Host().RunAsync(request.RunId, "dummy-key-for-a-local-test");
+        var recording = await StartedAsync(run);
+        TestAudio.WriteWav(recording.Files!.Segment(1), 16000, TestAudio.Tone(16000, seconds: 0.5, frequency: 440, amplitude: 0.5));
+
+        StopFromAnotherWindow(request.RunId);
+
+        Assert.That(await EndedAsync(run), Is.EqualTo(0));
+        Assert.That(sent, Is.EqualTo(new[] { new[] { "kalām", "manṭiq" } }));
+        var record = new GlossaryFiles(new SettingsPlaces(_folder.Path, userFolder: null)).ReadRecord(recording.Files!)!;
+        Assert.That((record.Decided.Path, record.Decided.From, record.Decided.Terms), Is.EqualTo((glossary, "the saved class \"Mantiq\"", 2)));
+        Assert.That(record.Sent.Single().Copy, Is.EqualTo(1));
+        Assert.That(LoggedLines(), Has.Some.EndsWith("Glossary: mantiq.txt (the saved class \"Mantiq\"), 2 terms"));
+        Assert.That(LoggedLines(), Has.Some.EndsWith("Glossary: mantiq.txt, as decided when this recording started (2 terms then, 2 now)"));
     }
 }

@@ -52,8 +52,8 @@ public class FreedAudioTests
 
     /// <summary>The workflow over the world's class folders, with an upload that must never be made.</summary>
     private TranscriptionWorkflow Workflow(ClassFolders folders) =>
-        new(_preparer.Object, _client.Object, new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance), new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
-            folders, new ClassMarks(NullLogger<ClassMarks>.Instance), TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test" }), _world.Recording,
+        new(_preparer.Object, _client.Object, TestGlossaries.Choice(TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test" })), new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
+            folders, new ClassMarks(NullLogger<ClassMarks>.Instance), _world.Recording,
             new TranscriptionProgress(), new UsageReport(new FakeElevenLabsAccount(), _world.Time, NullLogger<UsageReport>.Instance), NullLogger<TranscriptionWorkflow>.Instance);
 
     /// <summary>The transcribe command over the world's class folders, which know of the audio on Drive.</summary>

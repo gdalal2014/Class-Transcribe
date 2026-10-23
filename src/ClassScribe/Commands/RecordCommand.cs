@@ -33,6 +33,7 @@ public sealed class RecordCommand(
     IRecordingFactory recordings,
     RecordingLoop loop,
     TranscriptionWorkflow workflow,
+    GlossaryChoice glossaries,
     TranscriptionProgress progress,
     UsageReport usage,
     IUserSignals signals,
@@ -80,7 +81,9 @@ public sealed class RecordCommand(
     /// <item>begins the bookkeeping: the run file, the recording's log, Google Drive's queue, the laptop kept awake, and
     /// the handlers for an end without the usual stop;</item>
     /// <item>starts the recording at that length, with a note where a continued recording resumes;</item>
-    /// <item>says where it records, what, the keys, and when it stops by itself with --minutes;</item>
+    /// <item>says where it records, what, the keys, and when it stops by itself with --minutes; then which glossary its
+    /// transcripts take, decided now and written beside it, or kept from its start for a continued recording (see
+    /// <see cref="GlossaryChoice.AtStart"/>);</item>
     /// <item>runs the loop until the stop;</item>
     /// <item>stops the recording, lets go of the lock, so that the next class can start while this one uploads, and moves
     /// the run file on;</item>
@@ -144,8 +147,10 @@ public sealed class RecordCommand(
                         sofar.Started = true;
                         if (notRecorded is { } gap) NoteTheResume(files, offset, gap);
 
-                        // 5. The start lines, then 6. the loop, until the stop.
+                        // 5. The start lines, the glossary's among them, with the recording's glossary record written now, before
+                        // any transcript, then 6. the loop, until the stop.
                         LogTheStart(request, files, offset);
+                        glossaries.AtStart(files, request);
                         stopping = await loop.RunAsync(started, files, request, run, offset);
                     }
                     finally

@@ -65,6 +65,7 @@ public partial class RecordCommandTests
     private RecorderLog _recorderLog = null!;
     private RunContextSlot _context = null!;
     private RecordingLogger<RecordCommand> _log = null!;
+    private RecordingLogger<GlossaryChoice> _glossaryLog = null!;
     private RecordingLogger<RunBookkeeping> _bookkeepingLog = null!;
     private RecordingLogger<RecordingLoop> _loopLog = null!;
     private FakeSystemTimes _times = null!;
@@ -109,6 +110,7 @@ public partial class RecordCommandTests
         _recorderLog = new RecorderLog(TimeProvider.System);
         _context = new RunContextSlot();
         _log = new RecordingLogger<RecordCommand>();
+        _glossaryLog = new RecordingLogger<GlossaryChoice>();
         _bookkeepingLog = new RecordingLogger<RunBookkeeping>();
         _loopLog = new RecordingLogger<RecordingLoop>();
         _bookkeeping = null;
@@ -161,14 +163,14 @@ public partial class RecordCommandTests
         var folders = new ClassFolders(recording, time, NullLogger<ClassFolders>.Instance);
         var marks = new ClassMarks(NullLogger<ClassMarks>.Instance);
         var usage = new UsageReport(_account, time, _usageLog);
+        var glossaries = TestGlossaries.Choice(elevenLabs, logger: _glossaryLog, time: time);
         var workflow = new TranscriptionWorkflow(
             new AudioPreparer(NullLogger<AudioPreparer>.Instance),
             _client.Object,
-            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
+            glossaries,
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             marks,
-            elevenLabs,
             recording,
             _progress,
             usage,
@@ -198,7 +200,7 @@ public partial class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance, video),
-            loop, workflow, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
+            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
     }
 
     /// <summary>
@@ -224,6 +226,58 @@ public partial class RecordCommandTests
         Assert.That(atTheSecondRead, Is.EqualTo((true, true)), "saved and opened before the second read");
         Assert.That(UsageLines(), Is.EqualTo(["ElevenLabs charged 500 credits for this transcript; 99,500 of 100,000 credits are left"]));
         Assert.That(RunFile().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+    }
+
+    /// <summary>
+    /// The recording's glossary record is written as the run starts, before anything is transcribed, so that a recording made
+    /// with record-only has it, from the glossary the request carries; the start says which glossary, after the start lines.
+    /// </summary>
+    [Test]
+    public async Task The_glossary_record_is_written_at_the_start_and_a_record_only_recording_has_it()
+    {
+        var glossary = _folder.File("mantiq.txt");
+        File.WriteAllLines(glossary, ["kalām", "manṭiq"]);
+        var request = Request(transcribe: false) with { Glossary = new GlossaryPick("mantiq.txt", glossary, "the saved class \"Mantiq\"", "Mantiq") };
+        var run = CreateCommand().RunAsync(request);
+        await Wait.UntilAsync(() => _capture.Started);
+        await Wait.UntilAsync(() => _glossaryLog.Messages.Count > 0);
+        var files = new RecordingFiles(RunFile().Folder!, RunFile().BaseName!);
+        var whileRecording = File.Exists(files.Glossary);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(whileRecording, Is.True, "written as the run started");
+        var record = new GlossaryFiles(new SettingsPlaces(_folder.Path, userFolder: null)).ReadRecord(files)!;
+        Assert.That((record.Decided.Path, record.Decided.Terms, record.Decided.From, record.Sent.Count), Is.EqualTo((glossary, 2, "the saved class \"Mantiq\"", 0)));
+        Assert.That(_glossaryLog.Messages, Is.EqualTo(new[] { "Glossary: mantiq.txt (the saved class \"Mantiq\"), 2 terms" }));
+    }
+
+    /// <summary>
+    /// A class transcribed after it stops sends the glossary decided at its start, though the settings changed meanwhile, and
+    /// the line before the upload says so; the transcript's entry is added to the record.
+    /// </summary>
+    [Test]
+    public async Task The_transcript_after_the_class_sends_the_glossary_decided_at_its_start()
+    {
+        var glossary = _folder.File("start.txt");
+        File.WriteAllLines(glossary, ["kalām"]);
+        var sent = new List<IReadOnlyList<string>>();
+        _client.Setup(Calls.AnyTranscription).Callback((string _, IReadOnlyList<string> terms, CancellationToken _) => sent.Add(terms)).ReturnsAsync(Mocks.Transcript);
+        var run = CreateCommand().RunAsync(Request() with { Glossary = new GlossaryPick("start.txt", glossary, "ElevenLabs:KeytermsFile") });
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts(1000, -1000));
+        _signals.RequestStop();
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(sent, Is.EqualTo(new[] { new[] { "kalām" } }));
+        Assert.That(_glossaryLog.Messages, Is.EqualTo(new[]
+        {
+            "Glossary: start.txt (ElevenLabs:KeytermsFile), 1 term",
+            "Glossary: start.txt, as decided when this recording started (1 term then, 1 now)"
+        }));
+        var files = new RecordingFiles(RunFile().Folder!, RunFile().BaseName!);
+        Assert.That(new GlossaryFiles(new SettingsPlaces(_folder.Path, userFolder: null)).ReadRecord(files)!.Sent.Single().Copy, Is.EqualTo(1));
     }
 
     /// <summary>A reader that fails changes neither the exit code nor the outcome: the line says the credits could not be read, and that is all.</summary>

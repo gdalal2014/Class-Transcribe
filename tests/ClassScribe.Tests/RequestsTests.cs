@@ -5,6 +5,7 @@ using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using ClassScribe.Transcription;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClassScribe.Tests;
@@ -116,6 +117,28 @@ public class RequestsTests
         Assert.That(JsonSerializer.Deserialize(json, RecorderJson.Default.RecordRequest), Is.EqualTo(request));
         Assert.That(JsonSerializer.Serialize(request with { ClassName = null }, RecorderJson.Default.RecordRequest), Does.Not.Contain("className"));
         Assert.That(JsonSerializer.Deserialize(RequestJson("""{ "kind": "automatic" }"""), RecorderJson.Default.RecordRequest)!.ClassName, Is.Null);
+    }
+
+    /// <summary>
+    /// The glossary the window decided travels with the request to the recorder (architecture 8.2, item 7), read back as
+    /// written, its class and warning only when set; a request without one, as an older window writes it, has no glossary
+    /// field, and a file without one reads with none, so that the recorder decides by its own ElevenLabs:KeytermsFile.
+    /// </summary>
+    [Test]
+    public void The_decided_glossary_round_trips_and_is_written_only_when_set()
+    {
+        var plan = new SourcePlan(RecordingMode.Class, new ClassSource.App("chrome"), null);
+        var ofClass = Request(plan) with { Glossary = new GlossaryPick("mantiq.txt", @"C:\Users\x\AppData\Roaming\ClassScribe\mantiq.txt", "the saved class \"Mantiq\"", "Mantiq") };
+        var none = Request(plan) with { Glossary = new GlossaryPick("", "", "ElevenLabs:KeytermsFile", Warning: "Two classes disagree") };
+
+        var json = JsonSerializer.Serialize(ofClass, RecorderJson.Default.RecordRequest);
+        var glossary = JsonNode.Parse(json)!["glossary"]!;
+
+        Assert.That(glossary.AsObject().Select(field => field.Key), Is.EqualTo(new[] { "setting", "path", "from", "className" }));
+        Assert.That(JsonSerializer.Deserialize(json, RecorderJson.Default.RecordRequest), Is.EqualTo(ofClass));
+        Assert.That(JsonSerializer.Deserialize(JsonSerializer.Serialize(none, RecorderJson.Default.RecordRequest), RecorderJson.Default.RecordRequest), Is.EqualTo(none));
+        Assert.That(JsonSerializer.Serialize(ofClass with { Glossary = null }, RecorderJson.Default.RecordRequest), Does.Not.Contain("glossary"));
+        Assert.That(JsonSerializer.Deserialize(RequestJson("""{ "kind": "automatic" }"""), RecorderJson.Default.RecordRequest)!.Glossary, Is.Null);
     }
 
     /// <summary>

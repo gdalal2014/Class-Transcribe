@@ -47,11 +47,10 @@ public class VideoTranscriptionWorkflowTests
         return new TranscriptionWorkflow(
             Mocks.AudioPreparer().Object,
             _client.Object,
-            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
+            TestGlossaries.Choice(TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test", KeytermsFile = _folder.File("no-glossary.txt") })),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions { IncludeTimestamps = false })),
             new ClassFolders(recording, ZonedClock.Eastern(new ManualTimeProvider(Downloaded)), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
-            TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test", KeytermsFile = _folder.File("no-glossary.txt") }),
             recording,
             new TranscriptionProgress(),
             new UsageReport(new FakeElevenLabsAccount(), TimeProvider.System, NullLogger<UsageReport>.Instance),

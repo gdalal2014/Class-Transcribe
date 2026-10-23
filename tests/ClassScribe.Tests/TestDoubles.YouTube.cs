@@ -376,7 +376,7 @@ public sealed class YouTubeWorld : IDisposable
         var locator = new ToolLocator(new FakeRegistryValues(), Files, YouTube, Log<ToolLocator>()) { LocalAppData = @"C:\Users\gdala\AppData\Local" };
         return new DownloadBatch(batch, new YtDlpCheck(locator, Tools, Folders, Time, Log<YtDlpCheck>()), Folders, Tools, Pace,
             new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), ClassFolders, RecorderLog, DriveRoom, Drive, FreeSpace,
-            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance), Ui, YouTube, ElevenLabs, Time, Log<DownloadBatch>());
+            TestGlossaries.Choice(ElevenLabs), Ui, YouTube, ElevenLabs, Time, Log<DownloadBatch>());
     }
 
     /// <summary>A request for <paramref name="links"/>, downloaded into the course Risala, going ahead with --yes unless told otherwise.</summary>

@@ -100,7 +100,7 @@ public sealed class YouTubeMenuMemory
 /// stream's link, which only D takes; the rest go on. The recordings folder is Recording:OutputFolder, as for the menu's
 /// classes.
 /// </summary>
-public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.ClassFolders folders, YouTubeMenuMemory memory, Transcription.KeytermLoader keyterms,
+public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.ClassFolders folders, YouTubeMenuMemory memory, Transcription.GlossaryChoice glossaries,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs)
 {
     /// <summary>Asks for the batch and runs it. Returns the exit code; 0 when Esc went back.</summary>
@@ -162,7 +162,7 @@ public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.C
             }
         }
 
-        if (await AskTranscribeAsync() is not { } transcribe) return 0;
+        if (await AskTranscribeAsync(name) is not { } transcribe) return 0;
 
         memory.LastCourse = name;
         return await command.RunAsync(new YouTubeRequest(links, name, folders.Root, download, BatchConfirmation.Ask, transcribe));
@@ -210,11 +210,14 @@ public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.C
         }
     }
 
-    /// <summary>Asks whether to transcribe each video, with about what an hour costs: T transcribes, O only fetches the audio. Null for Esc.</summary>
-    private async Task<bool?> AskTranscribeAsync()
+    /// <summary>
+    /// Asks whether to transcribe each video, with about what an hour costs, the glossary counted as a recording of
+    /// <paramref name="course"/> would be sent with it: T transcribes, O only fetches the audio. Null for Esc.
+    /// </summary>
+    private async Task<bool?> AskTranscribeAsync(string course)
     {
         var settings = elevenLabs.Value;
-        var glossary = keyterms.Load(keyterms.ResolvePath(settings.KeytermsFile)).Count > 0;
+        var glossary = glossaries.TermsFor(course) > 0;
         var hour = settings.PricePerHourUsd + (glossary ? settings.KeytermsPricePerHourUsd : 0);
         ui.WriteLine(System.FormattableString.Invariant(
             $"Then transcribe each one? T transcribes (about ${hour:0.00} an hour of audio{(glossary ? " with the glossary" : "")}), O only fetches the audio, Esc goes back."));

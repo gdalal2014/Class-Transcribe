@@ -5,6 +5,8 @@ using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using ClassScribe.Transcription;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -50,6 +52,9 @@ public partial class RecordStarterTests
     /// <summary>The camera's start the starter is given; null, as most tests have it, for none.</summary>
     private CameraStart? _camera;
 
+    /// <summary>What decides the run's glossary, the starter is given; null, as most tests have it, for none.</summary>
+    private GlossaryChoice? _glossary;
+
     /// <summary>Makes the folders, the settings, the pretend processes and views, and a run in this window in a scope of its own, with the clock at <see cref="Now"/>.</summary>
     [SetUp]
     public void SetUp()
@@ -74,6 +79,7 @@ public partial class RecordStarterTests
         _log = new RecordingLogger<RecordStarter>();
         _videoYield = new FakeVideoYield();
         _camera = null;
+        _glossary = null;
     }
 
     /// <summary>Deletes the temporary folders.</summary>
@@ -94,7 +100,7 @@ public partial class RecordStarterTests
         var question = new ContinueQuestion(new ClassFolders(_options, clock, new RecordingLogger<ClassFolders>()), _runtime.Journal, _ui, _options, clock,
             new RecordingLogger<ContinueQuestion>());
         return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Reloader, _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log,
-            _videoYield, _camera);
+            _videoYield, _camera, _glossary);
     }
 
     /// <summary>This build's camera start over the fakes: this laptop's cameras, set up as the camera needs, and a camera's recording not built yet.</summary>
@@ -140,6 +146,35 @@ public partial class RecordStarterTests
         Assert.That(_ui.Screen, Does.Contain(Camera.CameraRecorderNotBuilt.Words));
         Assert.That(_starter.Recorders, Is.Empty, "no recorder was started");
         Assert.That(_inWindow.Runs, Is.Empty, "nothing recorded in this window");
+    }
+
+    /// <summary>
+    /// The window decides the run's glossary before the run starts, where the saved classes are, and hands it on in the request
+    /// (architecture 8.2, item 7): to a recorder, the saved class the run was started as; to a run in this window, the setting,
+    /// for a run of no class; and a request that carries one already, as a lost recorder's continued, keeps it.
+    /// </summary>
+    [Test]
+    public async Task The_window_decides_the_glossary_and_hands_it_on_in_the_request()
+    {
+        var classes = new SavedClasses(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Classes:Mantiq:Course"] = "Mantiq", ["Classes:Mantiq:App"] = "chrome", ["Classes:Mantiq:KeytermsFile"] = "mantiq.txt"
+        }).Build());
+        _glossary = TestGlossaries.Choice(TestOptions.Create(new ElevenLabsOptions { KeytermsFile = "setting.txt" }), new SettingsPlaces(_settingsFolder.Path, userFolder: null),
+            classes: classes);
+        _viewer.Then(Ends(_recorder, Transcribed));
+        await RunAsync(Request("Mantiq") with { ClassName = "Mantiq" });
+
+        _options.Set(new RecordingOptions { OutputFolder = _recordings.Path, SeparateProcess = false });
+        _inWindow.ThenExit(0).ThenExit(0);
+        var handedOn = new GlossaryPick("lost.txt", @"C:\lost.txt", "ElevenLabs:KeytermsFile");
+        await RunAsync(Request());
+        await RunAsync(Request() with { Glossary = handedOn });
+
+        Assert.That(_recorder.Runs.Single().Request!.Glossary,
+            Is.EqualTo(new GlossaryPick("mantiq.txt", Path.Combine(_settingsFolder.Path, "mantiq.txt"), "the saved class \"Mantiq\"", "Mantiq")));
+        Assert.That(_inWindow.Requests.Select(request => request.Glossary),
+            Is.EqualTo(new[] { new GlossaryPick("setting.txt", Path.Combine(_settingsFolder.Path, "setting.txt"), "ElevenLabs:KeytermsFile"), handedOn }));
     }
 
     /// <summary>A request to record "Kalam" into the recordings folder and transcribe it, with neither --continue nor --new.</summary>
