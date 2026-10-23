@@ -22,6 +22,9 @@ public interface IGlossaryFiles
     /// </summary>
     string Resolve(string configured);
 
+    /// <summary>True when a file is at <paramref name="path"/>, which is not read: for the menu's header, which names a class whose glossary is not there.</summary>
+    bool Exists(string path);
+
     /// <summary>The glossary at <paramref name="path"/>, read whole; null when there is no file there.</summary>
     /// <exception cref="IOException">The file is there but cannot be read.</exception>
     /// <exception cref="UnauthorizedAccessException">The file may not be read.</exception>

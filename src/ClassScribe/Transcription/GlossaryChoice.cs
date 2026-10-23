@@ -98,13 +98,13 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
     public void AtStart(RecordingFiles files, RecordRequest request)
     {
         var (record, readable) = ReadRecord(files);
-        var pick = request.Glossary ?? ForRun(request.Name, request.ClassName);
         if (record is not null)
         {
-            if (Reuse(record.Decided) is null) Decide(pick);
+            if (Reuse(record.Decided) is null) Decide(request.Glossary ?? ForRun(request.Name, request.ClassName));
             return;
         }
 
+        var pick = request.Glossary ?? ForRun(request.Name, request.ClassName);
         var loaded = Decide(pick);
         if (readable) WriteRecord(files, new GlossaryRecord(GlossaryRecord.CurrentVersion, Decision(pick, loaded), []), "the recording is not affected");
     }
@@ -188,7 +188,7 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
             if (entry.Class?.KeytermsFile is not { } glossary || SavedClass.MeansNoGlossary(glossary)) continue;
 
             var path = ResolveQuietly(files, glossary);
-            if (!File.Exists(path))
+            if (!files.Exists(path))
                 yield return $"The saved class \"{entry.Name}\" names the glossary {path}, which is not there; its transcripts are made without its terms until it is.";
         }
     }

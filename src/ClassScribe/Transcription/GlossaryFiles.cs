@@ -21,6 +21,9 @@ public sealed class GlossaryFiles(SettingsPlaces places) : IGlossaryFiles
     public string Resolve(string configured) => places.ResolveFile(configured);
 
     /// <inheritdoc />
+    public bool Exists(string path) => path.Length > 0 && File.Exists(path);
+
+    /// <inheritdoc />
     public GlossaryText? Read(string path)
     {
         if (path.Length == 0 || !File.Exists(path)) return null;
