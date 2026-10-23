@@ -118,8 +118,9 @@ public interface ILessonVideoMedia
 
     /// <summary>
     /// Writes the lesson's video as <paramref name="plan"/> says into <paramref name="path"/>, which must not be there yet:
-    /// a plain MP4 with its index before the data, the picture passed through or encoded again, every frame lasting until
-    /// the next and the last until the plan's end, and <paramref name="sound"/> read to its end, encoded AAC-LC mono at
+    /// a plain MP4, not fragmented, its index (moov) after the data, where Windows' MP4 sink writes it though asked for it
+    /// first; the picture passed through or encoded again, every frame lasting until the next and the last until the plan's
+    /// end, and <paramref name="sound"/> read to its end, encoded AAC-LC mono at
     /// 128 kbit/s. The file is held open for writing, others allowed to read it, until this returns, so that the recording
     /// counts as being written meanwhile. How far it has got, from 0 to 1, goes to <paramref name="progress"/>. Throws when
     /// it cannot be written, and an <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is

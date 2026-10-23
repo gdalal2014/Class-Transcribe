@@ -12,8 +12,8 @@ namespace ClassScribe.Tests;
 
 /// <summary>
 /// The real media work of a lesson's video (teach-video 6.9): pieces written by the real piece writer with Windows' software
-/// encoder from generated frames, a .wav beside them, joined by Media Foundation into a plain MP4 with its index before its
-/// data, read back and checked, in a temporary folder. It opens no device: category WindowsMedia, run with the suite.
+/// encoder from generated frames, a .wav beside them, joined by Media Foundation into a plain MP4 (its index after its data,
+/// where Windows writes it), read back and checked, in a temporary folder. It opens no device: category WindowsMedia, run with the suite.
 /// </summary>
 [TestFixture]
 [Category("WindowsMedia")]
@@ -115,7 +115,7 @@ public sealed class LessonVideoMediaTests
 
     /// <summary>
     /// Two pieces and their sound become one plain MP4: picture and sound, as long as the sound, a frame decoded at the start,
-    /// on each side of the join and at the end, passed through, its index before its data.
+    /// on each side of the join and at the end, passed through, with its index (moov) and its data (mdat), not fragmented.
     /// </summary>
     [Test]
     public void Two_pieces_and_the_sound_become_one_video_that_passes_its_check()
