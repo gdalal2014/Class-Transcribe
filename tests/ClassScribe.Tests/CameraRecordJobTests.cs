@@ -209,20 +209,27 @@ public sealed class CameraRecordJobTests
         Assert.That(_writers.Made, Has.Count.EqualTo(1));
     }
 
-    /// <summary>A camera that opens but sends no picture for 5 seconds is said, as a security program's block would look, and opened again.</summary>
+    /// <summary>
+    /// A camera that opens but sends no picture for 5 seconds is said, as a security program's block would look, and opened
+    /// again. The 5 seconds are timed from the capture's start, which the job makes just before it starts them: the opened
+    /// line reaches the test through the pipe, and on a busy computer the clock could move a few looks meanwhile, so that
+    /// the problem seemed to come early (4.9 seconds, twice in twelve runs beside the whole suite).
+    /// </summary>
     [Test]
     public async Task A_camera_that_gives_no_picture_is_said_and_opened_again()
     {
         await using var process = new FakeCameraProcess();
         var (host, seen) = await StartAsync(process, Record());
-        await _time.AdvanceUntilAsync(() => seen.Of<CameraOpened>().Count == 1, Step);
+        await _time.AdvanceUntilAsync(() => _captures.Last is { Streaming: true }, Step);
 
         var waited = await _time.AdvanceUntilAsync(() => seen.Of<CameraProblem>().Count == 1, Step, atMost: TimeSpan.FromSeconds(6));
         await _time.AdvanceUntilAsync(() => _captures.Made.Count == 2, Step, atMost: TimeSpan.FromSeconds(3));
         await CancelAsync(process, host);
 
+        Assert.That(seen.Of<CameraOpened>(), Is.Not.Empty);
         Assert.That(seen.Of<CameraProblem>().Single(), Is.EqualTo(new CameraProblem(CameraProblemKind.NoPicture, CameraRecordJob.NoPictureWords)));
-        Assert.That(waited, Is.GreaterThanOrEqualTo(CameraRecordJob.FirstFrameLimit));
+        // The job reads the clock just after the capture starts; the test sees the start at its next look at the latest.
+        Assert.That(waited, Is.GreaterThanOrEqualTo(CameraRecordJob.FirstFrameLimit - Step));
         Assert.That(_captures.Made[0].Capture.Disposed, Is.True);
     }
 
