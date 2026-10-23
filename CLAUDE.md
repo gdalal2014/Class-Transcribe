@@ -1658,7 +1658,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (`AudioPreparer.OpenMix` as `MixedSound`, the microphone left out when silent, as at upload) at 48 kHz as AAC-LC mono
   128 kbit/s, interleaved by time; the check seeks to each frame to check and decodes it, and reads the length. In the
   camera process, `CameraFinishJob` refuses a recording without its `.wav` here or with a `.mp4.partial` being written,
-  deletes a stale partial with a line, leaves an unreadable piece out with a warning, logs the plan, sends `progress`
+  deletes a stale partial with a line, leaves an unreadable piece out with a warning (and keeps it after the video: only the
+  pieces it read are deleted), fails with every piece kept when Windows cannot open a source now (`CouldNotOpenNow`: an
+  IOException, UnauthorizedAccessException or FACILITY_WIN32 COM error) or an older video cannot be read, logs the plan, sends `progress`
   at each new percent or every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking), and on a pass renames
   the partial (`PutInPlaceAsync`: `RenameTries` 3, a second apart, while a player or scanner holds a file open; then failed
   with why, the checked partial kept for the next making to delete, the older video and the pieces as they were) and deals

@@ -36,6 +36,12 @@ public sealed class FakeLessonVideoMedia : ILessonVideoMedia
         lock (_gate) _facts[name] = () => throw new InvalidDataException("it holds no H.264 picture");
     }
 
+    /// <summary>Makes the file named <paramref name="name"/> one Windows cannot open now, as one another program holds: a sharing violation.</summary>
+    public void Unopenable(string name)
+    {
+        lock (_gate) _facts[name] = () => throw new IOException("The process cannot access the file because it is being used by another process.", unchecked((int)0x80070020));
+    }
+
     /// <summary>What a source holds when the test said nothing of it: 720p from the hardware encoder, ten minutes long.</summary>
     public VideoSourceFacts Default { get; set; } = new(1280, 720, HardwareHeader, TimeSpan.FromMinutes(10));
 

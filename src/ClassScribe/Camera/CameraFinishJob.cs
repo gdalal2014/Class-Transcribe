@@ -14,9 +14,12 @@ namespace ClassScribe.Camera;
 /// again whole otherwise (<see cref="LessonVideoPlan"/>); the sound is the tracks mixed as the upload is, at 48 kHz. It is
 /// written as <c>&lt;base&gt;.mp4.partial</c>, checked (it opens, has both streams, is as long as the longest .wav track
 /// within a tenth of a second, and a frame decodes at the start, on each side of every join and at the end), and only then
-/// renamed, replacing an older video, the one file ClassScribe replaces, since it is made from the others. Then the
-/// camera's pieces are deleted, with a line saying so, unless the job keeps them for Google Drive (<see cref="CameraJob.KeepPieces"/>:
-/// only when the video goes there, amendment 47). A video that fails its check, or cannot be made, is deleted, the pieces
+/// renamed, replacing an older video, the one file ClassScribe replaces, since it is made from the others (tried
+/// <see cref="RenameTries"/> times while another program holds a file open, then failed with why). Then the camera's pieces
+/// it read are deleted, with a line saying so, unless the job keeps them for Google Drive (<see cref="CameraJob.KeepPieces"/>:
+/// only when the video goes there, amendment 47); a piece left out because what it holds cannot be read is in no video, so
+/// it stays, named. A piece Windows cannot open now, or an older video that cannot be read, ends the job with every piece
+/// kept, so that no picture is lost to a video made without it. A video that fails its check, or cannot be made, is deleted, the pieces
 /// kept, and failed says why and names finish-video; a cancel does the same and ends with 130. A stale .partial, one that
 /// nothing holds open, is deleted first; one held open means another camera process is making the video, and the job is
 /// refused. Its media work goes through <see cref="ILessonVideoMedia"/>.
@@ -103,13 +106,38 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         var pieces = new List<LessonVideoSource>();
         foreach (var piece in files.FindCameraPieces())
         {
-            if (await DescribeAsync(piece.Path, piece.Start) is { } source) pieces.Add(source);
+            var (source, why, notNow) = await DescribeAsync(piece.Path, piece.Start);
+            if (notNow)
+                return await FailAsync(files, $"{Path.GetFileName(piece.Path)} could not be opened now ({why}), so the video was not made without its picture", kept: true);
+
+            if (source is not null)
+            {
+                pieces.Add(source);
+                continue;
+            }
+
+            await LogAsync("Warning", $"{Path.GetFileName(piece.Path)} cannot be read ({why}), so it is left out of the lesson's video");
         }
 
         if (pieces.Count == 0)
             return await FailAsync(files, $"{files.BaseName} has no camera piece that can be read, so it has no picture to make a video of", kept: true, retry: false);
 
-        var older = pieces.Min(piece => piece.Start) > TimeSpan.Zero && File.Exists(files.LessonVideo) ? await DescribeAsync(files.LessonVideo, TimeSpan.Zero) : null;
+        LessonVideoSource? older = null;
+        if (pieces.Min(piece => piece.Start) > TimeSpan.Zero && File.Exists(files.LessonVideo))
+        {
+            // Its picture before the first piece is in no piece any more, so a video made without it would lose it for good.
+            var (source, why, notNow) = await DescribeAsync(files.LessonVideo, TimeSpan.Zero);
+            if (source is null)
+            {
+                return await FailAsync(files, notNow
+                    ? $"{Path.GetFileName(files.LessonVideo)}, the older video, could not be opened now ({why}), so the video was not made without its picture"
+                    : $"{Path.GetFileName(files.LessonVideo)}, the older video, cannot be read ({why}), and its picture before the first camera piece is in no piece, so a new video would lose it. Move the older video out of the folder to make one from the pieces alone",
+                    kept: true, retry: notNow);
+            }
+
+            older = source;
+        }
+
         var soundLength = Longest(tracks);
         LessonVideoPlan plan;
         try
@@ -167,7 +195,7 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         var bytes = new FileInfo(files.LessonVideo).Length;
         await LogAsync("Information", string.Create(CultureInfo.InvariantCulture,
             $"{Path.GetFileName(files.LessonVideo)} passed its check: {Durations.Format(soundLength)}, picture and sound, a frame decoded at the start, at each of {plan.Joins.Count} {(plan.Joins.Count == 1 ? "join" : "joins")} and at the end"));
-        await DealWithThePiecesAsync(files);
+        await DealWithThePiecesAsync(files, [.. pieces.Select(piece => piece.Path)]);
         await SendAsync(CameraProtocol.Made, new CameraMade(files.LessonVideo, Math.Round(soundLength.TotalSeconds, 3), bytes), CameraJson.Default.CameraMade);
         return CameraProtocol.DoneExitCode;
     }
@@ -201,12 +229,21 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     }
 
     /// <summary>
-    /// After the video passed its check: the camera's pieces deleted, said in a line with why, unless the job keeps them for
-    /// Google Drive, which is said too. A piece that cannot be deleted stays, with a line.
+    /// After the video passed its check: the camera's pieces the job read, <paramref name="read"/>, deleted, said in a line
+    /// with why, unless the job keeps them for Google Drive, which is said too. Any other piece, as one left out because it
+    /// could not be read, is in no video, so it stays, named in a line. A piece that cannot be deleted stays, with a line.
     /// </summary>
-    private async Task DealWithThePiecesAsync(RecordingFiles files)
+    private async Task DealWithThePiecesAsync(RecordingFiles files, IReadOnlyList<string> read)
     {
-        var pieces = files.FindCameraPieces();
+        List<string> pieces = [];
+        foreach (var piece in files.FindCameraPieces().Select(piece => piece.Path))
+        {
+            if (read.Contains(piece, StringComparer.OrdinalIgnoreCase))
+                pieces.Add(piece);
+            else
+                await LogAsync("Warning", $"{Path.GetFileName(piece)} could not be read, so its picture is in no video; it stays on this laptop. Delete it by hand once you no longer need it");
+        }
+
         if (pieces.Count == 0) return;
 
         var count = pieces.Count == 1 ? "1 piece" : $"{pieces.Count} pieces";
@@ -221,14 +258,14 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         {
             try
             {
-                File.Delete(piece.Path);
+                File.Delete(piece);
                 deleted++;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // Deliberately not rethrown: the video is made and checked; a piece that cannot be deleted now, as one a scanner
                 // holds, only takes room, and the line says which stayed and why.
-                await LogAsync("Warning", $"{Path.GetFileName(piece.Path)} could not be deleted ({Words(ex)}); it stays on this laptop");
+                await LogAsync("Warning", $"{Path.GetFileName(piece)} could not be deleted ({Words(ex)}); it stays on this laptop");
             }
         }
 
@@ -236,21 +273,33 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
             await LogAsync("Information", $"Deleted the camera's {(deleted == 1 ? "1 piece" : $"{deleted} pieces")} of {files.BaseName}: the lesson's video passed its check, and lesson videos do not go to Google Drive (Drive:LessonVideos), so the video is the one copy of the picture kept");
     }
 
-    /// <summary>The source at <paramref name="path"/>, which begins at <paramref name="start"/>; null, with a line, when it cannot be read.</summary>
-    private async Task<LessonVideoSource?> DescribeAsync(string path, TimeSpan start)
+    /// <summary>
+    /// The source at <paramref name="path"/>, which begins at <paramref name="start"/>; when it cannot be read, no source, why,
+    /// and whether only because Windows could not open it now (see <see cref="CouldNotOpenNow"/>), as when another program
+    /// holds it, so that a later making may read it.
+    /// </summary>
+    private async Task<(LessonVideoSource? Source, string? Why, bool NotNow)> DescribeAsync(string path, TimeSpan start)
     {
         try
         {
-            return new LessonVideoSource(path, start, await Task.Run(() => media.Describe(path)));
+            return (new LessonVideoSource(path, start, await Task.Run(() => media.Describe(path))), null, false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Deliberately not rethrown: a piece that holds nothing readable, as one whose camera process was killed before its
-            // first fragment, is left out, and the video is made from the others, with this line naming it.
-            await LogAsync("Warning", $"{Path.GetFileName(path)} cannot be read ({Words(ex)}), so it is left out of the lesson's video");
-            return null;
+            // Deliberately not rethrown: the caller deals with a source that cannot be read by this reason. A piece that holds
+            // nothing readable, as one whose camera process was killed before its first fragment, is left out and kept; one
+            // Windows cannot open now, or an older video, ends the job with every piece kept.
+            return (null, Words(ex), CouldNotOpenNow(ex));
         }
     }
+
+    /// <summary>
+    /// True when <paramref name="ex"/> says Windows could not open the file now (another program holds it, access is denied, it
+    /// is gone), rather than that what it holds cannot be read: an IOException or an UnauthorizedAccessException, or a COM
+    /// error of Windows' own (FACILITY_WIN32, as 0x80070020, a sharing violation), which Media Foundation passes on.
+    /// </summary>
+    private static bool CouldNotOpenNow(Exception ex) =>
+        ex is IOException or UnauthorizedAccessException || (ex is System.Runtime.InteropServices.COMException com && ((com.HResult >> 16) & 0x1FFF) == 7);
 
     /// <summary>Writes the video on the thread pool, saying how far it has got (see <see cref="FollowAsync"/>).</summary>
     private async Task WriteAsync(LessonVideoPlan plan, MixedSound sound, string path)

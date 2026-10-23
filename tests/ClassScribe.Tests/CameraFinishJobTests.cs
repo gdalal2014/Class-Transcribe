@@ -255,6 +255,26 @@ public sealed class CameraFinishJobTests
         }));
     }
 
+    /// <summary>
+    /// An older video that cannot be read, of a continued lesson whose first pieces are gone, holds the only picture before its
+    /// first piece: the video is not made, rather than made without it and put in its place; failed says what to do.
+    /// </summary>
+    [Test]
+    public async Task An_older_video_that_cannot_be_read_is_never_replaced_by_one_without_its_picture()
+    {
+        Piece(1.5);
+        File.WriteAllText(_files.LessonVideo, "the older video");
+        _media.Unreadable(Path.GetFileName(_files.LessonVideo));
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
+        Assert.That(seen.Of<CameraFailed>().Single().Why, Is.EqualTo(
+            $"{BaseName}.mp4, the older video, cannot be read (it holds no H.264 picture), and its picture before the first camera piece is in no piece, so a new video would lose it. Move the older video out of the folder to make one from the pieces alone. The camera's pieces are kept"));
+        Assert.That(_media.Written, Is.Empty);
+        Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("the older video"));
+    }
+
     /// <summary>A stale .partial, which nothing holds, is deleted first, with a line; one held open is another making, and the job is refused.</summary>
     [Test]
     public async Task A_stale_partial_is_deleted_and_a_held_one_refuses_the_job()
@@ -307,6 +327,34 @@ public sealed class CameraFinishJobTests
         Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
         Assert.That(_media.Written.Single().Slices.Select(slice => slice.Path), Is.EqualTo(new[] { good }));
         Assert.That(seen.Logs, Has.Member($"{Path.GetFileName(bad)} cannot be read (it holds no H.264 picture), so it is left out of the lesson's video"));
+        Assert.That(File.Exists(good), Is.False, "the piece in the video is deleted once it passed its check");
+        Assert.That(File.Exists(bad), Is.True, "a piece left out is in no video, so it stays");
+        Assert.That(seen.Logs, Has.Member($"{Path.GetFileName(bad)} could not be read, so its picture is in no video; it stays on this laptop. Delete it by hand once you no longer need it"));
+        Assert.That(seen.Logs, Has.Member($"Deleted the camera's 1 piece of {BaseName}: the lesson's video passed its check, and lesson videos do not go to Google Drive (Drive:LessonVideos), so the video is the one copy of the picture kept"));
+    }
+
+    /// <summary>
+    /// A piece Windows cannot open now, as one another program holds, may be read later: the video is not made, every piece is
+    /// kept, and failed names it with how to make the video again, free, rather than making it without that picture.
+    /// </summary>
+    [Test]
+    public async Task A_piece_that_cannot_be_opened_now_keeps_every_piece_for_a_later_making()
+    {
+        var first = Piece(0);
+        var held = Piece(0.5);
+        _media.Unopenable(Path.GetFileName(held));
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        var failed = seen.Of<CameraFailed>().Single().Why;
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(failed, Does.StartWith($"{Path.GetFileName(held)} could not be opened now (The process cannot access the file because it is being used by another process), so the video was not made without its picture. The camera's pieces are kept. To make it again, free: "));
+            Assert.That(_media.Written, Is.Empty);
+            Assert.That(File.Exists(first) && File.Exists(held), Is.True);
+            Assert.That(File.Exists(_files.LessonVideo), Is.False);
+        }
     }
 
     /// <summary>A lesson without any piece has no picture to make a video of.</summary>
