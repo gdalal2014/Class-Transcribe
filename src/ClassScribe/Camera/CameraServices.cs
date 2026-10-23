@@ -26,6 +26,9 @@ public static class CameraServices
         // A lesson's picture (slice 7): each run's camera track starts camera processes with record jobs.
         services.AddSingleton<ICameraRecorder, CameraRecorder>();
 
+        // A lesson's video (slice 8): a camera process with a finish job, for a lesson that stopped, finish-video and the Vs.
+        services.AddTransient<LessonVideoMaker>();
+
         // The start of a camera process (--camera-process <job id>), in a kill-on-close job, from ClassScribe's own folder;
         // the webcam hold and the camera check start one, and a test run refuses the real start (DeviceGuards).
         services.AddSingleton<ICameraProcessStarter>(provider => OperatingSystem.IsWindows()
