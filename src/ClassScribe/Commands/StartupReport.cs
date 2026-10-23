@@ -63,6 +63,7 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
         foreach (var run in runs.Where(run => run.HasUnseenOutcome))
         {
             if (await ShowOutcomeAsync(run.Record, interactive) is { } opened) made = opened;
+            if (await OfferTheVideoAfterTheOutcomeAsync(run, interactive) is { } video) return video;
         }
 
         foreach (var run in runs.Where(run => run.EndedUnexpectedly || run.TranscriptionInterrupted))
@@ -196,9 +197,42 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
     }
 
     /// <summary>
+    /// After the outcome of a lesson's run nobody saw, when its video is still to be made by its files and its process is
+    /// gone (a cancel, a failure, a time limit, a record-only lesson whose video failed): says so and, interactive, offers V
+    /// to make it now, free, and Enter to go on; not interactive, prints the command. Asked once, as the outcome is shown
+    /// once. Returns the choice when V was pressed, which ends the report.
+    /// </summary>
+    private async Task<StartupChoice?> OfferTheVideoAfterTheOutcomeAsync(RunView run, bool interactive)
+    {
+        if (run.IsAlive || !LessonRuns.VideoNotMade(run.Record)) return null;
+
+        ui.WriteLine($"The lesson video of {RecordStarter.Named(run.Record)} was not made; its sound and its camera pieces are kept.");
+        if (!interactive)
+        {
+            ui.WriteLine($"To make it, free: {LessonRuns.FinishVideoCommand(run.Record)}");
+            return null;
+        }
+
+        WriteOffers([("V", MakeTheVideoNow), ("Enter", "go on to the menu")]);
+        while (true)
+        {
+            if (await ui.ReadKeyAsync(CancellationToken.None) is not { } key || key.Key is ConsoleKey.Enter or ConsoleKey.Escape || IsCtrlC(key)) return null;
+            if (key.Key == ConsoleKey.V) return (await CarryOutAsync(run.Record, StartupAction.MakeVideo, () => MakeTheVideoAsync(run.Record))).Choice;
+        }
+    }
+
+    /// <summary>The words of V in the report: the lesson's video made now, from its pieces and its sound, for free.</summary>
+    public const string MakeTheVideoNow = "make the lesson's video now, free";
+
+    /// <summary>Makes <paramref name="run"/>'s lesson video through the runner, as finish-video does, by one of the lesson's files.</summary>
+    private Task<int> MakeTheVideoAsync(RunRecord run) =>
+        commands.FinishVideoAsync(new FinishVideoRequest(LessonRuns.FilesOf(run) is { } files ? files.FindSegments().FirstOrDefault() ?? files.Folder : run.Folder!));
+
+    /// <summary>
     /// What to report about <paramref name="run"/>, which ended unexpectedly or whose transcription was interrupted; null
     /// when it has been dealt with since, which marks it seen, or when its recording cannot be looked at now, which leaves
-    /// it for the next start.
+    /// it for the next start. A lesson's run is dealt with only once its video is made too, and offers T only when it was to
+    /// be transcribed and has no transcript, and V while its video is still to be made (teach-video 6.9).
     /// </summary>
     private RunReport? Report(RunView run, IReadOnlyList<RunView> runs)
     {
@@ -215,21 +249,30 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
                 return null;
             }
 
+            var lesson = LessonRuns.IsLesson(record);
+            var videoNotMade = LessonRuns.VideoNotMade(record);
             var dealtWith =
                 runs.Any(other => other.Record.RunId != record.RunId && other.Record.StartedUtc >= record.StartedUtc && ContinueQuestion.Records(other.Record, files))
                     ? "a later run continued it"
-                    : files.HasTranscript
-                        ? "it has a transcript"
-                        : files.FindSegments().Count == 0 && files.FindSegments(Track.Microphone).Count == 0
-                            ? "its audio is gone"
-                            : null;
+                    : files.HasTranscript && !videoNotMade
+                        ? lesson ? "it has a transcript and its lesson video" : "it has a transcript"
+                        : lesson && run.TranscriptionInterrupted && !record.Request.Transcribe && !videoNotMade
+                            ? "its lesson video is made"
+                            : files.FindSegments().Count == 0 && files.FindSegments(Track.Microphone).Count == 0
+                                ? "its audio is gone"
+                                : null;
             if (dealtWith is not null) return DealtWith(record, dealtWith);
 
+            // A lesson's T only while it was to be transcribed and has none; its V while its video is still to be made.
+            var canTranscribe = !lesson || (record.Request.Transcribe && !files.HasTranscript);
             if (run.TranscriptionInterrupted)
             {
                 return new RunReport(record, files,
-                    [$"The transcript of {RecordStarter.Named(record)} ({record.BaseName}) was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again."],
-                    CanContinue: false);
+                [
+                    LessonRuns.MakesItsVideoOnly(record)
+                        ? $"The lesson video of {RecordStarter.Named(record)} ({record.BaseName}) was not finished; its sound and its camera pieces are kept."
+                        : $"The transcript of {RecordStarter.Named(record)} ({record.BaseName}) was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again."
+                ], CanContinue: false, canTranscribe, videoNotMade);
             }
 
             var endedAt = EndedAt(record, files);
@@ -238,7 +281,7 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
             [
                 $"{recording} ({record.BaseName}) ended unexpectedly at about {When(endedAt)}, {Durations.Format(LengthOf(record, files))} in. Its audio is kept.",
                 Cause(record, files, endedAt)
-            ], CanContinue(record, files, runs));
+            ], CanContinue(record, files, runs), canTranscribe, videoNotMade);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -327,7 +370,8 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
 
         List<(string Key, string Text)> offers = [];
         if (report.CanContinue) offers.Add(("C", "continue it now as its next part"));
-        offers.Add(("T", run.State == RunState.Transcribing ? "transcribe it" : "transcribe what was recorded"));
+        if (report.CanTranscribe) offers.Add(("T", run.State == RunState.Transcribing ? "transcribe it" : "transcribe what was recorded"));
+        if (report.CanMakeVideo) offers.Add(("V", MakeTheVideoNow));
         offers.Add(("F", "forget this"));
         offers.Add(("Enter", "go on to the menu"));
         WriteOffers(offers);
@@ -341,8 +385,11 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
                 case ConsoleKey.C when report.CanContinue:
                     return await CarryOutAsync(run, StartupAction.Continue, () => commands.RecordAsync(ContinueRequest(run), StartOrigin.StartupReport));
 
-                case ConsoleKey.T:
+                case ConsoleKey.T when report.CanTranscribe:
                     return await CarryOutAsync(run, StartupAction.Transcribe, () => commands.TranscribeAsync(new TranscribeRequest(report.Files.Segment(1))));
+
+                case ConsoleKey.V when report.CanMakeVideo:
+                    return await CarryOutAsync(run, StartupAction.MakeVideo, () => MakeTheVideoAsync(run));
 
                 case ConsoleKey.F:
                     journal.MarkSeen(run.RunId);
@@ -398,9 +445,14 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
         foreach (var line in report.Lines) ui.WriteLine(line);
 
         if (report.CanContinue) ui.WriteLine($"To continue it as its next part: {CommandLine.Record(ContinueRequest(report.Run))}");
-        ui.WriteLine(report.Run.State == RunState.Transcribing
-            ? $"To transcribe it: {CommandLine.Transcribe(report.Files.Segment(1))}"
-            : $"To transcribe what was recorded: {CommandLine.Transcribe(report.Files.Segment(1))}");
+        if (report.CanTranscribe)
+        {
+            ui.WriteLine(report.Run.State == RunState.Transcribing
+                ? $"To transcribe it: {CommandLine.Transcribe(report.Files.Segment(1))}"
+                : $"To transcribe what was recorded: {CommandLine.Transcribe(report.Files.Segment(1))}");
+        }
+
+        if (report.CanMakeVideo) ui.WriteLine($"To make its lesson video, free: {LessonRuns.FinishVideoCommand(report.Run)}");
         ui.WriteLine(ForgetInTheMenu);
     }
 
@@ -414,12 +466,14 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
     /// <summary>True for Ctrl+C, which goes on as Enter does.</summary>
     private static bool IsCtrlC(ConsoleKeyInfo key) => key.Key == ConsoleKey.C && key.Modifiers.HasFlag(ConsoleModifiers.Control);
 
-    /// <summary>A run to report: the run, its recording's files, the lines that describe it, and whether C may continue it.</summary>
+    /// <summary>A run to report: the run, its recording's files, the lines that describe it, and which of C, T and V are offered.</summary>
     /// <param name="Run">The run as its file says.</param>
     /// <param name="Files">The files of the recording it made.</param>
     /// <param name="Lines">What happened, as shown above the offers or the commands.</param>
     /// <param name="CanContinue">True when C is offered.</param>
-    private sealed record RunReport(RunRecord Run, RecordingFiles Files, IReadOnlyList<string> Lines, bool CanContinue);
+    /// <param name="CanTranscribe">True when T is offered: always for a class, and for a lesson only when it was to be transcribed and has no transcript.</param>
+    /// <param name="CanMakeVideo">True when V is offered: a lesson whose video is still to be made, by its files.</param>
+    private sealed record RunReport(RunRecord Run, RecordingFiles Files, IReadOnlyList<string> Lines, bool CanContinue, bool CanTranscribe = true, bool CanMakeVideo = false);
 }
 
 /// <summary>Sentences that the report, the starter and the launcher build around a message from elsewhere, such as a run's outcome.</summary>

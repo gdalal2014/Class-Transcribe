@@ -427,6 +427,32 @@ public class AttachCommandTests
     }
 
     /// <summary>
+    /// A record-only lesson found in Transcribing with its process gone was having its video made, not its transcript: it is
+    /// reported so, with the command that makes the video, free (teach-video 6.9).
+    /// </summary>
+    [Test]
+    public async Task A_lesson_whose_video_s_making_was_cut_off_is_reported_with_finish_video()
+    {
+        var record = TestRuns.Record(TestRuns.Id(7), RunState.Transcribing, processId: 1007) with { BaseName = BaseName, Folder = Folder };
+        record = record with
+        {
+            Request = record.Request with
+            {
+                Transcribe = false,
+                Source = new SourcePlan(Audio.RecordingMode.Microphone, Class: null, new MicrophoneChoice(null), new CameraChoice("OBSBOT", "720p"))
+            }
+        };
+        _runtime.Journal.Begin(record).Dispose();
+
+        var exitCode = await Command().RunAsync(record.RunId, alert: false);
+
+        Assert.That(exitCode, Is.EqualTo(1));
+        Assert.That(Shown("The lesson video of \"Kalam\" was not finished; its sound and its camera pieces are kept. To make it, free, run:"), Is.True);
+        Assert.That(Shown("finish-video"), Is.True);
+        Assert.That(Shown("The transcript of"), Is.False);
+    }
+
+    /// <summary>
     /// A recorder lost while the view showed it recording is continued at once as the next part of the same recording: the
     /// same name, source, folder and choice to transcribe and to open, a new run id, and the start marked as a window
     /// continuing by itself, which the starter takes over. The command exits as that run does.

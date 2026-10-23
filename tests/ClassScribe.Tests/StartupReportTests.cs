@@ -17,7 +17,7 @@ namespace ClassScribe.Tests;
 /// folders; the clock reads local time in US Eastern time, where the evening class stamped 23:00 UTC began at 19:00.
 /// </summary>
 [TestFixture]
-public class StartupReportTests
+public partial class StartupReportTests
 {
     /// <summary>The run most tests report.</summary>
     private static readonly string RunId = TestRuns.Id();

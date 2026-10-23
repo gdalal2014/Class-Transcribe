@@ -426,7 +426,9 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
 
             case RunState.Transcribing:
                 MarkSeen(lost.RunId, origin);
-                ui.WriteLine($"The transcript of \"{name}\" was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again.{TranscribeCommand(lost)}");
+                ui.WriteLine(LessonRuns.MakesItsVideoOnly(lost)
+                    ? LessonRuns.VideoNotFinished(lost)
+                    : $"The transcript of \"{name}\" was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again.{TranscribeCommand(lost)}");
                 return new Step.Done(NotDone);
 
             default:

@@ -96,7 +96,9 @@ public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, IComman
 
         if (run.Home != RunHome.Separate)
         {
-            var (doing, what) = run.State == RunState.Transcribing ? ("transcribed", "transcription") : ("recorded", "recording");
+            var (doing, what) = run.State != RunState.Transcribing ? ("recorded", "recording")
+                : LessonRuns.MakesItsVideoOnly(run) ? ("made into its lesson video", "making of its video")
+                : ("transcribed", "transcription");
             Say($"\"{run.Request.Name}\" is being {doing} in another ClassScribe window (process {run.ProcessId}), which shows it; closing that window ends the {what}.",
                 LogLevel.Warning);
             return Failed;
@@ -247,9 +249,11 @@ public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, IComman
         journal.MarkSeenIfOver(run.RunId);
     }
 
-    /// <summary>What carries on in the background once the window has left <paramref name="run"/>: its transcription, or its recording.</summary>
+    /// <summary>What carries on in the background once the window has left <paramref name="run"/>: its transcription, a record-only lesson's video, or its recording.</summary>
     private static string CarriesOn(RunRecord run) => run.State switch
     {
+        RunState.Transcribing when LessonRuns.MakesItsVideoOnly(run) && run.Folder is { Length: > 0 } lesson =>
+            $"The lesson's video is being made in the background; it will appear in {lesson}.",
         RunState.Transcribing when run.Folder is { Length: > 0 } folder => $"The transcription carries on in the background; its transcript will appear in {folder}.",
         RunState.Transcribing => "The transcription carries on in the background.",
         _ => "The recording carries on in the background."
@@ -264,9 +268,11 @@ public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, IComman
             : $"The recording \"{run.Request.Name}\" ended unexpectedly at about {when}, before anything was recorded.";
     }
 
-    /// <summary>That the transcript of <paramref name="run"/> was not finished, with the command that transcribes its recording.</summary>
+    /// <summary>That the transcript of <paramref name="run"/> was not finished, with the command that transcribes its recording; for a record-only lesson, its video.</summary>
     private static string TranscriptNotFinished(RunRecord run)
     {
+        if (LessonRuns.MakesItsVideoOnly(run)) return LessonRuns.VideoNotFinished(run);
+
         var said = $"The transcript of \"{run.Request.Name}\" was not finished; its audio is complete.";
         var recording = run is { Folder: { Length: > 0 } folder, BaseName: { Length: > 0 } baseName } ? new RecordingFiles(folder, baseName).Segment(1) : run.Folder;
         return recording is null

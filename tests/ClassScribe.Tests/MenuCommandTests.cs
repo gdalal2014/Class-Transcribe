@@ -661,6 +661,28 @@ public class MenuCommandTests
     }
 
     /// <summary>
+    /// 3 notes a lesson's video, made or not made yet, and offers V: V then a lesson's number makes its video, free, through the
+    /// runner, by one of its files; V then a recording without the camera says it has none to make.
+    /// </summary>
+    [Test]
+    public async Task Three_notes_a_lesson_s_video_and_V_makes_it()
+    {
+        var plain = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        var lesson = WriteRecording("Tajwid", new DateTimeOffset(2026, 10, 15, 19, 30, 0, TimeSpan.Zero));
+        File.WriteAllBytes(lesson.CameraPiece(TimeSpan.Zero), [1, 2, 3]);
+        _commands.Setup(c => c.FinishVideoAsync(It.IsAny<FinishVideoRequest>())).ReturnsAsync(0);
+        _ui.Type('3', 'v', '1', '3', 'v', '2', 'q');
+
+        await RunMenuAsync();
+
+        Assert.That(Lines(), Has.Member($"  1  {lesson.BaseName}  00:00:00  lesson video not made yet  no transcript yet"));
+        Assert.That(Lines(), Has.Member("Press a recording's number to transcribe it, V then a lesson's number to make its video (free), or Esc to go back."));
+        Assert.That(Lines(), Has.Member($"{plain.BaseName} was recorded without the camera, so it has no video to make."));
+        _commands.Verify(c => c.FinishVideoAsync(new FinishVideoRequest(lesson.Segment(1), true)), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(It.IsAny<TranscribeRequest>()), Times.Never);
+    }
+
+    /// <summary>
     /// 3 lists the recordings of both layouts together, those in the course and date folders and those flat in the folder
     /// of their name, and a second class of the name on the same day is shown with its date folder, "(2)", which tells the
     /// day's classes apart. The one picked is sent by its first segment, in its own folder.

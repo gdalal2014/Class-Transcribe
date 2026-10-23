@@ -365,7 +365,9 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     /// </summary>
     internal static string InAnotherWindow(RunRecord run) =>
         run.State == RunState.Transcribing
-            ? $"\"{run.Request.Name}\" is being transcribed in another ClassScribe window (process {run.ProcessId}), which shows it"
+            ? LessonRuns.MakesItsVideoOnly(run)
+                ? $"\"{run.Request.Name}\" is having its lesson video made in another ClassScribe window (process {run.ProcessId}), which shows it"
+                : $"\"{run.Request.Name}\" is being transcribed in another ClassScribe window (process {run.ProcessId}), which shows it"
             : $"\"{run.Request.Name}\" is being recorded in another ClassScribe window (process {run.ProcessId}), which shows it; closing that window ends the recording";
 
     /// <summary>
