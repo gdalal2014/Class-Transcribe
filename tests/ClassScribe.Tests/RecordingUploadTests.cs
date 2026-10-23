@@ -169,8 +169,8 @@ public class RecordingUploadTests
 
         Assert.That(result.Outcome, Is.EqualTo(RecordingOutcome.Done));
         Assert.That(_world.Google.FilesIn(DriveFolder.Id).ToDictionary(file => file.Name, file => file.Content), Is.EquivalentTo(copies));
-        Assert.That(_world.Logs.Problems, Has.Member($"{_mantiq.BaseName}.mic.wav on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown goes up again, as a new revision. The copy on Drive stays as it is"));
-        Assert.That(_world.Logs.Problems, Has.Member($"{_mantiq.BaseName}.md on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown goes up again, as a new revision. The copy on Drive stays as it is"));
+        Assert.That(_world.Logs.Problems, Has.Member($"{_mantiq.BaseName}.mic.wav on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown, or a lesson's video made again, goes up again, as a new revision. The copy on Drive stays as it is"));
+        Assert.That(_world.Logs.Problems, Has.Member($"{_mantiq.BaseName}.md on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown, or a lesson's video made again, goes up again, as a new revision. The copy on Drive stays as it is"));
     }
 
     /// <summary>

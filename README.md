@@ -1309,8 +1309,11 @@ camera pieces and its `.mp4.partial` never go up. At the start of a lesson with 
 where its video goes; with `Drive:LessonVideos` off: `The lesson's video stays on this laptop; to send
 lesson videos to Google Drive too, run: & "...\ClassScribe.exe" settings set Drive:LessonVideos "true".
 Its camera pieces are deleted once the video passes its check.` (A free 15 GB Drive holds about six hours
-of 720p video.) A lesson's video made again (`finish-video`) is not sent over the copy already on Drive:
-ClassScribe never replaces a video there.
+of 720p video.) A lesson's video made again since its copy went up (a continued lesson's, or one made
+with `finish-video`) goes up whole, as a new revision of that copy, with the line `<base>.mp4 was made
+again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy`: an
+hour of video takes as long again to send. Google Drive keeps the older revision for 30 days, under the
+file's Manage versions.
 Your own files in the folder, such as the class's PDFs, never go up: only files named as the
 recording's are taken. With `Drive:Upload` set to `WithoutAudio` the `.wav` files stay on the laptop
 alone, and so does a lesson's video, which holds the same sound. A YouTube video's recording goes up the same way, its `.source.json` with it, but
@@ -1343,7 +1346,8 @@ new revision of the log, the next time that recording goes up (after a transcrip
 `%LOCALAPPDATA%\ClassScribe\drive\recordings`), so another upload of the recording sends only what is
 new. A new transcript copy or a new part is a new file; a text file that has grown, such as the log
 after a continued class or the marks, goes up as a new revision of ClassScribe's own copy, and as a
-new file when that copy was deleted on Drive or is in the trash, which ClassScribe never touches.
+new file when that copy was deleted on Drive or is in the trash, which ClassScribe never touches. A
+lesson's video made again goes up the same way, as a new revision of its own copy, larger or smaller.
 Nothing else on Drive is ever replaced: a file on the laptop that changed in any other way is left
 out, with a warning, and the copy on Drive stays as it is. When the record of a recording is lost
 (another laptop, `%LOCALAPPDATA%` cleared), the files already in its folder on Drive are taken for
@@ -2714,9 +2718,10 @@ Windows audio through COM interop.
   and asks only for `drive.file`, which lets ClassScribe see and change only the files and folders it
   makes itself, nothing else in your Drive. It never shares anything (it never calls Drive's sharing
   API), and it only adds to Drive: it never deletes, trashes or overwrites anything there, with one
-  exception, a new revision of its own copy of a file in two cases only: a text file of the recording
-  (its log, its marks, a transcript or an answer) that has grown since it went up, and its own copy
-  whose MD5 check failed, sent once more. A class's audio goes to Google's servers, as it does to
+  exception, a new revision of its own copy of a file in three cases only: a text file of the recording
+  (its log, its marks, a transcript or an answer) that has grown since it went up, a lesson's video made
+  again (with `Drive:LessonVideos` on), and its own copy whose MD5 check failed, sent once more. A
+  class's audio goes to Google's servers, as it does to
   ElevenLabs'; with your microphone, or in person, other voices go too. Your own files beside a
   recording, such as the class's PDFs, never go up. The Google client and the sign-in stay on this
   laptop, encrypted for your Windows account; they are never written to a log (the `.log` that goes up
@@ -3064,7 +3069,7 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Sending the lesson's video (2.4 GB) to Google Drive; at this connection's speed so far, about 30 minutes.` | Normal, with `Drive:LessonVideos` on: the lesson's video goes up last, after everything else of the recording. |
 | `... is having its lesson video made now; it goes up once it has stopped` | `finish-video` is making the lesson's video; the recording goes up with the next upload. |
 | `The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: ...` (a lesson's start) | Lesson videos stay off Drive by default. Run the command to send them too (they are large: about 2.3 GB an hour at 720p). |
-| `The camera's pieces of ... stay: ....mp4 differs from its copy on Google Drive ...` (free-space) | The video on the laptop is not the one on Drive (made again since, say). The pieces are kept; free-space deletes them once a video's copy on Drive matches. |
+| `The camera's pieces of ... stay: ....mp4 differs from its copy on Google Drive ...` (free-space) | The video on the laptop is not the one on Drive (made again since, say). The pieces are kept; upload the lesson (9 > U, or `drive upload`), which sends the new video as a new revision of its copy, and free-space deletes them once that copy matches. |
 | `Freed the camera's 2 pieces of ... (...): its lesson video is on Google Drive, checked, in ...; the video stays here too` | Normal: the pieces kept for Drive went once its copy of the video was checked. |
 | `The lesson video of ... is still to be made, so none of its audio or camera pieces were deleted: ...` (free-space) | A camera piece is newer than the lesson's video, or there is no video, so free-space keeps the lesson whole. Run the `finish-video` command the line gives, then free-space again. If you do not want the video, delete the `.cam*.mp4` pieces by hand first. |
 | `... is newer than the lesson video of ..., which does not hold it, so it stays on this laptop` (free-space) | That piece's picture is in no video, and the sound to make one is gone from the laptop. Download the `.wav` files from Drive into the lesson's folder and run `finish-video`, or delete the piece by hand if you do not need it. |
@@ -3076,7 +3081,8 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Google Drive is full: the account's storage takes nothing more (HTTP 403, storageQuotaExceeded: ...). Make room in Google Drive, or add storage to the account, then upload again.` | Make room in Google Drive or add storage, then upload with 9 > U. After a class, ClassScribe tries that recording again no sooner than a day later. |
 | `Google Drive takes no more uploads today (...). Upload again tomorrow.` | Google lets each account upload 750 GB in 24 hours ([Google's limits](https://knowledge.workspace.google.com/admin/drive/storage-and-upload-limits-for-google-workspace)). Upload tomorrow with 9 > U; after a class, ClassScribe tries again no sooner than a day later. |
 | `<file> does not match Drive's MD5 after it went up (here ..., ... bytes; on Drive ..., ... bytes); sending it again as a new revision` | The copy that arrived differs from the file, so it is sent once more, as a new revision of ClassScribe's own copy. `<file> still does not match Drive's MD5 after it was sent again; it goes up again with the next upload.` leaves the recording waiting; the next upload tries again. |
-| `<file> on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown goes up again, as a new revision. The copy on Drive stays as it is`, `A different <file> is already in My Drive > ... on Google Drive; ClassScribe never replaces it, so this one did not go up` | The file changed on the laptop after it went up, or Drive holds another file of that name. The copy on Drive stays as it is; only a text file that has grown goes up again. To keep the laptop's version on Drive as well, upload it yourself under another name. |
+| `<file> on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown, or a lesson's video made again, goes up again, as a new revision. The copy on Drive stays as it is`, `A different <file> is already in My Drive > ... on Google Drive; ClassScribe never replaces it, so this one did not go up` | The file changed on the laptop after it went up, or Drive holds another file of that name. The copy on Drive stays as it is; only a text file that has grown, or a lesson's video made again, goes up again. To keep the laptop's version on Drive as well, upload it yourself under another name. |
+| `<base>.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy` | Normal, with `Drive:LessonVideos` on: a continued lesson's video, or one made with `finish-video`, replaces its copy on Drive as a new revision of the same file. Once it is checked there, free-space can delete the camera's pieces. |
 | `<file>'s copy on Google Drive is no longer there, or is in the trash, so it goes up again as a new file; ClassScribe takes nothing out of the trash` | Nothing to do: the grown file goes up again, and the copy in the trash stays there. |
 | `<base> is being recorded now; it goes up once it has stopped`, `<base> is being transcribed now; it goes up once it has stopped`, `<file> is open in another program, as while it is being recorded; <base> goes up once it is closed` | Nothing to do: it waits and goes up after it has stopped. For another program holding a file, close that program. |
 | `Google Drive answered with an upload address for <file> that is not its own, so nothing was sent there.`, `The upload of <file> begun earlier names an address that is not Google Drive's own, so it is not used; the upload starts again` | ClassScribe sends a file only to Google Drive's own address. Nothing was sent elsewhere; the file goes up with the next upload, or starts again from the beginning. If it happens again, check `Drive:ApiBaseUrl`. |

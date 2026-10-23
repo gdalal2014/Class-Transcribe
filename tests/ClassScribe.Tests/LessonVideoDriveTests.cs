@@ -112,6 +112,40 @@ public sealed class LessonVideoDriveTests
     public void The_video_line_gives_a_time_from_the_speed_so_far(long bytes, double? bytesPerSecond, string line) =>
         Assert.That(RecordingUpload.SendingTheVideo(bytes, bytesPerSecond), Is.EqualTo(line));
 
+    /// <summary>
+    /// A lesson's video made again since its copy went up (a continued lesson's, by finish-video) goes up whole as a new
+    /// revision of that copy, as teach-video 8 asks, smaller or larger: the same file on Drive, never a second one, its bytes
+    /// now the new video's and checked, which is said; free-space then finds the copy the same and frees the pieces.
+    /// </summary>
+    [TestCase(2)]
+    [TestCase(5)]
+    public async Task A_video_made_again_goes_up_as_a_new_revision_of_its_copy(int pieces)
+    {
+        LessonVideos(on: true);
+        await UploadAsync();
+        var b = _lesson.BaseName;
+        var folder = _world.Google.FolderAt("Tajwid/2026-10-19")!.Id;
+        var copy = _world.Google.FilesIn(folder).Single(file => file.Name == $"{b}.mp4");
+        File.WriteAllBytes(_lesson.LessonVideo, Bytes(pieces * GoogleWorld.PieceSize + 7000, 5));
+
+        var result = await UploadAsync();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.Outcome, Is.EqualTo(RecordingOutcome.Done));
+            Assert.That(_world.Google.FilesIn(folder).Where(file => file.Name == $"{b}.mp4").Select(file => file.Id), Is.EqualTo(new[] { copy.Id }), "a new revision, not a second file");
+            Assert.That(copy.Content, Is.EqualTo(File.ReadAllBytes(_lesson.LessonVideo)));
+            Assert.That(copy.Revisions, Is.EqualTo(2));
+            Assert.That(_world.Lines, Has.Member($"{b}.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy"));
+            Assert.That(_world.Google.Destructive, Is.Empty);
+        }
+
+        var freed = await _world.Freer().FreeAsync(_lesson, CancellationToken.None);
+
+        Assert.That(freed.Problem, Is.Null);
+        Assert.That(_lesson.FindCameraPieces(), Is.Empty);
+    }
+
     /// <summary>A lesson whose video is being made, its .partial held open, waits to go up.</summary>
     [Test]
     public async Task A_lesson_whose_video_is_being_made_waits()

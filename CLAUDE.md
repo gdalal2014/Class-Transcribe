@@ -115,7 +115,8 @@ advice after a format error (10 A).
   exception Gulzar allowed: a new revision of its own copy of a text file that has grown (a log, the
   marks, an answer laid out anew; `RecordingUpload` sends a revision only when the text file is
   larger than Drive's copy, and to its copy that is still there outside the trash, or to repair its own
-  copy whose MD5 check failed). Deleting local files,
+  copy whose MD5 check failed), and, as teach-video 8 asks, a new revision of its own verified copy of a
+  lesson's video (`<base>.mp4`) made again, larger or smaller; never of a `.wav`. Deleting local files,
   by `drive free-space` or by hand, never touches Drive. A test run turns on the AppContext switches
   `RoamingFolder.RefuseTheRealFolderSwitch` and `RuntimeFolder.RefuseTheRealFolderSwitch` (`TestGuards`,
   the assembly's `[SetUpFixture]`), so a test that asks for the real `%APPDATA%\ClassScribe` or
@@ -1239,7 +1240,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   give the same size and `md5Checksum`, else a warning with both and one new revision of itself,
   then the recording waits; a verified text file that has grown goes up as a new revision while
   `files.get` finds its copy outside the trash, and otherwise, its copy deleted or trashed on Drive,
-  as a new file in the folder (the trash is never touched); any other change is left as it is on
+  as a new file in the folder (the trash is never touched), and so does a verified lesson video made
+  again (`TargetOfAsync`'s `lessonVideo`, with the line `<base>.mp4 was made again since its copy went
+  up ...`); any other change is left as it is on
   Drive with a warning; without a manifest, a same-name text file on Drive gets a revision only when
   the local one is larger; a file gone from the laptop after its copy
   was checked stays in the manifest and counts as safe. Lines: `Google Drive: uploading <base> (n

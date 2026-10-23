@@ -55,8 +55,9 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 /// (see <see cref="SendsLessonVideo"/>), streamed as the audio is; never the camera's pieces. Each file's MD5 is worked out once and kept in the manifest
 /// (<see cref="UploadManifests"/>) with its size and the time it was last written, and after its last piece the copy on
 /// Drive is checked against Drive's own size and MD5; one that differs is sent again once, as a new revision. A file already
-/// checked goes up no more; a text file that has grown since (a log, the marks, an answer laid out anew) goes up as a new
-/// revision of the same file on Drive; nothing else on Drive is ever replaced, deleted or trashed. A file deleted from the
+/// checked goes up no more; a text file that has grown since (a log, the marks, an answer laid out anew), and a lesson's
+/// video made again since (teach-video 8), go up as a new revision of the same file on Drive; nothing else on Drive is ever
+/// replaced, deleted or trashed. A file deleted from the
 /// laptop after its copy was checked is safe on Drive, not missing. With no manifest, Drive's files in the folder are
 /// adopted by name and MD5, so nothing goes up twice. A recording being recorded or transcribed now is passed over and left
 /// in the queue, and so is one whose audio another program holds open. One whose folder is not there waits only while its
@@ -276,7 +277,8 @@ public sealed partial class RecordingUpload(
 
     /// <summary>
     /// True for a file of media, which goes up streamed from the file as it is, never read into memory, and never as a
-    /// revision: a segment of either track, or a lesson's finished video, of up to gigabytes.
+    /// revision but for a lesson's finished video made again: a segment of either track, or a lesson's finished video, of up
+    /// to gigabytes.
     /// </summary>
     public static bool IsMedia(string path) => IsAudio(path) || path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
 
@@ -506,7 +508,8 @@ public sealed partial class RecordingUpload(
 
         /// <summary>
         /// Sends one file, or finds it there already, or leaves it out when it differs from a copy on Drive that may not be
-        /// replaced; a text file that has grown since its copy went up gets a new revision of that copy.
+        /// replaced; a text file that has grown since its copy went up, or a lesson's video made again, gets a new revision of
+        /// that copy.
         /// </summary>
         private async Task<FileOutcome> SendFileAsync(string path, DriveFolderPath location, CancellationToken cancellationToken)
         {
@@ -521,7 +524,7 @@ public sealed partial class RecordingUpload(
             var seconds = audio ? entry.Seconds is { } measured && entry.Size == size ? measured : ClassFolders.MeasureSegment(path).TotalSeconds : (double?)null;
             entry = Put(entry with { Size = size, LastWriteUtc = lastWrite, Md5 = md5, Seconds = seconds, FreedUtc = null });
 
-            if (await TargetOfAsync(entry, name, media, location, cancellationToken) is not { } target)
+            if (await TargetOfAsync(entry, name, media, RecordingFiles.IsLessonVideo(path), location, cancellationToken) is not { } target)
                 return Entry(name).InSync ? FileOutcome.AlreadyThere : FileOutcome.LeftOut;
 
             var source = new UploadSource(content, size, md5, ContentTypeOf(name));
@@ -556,21 +559,26 @@ public sealed partial class RecordingUpload(
         /// the copy in the trash left as it is. ClassScribe's own copy whose check failed last time is asked about again:
         /// adopted when it matches now, otherwise sent again as a new revision of itself, as it was never a good copy. Without
         /// either, the folder on Drive is looked through for a copy of the same name, which is adopted when it is the same.
-        /// Media (<paramref name="media"/>: audio, or a lesson's video) is never sent as a revision.
+        /// Media (<paramref name="media"/>: audio, or a lesson's video) is never sent as a revision, but for a lesson's finished
+        /// video (<paramref name="lessonVideo"/>) made again since its copy was checked, as a continued lesson's by
+        /// finish-video: it goes up whole as a new revision of that copy, larger or smaller (teach-video 8), which is said.
         /// </summary>
-        private async Task<UploadTarget?> TargetOfAsync(ManifestFile entry, string name, bool media, DriveFolderPath location, CancellationToken cancellationToken)
+        private async Task<UploadTarget?> TargetOfAsync(ManifestFile entry, string name, bool media, bool lessonVideo, DriveFolderPath location, CancellationToken cancellationToken)
         {
             if (entry.IsVerified)
             {
                 if (entry.InSync) return null;
-                if (media || entry.Size <= entry.DriveSize)
+                if (!lessonVideo && (media || entry.Size <= entry.DriveSize))
                 {
-                    owner.Logger.LogWarning("{Name} on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown goes up again, as a new revision. The copy on Drive stays as it is", name);
+                    owner.Logger.LogWarning("{Name} on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown, or a lesson's video made again, goes up again, as a new revision. The copy on Drive stays as it is", name);
                     return null;
                 }
 
                 if (await CheckAsync(new DriveFile(entry.DriveId!, name, null, null, null, null, null), name, cancellationToken) is { Trashed: not true })
+                {
+                    if (lessonVideo) owner.Logger.LogInformation("{Name} was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy", name);
                     return new UploadTarget(name, null, entry.DriveId);
+                }
 
                 owner.Logger.LogInformation("{Name}'s copy on Google Drive is no longer there, or is in the trash, so it goes up again as a new file; ClassScribe takes nothing out of the trash", name);
                 entry = Put(entry with { DriveId = null, DriveSize = null, DriveMd5 = null, VerifiedUtc = null, Session = null });
