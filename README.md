@@ -495,8 +495,11 @@ record of which apps use the microphone (the one behind Settings > Privacy & sec
 while the record says the app is using the microphone, it counts as listening, and the log says so
 once (`Windows would not give the state of zoom's session on "..." (...); until it does, Windows'
 microphone usage record says whether zoom is listening`); when the record says it closed the
-microphone, it counts as not listening. If the record says nothing of the app, or the session cannot
-even be told apart, nothing is written, and after 10 seconds the title shows `CANNOT READ THE
+microphone, it counts as not listening. With `auto`, the default, which follows any app, every app's
+session counts as the followed app's, and each one whose state cannot be read is judged by the
+record's entry for its own program, found by its name (`Zoom` for the Zoom app), so a class in the
+Zoom app needs no `--mic-follows zoom` for this. If the record says nothing of the app, or the session
+cannot even be told apart, nothing is written, and after 10 seconds the title shows `CANNOT READ THE
 MICROPHONE SESSIONS`, naming the session and the Windows call that failed.
 
 **V** switches your microphone off and on by hand, in any mode. Off releases the microphone, so
@@ -2764,8 +2767,8 @@ words you see.
 | `The microphone starts switched off (V switches it on)` | `Recording:ClassAppMute` is `Unknown` or `Invisible`: your voice is recorded after you press V, and only while the class app holds the microphone. |
 | `chrome has not opened the microphone for 5 minutes; your voice is not recorded until it does. Join the class, or check that the page may use the microphone` (`MIC WAITING`) | Join the class, or allow the microphone in the page. The class is recorded meanwhile. |
 | `chrome uses "OBSBOT ..."; ClassScribe records "Microphone Array ..."` in the status line | The class app and ClassScribe use different microphones for a moment; ClassScribe moves to the app's at its next look. |
-| `Cannot read chrome's microphone session: ...; your voice is not recorded until the sessions can be read again` (`CANNOT READ THE MICROPHONE SESSIONS` in red after 10 seconds) | Windows' audio service is restarting, or refused the look; the words after the colon say what could not be read, whose session it was when Windows said (`session 2 of 3 (Zoom, pid 9090) not readable: GetState: ...`) and which call failed. ClassScribe keeps looking four times a second, and the class is recorded all the while. Another app's session that cannot be read does not cause this; the followed app's own does when Windows' usage record says nothing of the app either. |
-| `Windows would not give the state of zoom's session on "Microphone Array ..." (...); until it does, Windows' microphone usage record says whether zoom is listening` | The followed app's own session on your microphone cannot be read beyond its process, as with the Zoom app in a meeting; Windows' record of which apps use the microphone stands in for it, so your voice is recorded while the record says the app uses the microphone. Nothing to do. |
+| `Cannot read chrome's microphone session: ...; your voice is not recorded until the sessions can be read again` (`CANNOT READ THE MICROPHONE SESSIONS` in red after 10 seconds) | Windows' audio service is restarting, or refused the look; the words after the colon say what could not be read, whose session it was when Windows said (`session 2 of 3 (Zoom, pid 9090) not readable: GetState: ...`) and which call failed. ClassScribe keeps looking four times a second, and the class is recorded all the while. Another app's session that cannot be read does not cause this; the followed app's own (with `auto`, any app's) does when Windows' usage record says nothing of the app either. |
+| `Windows would not give the state of zoom's session on "Microphone Array ..." (...); until it does, Windows' microphone usage record says whether zoom is listening` | The followed app's own session on your microphone (with `auto`, any app's, named by its program, such as `Zoom`) cannot be read beyond its process, as with the Zoom app in a meeting; Windows' record of which apps use the microphone stands in for it, so your voice is recorded while the record says the app uses the microphone. Nothing to do. |
 | `The microphone watch stopped: ...; your voice is not recorded for the rest of this run` | The watch failed in a way it did not expect. The class is still recorded; start the next run as usual. |
 | `Could not look at the class app's microphone sessions now; the looks so far decide` | A last look failed, at V or at the stop; the watch's own line says why. |
 | `chrome let go of the microphone at 19:12:03 and took it again at 19:12:40. If that was you muting and unmuting in the class page ...` | If those were your clicks, your mute is visible to Windows: set `Recording:ClassAppMute` to `Visible`. If it was a rejoin or a device change, leave it. |

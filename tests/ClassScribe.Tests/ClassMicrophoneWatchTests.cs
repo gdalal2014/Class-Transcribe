@@ -189,7 +189,10 @@ public class ClassMicrophoneWatchTests
         Assert.That(_watch.LookNow().Listening, Is.EqualTo(AppListening.Unknown));
     }
 
-    /// <summary>Following any app, another app's session that could not be read leaves nothing known: it may be listening.</summary>
+    /// <summary>
+    /// Following any app, an app's session whose state could not be read leaves nothing known while Windows' usage record
+    /// says nothing of that app: it may be listening.
+    /// </summary>
     [Test]
     public void Following_any_app_another_apps_unread_session_leaves_nothing_known()
     {
@@ -201,7 +204,100 @@ public class ClassMicrophoneWatchTests
         Assert.Multiple(() =>
         {
             Assert.That(look.Listening, Is.EqualTo(AppListening.Unknown));
-            Assert.That(look.UsageInUse, Is.Null, "no one app to look up in the record");
+            Assert.That(look.UsageInUse, Is.Null, "the look's word from the record is the followed app's, and no one app is followed");
+        });
+    }
+
+    /// <summary>
+    /// Following any app (auto, the shipped default), the session of an app whose state Windows would not give, as the Zoom
+    /// app's in a meeting on 18 October, is judged by Windows' usage record as a followed app's is: by the entry of its own
+    /// program, matched by the whole name, so that another program whose name holds the app's says nothing of it. In use,
+    /// the app is listening; closed, it is not. The look's own word from the record stays null, since no one app is
+    /// followed. That the record decides is said once, at Information, naming the app.
+    /// </summary>
+    [Test]
+    public void Following_any_app_an_unread_session_is_judged_by_its_own_programs_entry_in_the_usage_record()
+    {
+        Make(new FollowRule.Any());
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null)));
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("ZoomOutlookPlugin.exe", inUse: true));
+
+        var anotherProgram = _watch.LookNow();
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: true));
+        var inUse = _watch.LookNow();
+        _record.Entries[1] = FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: false);
+        var closed = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(anotherProgram.Listening, Is.EqualTo(AppListening.Unknown), "a program whose name only holds the app's says nothing of it");
+            Assert.That(inUse.Listening, Is.EqualTo(AppListening.Yes));
+            Assert.That(inUse.Holds, Is.True);
+            Assert.That(inUse.ListeningApps, Is.EqualTo(new[] { "Zoom" }));
+            Assert.That(inUse.UsageInUse, Is.Null, "no one app is followed");
+            Assert.That(closed.Listening, Is.EqualTo(AppListening.No), "the other program in use says nothing of the Zoom app");
+            Assert.That(closed.Holds, Is.True);
+            Assert.That(_log.Entries.Where(entry => entry.Level >= LogLevel.Information).Select(entry => entry.Message), Is.EqualTo(new[]
+            {
+                $"Windows would not give the state of Zoom's session on \"{Laptop.ArrayName}\" ({ZoomUnread}); until it does, Windows' microphone usage record says whether Zoom is listening"
+            }), "said once, when the record first decides");
+        });
+    }
+
+    /// <summary>
+    /// Following any app, with several sessions whose state could not be read, one app using the microphone by the record
+    /// is enough for listening, and only that app is listed; not listening needs every one of them to have closed it by the
+    /// record. One the record says nothing of, or whose program could not be named, leaves nothing known otherwise.
+    /// </summary>
+    [Test]
+    public void Following_any_app_every_unread_sessions_program_must_have_closed_the_microphone_for_none_to_be_listening()
+    {
+        Make(new FollowRule.Any());
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null), new UnreadCaptureSession(Laptop.Vibe, "vibe", null)));
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: false));
+
+        var oneSaysNothing = _watch.LookNow();
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("vibe.exe", inUse: false));
+        var bothClosed = _watch.LookNow();
+        _record.Entries[1] = FakeMicrophoneUsageRecord.Desktop("vibe.exe", inUse: true);
+        var oneInUse = _watch.LookNow();
+        _record.Entries[1] = FakeMicrophoneUsageRecord.Desktop("vibe.exe", inUse: false);
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null), new UnreadCaptureSession(Laptop.Vibe, null, null)));
+        var oneUnnamed = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(oneSaysNothing.Listening, Is.EqualTo(AppListening.Unknown));
+            Assert.That(bothClosed.Listening, Is.EqualTo(AppListening.No));
+            Assert.That(oneInUse.Listening, Is.EqualTo(AppListening.Yes));
+            Assert.That(oneInUse.ListeningApps, Is.EqualTo(new[] { "vibe" }));
+            Assert.That(oneUnnamed.Listening, Is.EqualTo(AppListening.Unknown), "a session whose program could not be named cannot be looked up");
+        });
+    }
+
+    /// <summary>
+    /// Following any app, the record does not stand in for the unread session of an app that the last look over every
+    /// microphone found taking sound from another microphone: its word is explained by that one, and nothing is known. No
+    /// other microphone is reported, as there is no one app to move the recording after.
+    /// </summary>
+    [Test]
+    public void Following_any_app_the_usage_record_does_not_decide_for_an_app_listening_on_another_microphone()
+    {
+        Make(new FollowRule.Any());
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: true));
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", null)));
+        _sessions.SetSessions(Laptop.ObsbotId, Laptop.Session(Laptop.ObsbotId, Laptop.Zoom));
+
+        var elsewhere = _watch.LookNow();
+        _sessions.SetSessions(Laptop.ObsbotId);
+        _time.Advance(ClassMicrophoneWatch.AllMicrophonesInterval);
+        var nowhereElse = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(elsewhere.Listening, Is.EqualTo(AppListening.Unknown));
+            Assert.That(elsewhere.OtherMicrophone, Is.Null);
+            Assert.That(nowhereElse.Listening, Is.EqualTo(AppListening.Yes), "once the next look over every microphone finds it nowhere else, the record decides");
         });
     }
 

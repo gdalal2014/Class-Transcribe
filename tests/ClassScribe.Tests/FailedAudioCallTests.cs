@@ -333,6 +333,38 @@ public sealed class FailedAudioCallTests
         });
     }
 
+    /// <summary>
+    /// A class recorded from a device, with your microphone following any app by Recording:MicrophoneFollows' shipped
+    /// default, auto, and the Zoom app in a meeting the only app on the microphone, its session answering E_INVALIDARG when
+    /// asked for its state at every look: while Windows' usage record says the Zoom app uses the microphone, the record
+    /// stands in for that session's state as it does for a followed Zoom app, the gate opens, and your voice is written
+    /// beside the class. Before, the default saw nothing known at every look, and your voice was dropped for the whole class.
+    /// </summary>
+    [Test]
+    public async Task Following_any_app_your_voice_is_recorded_beside_a_Zoom_session_that_cannot_be_read_while_the_usage_record_says_it_uses_the_microphone()
+    {
+        var record = new FakeMicrophoneUsageRecord();
+        record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("Zoom.exe", inUse: true));
+        var reader = SessionsReader(Array.Id, Array.Name, withChrome: false);
+        var theClass = new FakeCaptureProvider();
+        var speakers = theClass.Enqueue(new FakeAudioCapture(Pcm48KMono, "Speakers"));
+        var microphones = new FakeMicrophoneProvider().Connect(Array);
+        var microphone = microphones.Prepare(new FakeAudioCapture(Pcm48KMono, Array.Name, Array.Id) { DeliversContinuously = true });
+        var recording = (TrackSet)Factory(theClass, reader, microphones, new RecordingOptions { MicrophoneFollows = FollowRule.AnyWord, ClassAppMute = ClassAppMute.Visible }, record)
+            .Create(new SourcePlan(RecordingMode.ClassAndMicrophone, new ClassSource.Automatic(), new MicrophoneChoice(null, Follows: null)), new RecordingClock(_time));
+        using var run = new ZoomRun(reader, recording, speakers, microphone, _files);
+
+        var (samples, gate, why) = await run.RecordAsync(_time);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(samples, Has.Some.EqualTo(9), "your voice was written");
+            Assert.That(gate, Is.EqualTo(MicrophoneGateState.Recording), why);
+            Assert.That(run.Recording.Watch!.Failure, Is.Null, "the watch never stopped");
+            Assert.That(_logs.Messages, Has.Some.StartsWith("Windows would not give the state of Zoom's session on"), "said why the record decides");
+        });
+    }
+
     /// <summary>Windows' own words for E_INVALIDARG, "The parameter is incorrect." on an English Windows.</summary>
     private static string InvalidArgumentWords => Marshal.GetPInvokeErrorMessage(FakeResults.InvalidArgument).Trim();
 
@@ -357,14 +389,15 @@ public sealed class FailedAudioCallTests
 
     /// <summary>
     /// The sessions reader over a fake of Windows' enumerator with one microphone, <paramref name="endpointId"/> named
-    /// <paramref name="name"/>, on which chrome's audio service is listening and the Zoom app holds a session that answers
-    /// E_INVALIDARG when asked for its state.
+    /// <paramref name="name"/>, on which chrome's audio service is listening (unless <paramref name="withChrome"/> is
+    /// false) and the Zoom app holds a session that answers E_INVALIDARG when asked for its state.
     /// </summary>
-    private static WasapiMicrophoneSessions SessionsReader(string endpointId, string name)
+    private static WasapiMicrophoneSessions SessionsReader(string endpointId, string name, bool withChrome = true)
     {
-        var endpoint = new FakeMicrophoneEndpoint(endpointId, name,
-            new FakeCaptureSessionControl("chrome", Laptop.ChromeUtility),
-            new FakeCaptureSessionControl("zoom", Laptop.Zoom) { StateFailure = FakeResults.InvalidArgument });
+        var zoom = new FakeCaptureSessionControl("zoom", Laptop.Zoom) { StateFailure = FakeResults.InvalidArgument };
+        var endpoint = withChrome
+            ? new FakeMicrophoneEndpoint(endpointId, name, new FakeCaptureSessionControl("chrome", Laptop.ChromeUtility), zoom)
+            : new FakeMicrophoneEndpoint(endpointId, name, zoom);
         return new WasapiMicrophoneSessions(new FakeProcessNames(), NullLogger<WasapiMicrophoneSessions>.Instance, () => new FakeCaptureEnumerator(endpoint),
             device => ((FakeMicrophoneEndpoint)device).Name);
     }

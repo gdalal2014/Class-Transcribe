@@ -330,7 +330,11 @@ advice after a format error (10 A).
   when the list itself failed) and its problem (`session 2 of 3 (Zoom, pid 9090) not readable:
   GetState: ...`) say whose it was; `ClassMicrophoneWatch` ignores another app's unread session, and
   judges the followed app's own stateless one by the usage record (in use: Yes, closed: No, nothing
-  said or found on another microphone: Unknown). `devices` prints every unread part with
+  said or found on another microphone: Unknown); under `auto` (`FollowRule.Any`, the shipped default)
+  each stateless session by its own program's entry, matched by the whole name (`ByRecord`: one in
+  use is Yes, all closed is No, else Unknown; a program the last look over every microphone found
+  active on another one is left to Unknown), and the look's `UsageInUse` stays null, so the gate's
+  record check never acts under `auto`. `devices` prints every unread part with
   `Could not be read now:` and ends with `Not everything could be read from Windows just now`, exit 0.
   `FailedAudioCallTests` plays E_INVALIDARG through the real readers, following chrome and zoom.
 - Time every interval on the steady clock (`TimeProvider.GetTimestamp` and `GetElapsedTime`), never
