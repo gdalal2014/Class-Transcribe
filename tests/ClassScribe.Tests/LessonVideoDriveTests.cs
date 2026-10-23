@@ -251,6 +251,6 @@ public sealed class LessonVideoDriveTests
 
         _world.Store.Stored = null;
         Assert.That(new LessonVideoDrive(_world.Store, _world.Options).StartLine(), Is.Null);
-        Assert.That(LessonVideoDrive.StaysHereLine, Does.Contain("ClassScribe settings set Drive:LessonVideos true"));
+        Assert.That(LessonVideoDrive.StaysHereLine, Does.Contain("settings set Drive:LessonVideos \"true\""));
     }
 }

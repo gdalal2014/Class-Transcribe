@@ -92,3 +92,44 @@ public sealed record LessonVideoPlan(IReadOnlyList<PlannedSlice> Slices, TimeSpa
     /// <summary>The shorter of two lengths.</summary>
     private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;
 }
+
+/// <summary>What the check of a lesson's video asks of the file written (teach-video 6.9).</summary>
+/// <param name="Length">The length of the lesson's longest .wav track, which the video's must match within <see cref="Tolerance"/>.</param>
+/// <param name="FramesAt">Where a frame must decode: the start, each side of every join, and the end (see <see cref="LessonVideoPlan.FramesToCheck"/>).</param>
+public sealed record LessonVideoCheck(TimeSpan Length, IReadOnlyList<TimeSpan> FramesAt)
+{
+    /// <summary>How far the video's length may be from the sound's: a tenth of a second.</summary>
+    public static readonly TimeSpan Tolerance = TimeSpan.FromMilliseconds(100);
+}
+
+/// <summary>
+/// The media work of a lesson's video, the seam between the finish job and Media Foundation (see
+/// <see cref="Windows.MediaFoundationLessonVideo"/>), so that the job's rules are tested with a fake: what a source holds,
+/// writing the video, and checking it. It opens no device.
+/// </summary>
+public interface ILessonVideoMedia
+{
+    /// <summary>
+    /// What the piece or older video at <paramref name="path"/> holds: its picture's size, its H.264 sequence header and its
+    /// length. Throws an <see cref="InvalidDataException"/> for a file that holds no H.264 picture that can be read, and
+    /// whatever Windows throws for one it cannot open.
+    /// </summary>
+    VideoSourceFacts Describe(string path);
+
+    /// <summary>
+    /// Writes the lesson's video as <paramref name="plan"/> says into <paramref name="path"/>, which must not be there yet:
+    /// a plain MP4 with its index before the data, the picture passed through or encoded again, every frame lasting until
+    /// the next and the last until the plan's end, and <paramref name="sound"/> read to its end, encoded AAC-LC mono at
+    /// 128 kbit/s. The file is held open for writing, others allowed to read it, until this returns, so that the recording
+    /// counts as being written meanwhile. How far it has got, from 0 to 1, goes to <paramref name="progress"/>. Throws when
+    /// it cannot be written, and an <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is
+    /// cancelled; either leaves the file for the caller to delete.
+    /// </summary>
+    void Write(LessonVideoPlan plan, Audio.MixedSound sound, string path, Action<double> progress, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Checks the video at <paramref name="path"/> as <paramref name="check"/> asks: it opens, it has a picture and a sound,
+    /// its length matches, and a frame decodes at each place asked. Null when it passes; otherwise why not, in a few words.
+    /// </summary>
+    string? Check(string path, LessonVideoCheck check);
+}

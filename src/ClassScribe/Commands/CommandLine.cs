@@ -46,6 +46,21 @@ public static class CommandLine
     public static string Rebuild(string path, string? processPath, string appFolder) => Command(processPath, appFolder, $"rebuild {Quote(path)}");
 
     /// <summary>
+    /// The PowerShell command that makes a lesson's video again, for free, from its camera pieces and its sound, with this
+    /// very program (finish-video): a recording's folder or one of its files.
+    /// </summary>
+    public static string FinishVideo(string path) => FinishVideo(path, Environment.ProcessPath, AppContext.BaseDirectory);
+
+    /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
+    public static string FinishVideo(string path, string? processPath, string appFolder) => Command(processPath, appFolder, $"finish-video {Quote(path)}");
+
+    /// <summary>The PowerShell command that sets the setting <paramref name="key"/> to <paramref name="value"/> in the user's own settings file, with this very program.</summary>
+    public static string SettingsSet(string key, string value) => SettingsSet(key, value, Environment.ProcessPath, AppContext.BaseDirectory);
+
+    /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
+    public static string SettingsSet(string key, string value, string? processPath, string appFolder) => Command(processPath, appFolder, $"settings set {key} {Quote(value)}");
+
+    /// <summary>
     /// The PowerShell command that uploads <paramref name="path"/> to Google Drive with this very program: a recording's file,
     /// a folder of recordings, or, when it is null, what waits in the queue.
     /// </summary>

@@ -11,11 +11,12 @@ namespace ClassScribe.Camera;
 /// hold (<see cref="CameraHoldJob"/>), which keeps a webcam's picture open, shared, while its microphone is recorded; the
 /// check (<see cref="CameraCheckJob"/>), which opens a camera for a few seconds and reports each call; and the record job
 /// (<see cref="CameraRecordJob"/>), which writes a lesson's picture into a piece on the run's clock. Each opens the camera
-/// only shared, on an STA thread of the process's own, through <see cref="CameraRoute"/>. A finish job (the lesson's video,
-/// slice 8) is answered with a log line and <see cref="CameraProtocol.Failed"/>, saying that it is not built yet, and ends
-/// with <see cref="CameraProtocol.JobNotTakenExitCode"/>. A job that does not come within <see cref="JobPatience"/>, a first
-/// line that is no job, a job of another version, or a hold, check or record job that names no camera is not taken either.
-/// It never throws: an output that is gone, as when its starter has ended, ends it with the same code.
+/// only shared, on an STA thread of the process's own, through <see cref="CameraRoute"/>. The fourth, the finish job
+/// (<see cref="CameraFinishJob"/>, slice 8), joins a lesson's pieces and its sound into its finished video, and opens no
+/// camera. A job that does not come within <see cref="JobPatience"/>, a first line that is no job, a job of another version,
+/// a hold, check or record job that names no camera, or a finish job that names no recording, is not taken, and ends with
+/// <see cref="CameraProtocol.JobNotTakenExitCode"/>. It never throws: an output that is gone, as when its starter has ended,
+/// ends it with the same code.
 /// </summary>
 public sealed class CameraHost
 {
@@ -31,6 +32,9 @@ public sealed class CameraHost
 
     /// <summary>Makes a record job's piece: Media Foundation's sink writer unless a test gives a fake; null where Windows has none.</summary>
     public IPieceWriterFactory? Writers { get; init; } = OperatingSystem.IsWindows() ? new Windows.MediaFoundationPieceWriterFactory() : null;
+
+    /// <summary>Does a finish job's media work: Media Foundation unless a test gives a fake; null where Windows has none.</summary>
+    public ILessonVideoMedia? Media { get; init; } = OperatingSystem.IsWindows() ? new Windows.MediaFoundationLessonVideo() : null;
 
     /// <summary>How long a call on the camera's route may take before the job gives up: the probe's 30 seconds.</summary>
     public TimeSpan CallLimit { get; init; } = TimeSpan.FromSeconds(30);
@@ -59,10 +63,11 @@ public sealed class CameraHost
             }
 
             if (job.Kind is CameraJobKind.Hold or CameraJobKind.Check or CameraJobKind.Record) return await RunCameraJobAsync(channel, jobId, job);
+            if (job.Kind == CameraJobKind.Finish && Media is { } media) return await new CameraFinishJob(channel, job, media, Time).RunAsync();
 
             await channel.SendAsync(CameraProtocol.Log, new CameraLog("Information",
                 $"Camera process for job {jobId}: a {job.Kind} job{(job.CameraName is { } name ? $" for the camera \"{name}\"" : "")}; no camera was opened"), CameraJson.Default.CameraLog, CancellationToken.None);
-            await SendFailedAsync(channel, $"{FinishNotBuilt}: this camera process takes no {job.Kind} job yet, and opened no camera");
+            await SendFailedAsync(channel, $"This Windows has no way to make the lesson's video (Media Foundation), so this camera process takes no {job.Kind} job, and opened no camera");
             return CameraProtocol.JobNotTakenExitCode;
         }
         catch (IOException)
@@ -105,9 +110,6 @@ public sealed class CameraHost
             _ => await new CameraCheckJob(channel, job, captures, thread, Time, CallLimit, CheckFor).RunAsync()
         };
     }
-
-    /// <summary>What a finish job is answered with: the lesson's video is made by a later build (slice 8).</summary>
-    public const string FinishNotBuilt = "Making the lesson's video is not built yet in this build of ClassScribe";
 
     /// <summary>
     /// The job, the first line: null when the input ended before any line came; a reason when no job came within the

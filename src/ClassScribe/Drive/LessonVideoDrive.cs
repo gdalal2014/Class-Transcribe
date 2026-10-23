@@ -18,9 +18,9 @@ public sealed class LessonVideoDrive(IGoogleCredentialStore store, IOptionsSnaps
     public const string GoesUpLine =
         "The lesson's video goes to Google Drive after the class (Drive:LessonVideos); its camera pieces stay on this laptop until free-space finds the video safe there.";
 
-    /// <summary>The start line with Drive:LessonVideos off, the default: how to turn it on.</summary>
-    public const string StaysHereLine =
-        "The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: ClassScribe settings set Drive:LessonVideos true. Its camera pieces are deleted once the video passes its check.";
+    /// <summary>The start line with Drive:LessonVideos off, the default: how to turn it on, with this very program's settings set.</summary>
+    public static string StaysHereLine =>
+        $"The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: {Commands.CommandLine.SettingsSet("Drive:LessonVideos", "true")}. Its camera pieces are deleted once the video passes its check.";
 
     /// <summary>The start line with Drive:LessonVideos on and Drive:Upload WithoutAudio, which keeps the video's sound off Drive too.</summary>
     public const string WithoutAudioLine =

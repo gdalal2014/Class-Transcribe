@@ -10,9 +10,9 @@ namespace ClassScribe.Tests;
 
 /// <summary>
 /// The camera process's role and lines (teach-video 6.2, amendment 24): <c>--camera-process &lt;job id&gt;</c> is taken
-/// only with a well-formed id, as <c>--recorder</c> now is; the host, run in-process over an in-memory pipe, reads its job
-/// and, in this build, answers it with a log line and failed, opening nothing, exit 4; anything that is not a job of this
-/// version is not taken either. The fake process speaks the same lines.
+/// only with a well-formed id, as <c>--recorder</c> now is; the host, run in-process over an in-memory pipe, reads its job,
+/// and does not take one that names nothing to work on, answering failed and opening nothing, exit 4; anything that is not
+/// a job of this version is not taken either. The fake process speaks the same lines.
 /// </summary>
 [TestFixture]
 public class CameraHostTests
@@ -45,22 +45,20 @@ public class CameraHostTests
     }
 
     /// <summary>
-    /// A finish job (the lesson's video, slice 8) is read, and answered, in this build, with a log line saying no camera was
-    /// opened and failed saying the lesson's video is not built yet; the exit code is 4, a job not taken.
+    /// A finish job (the lesson's video, slice 8) that names no recording is not taken: failed says why, nothing is opened or
+    /// written, and the exit code is 4. Its making is <see cref="CameraFinishJobTests"/>'.
     /// </summary>
     [Test]
-    public async Task A_finish_job_is_answered_that_this_build_takes_none_and_opens_nothing()
+    public async Task A_finish_job_without_a_recording_is_not_taken()
     {
         await using var process = new FakeCameraProcess();
         var host = Host(process);
 
-        await CameraLines.SendJobAsync(process.Channel, new CameraJob(CameraProtocol.Version, CameraJobKind.Finish, null, "OBSBOT Meet Flip StreamCamera"), CancellationToken.None);
-        var log = CameraLines.Read((await process.Channel.ReceiveAsync(CancellationToken.None))!);
+        await CameraLines.SendJobAsync(process.Channel, new CameraJob(CameraProtocol.Version, CameraJobKind.Finish), CancellationToken.None);
         var failed = CameraLines.Read((await process.Channel.ReceiveAsync(CancellationToken.None))!);
 
         Assert.That(await host, Is.EqualTo(CameraProtocol.JobNotTakenExitCode));
-        Assert.That(log, Is.EqualTo(new CameraLog("Information", $"Camera process for job {JobId}: a Finish job for the camera \"OBSBOT Meet Flip StreamCamera\"; no camera was opened")));
-        Assert.That(failed, Is.EqualTo(new CameraFailed($"{CameraHost.FinishNotBuilt}: this camera process takes no Finish job yet, and opened no camera")));
+        Assert.That(failed, Is.EqualTo(new CameraFailed("The Finish job names no recording to make the lesson's video of")));
     }
 
     /// <summary>A record job that names no camera, or no recording, is not taken: exit 4 or 1, nothing opened.</summary>
