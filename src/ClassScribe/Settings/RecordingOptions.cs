@@ -181,4 +181,12 @@ public sealed class RecordingOptions
     /// recording. Off by default (camera-first 3.4). The hold is <see cref="Camera.WebcamHold"/>.
     /// </summary>
     public bool WakeCameraMicrophone { get; init; }
+
+    /// <summary>
+    /// Moves a camera's picture against the sound in a lesson, by part of its name, in milliseconds, such as
+    /// <c>{ "OBSBOT": -60, "Integrated": -30 }</c>: negative is earlier. Each camera stamps its frames a little early or late
+    /// against the moment they were taken; a clap measures it (the README says how). When several parts are in a camera's
+    /// name, the longest applies (see <see cref="Camera.CameraOffsets.For"/>). Empty by default: no camera is moved.
+    /// </summary>
+    public Dictionary<string, int> CameraOffsets { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }

@@ -14,13 +14,14 @@ namespace ClassScribe.Camera;
 /// (P), <see cref="Stop"/> and <see cref="Cancel"/>. From it: <see cref="Opened"/>, <see cref="Status"/> once a second,
 /// <see cref="Problem"/>, <see cref="Piece"/>, <see cref="Progress"/>, <see cref="Made"/> or <see cref="Failed"/>, and
 /// <see cref="Log"/> lines, which the starter writes into its own log under the category Camera. Its exit codes are
-/// internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. It takes the hold and the check jobs, opening the camera
-/// only shared; a record or finish job is answered with <see cref="Failed"/>, and ends with 4.
+/// internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. It takes the hold, check and record jobs, opening the
+/// camera only shared; a finish job is answered with <see cref="Failed"/>, and ends with 4. Version 2 defined the clock
+/// line's body (<see cref="Audio.Timeline.ClockState"/>) and took the record job.
 /// </summary>
 public static class CameraProtocol
 {
     /// <summary>The version of the lines this build speaks; a job of another version is not taken.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>What makes ClassScribe a camera process, followed by the job's id.</summary>
     public const string ProcessSwitch = "--camera-process";
@@ -40,19 +41,25 @@ public static class CameraProtocol
     /// <summary>The job, the first line to the camera process (see <see cref="CameraJob"/>).</summary>
     public const string Job = "job";
 
-    /// <summary>The recording clock's state, sent whenever it changes (slice 7: ClockState); its body is not defined in this build.</summary>
+    /// <summary>The recording clock's whole state (see <see cref="Audio.Timeline.ClockState"/>), sent whenever it changes; each replaces the one before it whole.</summary>
     public const string Clock = "clock";
 
-    /// <summary>Let the camera go during a pause (P), so that its light goes off; no body.</summary>
+    /// <summary>Let the camera go during a pause (P), so that its light goes off; an empty body.</summary>
     public const string Off = "off";
 
-    /// <summary>Take the camera again after a pause; no body.</summary>
+    /// <summary>Take the camera again after a pause; an empty body.</summary>
     public const string On = "on";
 
     /// <summary>Stop at an end position (see <see cref="CameraStop"/>).</summary>
     public const string Stop = "stop";
 
-    /// <summary>Give the job up at once, keeping what is written; no body.</summary>
+    /// <summary>
+    /// The sound's end position (see <see cref="CameraStop"/>), sent as soon as the recorder takes it and before it stops the
+    /// sound: a frame placed after it is dropped from then on. The stop follows once the sound is saved.
+    /// </summary>
+    public const string End = "end";
+
+    /// <summary>Give the job up at once, keeping what is written; an empty body.</summary>
     public const string Cancel = "cancel";
 
     /// <summary>The camera opened (see <see cref="CameraOpened"/>).</summary>
@@ -125,8 +132,12 @@ public enum CameraJobKind
 /// <param name="BaseName">The recording's base name, such as Tajwid 4_2026-10-19_14-00-02Z, for a record or finish job.</param>
 /// <param name="StartSeconds">Where on the run's clock a record job's piece begins, in seconds.</param>
 /// <param name="StillPath">Where a check job saves its one picture.</param>
+/// <param name="SoftwareEncoder">True for a record job to use Windows' software encoder from the start, as after the hardware encoder failed in this run.</param>
 public sealed record CameraJob(int Protocol, CameraJobKind Kind, string? CameraId = null, string? CameraName = null, string? Resolution = null,
-    int OffsetMilliseconds = 0, string? Folder = null, string? BaseName = null, double StartSeconds = 0, string? StillPath = null);
+    int OffsetMilliseconds = 0, string? Folder = null, string? BaseName = null, double StartSeconds = 0, string? StillPath = null, bool SoftwareEncoder = false);
+
+/// <summary>The body of a line that needs none (<see cref="CameraProtocol.Off"/>, <see cref="CameraProtocol.On"/>, <see cref="CameraProtocol.Cancel"/>): an empty object.</summary>
+public sealed record CameraEmpty;
 
 /// <summary>Stop a record job at <paramref name="EndSeconds"/> on the run's clock, the last frame lasting to it, and make the lesson's video after it when <paramref name="MakeVideo"/>.</summary>
 /// <param name="EndSeconds">The end position on the run's clock, in seconds: where the sound tracks end.</param>
@@ -146,7 +157,9 @@ public sealed record CameraOpened(string Name, int Width, int Height, double Fra
 /// <param name="Dropped">Frames dropped so far.</param>
 /// <param name="SinceLastFrameSeconds">Seconds since the last frame came.</param>
 /// <param name="Dark">True while the picture has been black for 10 seconds.</param>
-public sealed record CameraStatus(long Frames, long Dropped, double SinceLastFrameSeconds, bool Dark);
+/// <param name="FramesPerSecond">The frames written a second since the last status, for a record job; 0 for the others.</param>
+/// <param name="Capturing">True while a record job holds the camera open and its frames arrive; false while it is let go (P), not open yet, or lost.</param>
+public sealed record CameraStatus(long Frames, long Dropped, double SinceLastFrameSeconds, bool Dark, double FramesPerSecond = 0, bool Capturing = false);
 
 /// <summary>What went wrong with the camera, which the run says in words.</summary>
 public enum CameraProblemKind
@@ -167,7 +180,13 @@ public enum CameraProblemKind
     Encoder,
 
     /// <summary>The disk failed or is full.</summary>
-    Disk
+    Disk,
+
+    /// <summary>The camera opened but sent no picture: a security program may be blocking it.</summary>
+    NoPicture,
+
+    /// <summary>The camera's frames come, but none can be written: of another size than the picture's, or without NV12 pixels that can be read.</summary>
+    Unwritable
 }
 
 /// <summary>A problem with the camera, with its words.</summary>
@@ -215,4 +234,6 @@ public sealed record CameraLog(string Level, string Text);
 [JsonSerializable(typeof(CameraMade))]
 [JsonSerializable(typeof(CameraFailed))]
 [JsonSerializable(typeof(CameraLog))]
+[JsonSerializable(typeof(CameraEmpty))]
+[JsonSerializable(typeof(Audio.Timeline.ClockState))]
 public sealed partial class CameraJson : JsonSerializerContext;

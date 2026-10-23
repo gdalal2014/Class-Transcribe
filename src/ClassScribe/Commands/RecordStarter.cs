@@ -144,9 +144,10 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
         if (request.ContinueBaseName is not null) return request with { Continue = ContinueChoice.Continue };
 
         var mode = request.Source.Mode;
+        var camera = request.Source.Camera is not null;
         var answer = origin == StartOrigin.Menu && request.Continue == ContinueChoice.Ask
-            ? await question.AskAsync(request.Name, mode, request.OutputRoot)
-            : question.Resolve(request.Name, mode, request.OutputRoot, request.Continue);
+            ? await question.AskAsync(request.Name, mode, request.OutputRoot, camera)
+            : question.Resolve(request.Name, mode, request.OutputRoot, request.Continue, camera);
         if (answer.GoBack) return null;
 
         if (answer.Hint is { } hint) ui.WriteLine(hint);

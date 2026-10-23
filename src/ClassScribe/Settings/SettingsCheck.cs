@@ -81,6 +81,19 @@ public sealed class SettingsCheck
         if (!CameraSize.TryParse(recording.CameraResolution, out _))
             problems.Add($"{Name(recordingSection, nameof(RecordingOptions.CameraResolution))} is \"{recording.CameraResolution}\"; it must be {CameraSize.Rule}.");
 
+        // The cameras' offsets (teach-video 7): each name part 1 to 200 characters without control characters, each figure from
+        // -1000 to 1000 milliseconds.
+        var offsets = Name(recordingSection, nameof(RecordingOptions.CameraOffsets));
+        foreach (var (part, milliseconds) in recording.CameraOffsets)
+        {
+            if (part.Trim().Length is 0 or > CameraOffsets.LongestPart || part.Any(char.IsControl))
+                problems.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"{offsets} names \"{part}\"; each name part must be 1 to {CameraOffsets.LongestPart} characters of a camera's name, such as OBSBOT, without control characters."));
+            if (Math.Abs(milliseconds) > CameraOffsets.MostMilliseconds)
+                problems.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"{offsets}:{part} is {milliseconds}; it must be from -{CameraOffsets.MostMilliseconds} to {CameraOffsets.MostMilliseconds} milliseconds, such as -60 (negative moves the picture earlier)."));
+        }
+
         const string elevenLabsSection = ElevenLabsOptions.SectionName;
         var elevenLabs = Bind<ElevenLabsOptions>(configuration, elevenLabsSection, problems);
         var baseUrl = Name(elevenLabsSection, nameof(ElevenLabsOptions.BaseUrl));
@@ -351,14 +364,50 @@ public sealed class SettingsCheck
         foreach (var property in typeof(TOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(property => property.CanWrite))
         {
             var key = Name(section, property.Name);
+            if (property.PropertyType == typeof(Dictionary<string, int>))
+            {
+                CheckWholeNumberMap(configuration, key, problems, unreadable);
+                continue;
+            }
+
             if (configuration[key] is not { } text || Expected(property.PropertyType, text) is not { } expected) continue;
 
             problems.Add($"{key} is \"{text}\", which is not {expected}.");
             unreadable.Add(key);
         }
 
-        var readable = configuration.GetSection(section).AsEnumerable().Where(setting => !unreadable.Contains(setting.Key));
+        var readable = configuration.GetSection(section).AsEnumerable().Where(setting => !unreadable.Contains(setting.Key) && !unreadable.Any(left => setting.Key.StartsWith(left + ":", StringComparison.OrdinalIgnoreCase)));
         return new ConfigurationBuilder().AddInMemoryCollection(readable).Build().GetSection(section).Get<TOptions>() ?? new TOptions();
+    }
+
+    /// <summary>
+    /// Checks a setting that maps names to whole numbers, such as Recording:CameraOffsets, before it is bound: it must be a
+    /// set of names and numbers in braces, each name a single word of the settings' path (no colon) and each number whole.
+    /// What cannot be read is reported and left out of the binding: the whole setting when it is a single value, else the
+    /// entry.
+    /// </summary>
+    private static void CheckWholeNumberMap(IConfiguration configuration, string key, List<string> problems, HashSet<string> unreadable)
+    {
+        if (configuration[key] is { Length: > 0 } single)
+        {
+            problems.Add($"{key} is \"{single}\", which is not a set of camera name parts and milliseconds in braces, such as {{ \"OBSBOT\": -60 }}.");
+            unreadable.Add(key);
+            return;
+        }
+
+        foreach (var entry in configuration.GetSection(key).GetChildren())
+        {
+            if (entry.GetChildren().Any())
+            {
+                problems.Add($"{entry.Path} is not a number: a name part may not hold a colon, and each takes a whole number of milliseconds, such as -60.");
+                unreadable.Add(entry.Path);
+            }
+            else if (!int.TryParse(entry.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                problems.Add($"{entry.Path} is \"{entry.Value}\", which is not a whole number of milliseconds, such as -60.");
+                unreadable.Add(entry.Path);
+            }
+        }
     }
 
     /// <summary>

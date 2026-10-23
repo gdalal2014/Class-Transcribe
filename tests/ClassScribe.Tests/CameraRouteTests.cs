@@ -70,7 +70,7 @@ public class CameraRouteTests
             log.Required(CameraRoute.StreamState, () => capture.AddStreamStateChanged(_ => { }));
             log.Required(CameraRoute.Exclusive, () => capture.AddExclusiveControlChanged(_ => { }));
             log.Required(CameraRoute.Source, capture.FindSourceGroup);
-            log.Required(CameraRoute.Initialize, capture.InitializeShared);
+            log.Required(CameraRoute.Initialize, () => capture.InitializeShared(cpuFrames: false));
         });
 
         Assert.That(failed!.Call, Is.EqualTo(CameraRoute.Exclusive));

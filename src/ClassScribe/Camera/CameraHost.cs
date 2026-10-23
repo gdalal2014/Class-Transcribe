@@ -7,14 +7,15 @@ namespace ClassScribe.Camera;
 /// <summary>
 /// The camera process (teach-video 6.2, amendment 24): ClassScribe started as <c>ClassScribe.exe --camera-process &lt;job
 /// id&gt;</c>, which <c>Program</c> hands here before anything touches the console. It reads its job, the first line on its
-/// standard input, and speaks the lines of <see cref="CameraProtocol"/> on its standard output. It takes two jobs: the hold
-/// (<see cref="CameraHoldJob"/>), which keeps a webcam's picture open, shared, while its microphone is recorded, and the
-/// check (<see cref="CameraCheckJob"/>), which opens a camera for a few seconds and reports each call; both open the camera
-/// only shared, on an STA thread of the process's own, through <see cref="CameraRoute"/>. A record or finish job is
-/// answered with a log line and <see cref="CameraProtocol.Failed"/>, saying that the camera's recording is not built yet,
-/// and ends with <see cref="CameraProtocol.JobNotTakenExitCode"/>. A job that does not come within <see cref="JobPatience"/>,
-/// a first line that is no job, a job of another version, or a hold or check that names no camera is not taken either. It
-/// never throws: an output that is gone, as when its starter has ended, ends it with the same code.
+/// standard input, and speaks the lines of <see cref="CameraProtocol"/> on its standard output. It takes three jobs: the
+/// hold (<see cref="CameraHoldJob"/>), which keeps a webcam's picture open, shared, while its microphone is recorded; the
+/// check (<see cref="CameraCheckJob"/>), which opens a camera for a few seconds and reports each call; and the record job
+/// (<see cref="CameraRecordJob"/>), which writes a lesson's picture into a piece on the run's clock. Each opens the camera
+/// only shared, on an STA thread of the process's own, through <see cref="CameraRoute"/>. A finish job (the lesson's video,
+/// slice 8) is answered with a log line and <see cref="CameraProtocol.Failed"/>, saying that it is not built yet, and ends
+/// with <see cref="CameraProtocol.JobNotTakenExitCode"/>. A job that does not come within <see cref="JobPatience"/>, a first
+/// line that is no job, a job of another version, or a hold, check or record job that names no camera is not taken either.
+/// It never throws: an output that is gone, as when its starter has ended, ends it with the same code.
 /// </summary>
 public sealed class CameraHost
 {
@@ -27,6 +28,9 @@ public sealed class CameraHost
     /// <summary>Makes the cameras' captures: Windows' own MediaCapture unless a test gives a fake; null on a Windows too old for the camera API.</summary>
     public ICameraCaptureFactory? Captures { get; init; } =
         OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) ? new Windows.WindowsCameraCaptureFactory() : null;
+
+    /// <summary>Makes a record job's piece: Media Foundation's sink writer unless a test gives a fake; null where Windows has none.</summary>
+    public IPieceWriterFactory? Writers { get; init; } = OperatingSystem.IsWindows() ? new Windows.MediaFoundationPieceWriterFactory() : null;
 
     /// <summary>How long a call on the camera's route may take before the job gives up: the probe's 30 seconds.</summary>
     public TimeSpan CallLimit { get; init; } = TimeSpan.FromSeconds(30);
@@ -54,11 +58,11 @@ public sealed class CameraHost
                 return CameraProtocol.JobNotTakenExitCode;
             }
 
-            if (job.Kind is CameraJobKind.Hold or CameraJobKind.Check) return await RunCameraJobAsync(channel, jobId, job);
+            if (job.Kind is CameraJobKind.Hold or CameraJobKind.Check or CameraJobKind.Record) return await RunCameraJobAsync(channel, jobId, job);
 
             await channel.SendAsync(CameraProtocol.Log, new CameraLog("Information",
                 $"Camera process for job {jobId}: a {job.Kind} job{(job.CameraName is { } name ? $" for the camera \"{name}\"" : "")}; no camera was opened"), CameraJson.Default.CameraLog, CancellationToken.None);
-            await SendFailedAsync(channel, $"{CameraRecorderNotBuilt.Words}: this camera process takes no {job.Kind} job yet, and opened no camera");
+            await SendFailedAsync(channel, $"{FinishNotBuilt}: this camera process takes no {job.Kind} job yet, and opened no camera");
             return CameraProtocol.JobNotTakenExitCode;
         }
         catch (IOException)
@@ -87,11 +91,23 @@ public sealed class CameraHost
             return CameraProtocol.JobNotTakenExitCode;
         }
 
+        if (job.Kind == CameraJobKind.Record && Writers is null)
+        {
+            await SendFailedAsync(channel, "This Windows has no way to write the camera's picture (Media Foundation's sink writer)");
+            return CameraProtocol.JobNotTakenExitCode;
+        }
+
         using var thread = new CameraThread($"ClassScribe camera {jobId}", Time);
-        return job.Kind == CameraJobKind.Hold
-            ? await new CameraHoldJob(channel, job, captures, thread, Time, CallLimit).RunAsync()
-            : await new CameraCheckJob(channel, job, captures, thread, Time, CallLimit, CheckFor).RunAsync();
+        return job.Kind switch
+        {
+            CameraJobKind.Hold => await new CameraHoldJob(channel, job, captures, thread, Time, CallLimit).RunAsync(),
+            CameraJobKind.Record => await new CameraRecordJob(channel, job, captures, Writers!, thread, Time, CallLimit).RunAsync(),
+            _ => await new CameraCheckJob(channel, job, captures, thread, Time, CallLimit, CheckFor).RunAsync()
+        };
     }
+
+    /// <summary>What a finish job is answered with: the lesson's video is made by a later build (slice 8).</summary>
+    public const string FinishNotBuilt = "Making the lesson's video is not built yet in this build of ClassScribe";
 
     /// <summary>
     /// The job, the first line: null when the input ended before any line came; a reason when no job came within the

@@ -283,7 +283,7 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
 
         var within = TimeSpan.FromMinutes(Math.Max(0, recording.CurrentValue.ContinueWithinMinutes));
         return ContinueQuestion.FindContinuable(folders, journal, run.Request.Name, run.Request.Source.Mode, within, run.Request.OutputRoot, logger,
-                   ifUnreadable: "it is not offered to be continued this time") is { } candidate
+                   ifUnreadable: "it is not offered to be continued this time", camera: run.Request.Source.Camera is not null) is { } candidate
                && ContinueQuestion.Records(run, candidate.Files);
     }
 

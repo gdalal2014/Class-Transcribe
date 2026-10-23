@@ -29,8 +29,8 @@ public abstract record CameraDecision
 /// question whether to continue a recent recording: the picture's size is resolved into the request (--resolution, else
 /// menu choice 7's pick, else Recording:CameraResolution, else 720p), so that the recorder and the camera process never
 /// read the settings; then what keeps the camera from being used on this computer is looked for (the set-up's problems:
-/// Windows too old, its privacy switches, no H.264 encoder; then a build that cannot record the picture, which is every build
-/// before slice 7). Refused, the menu says why and offers Enter to record the sound only, Esc to go back; any other start
+/// Windows too old, its privacy switches, no H.264 encoder; then a camera recorder that cannot record the picture, see
+/// <see cref="ICameraRecorder.NotReady"/>). Refused, the menu says why and offers Enter to record the sound only, Esc to go back; any other start
 /// says why and starts nothing, exit 1. Otherwise the menu asks <c>Enter records with the camera; S records the sound only</c>,
 /// so that a camera never comes on because of an earlier choice alone; the command line is the user's word already.
 /// </summary>

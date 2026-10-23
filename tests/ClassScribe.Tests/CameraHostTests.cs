@@ -45,22 +45,45 @@ public class CameraHostTests
     }
 
     /// <summary>
-    /// A record job is read, and answered, in this build, with a log line saying no camera was opened and failed saying the
-    /// camera's recording is not built yet; the exit code is 4, a job not taken.
+    /// A finish job (the lesson's video, slice 8) is read, and answered, in this build, with a log line saying no camera was
+    /// opened and failed saying the lesson's video is not built yet; the exit code is 4, a job not taken.
     /// </summary>
     [Test]
-    public async Task A_job_is_answered_that_this_build_takes_none_and_opens_nothing()
+    public async Task A_finish_job_is_answered_that_this_build_takes_none_and_opens_nothing()
     {
         await using var process = new FakeCameraProcess();
         var host = Host(process);
 
-        await CameraLines.SendJobAsync(process.Channel, new CameraJob(CameraProtocol.Version, CameraJobKind.Record, "id", "OBSBOT Meet Flip StreamCamera", "720p"), CancellationToken.None);
+        await CameraLines.SendJobAsync(process.Channel, new CameraJob(CameraProtocol.Version, CameraJobKind.Finish, null, "OBSBOT Meet Flip StreamCamera"), CancellationToken.None);
         var log = CameraLines.Read((await process.Channel.ReceiveAsync(CancellationToken.None))!);
         var failed = CameraLines.Read((await process.Channel.ReceiveAsync(CancellationToken.None))!);
 
         Assert.That(await host, Is.EqualTo(CameraProtocol.JobNotTakenExitCode));
-        Assert.That(log, Is.EqualTo(new CameraLog("Information", $"Camera process for job {JobId}: a Record job for the camera \"OBSBOT Meet Flip StreamCamera\"; no camera was opened")));
-        Assert.That(failed, Is.EqualTo(new CameraFailed($"{CameraRecorderNotBuilt.Words}: this camera process takes no Record job yet, and opened no camera")));
+        Assert.That(log, Is.EqualTo(new CameraLog("Information", $"Camera process for job {JobId}: a Finish job for the camera \"OBSBOT Meet Flip StreamCamera\"; no camera was opened")));
+        Assert.That(failed, Is.EqualTo(new CameraFailed($"{CameraHost.FinishNotBuilt}: this camera process takes no Finish job yet, and opened no camera")));
+    }
+
+    /// <summary>A record job that names no camera, or no recording, is not taken: exit 4 or 1, nothing opened.</summary>
+    [Test]
+    public async Task A_record_job_without_a_camera_or_a_recording_is_not_taken()
+    {
+        await using (var process = new FakeCameraProcess())
+        {
+            var host = Host(process);
+            await CameraLines.SendJobAsync(process.Channel, new CameraJob(CameraProtocol.Version, CameraJobKind.Record, null, "OBSBOT", "720p", 0, @"C:\r", "Tajwid_2026-10-19_14-00-02Z"), CancellationToken.None);
+            var failed = CameraLines.Read((await process.Channel.ReceiveAsync(CancellationToken.None))!);
+            Assert.That(await host, Is.EqualTo(CameraProtocol.JobNotTakenExitCode));
+            Assert.That(failed, Is.EqualTo(new CameraFailed("The Record job names no camera")));
+        }
+
+        await using (var process = new FakeCameraProcess())
+        {
+            var host = Host(process);
+            await CameraLines.SendJobAsync(process.Channel, new CameraJob(CameraProtocol.Version, CameraJobKind.Record, "id", "OBSBOT", "720p"), CancellationToken.None);
+            var failed = CameraLines.Read((await process.Channel.ReceiveAsync(CancellationToken.None))!);
+            Assert.That(await host, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(failed, Is.EqualTo(new CameraFailed("The record job names no recording to write the camera's picture into")));
+        }
     }
 
     /// <summary>A first line that is not a job, a job of another version, or a line that is not a message, is answered with failed and why, exit 4.</summary>

@@ -686,12 +686,17 @@ public sealed class RecordCommand(
         }
     }
 
-    /// <summary>What a run records, in words for the start line: the class's source, and your microphone with the class or alone in person, named by its name part when one was given.</summary>
+    /// <summary>
+    /// What a run records, in words for the start line: the class's source, and your microphone with the class or alone in
+    /// person, named by its name part when one was given; and a lesson's camera with its picture's size (teach-video 6.13).
+    /// </summary>
     private static string Describe(SourcePlan source)
     {
         var microphone = source.Microphone?.NamePart is { Length: > 0 } namePart ? $"your microphone \"{namePart}\"" : "your microphone";
         return source.Mode switch
         {
+            RecordingMode.Microphone when source.Camera is { } camera =>
+                $"{microphone}, in person, and the camera {(camera.NamePart is { Length: > 0 } part ? $"\"{part}\"" : "of the lesson (a USB camera, else the built-in front camera)")} at {camera.Resolution ?? Camera.CameraSize.DefaultText}",
             RecordingMode.Microphone => microphone,
             RecordingMode.ClassAndMicrophone => $"{DescribeClass(source.Class)}, and {microphone}",
             _ => DescribeClass(source.Class)

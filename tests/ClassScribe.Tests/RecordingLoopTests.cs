@@ -20,7 +20,7 @@ namespace ClassScribe.Tests;
 /// keyboard are the test's, and the run file is a real one, in a folder of the test's own.
 /// </summary>
 [TestFixture]
-public class RecordingLoopTests
+public partial class RecordingLoopTests
 {
     /// <summary>What the log says when a second's work fails.</summary>
     private const string TickFailure = "Could not check on the recording; it goes on, and the next second checks again";

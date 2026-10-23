@@ -260,8 +260,11 @@ public interface ICameraCapture : IDisposable
     /// </summary>
     void FindSourceGroup();
 
-    /// <summary>MediaCapture.InitializeAsync with the camera's source group, SharedReadOnly, video only, no memory preference.</summary>
-    void InitializeShared();
+    /// <summary>
+    /// MediaCapture.InitializeAsync with the camera's source group, SharedReadOnly, video only: with no memory preference,
+    /// or with CPU memory when <paramref name="cpuFrames"/>, so that a record job's frames come as pixels it can copy.
+    /// </summary>
+    void InitializeShared(bool cpuFrames);
 
     /// <summary>MediaCapture.CameraStreamStateChanged += (only reports).</summary>
     void AddStreamStateChanged(Action<string> onEvent);
@@ -284,6 +287,12 @@ public interface ICameraCapture : IDisposable
     /// <summary>MediaFrameReader.FrameArrived +=: each frame is taken and released at once, its pixels never touched, then <paramref name="onFrame"/> is called.</summary>
     void AddFrameArrived(Action onFrame);
 
+    /// <summary>
+    /// MediaFrameReader.FrameArrived +=, for a record job: each frame is taken, handed to <paramref name="onFrame"/> with its
+    /// stamp and its pixels while Windows holds it, then released.
+    /// </summary>
+    void AddFrameReader(Action<ICameraFrame> onFrame);
+
     /// <summary>MediaFrameReader.StartAsync; returns its status by name, Success when frames will come.</summary>
     string StartReader();
 
@@ -300,9 +309,42 @@ public interface ICameraCaptureFactory
 
 /// <summary>A camera opened shared and streaming: the capture, the calls that opened it, and what it streams.</summary>
 /// <param name="Capture">The capture, to let go with <see cref="CameraRoute.Close"/>.</param>
-/// <param name="Format">The colour source's format as it runs, in words: a shared open cannot change it.</param>
+/// <param name="Format">The colour source's format as it runs, in words (see <see cref="CameraFormats.Words"/>): a shared open cannot change it.</param>
 /// <param name="Reader">What the frame reader hands over, in words.</param>
-public sealed record CameraOpening(ICameraCapture Capture, string Format, string Reader);
+public sealed record CameraOpening(ICameraCapture Capture, string Format, string Reader)
+{
+    /// <summary>The frames a second the camera sends as it runs, by its format; null when Windows did not say.</summary>
+    public double? FramesPerSecond => CameraFormats.FramesPerSecondOf(Format);
+}
+
+/// <summary>
+/// A camera's format as it runs, in the words the camera's lines use, such as <c>MJPG 1920x1080 at 30 frames a second</c>,
+/// and the frame rate read back from them. One place writes and reads them, so the two stay in step.
+/// </summary>
+public static class CameraFormats
+{
+    /// <summary>What ends a format's words, after its rate.</summary>
+    private const string RateEnding = " frames a second";
+
+    /// <summary>What comes before a format's rate.</summary>
+    private const string RateMark = " at ";
+
+    /// <summary>A format in words: <c>MJPG 1920x1080 at 30 frames a second</c>, the rate to two decimals at most.</summary>
+    public static string Words(string subtype, uint? width, uint? height, double framesPerSecond) =>
+        string.Create(CultureInfo.InvariantCulture, $"{subtype} {width}x{height}{RateMark}{framesPerSecond:0.##}{RateEnding}");
+
+    /// <summary>The frame rate a format's <paramref name="words"/> hold; null when they hold none above 0, as "not said by Windows".</summary>
+    public static double? FramesPerSecondOf(string? words)
+    {
+        if (words is null || !words.EndsWith(RateEnding, StringComparison.Ordinal)) return null;
+
+        var at = words.LastIndexOf(RateMark, StringComparison.Ordinal);
+        if (at < 0) return null;
+
+        var number = words[(at + RateMark.Length)..^RateEnding.Length];
+        return double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out var rate) && rate > 0 ? rate : null;
+    }
+}
 
 /// <summary>
 /// The route of a shared open, in the order Microsoft documents and Windows enforces (ROOT-CAUSE.md beside the camera
@@ -328,6 +370,9 @@ public static class CameraRoute
     /// <summary>The open itself.</summary>
     public const string Initialize = "MediaCapture.InitializeAsync (SharedReadOnly, video only)";
 
+    /// <summary>The open itself, for a record job, whose frames come in CPU memory to be copied.</summary>
+    public const string InitializeForPixels = "MediaCapture.InitializeAsync (SharedReadOnly, video only, CPU memory)";
+
     /// <summary>An event that only reports, registered after InitializeAsync.</summary>
     public const string StreamState = "MediaCapture.CameraStreamStateChanged +=";
 
@@ -352,6 +397,9 @@ public static class CameraRoute
     /// <summary>The frame handler.</summary>
     public const string FrameArrived = "MediaFrameReader.FrameArrived +=";
 
+    /// <summary>The frame handler of a record job, which copies each frame's pixels before it is released.</summary>
+    public const string FrameArrivedForPixels = "MediaFrameReader.FrameArrived += (each frame's pixels copied, then released)";
+
     /// <summary>The start of the frames.</summary>
     public const string Start = "MediaFrameReader.StartAsync";
 
@@ -375,19 +423,21 @@ public static class CameraRoute
     /// <summary>
     /// Opens the camera <paramref name="cameraId"/> shared, through <paramref name="factory"/>, in the documented order, each
     /// call recorded in <paramref name="log"/>: with the reader converting nothing when <paramref name="convertTo"/> is null
-    /// (the hold), else to NV12 at that size (the camera check). <paramref name="onEvent"/> hears what MediaCapture reports
-    /// (Failed, the stream's state, exclusive control); <paramref name="onFrame"/> is called for each frame, released unread.
-    /// Throws <see cref="CameraCallFailedException"/> naming the call that failed, after letting the camera go.
+    /// (the hold), else to NV12 at that size (the camera check and a lesson). <paramref name="onEvent"/> hears what
+    /// MediaCapture reports (Failed, the stream's state, exclusive control); <paramref name="onFrame"/> is called for each
+    /// frame, released unread, unless <paramref name="onPixels"/> is given: then the frames come in CPU memory and each is
+    /// handed to it with its stamp and pixels before it is released (a record job). Throws
+    /// <see cref="CameraCallFailedException"/> naming the call that failed, after letting the camera go.
     /// </summary>
     public static CameraOpening Open(ICameraCaptureFactory factory, string cameraId, string cameraName, CameraSize? convertTo, CameraCallLog log,
-        Action<string> onEvent, Action onFrame)
+        Action<string> onEvent, Action onFrame, Action<ICameraFrame>? onPixels = null)
     {
         var capture = log.Required(Create, () => factory.Create(cameraId, cameraName));
         try
         {
             log.Required(Failed, () => capture.AddFailed(onEvent));
             log.Required(Source, capture.FindSourceGroup);
-            log.Required(Initialize, capture.InitializeShared);
+            log.Required(onPixels is null ? Initialize : InitializeForPixels, () => capture.InitializeShared(cpuFrames: onPixels is not null));
 
             // Only after InitializeAsync has completed: these only report, so a refusal is recorded and passed over.
             log.Optional(StreamState, () => capture.AddStreamStateChanged(onEvent));
@@ -400,7 +450,8 @@ public static class CameraRoute
                 : $"{Reader} (as the camera sends it, nothing converted)";
             var reader = log.Required(readerName, () => capture.CreateReader(convertTo));
             log.Required(Realtime, capture.UseRealtime);
-            log.Required(FrameArrived, () => capture.AddFrameArrived(onFrame));
+            if (onPixels is { } pixels) log.Required(FrameArrivedForPixels, () => capture.AddFrameReader(pixels));
+            else log.Required(FrameArrived, () => capture.AddFrameArrived(onFrame));
             var status = log.Required(Start, capture.StartReader);
             if (status != Success)
             {

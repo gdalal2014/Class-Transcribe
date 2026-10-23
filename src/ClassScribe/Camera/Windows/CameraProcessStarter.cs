@@ -83,16 +83,23 @@ public sealed class CameraProcessStarter : ICameraProcessStarter
     /// <summary>A camera process this starter started: its lines over its pipes, its standard error into the log, and its job.</summary>
     private sealed class StartedCameraProcess : ICameraProcess
     {
+        /// <summary>How long letting the process go waits for its standard error to close: a process that cannot be ended keeps it open.</summary>
+        private static readonly TimeSpan ErrorsWait = TimeSpan.FromSeconds(5);
+
         /// <summary>The process, its pipes and its job.</summary>
         private readonly PipedProcess _piped;
 
         /// <summary>The reading of its standard error.</summary>
         private readonly Task _errors;
 
+        /// <summary>Where its standard error and its letting go are logged.</summary>
+        private readonly ILogger _logger;
+
         /// <summary>Starts reading the process's standard error into <paramref name="logger"/>, and joins its input and output into one channel.</summary>
         public StartedCameraProcess(PipedProcess piped, ILogger logger)
         {
             _piped = piped;
+            _logger = logger;
             Channel = new LineChannel(new JoinedStream(piped.Output, piped.Input));
             _errors = Task.Run(() => LogErrorsAsync(piped.Errors, logger));
         }
@@ -109,12 +116,26 @@ public sealed class CameraProcessStarter : ICameraProcessStarter
         /// <inheritdoc />
         public void Kill() => _piped.Terminate();
 
-        /// <summary>Closes the channel, then the job, which ends the process if it still runs, and lets the reading of its errors finish.</summary>
+        /// <summary>
+        /// Closes the channel, then the job, which ends the process if it still runs, and lets the reading of its errors
+        /// finish, waiting at most <see cref="ErrorsWait"/> for it: a process stuck inside Windows cannot be ended, and its
+        /// standard error stays open until it ends.
+        /// </summary>
         public async ValueTask DisposeAsync()
         {
             await Channel.DisposeAsync();
             _piped.Dispose();
-            await _errors;
+            try
+            {
+                await _errors.WaitAsync(ErrorsWait);
+            }
+            catch (TimeoutException)
+            {
+                // Deliberately not rethrown: the reading ends by itself when the process does; letting the process go must not
+                // wait on a process that cannot be ended, so the stop and the sound's transcript go on without it.
+                _logger.LogDebug("The camera process's error output was still open {Seconds} seconds after it was let go; its reading ends with the process",
+                    ErrorsWait.TotalSeconds);
+            }
         }
 
         /// <summary>Writes each line of the camera process's standard error to the log at Debug, until it ends.</summary>

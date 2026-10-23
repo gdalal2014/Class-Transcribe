@@ -15,8 +15,9 @@ namespace ClassScribe.Desktop;
 /// <list type="bullet">
 /// <item>recording: <c>REC 01:12:40 Kalam</c>, with <c>MIC OFF</c> before the name while the microphone is switched
 /// off, <c>MIC MUTED</c> while the class app it follows is not listening or Windows mutes it, and <c>MIC WAITING</c>
-/// while that app has not opened it, uses another, or cannot be read; paused: <c>PAUSED 01:12:40 Kalam</c>; a green
-/// bar, or a yellow one while paused;</item>
+/// while that app has not opened it, uses another, or cannot be read; then, for a lesson with the camera, <c>CAM
+/// WAITING</c> while its picture is not recording and <c>CAM DARK</c> while it is black; paused: <c>PAUSED 01:12:40
+/// Kalam</c>; a green bar, or a yellow one while paused;</item>
 /// <item>a Notice: its words in brackets after the name, <c>REC 01:12:40 Kalam (no sound 2 min)</c>; a yellow bar;</item>
 /// <item>an Alert: "!" and its words before the name, <c>! NOT RECORDING (waiting for "chrome") Kalam</c>; a red bar;</item>
 /// <item>uploading: <c>UPLOADING 40% Kalam</c>, a green bar at 40%; transcribing: <c>TRANSCRIBING Kalam</c>, a running bar;</item>
@@ -145,7 +146,7 @@ public static class TitleText
     private static string PhaseWords(RecorderState state) => state.Phase switch
     {
         RecorderPhase.Starting => "STARTING",
-        RecorderPhase.Recording or RecorderPhase.NotRecording => $"REC {Durations.Format(state.Position)}{MicrophoneOff(state)}",
+        RecorderPhase.Recording or RecorderPhase.NotRecording => $"REC {Durations.Format(state.Position)}{MicrophoneOff(state)}{CameraWords(state)}",
         RecorderPhase.Paused => $"PAUSED {Durations.Format(state.Position)}{MicrophoneOff(state)}",
         RecorderPhase.Stopping => "STOPPING",
         RecorderPhase.Preparing => "PREPARING",
@@ -157,6 +158,19 @@ public static class TitleText
         RecorderPhase.Failed => "! FAILED",
         RecorderPhase.Cancelled => "CANCELLED",
         _ => state.Phase.ToString().ToUpperInvariant()
+    };
+
+    /// <summary>
+    /// The camera's words before the name while recording (teach-video 6.13): " CAM DARK" while its picture has been black for
+    /// 10 seconds, " CAM WAITING" while it is not open yet, in use, unplugged, restarting or given up; empty while its picture
+    /// records, and for a run without a camera. While paused the camera is let go by design, and nothing is said.
+    /// </summary>
+    private static string CameraWords(RecorderState state) => state.Camera switch
+    {
+        null => "",
+        { Dark: true } => " CAM DARK",
+        { Capturing: false } => " CAM WAITING",
+        _ => ""
     };
 
     /// <summary>

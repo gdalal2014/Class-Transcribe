@@ -21,8 +21,13 @@ namespace ClassScribe.Commands;
 /// When the recording stops by itself, by the time of day: at the end of --minutes, or, from its warning on, at the safety
 /// stop, whichever comes first; null when neither is due.
 /// </param>
+/// <param name="LetGoOfTheCamera">
+/// Why the lesson's camera is to be let go for the rest of the run, as when the disk has room for less than 30 minutes of
+/// the sound and the picture together; null while it records on. The words are not among <paramref name="Lines"/>: the
+/// camera's track says them as it lets go.
+/// </param>
 public sealed record MonitorTick(IReadOnlyList<(LogLevel Level, string Text)> Lines, IReadOnlyList<TimelineNote> Notes, Attention Attention,
-    string? StopBecause, (Track Track, string Reason)? Reopen, DateTimeOffset? StopsAtUtc);
+    string? StopBecause, (Track Track, string Reason)? Reopen, DateTimeOffset? StopsAtUtc, string? LetGoOfTheCamera = null);
 
 /// <summary>What the checks of a run need to know about it, beyond the recording itself.</summary>
 /// <param name="Request">The run's request: its name, what it records, whether it is transcribed, and --minutes.</param>
@@ -34,8 +39,9 @@ public sealed record MonitorTick(IReadOnlyList<(LogLevel Level, string Text)> Li
 /// What the recording says about your microphone beyond its snapshot (see <see cref="IMicrophoneRecording"/>); null for a
 /// recording that has no microphone, or one that cannot say more about it.
 /// </param>
+/// <param name="Camera">What the recording says about the lesson's camera (see <see cref="ICameraRecording"/>); null for a recording without one.</param>
 public sealed record MonitorContext(RecordRequest Request, string Folder, DateTimeOffset StartedUtc, long StartedTimestamp, TimeSpan Offset,
-    IMicrophoneRecording? Microphone = null);
+    IMicrophoneRecording? Microphone = null, ICameraRecording? Camera = null);
 
 /// <summary>
 /// What a recording with your microphone says about it beyond its snapshot, for the run's lines, its status line, its
@@ -86,6 +92,20 @@ public interface IMicrophoneRecording
     /// microphone must say, and one that stopped saying would not build rather than fall silent in a class.
     /// </summary>
     Camera.WebcamState? Webcam { get; }
+}
+
+/// <summary>
+/// What a recording with the camera's picture says about it (teach-video 6.13): the camera as the run sees it, for the
+/// title, the status line and the checks; and the way to let it go for the rest of the run, as when the disk is nearly
+/// full. A recording without a camera does not implement it, or says null.
+/// </summary>
+public interface ICameraRecording
+{
+    /// <summary>The lesson's camera now; null when the recording records no picture.</summary>
+    Camera.CameraTrackState? Camera { get; }
+
+    /// <summary>Lets the camera go for the rest of the run, saying <paramref name="why"/>; the sound records on.</summary>
+    void LetGoOfTheCamera(string why);
 }
 
 /// <summary>The words for the app the microphone track follows, as the run's lines, status line and summary use them.</summary>
@@ -244,6 +264,9 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// <summary>The words of the last reading of the free space, when it found room for less than 30 minutes; null otherwise.</summary>
     private string? _spaceAlert;
 
+    /// <summary>Why the lesson's camera is to be let go, found by the last reading of the free space, for this look's tick to carry; null otherwise.</summary>
+    private string? _letGoOfTheCamera;
+
     /// <summary>True once the safety stop has been warned about.</summary>
     private bool _safetyWarned;
 
@@ -367,7 +390,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         if (time.GetElapsedTime(_lastStatus, now) >= TimeSpan.FromSeconds(Math.Max(1, options.StatusIntervalSeconds)))
         {
             _lastStatus = now;
-            lines.Add((LogLevel.Information, StatusLine(snapshot, stopsAt) + _microphone.StatusClause(snapshot, context)));
+            lines.Add((LogLevel.Information, StatusLine(snapshot, stopsAt) + _microphone.StatusClause(snapshot, context) + CameraClause(context)));
         }
 
         lines.AddRange(stopLines);
@@ -393,11 +416,41 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         conditions.AddRange(bluetoothConditions);
         if (_microphoneArrival.Stalled) conditions.Add(("MicrophoneNoAudio", AttentionLevel.Notice, "no audio from the microphone", _microphoneArrival.Stall.Text));
         conditions.AddRange(microphoneConditions);
+        if (CameraCondition(snapshot, context) is { } camera) conditions.Add(camera);
 
         _lastLook = now;
+        var letGo = _letGoOfTheCamera;
+        _letGoOfTheCamera = null;
 
         // The class's conditions come before the microphone's at each level; an Alert of the microphone's still outranks a Notice.
-        return new MonitorTick(lines, notes, Attend([.. conditions.OrderByDescending(condition => condition.Level)]), stopBecause, reopen, stopsAt);
+        return new MonitorTick(lines, notes, Attend([.. conditions.OrderByDescending(condition => condition.Level)]), stopBecause, reopen, stopsAt, letGo);
+    }
+
+    /// <summary>
+    /// What is wrong with the lesson's camera, while it lasts (teach-video 6.10 to 6.12): an Alert while its picture is not
+    /// recorded (lost, refused, in use, giving no picture, restarting, given up), a Notice while it is dark. A lost camera
+    /// whose microphone the run records adds that the microphone may be silent too. While paused the camera is let go by
+    /// design, so only a picture given up is said.
+    /// </summary>
+    private static Condition? CameraCondition(RecordingSnapshot snapshot, MonitorContext context)
+    {
+        if (context.Camera?.Camera is not { Concern: { } concern } camera || snapshot.Paused && !camera.GivenUp) return null;
+
+        var text = concern.Text;
+        if (concern.Alert && !camera.Capturing && camera.ContainerId is { } container && container != Camera.Cameras.ThisComputer
+            && context.Microphone?.Microphone?.ContainerId == container)
+            text += ". Its microphone may be silent too while the camera is away or asleep";
+        return ("Camera", concern.Alert ? AttentionLevel.Alert : AttentionLevel.Notice, concern.Short, text);
+    }
+
+    /// <summary>The status line's words for the lesson's camera: its size, the frames a second and those dropped, or that its picture is not recording; empty for a run without one.</summary>
+    private static string CameraClause(MonitorContext context)
+    {
+        if (context.Camera?.Camera is not { } camera) return "";
+        if (!camera.Capturing) return camera.GivenUp ? "; camera given up" : "; camera not recording";
+
+        var size = Camera.CameraSize.TryParse(camera.Size, out var parsed) ? parsed : Camera.CameraSize.Default;
+        return string.Create(CultureInfo.InvariantCulture, $"; camera {size.Width}x{size.Height}, {camera.FramesPerSecond:0.0} frames a second, {camera.Dropped} dropped");
     }
 
     /// <summary>
@@ -590,6 +643,19 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     }
 
     /// <summary>
+    /// What an hour of the lesson's picture takes on disk while it records (teach-video 6.14): its pieces and the finished
+    /// video, both on disk until the pieces go, so twice the picture's bitrate; zero for a run without the camera, and once
+    /// its picture is given up.
+    /// </summary>
+    public static long CameraBytesPerHour(MonitorContext context)
+    {
+        if (context.Request.Source.Camera is not { } choice || context.Camera?.Camera is { GivenUp: true }) return 0;
+
+        var size = Camera.CameraSize.TryParse(choice.Resolution, out var parsed) ? parsed : Camera.CameraSize.Default;
+        return 2L * Camera.PieceSettings.BitrateFor(size) / 8 * 3600;
+    }
+
+    /// <summary>
     /// The room a class of <paramref name="length"/> takes on its drive, as the checks below count it: its one track and the
     /// upload copy. A YouTube batch keeps this much free for the next class (see <see cref="SpaceWarningBelow"/>).
     /// </summary>
@@ -610,8 +676,20 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         }
 
         var tracks = context.Request.Source.Mode == RecordingMode.ClassAndMicrophone ? 2 : 1;
-        var fits = TimeSpan.FromHours((double)Math.Max(0, bytes) / (tracks * TrackBytesPerHour + UploadBytesPerHour));
+        var sound = tracks * TrackBytesPerHour + UploadBytesPerHour;
+        var camera = CameraBytesPerHour(context);
+        var fits = TimeSpan.FromHours((double)Math.Max(0, bytes) / (sound + camera));
         var drive = Path.GetPathRoot(context.Folder) is { Length: > 0 } root ? root : context.Folder;
+
+        // The sound is the class: with room for less than 30 minutes of the sound and the picture together, the camera is let
+        // go (teach-video 6.14), and the sound alone is measured against the room left. The words are not among this check's
+        // lines: the camera's track says them as it lets go, once.
+        if (camera > 0 && fits < SpaceAlertBelow)
+        {
+            _letGoOfTheCamera = $"Little room is left on {drive} ({Size(bytes)} free), so the camera is let go: the rest of this lesson is recorded without its picture. The sound records on";
+            fits = TimeSpan.FromHours((double)Math.Max(0, bytes) / sound);
+        }
+
         if (fits < SpaceAlertBelow)
         {
             _spaceAlert = fits < TimeSpan.FromMinutes(1)

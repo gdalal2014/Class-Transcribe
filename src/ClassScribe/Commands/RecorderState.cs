@@ -98,8 +98,21 @@ public sealed record MicrophoneState(string Name, bool On, bool Capturing, strin
 /// <see cref="StopsAtUtc"/> as the title shows it, in the recorder's local time of day, such as 20:30; null when the run
 /// does not stop by itself. Written once by the run, whose clock knows the time zone, for the title, which has none.
 /// </param>
+/// <param name="Camera">
+/// The lesson's camera, for a run that records its picture; null for none. Last, with a default, so that a window of an
+/// older build passes it over and a state from one reads without it, as <see cref="MicrophoneState"/>'s fields did.
+/// </param>
 public sealed record RecorderState(RecorderPhase Phase, string Name, TimeSpan Position, string? Source, string? WaitingFor,
-    MicrophoneState? Microphone, int? UploadPercent, DateTimeOffset? StopsAtUtc, Attention Attention, bool InWindow, string? StopsAtText = null);
+    MicrophoneState? Microphone, int? UploadPercent, DateTimeOffset? StopsAtUtc, Attention Attention, bool InWindow, string? StopsAtText = null,
+    CameraState? Camera = null);
+
+/// <summary>The lesson's camera in a run (teach-video 6.13), for the title's CAM WAITING and CAM DARK.</summary>
+/// <param name="Name">The camera's name.</param>
+/// <param name="Capturing">True while the camera is open and its frames arrive.</param>
+/// <param name="Problem">What is wrong with it, in words; null when nothing is.</param>
+/// <param name="Size">The picture's size, such as 720p.</param>
+/// <param name="Dark">True while its picture has been black for 10 seconds.</param>
+public sealed record CameraState(string Name, bool Capturing, string? Problem, string? Size = null, bool Dark = false);
 
 /// <summary>Takes a run's state on every change and once a second, for the window's title and taskbar, or for the windows that show the run.</summary>
 public interface IRecorderStatusSink

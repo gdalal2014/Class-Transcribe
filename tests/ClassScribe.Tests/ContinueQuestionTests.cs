@@ -73,11 +73,15 @@ public class ContinueQuestionTests
         return files;
     }
 
-    /// <summary>The run file of a run that recorded <paramref name="files"/> in <paramref name="mode"/>, by process <paramref name="processId"/>.</summary>
-    private void WriteRun(RecordingFiles files, RecordingMode mode = RecordingMode.Class, RunState state = RunState.Recording, int processId = TestRuns.ProcessId)
+    /// <summary>
+    /// The run file of a run that recorded <paramref name="files"/> in <paramref name="mode"/>, by process
+    /// <paramref name="processId"/>, in person with <paramref name="camera"/> when one is given.
+    /// </summary>
+    private void WriteRun(RecordingFiles files, RecordingMode mode = RecordingMode.Class, RunState state = RunState.Recording, int processId = TestRuns.ProcessId,
+        CameraChoice? camera = null)
     {
         var plan = mode == RecordingMode.Microphone
-            ? new SourcePlan(mode, null, new MicrophoneChoice(null))
+            ? new SourcePlan(mode, null, new MicrophoneChoice(null), camera)
             : new SourcePlan(mode, new ClassSource.Automatic(), mode == RecordingMode.ClassAndMicrophone ? new MicrophoneChoice(null) : null);
         var record = TestRuns.Record(TestRuns.Id(), state, processId) with
         {
@@ -258,6 +262,40 @@ public class ContinueQuestionTests
 
         Assert.That(Question().Find("Kalam", RecordingMode.Class, _recordings.Path), Is.Null);
         Assert.That(Question().Find("Kalam", RecordingMode.Microphone, _recordings.Path)?.Files, Is.EqualTo(files));
+    }
+
+    /// <summary>
+    /// A lesson whose run asked for the camera, though it holds no piece (the camera was never connected, or its process never
+    /// started), is offered to a run with the camera, which writes its first piece; never to a run without, which its run file
+    /// alone tells, the files holding nothing of the camera's.
+    /// </summary>
+    [Test]
+    public void A_lesson_whose_run_asked_for_the_camera_is_continued_with_it_though_it_holds_no_piece()
+    {
+        var files = WriteStopped();
+        WriteRun(files, RecordingMode.Microphone, state: RunState.Finished, camera: new CameraChoice("OBSBOT", "720p"));
+
+        Assert.That(Question().Find("Kalam", RecordingMode.Microphone, _recordings.Path, camera: true)?.Files, Is.EqualTo(files));
+        Assert.That(Question().Find("Kalam", RecordingMode.Microphone, _recordings.Path), Is.Null);
+        Assert.That(_log.Messages, Has.Some.EqualTo($"{files.BaseName} is not offered to be continued: it was recorded with the camera, and this run records no camera"));
+    }
+
+    /// <summary>
+    /// A recording that holds no piece and whose run, if its file is left, did not ask for the camera is offered to a run
+    /// without the camera, never to one with it.
+    /// </summary>
+    [Test]
+    public void A_recording_without_the_camera_is_continued_only_without_it()
+    {
+        var files = WriteStopped();
+
+        Assert.That(Question().Find("Kalam", RecordingMode.Microphone, _recordings.Path)?.Files, Is.EqualTo(files));
+        Assert.That(Question().Find("Kalam", RecordingMode.Microphone, _recordings.Path, camera: true), Is.Null, "no run file left, and no piece");
+
+        WriteRun(files, RecordingMode.Microphone, state: RunState.Finished);
+
+        Assert.That(Question().Find("Kalam", RecordingMode.Microphone, _recordings.Path)?.Files, Is.EqualTo(files));
+        Assert.That(Question().Find("Kalam", RecordingMode.Microphone, _recordings.Path, camera: true), Is.Null, "its run file says no camera");
     }
 
     /// <summary>With Recording:ContinueWithinMinutes at 0, nothing is ever offered, and --continue says why.</summary>

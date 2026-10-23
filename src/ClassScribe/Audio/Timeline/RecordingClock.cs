@@ -14,7 +14,10 @@ public sealed class RecordingClock(TimeProvider time)
     private readonly Lock _gate = new();
 
     /// <summary>The stretches left out of the positions, each from its start up to but not including its end, kept sorted, apart and merged when they touch.</summary>
-    private readonly List<(long From, long To)> _excluded = [];
+    private readonly List<ClockExclusion> _excluded = [];
+
+    /// <summary>How many times the clock has changed: a snapshot carries it, so that a newer one is told from an older.</summary>
+    private long _version;
 
     /// <summary>The offset, in units.</summary>
     private long _offset;
@@ -84,6 +87,7 @@ public sealed class RecordingClock(TimeProvider time)
         {
             if (_origin is not null) throw new InvalidOperationException("The offset of a recording is set before its first packet arrives.");
             _offset = offset.Ticks;
+            _version++;
         }
     }
 
@@ -97,6 +101,7 @@ public sealed class RecordingClock(TimeProvider time)
         {
             if (_origin is not null) return false;
             _origin = stamp100ns;
+            _version++;
             return true;
         }
     }
@@ -118,23 +123,27 @@ public sealed class RecordingClock(TimeProvider time)
     /// <summary>True when the moment <paramref name="stamp100ns"/> is inside a pause, the open one included, or a cut: a packet stamped there is dropped.</summary>
     public bool IsExcluded(long stamp100ns)
     {
-        lock (_gate)
-        {
-            if (_pauseStart is { } start && stamp100ns >= start) return true;
-            foreach (var (from, to) in _excluded)
-            {
-                if (stamp100ns < from) return false;
-                if (stamp100ns < to) return true;
-            }
+        lock (_gate) return ClockState.IsExcludedIn(_excluded, _pauseStart, stamp100ns);
+    }
 
-            return false;
-        }
+    /// <summary>
+    /// The clock's whole state now, taken under its lock, as an immutable snapshot that places every moment as the clock
+    /// does now (see <see cref="ClockState"/>): what the camera process places the camera's frames by.
+    /// </summary>
+    public ClockState Snapshot()
+    {
+        lock (_gate) return new ClockState(_offset, _origin, [.. _excluded], _pauseStart, _version);
     }
 
     /// <summary>Pauses (P): from now until <see cref="Resume"/>, time is left out of the positions, which stay where they are. Nothing more while already paused.</summary>
     public void Pause()
     {
-        lock (_gate) _pauseStart ??= MediaTime.Now(time);
+        lock (_gate)
+        {
+            if (_pauseStart is not null) return;
+            _pauseStart = MediaTime.Now(time);
+            _version++;
+        }
     }
 
     /// <summary>Resumes (P again): the pause ends now and becomes an exclusion, and positions carry on from where they stopped. Nothing while not paused.</summary>
@@ -147,6 +156,7 @@ public sealed class RecordingClock(TimeProvider time)
             var now = MediaTime.Now(time);
             _paused += now - start - CoveredLocked(start, now);
             AddLocked(start, now);
+            _version++;
         }
     }
 
@@ -166,6 +176,7 @@ public sealed class RecordingClock(TimeProvider time)
 
             _cut += to - from100ns - CoveredLocked(from100ns, to);
             AddLocked(from100ns, to);
+            _version++;
         }
     }
 
@@ -173,36 +184,11 @@ public sealed class RecordingClock(TimeProvider time)
     public void Cut(Freeze freeze) =>
         Cut(MediaTime.From(freeze.FromTimestamp, time.TimestampFrequency), MediaTime.From(freeze.ToTimestamp, time.TimestampFrequency));
 
-    /// <summary>The position of <paramref name="stamp"/>. Call with the lock held.</summary>
-    private TimeSpan PositionLocked(long stamp)
-    {
-        if (_origin is not { } origin) return new TimeSpan(_offset);
-
-        var excluded = CoveredLocked(origin, stamp);
-        if (_pauseStart is { } start && stamp > Math.Max(origin, start))
-        {
-            // The open pause leaves out everything from its start, except what a cut inside it already left out.
-            var from = Math.Max(origin, start);
-            excluded += stamp - from - CoveredLocked(from, stamp);
-        }
-
-        return new TimeSpan(_offset + stamp - origin - excluded);
-    }
+    /// <summary>The position of <paramref name="stamp"/>, by the very code a snapshot places with (see <see cref="ClockState.PositionOf"/>). Call with the lock held.</summary>
+    private TimeSpan PositionLocked(long stamp) => ClockState.PositionOf(_offset, _origin, _excluded, _pauseStart, stamp);
 
     /// <summary>How much of the stretch from <paramref name="from"/> up to <paramref name="to"/> the exclusions that have ended cover. Call with the lock held.</summary>
-    private long CoveredLocked(long from, long to)
-    {
-        if (to <= from) return 0;
-
-        long covered = 0;
-        foreach (var (start, end) in _excluded)
-        {
-            if (start >= to) break;
-            covered += Math.Max(0, Math.Min(to, end) - Math.Max(from, start));
-        }
-
-        return covered;
-    }
+    private long CoveredLocked(long from, long to) => ClockState.Covered(_excluded, from, to);
 
     /// <summary>Adds the stretch from <paramref name="from"/> up to <paramref name="to"/> to the exclusions, merged with those it overlaps or touches. Call with the lock held.</summary>
     private void AddLocked(long from, long to)
@@ -219,6 +205,6 @@ public sealed class RecordingClock(TimeProvider time)
         }
 
         _excluded.RemoveRange(index, last - index);
-        _excluded.Insert(index, (from, to));
+        _excluded.Insert(index, new ClockExclusion(from, to));
     }
 }

@@ -112,7 +112,7 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
         _request = request;
         _run = run;
         _inWindow = run?.Current.Home != RunHome.Separate;
-        _context = new MonitorContext(request, files.Folder, time.GetUtcNow(), time.GetTimestamp(), offset, recording as IMicrophoneRecording);
+        _context = new MonitorContext(request, files.Folder, time.GetUtcNow(), time.GetTimestamp(), offset, recording as IMicrophoneRecording, recording as ICameraRecording);
         _lastHeartbeat = _context.StartedTimestamp;
         _stopsAt = request.Minutes is { } minutes ? _context.StartedUtc + TimeSpan.FromMinutes(minutes) : null;
 
@@ -203,6 +203,7 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
         WriteNotes();
 
         if (found.Reopen is { } reopen) _recording.Reopen(reopen.Track, reopen.Reason);
+        if (found.LetGoOfTheCamera is { } why) _context.Camera?.LetGoOfTheCamera(why);
         _attention = found.Attention;
         _stopsAt = found.StopsAtUtc;
         if (found.StopBecause is { } cause) Stop(cause);
@@ -359,7 +360,8 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
             _stopsAt,
             _attention,
             _inWindow,
-            _stopsAt is { } stopsAt ? TimeZoneInfo.ConvertTime(stopsAt, time.LocalTimeZone).ToString("HH:mm", CultureInfo.InvariantCulture) : null);
+            _stopsAt is { } stopsAt ? TimeZoneInfo.ConvertTime(stopsAt, time.LocalTimeZone).ToString("HH:mm", CultureInfo.InvariantCulture) : null,
+            _context.Camera?.Camera is { } camera ? new CameraState(camera.Name, camera.Capturing, camera.Concern?.Text, camera.Size, camera.Dark) : null);
     }
 
     /// <summary>
