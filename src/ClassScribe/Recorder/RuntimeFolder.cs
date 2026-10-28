@@ -9,7 +9,7 @@ namespace ClassScribe.Recorder;
 /// reading the real run files and the real queue for Google Drive.
 /// </summary>
 /// <param name="root">The folder to use instead, for tests; null for %LOCALAPPDATA%\ClassScribe.</param>
-public sealed class RuntimeFolder(string? root = null)
+public sealed class RuntimeFolder(string? root = null) : IRuntimeFolder
 {
     /// <summary>
     /// The AppContext switch a test run turns on: with it on, the real %LOCALAPPDATA%\ClassScribe is refused, and only a folder

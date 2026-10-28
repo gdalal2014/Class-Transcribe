@@ -96,7 +96,7 @@ public interface ICrashWarnings
 /// mark seen, and the recording's log takes every line the recorder wrote, as the host may log more after the run.</para>
 /// </remarks>
 public sealed class RunBookkeeping(
-    RecordingLock recordingLock,
+    IRecordingLock recordingLock,
     RunJournal journal,
     RecorderLog log,
     IPowerRequests power,
