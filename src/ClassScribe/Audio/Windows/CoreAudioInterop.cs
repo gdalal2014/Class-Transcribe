@@ -2,10 +2,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-// The tests drive the device check through fakes of the internal interfaces below, and through the
-// provider's internal constructor that takes them.
-[assembly: InternalsVisibleTo("ClassScribe.Tests")]
-
 namespace ClassScribe.Audio.Windows;
 
 /// <summary>

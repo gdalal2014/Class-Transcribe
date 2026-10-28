@@ -8,11 +8,14 @@ using Microsoft.Extensions.Logging;
 namespace ClassScribe.Desktop;
 
 /// <summary>
-/// Registers ClassScribe's own Windows integration: keeping the laptop awake while it records and uploads, where the
-/// laptop takes its power from, the computer's clocks, the watch for times when ClassScribe did not run, the registry
-/// values the microphone advice reads, whether the process a run file names still runs, Windows' record of which apps use
-/// the microphone, the names of processes and which of them are ClassScribe's own, the processes and windows of a YouTube
-/// video's Chrome, the window's title, taskbar button and flash, and Windows' end of the session.
+/// Registers ClassScribe's own Windows integration (architecture 5.2): keeping the laptop awake while it records and
+/// uploads, where the laptop takes its power from, the computer's clocks, the registry values the microphone advice reads,
+/// whether the process a run file names still runs, Windows' record of which apps use the microphone, the names of
+/// processes and which of them are ClassScribe's own, the processes and windows of a YouTube video's Chrome, the window's
+/// title, taskbar button and flash, Windows' end of the session, the desktop, the warnings of an exit and of an error
+/// nobody caught, and the starter of the recorder and the alert window with the reader of the job ClassScribe runs in. The
+/// watch for times when ClassScribe did not run is the use cases' (see <see cref="Commands.CommandUseCases"/>), and the
+/// window's status sink the window's.
 /// </summary>
 public static class DesktopServices
 {
@@ -21,7 +24,7 @@ public static class DesktopServices
     /// the requests ask for nothing and the power source is not read, and transcribing an existing file works there; the
     /// window's signals show nothing there. What only recording needs (the computer's clocks, the registry, whether a process
     /// still runs, the microphone usage record, the process names, and Windows' end of the session) is made only when a run
-    /// asks for it, and needs Windows. The freeze watch, the status sink and the session's window are one per run (one per scope).
+    /// asks for it, and needs Windows. The session's window is one per run (one per scope).
     /// </summary>
     public static IServiceCollection AddDesktop(this IServiceCollection services)
     {
@@ -34,7 +37,6 @@ public static class DesktopServices
         services.AddSingleton<ISystemTimes>(provider => OperatingSystem.IsWindows()
             ? new WindowsSystemTimes(provider.GetRequiredService<TimeProvider>())
             : throw new PlatformNotSupportedException("Reading Windows' interrupt times needs Windows."));
-        services.AddScoped<FreezeWatch>();
 
         // The registry, where Lenovo Vantage keeps its microphone mode and Windows its ducking preference: read only, for
         // the advice about the microphone, which only a recording needs.
@@ -70,17 +72,31 @@ public static class DesktopServices
             : throw new PlatformNotSupportedException("Reading the windows of a video's Chrome needs Windows."));
 
         // The window ClassScribe runs in: its title, its taskbar button and the flash, one for the process, which puts the
-        // window back as it was when ClassScribe ends. A run in this window shows its states there, and flashes once for
-        // each new Alert, with a status sink of its own.
+        // window back as it was when ClassScribe ends.
         services.AddSingleton<IWindowSignals>(provider => OperatingSystem.IsWindows()
             ? new ConsoleWindowSignals(provider.GetRequiredService<ILogger<ConsoleWindowSignals>>())
             : new NoWindowSignals());
-        services.AddScoped<IRecorderStatusSink, WindowStatusSink>();
 
         // Windows' end of the session: a hidden window of its own for each run that records, made when the run is.
         services.AddScoped<ISessionEvents>(provider => OperatingSystem.IsWindows()
             ? new SessionWindow(provider.GetRequiredService<ILogger<SessionWindow>>())
             : throw new PlatformNotSupportedException("Hearing of Windows' end of the session needs Windows."));
+
+        // The desktop a run opens its results with, and the warnings of an exit.
+        services.AddSingleton<IDesktop, WindowsDesktop>();
+        services.AddSingleton<IExitWarnings, ProcessExitWarnings>();
+
+        // .NET's warning of an error nobody caught, which a run hears before the exit warnings, to write down the right cause.
+        services.AddSingleton<ICrashWarnings, AppDomainCrashWarnings>();
+
+        // The recorder and the alert window run in ClassScribe's own folder, which the launcher makes before any start
+        // by writing the request there.
+        services.AddSingleton<IProcessStarter>(provider => OperatingSystem.IsWindows()
+            ? new ProcessStarter(provider.GetRequiredService<RuntimeFolder>().Root, provider.GetRequiredService<ILogger<ProcessStarter>>())
+            : throw new PlatformNotSupportedException("Starting the recorder in the background needs Windows."));
+        services.AddSingleton<IJobInspector>(provider => OperatingSystem.IsWindows()
+            ? new JobInspector(provider.GetRequiredService<ILogger<JobInspector>>())
+            : throw new PlatformNotSupportedException("Reading the job ClassScribe runs in needs Windows."));
         return services;
     }
 }

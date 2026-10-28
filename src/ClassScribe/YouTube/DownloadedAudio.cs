@@ -8,15 +8,12 @@ using NAudio.Wave;
 
 namespace ClassScribe.YouTube;
 
-/// <summary>A downloaded video's audio is not as long as the video: the download is incomplete, and nothing of it became a recording.</summary>
-public sealed class IncompleteAudioException(string message) : Exception(message);
-
 /// <summary>The note of a conversion in progress, &lt;RuntimeFolder&gt;\youtube\converting.json: the recording whose files it is writing.</summary>
 /// <param name="VideoId">The video's ID.</param>
 /// <param name="Title">The video's title, for the line the clean-up writes.</param>
 /// <param name="Folder">The recording's folder.</param>
 /// <param name="BaseName">The recording's base name.</param>
-public sealed record ConversionNote(string VideoId, string Title, string Folder, string BaseName);
+internal sealed record ConversionNote(string VideoId, string Title, string Folder, string BaseName);
 
 /// <summary>
 /// Turns the WAV FFmpeg made of a video's audio into ClassScribe's own (design 3.7, with Gulzar's answer 5), since every

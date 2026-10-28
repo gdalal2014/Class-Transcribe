@@ -8,6 +8,7 @@ using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -487,7 +488,7 @@ public partial class RecordCommandTests
     private string KalamFolder()
     {
         var dated = Directory.GetDirectories(KalamCourse()).Single();
-        Assert.That(ClassFolders.IsDateFolderName(Path.GetFileName(dated)), Is.True, $"{dated} is a date folder");
+        Assert.That(FolderNames.IsDateFolder(Path.GetFileName(dated)), Is.True, $"{dated} is a date folder");
         return dated;
     }
 
@@ -1309,9 +1310,9 @@ public partial class RecordCommandTests
 
         using (var otherProgram = new FileStream(Only("*.wav"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
-            otherProgram.Lock(0, WavSegmentWriter.HeaderSize);
+            otherProgram.Lock(0, WavHeader.Size);
             Assert.DoesNotThrow(() => _processEnding!());
-            otherProgram.Unlock(0, WavSegmentWriter.HeaderSize);
+            otherProgram.Unlock(0, WavHeader.Size);
         }
 
         Assert.That(_bookkeepingLog.Problems, Has.Some.StartsWith("Could not bring the recording on disk up to date before exiting"));

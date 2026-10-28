@@ -4,6 +4,7 @@ using ClassScribe.Audio.Timeline;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -221,7 +220,7 @@ public sealed partial class RecordingUpload(
     /// <summary>Why <paramref name="files"/> cannot go up now, among <paramref name="runs"/>, the runs the journal lists (see <see cref="Busy"/>); null when it can.</summary>
     public static string? BusyIn(IReadOnlyList<RunView> runs, RecordingFiles files)
     {
-        var live = runs.FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && ListCommand.IsRunOf(run.Record, files));
+        var live = runs.FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files));
         if (live is { IsTranscribingNow: true }) return "is being transcribed now";
         if (live is null && ClassFolders.IsLessonVideoBeingMade(files)) return LessonVideoBeingMade;
         if (live is not null || ClassFolders.IsBeingWritten(files)) return "is being recorded now";
@@ -300,7 +299,7 @@ public sealed partial class RecordingUpload(
     /// </summary>
     public static string SendingTheVideo(long bytes, double? bytesPerSecond)
     {
-        var line = $"Sending the lesson's video ({DriveCommand.Size(bytes)}) to Google Drive";
+        var line = $"Sending the lesson's video ({Sizes.Describe(bytes)}) to Google Drive";
         if (bytesPerSecond is not > 0) return $"{line}.";
 
         var minutes = Math.Max(1, (int)Math.Round(bytes / bytesPerSecond.Value / 60, MidpointRounding.AwayFromZero));
@@ -406,7 +405,7 @@ public sealed partial class RecordingUpload(
             Save();
 
             owner.Logger.LogInformation("Google Drive: uploading {Recording} ({Files} {FileWord}, {Size}) to {Path}", files.BaseName, pending.Count,
-                pending.Count == 1 ? "file" : "files", DriveCommand.Size(pending.Sum(path => new FileInfo(path).Length)), location.Path);
+                pending.Count == 1 ? "file" : "files", Sizes.Describe(pending.Sum(path => new FileInfo(path).Length)), location.Path);
 
             string? problem = null;
             var said = false;
@@ -500,7 +499,7 @@ public sealed partial class RecordingUpload(
             var verified = _entries.Where(entry => entry.IsVerified && (comingUp is null || !string.Equals(entry.Name, Path.GetFileName(comingUp), StringComparison.OrdinalIgnoreCase))).ToList();
             var number = verified.Count + (comingUp is null ? 0 : 1);
             var count = number == 1 ? "1 file" : $"{number} files";
-            var size = DriveCommand.Size(verified.Sum(entry => entry.DriveSize ?? 0) + (comingUp is null ? 0 : new FileInfo(comingUp).Length));
+            var size = Sizes.Describe(verified.Sum(entry => entry.DriveSize ?? 0) + (comingUp is null ? 0 : new FileInfo(comingUp).Length));
             var link = _manifest.DriveLink is { } address ? $": {address}" : "";
             owner.Logger.LogInformation("{Recording} is {Already}on Google Drive: {Location} ({Count}, {Size}, each checked against Drive's MD5){Link}", files.BaseName,
                 alreadyThere ? "already " : "", _manifest.DriveLocation, count, size, link);
@@ -734,7 +733,7 @@ public sealed partial class RecordingUpload(
             _tenthsSaid = tenths;
             var seconds = time.GetElapsedTime(_started).TotalSeconds;
             var speed = seconds > 0 ? string.Create(CultureInfo.InvariantCulture, $", {(session.Confirmed - _firstConfirmed.Value) / seconds / (1024 * 1024):0.0} MB/s") : "";
-            logger.LogInformation("{Name}: {Percent}% ({Sent} of {Total}{Speed})", name, tenths * 10, DriveCommand.Size(session.Confirmed), DriveCommand.Size(size), speed);
+            logger.LogInformation("{Name}: {Percent}% ({Sent} of {Total}{Speed})", name, tenths * 10, Sizes.Describe(session.Confirmed), Sizes.Describe(size), speed);
         }
     }
 }

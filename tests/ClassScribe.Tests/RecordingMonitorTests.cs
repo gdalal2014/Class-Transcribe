@@ -3,6 +3,7 @@ using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;

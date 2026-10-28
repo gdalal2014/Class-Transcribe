@@ -8,6 +8,7 @@ using ClassScribe.Audio.Windows;
 using ClassScribe.Commands;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 
 namespace ClassScribe.Tests;
 

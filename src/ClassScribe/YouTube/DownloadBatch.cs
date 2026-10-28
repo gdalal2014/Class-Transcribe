@@ -3,6 +3,7 @@ using System.Globalization;
 using ClassScribe.Commands;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -146,7 +147,7 @@ public sealed class DownloadBatch(
 
         var exitCode = Summarize(request, videos);
         var anythingNew = batchFolder is not null || videos.Any(video => video.Transcript is { Step: TranscriptStep.Transcribed });
-        batch.OpenCourse(anythingNew ? Path.Combine(ClassFolders.RootFor(request.OutputRoot), ClassFolders.SafeName(request.Name)) : null, request.Open);
+        batch.OpenCourse(anythingNew ? Path.Combine(ClassFolders.RootFor(request.OutputRoot), FolderNames.SafeName(request.Name)) : null, request.Open);
         return exitCode;
     }
 
@@ -569,12 +570,12 @@ public sealed class DownloadBatch(
         if (youTube.Value.DriveUpload == DriveUploadScope.WithoutAudio)
             return "Google Drive: the transcripts, answers, logs and source files, without the audio (YouTube:DriveUpload).";
 
-        var line = $"Google Drive: everything, the audio included (YouTube:DriveUpload), about {DriveCommand.Size(audioBytes)} of audio";
+        var line = $"Google Drive: everything, the audio included (YouTube:DriveUpload), about {Sizes.Describe(audioBytes)} of audio";
         if (audioBytes == 0 || await driveRoom.ReadAsync(cancellationToken) is not { Free: { } free }) return line + ".";
 
         return free >= audioBytes
-            ? $"{line}; Drive has {DriveCommand.Size(free)} free."
-            : $"{line}; Drive has only {DriveCommand.Size(free)} free, so what does not fit waits in the queue until there is room.";
+            ? $"{line}; Drive has {Sizes.Describe(free)} free."
+            : $"{line}; Drive has only {Sizes.Describe(free)} free, so what does not fit waits in the queue until there is room.";
     }
 
     /// <summary>The video's source file, as it is while it downloads (<paramref name="endConfirmed"/> false) and once its audio is whole.</summary>

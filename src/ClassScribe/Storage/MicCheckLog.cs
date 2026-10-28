@@ -14,9 +14,6 @@ namespace ClassScribe.Storage;
 /// </summary>
 public sealed class MicCheckLog : IDisposable
 {
-    /// <summary>The folder under the recordings folder the logs go in.</summary>
-    public const string FolderName = "mic-check";
-
     /// <summary>How the local start time is written into the file's name: sortable, without colons, and without a recording's Z.</summary>
     public const string StampFormat = "yyyy-MM-dd_HH-mm-ss";
 
@@ -50,7 +47,7 @@ public sealed class MicCheckLog : IDisposable
     public static MicCheckLog Create(string folder, DateTimeOffset started)
     {
         Directory.CreateDirectory(folder);
-        var stem = $"{FolderName}_{started.ToString(StampFormat, CultureInfo.InvariantCulture)}";
+        var stem = $"{FolderNames.MicCheck}_{started.ToString(StampFormat, CultureInfo.InvariantCulture)}";
         for (var attempt = 1; ; attempt++)
         {
             var path = System.IO.Path.Combine(folder, attempt == 1 ? $"{stem}.log" : $"{stem}_{attempt}.log");

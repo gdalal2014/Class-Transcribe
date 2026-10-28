@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Transcription;
 
 namespace ClassScribe.Tests;

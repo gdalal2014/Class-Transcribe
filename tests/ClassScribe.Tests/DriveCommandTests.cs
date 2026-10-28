@@ -146,8 +146,8 @@ public class DriveCommandTests
         var md = new FileInfo(mantiq.Transcript()).Length + new FileInfo(mantiq.Segment(1)).Length;
         Assert.That(Lines().TakeLast(2), Is.EqualTo(new[]
         {
-            $"Waiting: {mantiq.BaseName} (2 files, {DriveCommand.Size(md)}), not tried yet",
-            $"Waiting: {kalam.BaseName} (1 file, {DriveCommand.Size(new FileInfo(kalam.Segment(1)).Length)}), last try 17 Oct 21:40: Google Drive could not be reached (No such host is known)."
+            $"Waiting: {mantiq.BaseName} (2 files, {Sizes.Describe(md)}), not tried yet",
+            $"Waiting: {kalam.BaseName} (1 file, {Sizes.Describe(new FileInfo(kalam.Segment(1)).Length)}), last try 17 Oct 21:40: Google Drive could not be reached (No such host is known)."
         }));
     }
 

@@ -3,12 +3,13 @@ using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Condition = (string Name, ClassScribe.Commands.AttentionLevel Level, string Short, string Text);
+using Condition = (string Name, ClassScribe.Runs.AttentionLevel Level, string Short, string Text);
 
 namespace ClassScribe.Commands;
 
@@ -43,71 +44,6 @@ public sealed record MonitorTick(IReadOnlyList<(LogLevel Level, string Text)> Li
 /// <param name="Camera">What the recording says about the lesson's camera (see <see cref="ICameraRecording"/>); null for a recording without one.</param>
 public sealed record MonitorContext(RecordRequest Request, string Folder, DateTimeOffset StartedUtc, long StartedTimestamp, TimeSpan Offset,
     IMicrophoneRecording? Microphone = null, ICameraRecording? Camera = null);
-
-/// <summary>
-/// What a recording with your microphone says about it beyond its snapshot, for the run's lines, its status line, its
-/// title and its end-of-class summary: which microphone is recorded now and why, how Windows processes its audio, which
-/// app the track follows, and the gate that follows it. A recording that has your microphone implements this beside
-/// <see cref="IRecording"/>; a recording of the class alone does not, and the run then asks nothing of it. Each member
-/// answers for now, from whatever thread asks.
-/// </summary>
-public interface IMicrophoneRecording
-{
-    /// <summary>The app the microphone track follows, as the recording was built to follow it; null when none is followed, as in person.</summary>
-    FollowRule? Follows { get; }
-
-    /// <summary>
-    /// The gate that follows the app, whose state, words, evidence and summary the run shows; null when the recording has
-    /// none. In person, and with the class when no app is followed, a gate for <see cref="FollowRule.None"/> follows
-    /// nothing but still counts the time on and off with V, which the end-of-class summary gives; without one that line
-    /// is left out.
-    /// </summary>
-    MicrophoneGate? Gate { get; }
-
-    /// <summary>The microphone recorded now, as Windows lists it; null while there is none to record.</summary>
-    Microphone? Microphone { get; }
-
-    /// <summary>
-    /// The microphone the recording would record, as its last look picked it, while none is recorded: the track switched
-    /// off with V, or not yet opened. The same as <see cref="Microphone"/> while one is recorded. Null when no look has
-    /// picked one, as before the first look and while none is connected.
-    /// </summary>
-    Microphone? WouldRecord { get; }
-
-    /// <summary>Why that microphone, in the words the choice was made with, such as Windows' default microphone; null when there is nothing to say.</summary>
-    string? MicrophoneWhy { get; }
-
-    /// <summary>How Windows processes the microphone's audio, as the open capture reports it; null while no capture is open, or when the capture cannot say.</summary>
-    MicrophoneProcessing? Processing { get; }
-
-    /// <summary>
-    /// Whether the microphone recorded now is muted in Windows (the switch in Sound settings, and the microphone key), read
-    /// from Windows when asked; null while none is recorded, or when Windows cannot say.
-    /// </summary>
-    bool? MutedInWindows { get; }
-
-    /// <summary>
-    /// The webcam the microphone belongs to (camera-first 3.4), and whether its picture is held with its frames arriving;
-    /// null for a microphone of no webcam, and for a recording that cannot say. The webcam zeros rules take the place of
-    /// the warning about only silence for such a microphone. It has no default body, so that every recording with the
-    /// microphone must say, and one that stopped saying would not build rather than fall silent in a class.
-    /// </summary>
-    Camera.WebcamState? Webcam { get; }
-}
-
-/// <summary>
-/// What a recording with the camera's picture says about it (teach-video 6.13): the camera as the run sees it, for the
-/// title, the status line and the checks; and the way to let it go for the rest of the run, as when the disk is nearly
-/// full. A recording without a camera does not implement it, or says null.
-/// </summary>
-public interface ICameraRecording
-{
-    /// <summary>The lesson's camera now; null when the recording records no picture.</summary>
-    Camera.CameraTrackState? Camera { get; }
-
-    /// <summary>Lets the camera go for the rest of the run, saying <paramref name="why"/>; the sound records on.</summary>
-    void LetGoOfTheCamera(string why);
-}
 
 /// <summary>The words for the app the microphone track follows, as the run's lines, status line and summary use them.</summary>
 public static class MicrophoneWords
@@ -191,20 +127,11 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// <summary>How often the free space is read again after the start.</summary>
     private static readonly TimeSpan SpaceCheckEvery = TimeSpan.FromMinutes(5);
 
-    /// <summary>At the start, room for less recording than this is warned about; a YouTube batch keeps this much room for a class.</summary>
-    public static readonly TimeSpan SpaceWarningBelow = TimeSpan.FromHours(3);
-
     /// <summary>Room for less recording than this is an Alert.</summary>
     private static readonly TimeSpan SpaceAlertBelow = TimeSpan.FromMinutes(30);
 
     /// <summary>How long before the safety stop it is warned about.</summary>
     private static readonly TimeSpan SafetyWarningBefore = TimeSpan.FromMinutes(15);
-
-    /// <summary>What an hour of one track takes on disk: 48 kHz, 16-bit, mono, about 346 MB.</summary>
-    private const long TrackBytesPerHour = 48_000L * 2 * 3600;
-
-    /// <summary>What an hour of the upload copy takes on disk: 16 kHz, 16-bit, mono, about 115 MB.</summary>
-    private const long UploadBytesPerHour = 16_000L * 2 * 3600;
 
     /// <summary>The words for a recording whose files cannot be written.</summary>
     private const string CannotWriteText = "The recording cannot be written to disk now; nothing is saved until it can be again. The errors above say why";
@@ -661,12 +588,6 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     }
 
     /// <summary>
-    /// The room a class of <paramref name="length"/> takes on its drive, as the checks below count it: its one track and the
-    /// upload copy. A YouTube batch keeps this much free for the next class (see <see cref="SpaceWarningBelow"/>).
-    /// </summary>
-    public static long RoomFor(TimeSpan length) => (long)Math.Ceiling(length.TotalHours * (TrackBytesPerHour + UploadBytesPerHour));
-
-    /// <summary>
     /// Reads the free space of the recording's drive and says how much recording still fits there, counting each track
     /// and the upload copy: room for less than 30 minutes needs attention until a later reading finds more, and at the
     /// <paramref name="first"/> reading, room for less than 3 hours is warned about. A drive that cannot be read is passed
@@ -681,7 +602,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         }
 
         var tracks = context.Request.Source.Mode == RecordingMode.ClassAndMicrophone ? 2 : 1;
-        var sound = tracks * TrackBytesPerHour + UploadBytesPerHour;
+        var sound = tracks * Room.TrackBytesPerHour + Room.UploadBytesPerHour;
         var camera = CameraBytesPerHour(context);
         var fits = TimeSpan.FromHours((double)Math.Max(0, bytes) / (sound + camera));
         var drive = Path.GetPathRoot(context.Folder) is { Length: > 0 } root ? root : context.Folder;
@@ -705,7 +626,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         }
 
         _spaceAlert = null;
-        if (first && fits < SpaceWarningBelow)
+        if (first && fits < Room.SpaceWarningBelow)
             lines.Add((LogLevel.Warning, $"Only about {DescribeLength(fits)} of recording fit on {drive} ({Size(bytes)} free). Free some space there before a long class"));
     }
 

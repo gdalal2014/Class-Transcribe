@@ -2,8 +2,8 @@ using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Link;
@@ -162,7 +162,7 @@ public sealed class RecorderClient(IProcessLiveness liveness, TimeProvider time,
     private LineChannel? _pendingOn;
 
     /// <summary>Opens a run's pipe, waiting at most the time given for a free instance. Tests put an in-memory connection in its place.</summary>
-    internal Func<string, TimeSpan, CancellationToken, Task<Stream>> OpenPipe { get; init; } = OpenRealPipeAsync;
+    public Func<string, TimeSpan, CancellationToken, Task<Stream>> OpenPipe { get; init; } = OpenRealPipeAsync;
 
     /// <summary>
     /// Whether this window runs as administrator, for the advice when a recorder started with other rights cannot be
@@ -376,7 +376,7 @@ public sealed class RecorderClient(IProcessLiveness liveness, TimeProvider time,
     }
 
     /// <summary>Opens the run's pipe, for this user only, waiting at most <paramref name="limit"/> for a free instance: a <see cref="TimeoutException"/> when none came.</summary>
-    internal static async Task<Stream> OpenRealPipeAsync(string pipeName, TimeSpan limit, CancellationToken cancellationToken)
+    public static async Task<Stream> OpenRealPipeAsync(string pipeName, TimeSpan limit, CancellationToken cancellationToken)
     {
         var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         try

@@ -1,8 +1,7 @@
 using System.Diagnostics;
 using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging;
@@ -31,7 +30,7 @@ public sealed class TranscriptionRuns(RunJournal journal, TimeProvider time, ILo
             outputRoot, ContinueChoice.New, ContinueBaseName: null, Minutes: null, Open: false, video);
         var (processId, processStartedUtc) = ThisProcess();
         var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, processId, processStartedUtc, Environment.ProcessPath ?? AppContext.BaseDirectory,
-            LinkProtocol.Build, LinkProtocol.Version, Pipe: null, RunHome.InWindow, request, files.BaseName, files.Folder, RunState.Transcribing,
+            BuildInfo.Build, LinkVersion.Current, Pipe: null, RunHome.InWindow, request, files.BaseName, files.Folder, RunState.Transcribing,
             now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
 
         RunHandle? handle = null;
@@ -117,7 +116,7 @@ public sealed class TranscriptionRun : IDisposable
         lock (_gate)
         {
             var now = _time.GetTimestamp();
-            due = step != _lastStep || (shown is not null) != (_lastPercent is not null) || _time.GetElapsedTime(_lastHeartbeat, now) >= RecordingLoop.HeartbeatInterval;
+            due = step != _lastStep || (shown is not null) != (_lastPercent is not null) || _time.GetElapsedTime(_lastHeartbeat, now) >= RunTimings.HeartbeatInterval;
             if (due) (_lastStep, _lastPercent, _lastHeartbeat) = (step, shown, now);
         }
 

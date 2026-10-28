@@ -428,8 +428,8 @@ public class ClassFoldersLayoutTests
     [Test]
     public void A_date_folders_name_is_the_date_with_a_number_from_the_second()
     {
-        Assert.That(ClassFolders.DateFolderName(new DateOnly(2026, 10, 17)), Is.EqualTo("2026-10-17"));
-        Assert.That(ClassFolders.DateFolderName(new DateOnly(2026, 1, 5), 2), Is.EqualTo("2026-01-05 (2)"));
+        Assert.That(FolderNames.DateFolderName(new DateOnly(2026, 10, 17)), Is.EqualTo("2026-10-17"));
+        Assert.That(FolderNames.DateFolderName(new DateOnly(2026, 1, 5), 2), Is.EqualTo("2026-01-05 (2)"));
     }
 
     /// <summary>
@@ -451,7 +451,7 @@ public class ClassFoldersLayoutTests
     [TestCase("Kalam_10_15_2026", false)]
     [TestCase("", false)]
     public void Only_a_folder_named_as_a_date_is_a_date_folder(string name, bool dated) =>
-        Assert.That(ClassFolders.IsDateFolderName(name), Is.EqualTo(dated));
+        Assert.That(FolderNames.IsDateFolder(name), Is.EqualTo(dated));
 
     /// <summary>
     /// A later class of its day is told by its date folder's number, which the list shows; the day's first class, a
@@ -463,7 +463,7 @@ public class ClassFoldersLayoutTests
     [TestCase(@"C:\Classes\Mantiq", null)]
     [TestCase(@"C:\Classes\Mantiq\Slides (2)", null)]
     public void A_later_class_of_its_day_is_told_by_its_date_folders_number(string folder, string? shown) =>
-        Assert.That(ClassFolders.LaterClassOfItsDay(folder), Is.EqualTo(shown));
+        Assert.That(FolderNames.LaterClassOfItsDay(folder), Is.EqualTo(shown));
 
     /// <summary>
     /// The folders a folder's recordings may be in: the folder itself, for recordings flat in it as the old layout put

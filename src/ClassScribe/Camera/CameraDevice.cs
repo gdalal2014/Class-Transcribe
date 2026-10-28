@@ -79,13 +79,6 @@ public sealed record VideoDeviceFacts(string Id, string Name, CameraPanel Panel,
 /// <param name="Problem">Why the cameras could not be listed, in words; null when they were.</param>
 public sealed record CameraList(IReadOnlyList<CameraDevice> Cameras, string? Problem = null);
 
-/// <summary>Lists the colour cameras Windows can record from. Listing reads Windows' device lists only and never opens a camera, so no light comes on.</summary>
-public interface ICameraProvider
-{
-    /// <summary>The colour cameras connected now, or why they could not be listed; never throws but for <paramref name="cancellationToken"/>.</summary>
-    Task<CameraList> GetCamerasAsync(CancellationToken cancellationToken);
-}
-
 /// <summary>
 /// The rules of the camera list and the camera choice (teach-video 6.4), kept apart from Windows so that they are tested
 /// alone: which devices are colour cameras, where each is, which one a run records, and which microphone is a webcam's own.

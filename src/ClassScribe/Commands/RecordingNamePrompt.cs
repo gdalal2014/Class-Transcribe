@@ -15,7 +15,7 @@ public sealed class RecordingNamePrompt(IConsoleUi ui)
             var typed = await ui.ReadLineAsync(CancellationToken.None);
             if (typed is null) return null;
 
-            var name = ClassFolders.SafeName(typed);
+            var name = FolderNames.SafeName(typed);
             if (name.Length > 0) return name;
 
             ui.WriteLine("A name is needed.");

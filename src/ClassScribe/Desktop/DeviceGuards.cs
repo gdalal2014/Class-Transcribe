@@ -8,7 +8,7 @@ namespace ClassScribe.Desktop;
 /// microphone, on the laptop. Registering a fake is then no longer the only protection. ClassScribe itself never turns it on;
 /// an [Explicit] test that must open a real device turns it off for itself and on again in a finally block.
 /// </summary>
-public static class DeviceGuards
+internal static class DeviceGuards
 {
     /// <summary>The AppContext switch a test run turns on: with it on, a real camera or microphone is never opened.</summary>
     public const string RefuseTheRealDevicesSwitch = "ClassScribe.Devices.RefuseTheRealDevices";

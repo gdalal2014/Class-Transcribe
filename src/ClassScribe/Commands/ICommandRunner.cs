@@ -1,4 +1,5 @@
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -118,21 +119,6 @@ public interface ICommandRunner
 
     /// <summary>Menu choice S: the recordings folder, the camera picture size and the settings file (see <see cref="SettingsMenu"/>). Returns the exit code.</summary>
     Task<int> SettingsMenuAsync();
-}
-
-/// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>
-/// <param name="StopAfter">Stop by itself after this long (--seconds); null to watch until Q or Ctrl+C.</param>
-/// <param name="LogFolder">The folder the log goes to, as a full path (--log-folder); null for the mic-check folder under Recording:OutputFolder.</param>
-public sealed record MicCheckRequest(TimeSpan? StopAfter, string? LogFolder);
-
-/// <summary>
-/// One microphone check, resolved in a scope of its own by the runner, as <see cref="IRecordRun"/> is for a recording: the
-/// check command implements it, and reads Ctrl+C through the signals of its scope.
-/// </summary>
-public interface IMicCheckRun
-{
-    /// <summary>Runs the check <paramref name="request"/> describes and returns the exit code.</summary>
-    Task<int> RunAsync(MicCheckRequest request);
 }
 
 /// <summary>
@@ -386,7 +372,7 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         if (files is null) return null;
 
         var busy = services.GetRequiredService<RunJournal>().List()
-            .FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && ListCommand.IsRunOf(run.Record, files));
+            .FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files));
         return busy is null ? null : (files, busy);
     }
 

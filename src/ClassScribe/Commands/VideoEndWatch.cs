@@ -1,8 +1,9 @@
 using ClassScribe.Audio;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging;
-using Condition = (string Name, ClassScribe.Commands.AttentionLevel Level, string Short, string Text);
+using Condition = (string Name, ClassScribe.Runs.AttentionLevel Level, string Short, string Text);
 
 namespace ClassScribe.Commands;
 

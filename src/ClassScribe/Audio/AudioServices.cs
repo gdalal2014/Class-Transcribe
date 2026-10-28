@@ -6,13 +6,14 @@ using Microsoft.Extensions.Logging;
 namespace ClassScribe.Audio;
 
 /// <summary>
-/// Registers what records: Windows audio, made only when something first uses it; the choice of what to record; the
-/// recordings a run makes from its source plan; the advice about the microphone; and the upload preparation. The
-/// microphone itself is registered apart (see <see cref="MicrophoneServices"/>).
+/// Registers what records, as far as it reaches Windows and the files (architecture 5.2): Windows audio, made only when
+/// something first uses it, and the upload preparation. The choice of what to record, the recordings a run makes from its
+/// source plan and the advice about the microphone are the use cases' (see <see cref="AudioUseCases"/>). The microphone
+/// itself is registered apart (see <see cref="MicrophoneServices"/>).
 /// </summary>
 public static class AudioServices
 {
-    /// <summary>Adds the audio services.</summary>
+    /// <summary>Adds the audio services that reach Windows and the files.</summary>
     public static IServiceCollection AddAudio(this IServiceCollection services)
     {
         // Windows audio is reached only when a recording starts or the devices are listed: the menu and the command line
@@ -25,19 +26,6 @@ public static class AudioServices
         // For the devices command, which asks for the provider only when it runs: the one registered above, so that a
         // stand-in registered in its place is what the command lists.
         services.AddSingleton(provider => new Lazy<ILoopbackCaptureProvider>(provider.GetRequiredService<ILoopbackCaptureProvider>));
-        services.AddSingleton<SourceChoice>();
-
-        // One per use, inside a run's scope, with that run's settings and its freeze watch: the recording it makes is the
-        // class alone, the class and your microphone on one clock, or your microphone alone in person, as the plan says,
-        // each with sessions of its own.
-        services.AddTransient<TrackSetFactory>();
-        services.AddTransient<IRecordingFactory>(provider => provider.GetRequiredService<TrackSetFactory>());
-
-        // The advice about the microphone, one per run: it remembers Vantage's mode from the start, so that the run can
-        // say when the mode changes. The watch for the class app on a Bluetooth microphone is one per run too: it
-        // remembers what it last found, so that each use is warned about once.
-        services.AddScoped<MicrophoneAdvice>();
-        services.AddScoped<BluetoothMicrophoneWatch>();
 
         services.AddSingleton<IAudioPreparer, AudioPreparer>();
         return services;

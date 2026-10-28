@@ -8,6 +8,7 @@ using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
 using ClassScribe.Desktop;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 
 namespace ClassScribe.Commands;
@@ -443,7 +444,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             foreach (var note in reading.Notes) Invocation.Output.WriteLine(note);
             return commands.YouTubeAsync(new YouTube.YouTubeRequest(
                 reading.Links,
-                ClassFolders.SafeName(parsed.GetValue(name)!),
+                FolderNames.SafeName(parsed.GetValue(name)!),
                 OutputRoot(parsed.GetValue(output), classFolder: null),
                 parsed.GetValue(download),
                 parsed.GetValue(plan) ? YouTube.BatchConfirmation.PlanOnly : YouTube.BatchConfirmation.Yes,
@@ -469,7 +470,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             yield return "youtube needs --name \"<course>\", the course the videos belong to, such as --name \"Risala\"";
         else if (optionNames.Contains(course))
             yield return $"--name needs the course's name after it; it took the option {course} instead";
-        else if (ClassFolders.SafeName(course).Length == 0)
+        else if (FolderNames.SafeName(course).Length == 0)
             yield return $"youtube cannot use \"{course}\" as a course's name: nothing is left of it once the characters Windows does not allow in a folder's name are taken out";
 
         if (result.GetResult(output) is { } folder && FolderProblem(output.Name, TokenOf(folder), optionNames) is { } outputProblem) yield return outputProblem;
@@ -669,7 +670,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         {
             if (!withClass) yield return $"{word} needs a name, right after the word {word}: ClassScribe {word} \"Kalam\" ...{NameTakenBy(result, symbols)}";
         }
-        else if (ClassFolders.SafeName(name).Length == 0)
+        else if (FolderNames.SafeName(name).Length == 0)
         {
             yield return $"{word} cannot use \"{name}\" as a name: nothing is left of it once the characters Windows does not allow in a folder's name are taken out";
         }
@@ -762,7 +763,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
         var request = new RecordRequest(
             RunIds.New(time.GetUtcNow()),
-            ClassFolders.SafeName(parsed.GetValue(symbols.Name)!),
+            FolderNames.SafeName(parsed.GetValue(symbols.Name)!),
             transcribe,
             plan,
             OutputRoot(parsed.GetValue(symbols.Output), classFolder: null),
@@ -793,7 +794,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
             : null;
         var choices = new Settings.ClassChoices
         {
-            Course = parsed.GetValue(symbols.Name) is { } course && !string.IsNullOrWhiteSpace(course) ? ClassFolders.SafeName(course) : null,
+            Course = parsed.GetValue(symbols.Name) is { } course && !string.IsNullOrWhiteSpace(course) ? FolderNames.SafeName(course) : null,
             Source = source,
             Mic = parsed.GetResult(symbols.Mic) is not null,
             MicName = NamePart(parsed.GetValue(symbols.Mic)),

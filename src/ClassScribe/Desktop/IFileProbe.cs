@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace ClassScribe.Desktop;
 
 /// <summary>
@@ -13,15 +11,4 @@ public interface IFileProbe
 
     /// <summary>The product version a program's file at <paramref name="path"/> carries, as Windows shows it; null when there is none, or no such file.</summary>
     string? VersionOf(string path);
-}
-
-/// <summary>Looks at the disk itself.</summary>
-public sealed class FileProbe : IFileProbe
-{
-    /// <inheritdoc />
-    public bool FileExists(string path) => File.Exists(path);
-
-    /// <inheritdoc />
-    public string? VersionOf(string path) =>
-        File.Exists(path) && FileVersionInfo.GetVersionInfo(path).ProductVersion is { Length: > 0 } version ? version.Trim() : null;
 }

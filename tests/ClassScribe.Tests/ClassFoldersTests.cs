@@ -275,10 +275,10 @@ public class ClassFoldersTests
     [Test]
     public void A_recording_name_is_made_safe_for_a_file_name()
     {
-        Assert.That(ClassFolders.SafeName("  Kalam: lesson  <12>?  "), Is.EqualTo("Kalam lesson 12"));
-        Assert.That(ClassFolders.SafeName("Uṣūl al-dīn, part 1"), Is.EqualTo("Uṣūl al-dīn, part 1"), "letters outside ASCII and commas are fine");
-        Assert.That(ClassFolders.SafeName(" ... "), Is.Empty, "a name of only dots would not be a valid folder");
-        Assert.That(ClassFolders.SafeName(""), Is.Empty);
+        Assert.That(FolderNames.SafeName("  Kalam: lesson  <12>?  "), Is.EqualTo("Kalam lesson 12"));
+        Assert.That(FolderNames.SafeName("Uṣūl al-dīn, part 1"), Is.EqualTo("Uṣūl al-dīn, part 1"), "letters outside ASCII and commas are fine");
+        Assert.That(FolderNames.SafeName(" ... "), Is.Empty, "a name of only dots would not be a valid folder");
+        Assert.That(FolderNames.SafeName(""), Is.Empty);
     }
 
     /// <summary>
@@ -300,7 +300,7 @@ public class ClassFoldersTests
     [TestCase("COM10", "COM10")]
     [TestCase("Lecture nul", "Lecture nul")]
     public void A_name_windows_keeps_for_a_device_gets_an_underscore(string name, string safe) =>
-        Assert.That(ClassFolders.SafeName(name), Is.EqualTo(safe));
+        Assert.That(FolderNames.SafeName(name), Is.EqualTo(safe));
 
     /// <summary>A transcribed file gets a folder named after the file, with the date folder of the transcription in it, and files stamped with the transcription time.</summary>
     [Test]

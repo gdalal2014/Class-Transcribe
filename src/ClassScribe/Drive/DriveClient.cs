@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace ClassScribe.Drive;
 
 /// <summary>What Drive said to a piece of a resumable upload, or to the question how much of it Drive has.</summary>
-public enum PieceOutcome
+internal enum PieceOutcome
 {
     /// <summary>Drive wants more (HTTP 308), from the end of what it confirms it has.</summary>
     More,
@@ -24,7 +24,7 @@ public enum PieceOutcome
 /// <param name="Outcome">What it said.</param>
 /// <param name="Confirmed">How many bytes from the start Drive confirms it has, for <see cref="PieceOutcome.More"/>.</param>
 /// <param name="File">The file, for <see cref="PieceOutcome.Complete"/>: at least its id.</param>
-public sealed record PieceAnswer(PieceOutcome Outcome, long Confirmed, DriveFile? File);
+internal sealed record PieceAnswer(PieceOutcome Outcome, long Confirmed, DriveFile? File);
 
 /// <summary>
 /// The calls to Drive, through <see cref="IDriveApi"/>: each with the access token from <see cref="GoogleTokens"/> as its
@@ -139,7 +139,7 @@ public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, IOptionsSnap
     /// confirms, the file complete, or the session gone. An empty piece with Content-Range bytes */size asks how much Drive
     /// has. <paramref name="piece"/> is called again for a call repeated with a renewed token.
     /// </summary>
-    public async Task<PieceAnswer> SendPieceAsync(UploadAddress session, Func<HttpContent> piece, TimeSpan limit, CancellationToken cancellationToken)
+    internal async Task<PieceAnswer> SendPieceAsync(UploadAddress session, Func<HttpContent> piece, TimeSpan limit, CancellationToken cancellationToken)
     {
         const string what = "take a piece of an upload";
         using var response = await CallAsync((authorization, token) => session.FileId is { } fileId

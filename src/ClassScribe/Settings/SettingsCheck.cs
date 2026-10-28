@@ -12,15 +12,6 @@ using Microsoft.Extensions.Logging.Console;
 namespace ClassScribe.Settings;
 
 /// <summary>
-/// One problem the check found: the sentence that says it, starting with the setting's name, and the settings it names,
-/// which a recording drops from a file that fails the check while it keeps the rest (build-plan amendment 4). A name may be
-/// a section, such as Logging:Console, which stands for every setting under it.
-/// </summary>
-/// <param name="Text">The sentence.</param>
-/// <param name="Keys">The settings it names, the first being the one the sentence starts with.</param>
-public sealed record SettingsProblem(string Text, IReadOnlyList<string> Keys);
-
-/// <summary>
 /// Checks settings before they are used. Settings are otherwise read only when first used, which for the transcript
 /// layout is after the paid upload; here a value that cannot be read, or one that makes no sense, is found at once, with
 /// a message that names the setting. The settings to check are an argument, so that a staged copy of them is checked

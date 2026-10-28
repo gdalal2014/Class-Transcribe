@@ -2,6 +2,7 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -103,7 +104,7 @@ public partial class RecordCommandTests
         await run.WaitAsync(TimeSpan.FromSeconds(15));
 
         var dated = Directory.GetDirectories(Path.Combine(_folder.Path, "Risala")).Single();
-        Assert.That(ClassFolders.IsDateFolderName(Path.GetFileName(dated)), Is.True);
+        Assert.That(FolderNames.IsDateFolder(Path.GetFileName(dated)), Is.True);
         Assert.That(RunFile().Folder, Is.EqualTo(dated), "the batch reads its folder from the first run's file");
     }
 

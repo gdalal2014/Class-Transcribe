@@ -1,6 +1,7 @@
 using ClassScribe.Audio;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 
 namespace ClassScribe.Tests;

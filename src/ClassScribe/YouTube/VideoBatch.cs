@@ -2,6 +2,7 @@ using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -61,7 +62,7 @@ public sealed class RecordedVideo(int number, YouTubeLink link)
     public bool Recorded => Recording is not null && Outcome is { Kind: OutcomeKind.Recorded };
 
     /// <summary>The words of the plan's last column: what was done before, or YouTube's missing title.</summary>
-    public string Words => Past.Kind == PastKind.None ? Read is null ? $"({OEmbedTitles.NoTitle})" : "" : Past.Words;
+    public string Words => Past.Kind == PastKind.None ? Read is null ? $"({VideoTitle.NoTitle})" : "" : Past.Words;
 }
 
 /// <summary>
@@ -110,7 +111,7 @@ public static class VideoPlan
         if (transcribe && before.Count > 0)
         {
             var length = before.Aggregate(TimeSpan.Zero, (sum, video) => sum + Recorded(video.Past.Recording!.Files));
-            lines.Add($"Also transcribed: {DownloadPlan.Count(before.Count, "recording")} made before, {BatchTranscripts.Hours(length)}{DownloadPlan.CostOf(length, transcribe, keyterms, prices)}");
+            lines.Add($"Also transcribed: {DownloadPlan.Count(before.Count, "recording")} made before, {Durations.Hours(length)}{DownloadPlan.CostOf(length, transcribe, keyterms, prices)}");
         }
 
         if (transcribe && accountLine is not null) lines.Add($"{accountLine}.");
@@ -137,7 +138,7 @@ public static class VideoPlan
     internal static string Hours(TimeSpan length) =>
         length.TotalMinutes % 60 == 0 && length >= TimeSpan.FromHours(1)
             ? DownloadPlan.Count((long)length.TotalHours, "hour")
-            : BatchTranscripts.Hours(length);
+            : Durations.Hours(length);
 
     /// <summary>"this one" or "these 3".</summary>
     private static string These(int count) => count == 1 ? "this one" : string.Create(CultureInfo.InvariantCulture, $"these {count}");
@@ -253,7 +254,7 @@ public sealed class VideoBatch(
 
             var accountLine = request.Transcribe ? await batch.AccountLineAsync(stopping.Token) : null;
             var (longest, setting) = Longest();
-            var courseFolder = Path.Combine(ClassFolders.RootFor(request.OutputRoot), ClassFolders.SafeName(request.Name));
+            var courseFolder = Path.Combine(ClassFolders.RootFor(request.OutputRoot), FolderNames.SafeName(request.Name));
             var glossary = glossaries.TermsFor(request.Name);
             foreach (var line in VideoPlan.Lines(videos, request.Name, courseFolder, request.Transcribe, glossary, elevenLabs.Value, accountLine, longest, setting))
                 ui.WriteLine(line);

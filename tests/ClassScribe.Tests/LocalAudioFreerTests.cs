@@ -68,7 +68,7 @@ public class LocalAudioFreerTests
         Assert.That(_world.Google.Destructive, Is.Empty);
         var manifest = _world.Manifests().Read(_mantiq)!;
         Assert.That(manifest.Files.Where(file => file.FreedUtc is not null).Select(file => file.Name), Is.EquivalentTo(freed.Deleted));
-        Assert.That(_world.Lines, Has.Member($"Freed {DriveCommand.Size(bytes)} on this laptop: deleted 2 audio files of {b} ({b}.wav, {b}.mic.wav). Their copies stay on Google Drive, in My Drive > ClassScribe > Mantiq > 2026-10-17; the transcripts, ElevenLabs' answers, the marks and the log stay here"));
+        Assert.That(_world.Lines, Has.Member($"Freed {Sizes.Describe(bytes)} on this laptop: deleted 2 audio files of {b} ({b}.wav, {b}.mic.wav). Their copies stay on Google Drive, in My Drive > ClassScribe > Mantiq > 2026-10-17; the transcripts, ElevenLabs' answers, the marks and the log stay here"));
     }
 
     /// <summary>A recording that has not gone up keeps its audio; the refusal gives the command that uploads it.</summary>

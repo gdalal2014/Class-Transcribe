@@ -126,7 +126,7 @@ public class MicCheckCommandTests
 
         Assert.That(exitCode, Is.EqualTo(0));
         Assert.That(Lines[0], Does.StartWith("ClassScribe microphone check"));
-        Assert.That(LogPath, Does.StartWith(Path.Combine(_root.Path, MicCheckLog.FolderName, "mic-check_")));
+        Assert.That(LogPath, Does.StartWith(Path.Combine(_root.Path, FolderNames.MicCheck, "mic-check_")));
         Assert.That(Lines, Has.Some.Matches<string>(line => line.Contains($"MIC      {Laptop.ArrayName}: at start:", StringComparison.Ordinal)));
         Assert.That(Lines, Has.Some.Matches<string>(line => line.Contains($"MIC      {Laptop.ObsbotName}: at start:", StringComparison.Ordinal)));
         Assert.That(Lines, Has.Some.Matches<string>(line => line.Contains("PRIVACY  Windows settings: microphone access: Allow; desktop apps: Allow", StringComparison.Ordinal)));

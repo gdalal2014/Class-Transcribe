@@ -1,5 +1,4 @@
 using System.Globalization;
-using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using Microsoft.Extensions.Options;
 
@@ -48,7 +47,7 @@ public sealed class DriveQueueReport(IGoogleCredentialStore store, UploadManifes
 
         return count == 0
             ? $"Google Drive: signed in; nothing waits to go up.{off}"
-            : $"Google Drive: {Recordings(count)} to go up ({DriveCommand.Size(Bytes(waiting))}). 9 > U uploads {(count == 1 ? "it" : "them")}.{off}";
+            : $"Google Drive: {Recordings(count)} to go up ({Sizes.Describe(Bytes(waiting))}). 9 > U uploads {(count == 1 ? "it" : "them")}.{off}";
     }
 
     /// <summary>
@@ -64,7 +63,7 @@ public sealed class DriveQueueReport(IGoogleCredentialStore store, UploadManifes
         if (waiting.Count == 0) return null;
 
         var latest = waiting.Where(manifest => manifest.LastTriedUtc is not null).MaxBy(manifest => manifest.LastTriedUtc) ?? waiting[0];
-        var size = DriveCommand.Size(Bytes(waiting));
+        var size = Sizes.Describe(Bytes(waiting));
         var what = waiting.Count == 1 ? $"{waiting[0].BaseName}, {size}" : $"{size} in all";
         return new DriveWaiting($"Google Drive: {Recordings(waiting.Count)} to go up ({what}; {Tried(latest)}).", waiting.Count, stored.Credentials is { IsSignedIn: true });
     }

@@ -1,5 +1,6 @@
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;

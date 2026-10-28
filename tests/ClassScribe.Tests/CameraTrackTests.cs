@@ -2,6 +2,7 @@ using System.ComponentModel;
 using ClassScribe.Audio.Timeline;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

@@ -6,6 +6,7 @@ using System.Security.Principal;
 using ClassScribe.Commands;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

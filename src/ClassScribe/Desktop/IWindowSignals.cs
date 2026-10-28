@@ -49,7 +49,7 @@ public interface IWindowSignals
 /// A window without signals: nothing is shown. It stands in on a system other than Windows, where ClassScribe can only
 /// transcribe, and wherever a run has no window of its own to show its state on.
 /// </summary>
-internal sealed class NoWindowSignals : IWindowSignals
+public sealed class NoWindowSignals : IWindowSignals
 {
     /// <inheritdoc />
     public void SetTitle(string title)

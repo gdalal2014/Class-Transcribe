@@ -4,6 +4,7 @@ using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio.Timeline;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -258,7 +259,7 @@ public sealed class RecordingSessionTimelineTests
             Assert.That(LengthOf(result.SegmentPaths), Is.EqualTo(Seconds(118.5)), "padded to a second and a half behind the clock");
             Assert.That(result.SegmentPaths, Has.Count.GreaterThan(5));
             foreach (var part in result.SegmentPaths)
-                Assert.That(new FileInfo(part).Length - WavSegmentWriter.HeaderSize, Is.LessThanOrEqualTo(limit), $"{Path.GetFileName(part)} holds more than one chunk past the segment size");
+                Assert.That(new FileInfo(part).Length - WavHeader.Size, Is.LessThanOrEqualTo(limit), $"{Path.GetFileName(part)} holds more than one chunk past the segment size");
         }
     }
 
@@ -283,7 +284,7 @@ public sealed class RecordingSessionTimelineTests
             Assert.That(LengthOf(result.SegmentPaths), Is.EqualTo(Seconds(30.01)));
             Assert.That(result.SegmentPaths, Has.Count.GreaterThan(2));
             foreach (var part in result.SegmentPaths)
-                Assert.That(new FileInfo(part).Length - WavSegmentWriter.HeaderSize, Is.LessThanOrEqualTo(limit));
+                Assert.That(new FileInfo(part).Length - WavHeader.Size, Is.LessThanOrEqualTo(limit));
             Assert.That(TestAudio.ReadWav(result.SegmentPaths[^1]).Samples[^480..], Is.All.EqualTo(9));
             Assert.That(_log.Problems, Is.Empty);
         }

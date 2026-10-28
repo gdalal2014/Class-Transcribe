@@ -1,5 +1,6 @@
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.YouTube;
@@ -129,7 +130,7 @@ public class VideoBatchTests
 
         await world.RunAsync(world.Request([First], BatchConfirmation.PlanOnly, transcribe: false));
 
-        Assert.That(world.Screen, Has.Some.EqualTo($"  01  abcdefghijk  -        ({OEmbedTitles.NoTitle})"));
+        Assert.That(world.Screen, Has.Some.EqualTo($"  01  abcdefghijk  -        ({VideoTitle.NoTitle})"));
         Assert.That(world.Screen, Has.Some.EndsWith("so at most 4 hours for this one. Nothing is sent to ElevenLabs."));
         Assert.That(world.Account.Reads, Is.Zero);
     }

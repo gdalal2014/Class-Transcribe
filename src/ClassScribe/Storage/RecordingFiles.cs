@@ -117,7 +117,7 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     /// the recording that is not such a segment included. A recording is listed by these, so that files left without
     /// their audio, such as an upload copy, do not pass for one.
     /// </summary>
-    internal static RecordingFiles? TryParseSegment(string path) => Parse(MainSegmentName(), path);
+    public static RecordingFiles? TryParseSegment(string path) => Parse(MainSegmentName(), path);
 
     /// <summary>
     /// The audio file of segment <paramref name="number"/> of <paramref name="track"/>: the first has the bare name, the rest

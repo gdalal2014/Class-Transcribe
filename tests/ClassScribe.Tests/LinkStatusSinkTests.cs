@@ -2,6 +2,7 @@ using System.Text.Json;
 using ClassScribe.Commands;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 

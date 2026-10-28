@@ -121,7 +121,7 @@ public sealed class DriveCommand(GoogleSignIn signIn, IGoogleCredentialStore sto
             var tried = manifest.LastTriedUtc is { } last
                 ? $"last try {TimeZoneInfo.ConvertTime(last, time.LocalTimeZone).ToString(TryFormat, CultureInfo.InvariantCulture)}{(manifest.LastError is { } error ? $": {error}" : "")}"
                 : "not tried yet";
-            yield return $"Waiting: {manifest.BaseName} ({(count == 1 ? "1 file" : $"{count} files")}, {Size(bytes)}), {tried}";
+            yield return $"Waiting: {manifest.BaseName} ({(count == 1 ? "1 file" : $"{count} files")}, {Sizes.Describe(bytes)}), {tried}";
         }
     }
 
@@ -132,23 +132,7 @@ public sealed class DriveCommand(GoogleSignIn signIn, IGoogleCredentialStore sto
     /// <summary>The storage line: "Storage: 1.2 TB of 30 TB used", or for an account without a limit, "Storage: 1.2 TB used; the account has no limit".</summary>
     private static string StorageLine(DriveStorageQuota? quota)
     {
-        var usage = Size(quota?.Usage ?? 0);
-        return quota?.Limit is { } limit ? $"Storage: {usage} of {Size(limit)} used" : $"Storage: {usage} used; the account has no limit";
-    }
-
-    /// <summary>A size in the units Google One shows (1 TB is 1024 GB): one decimal below 10, as "1.2 TB", none from 10 up, as "30 TB".</summary>
-    internal static string Size(long bytes)
-    {
-        string[] units = ["bytes", "KB", "MB", "GB", "TB", "PB"];
-        double value = bytes;
-        var unit = 0;
-        while (value >= 1024 && unit < units.Length - 1)
-        {
-            value /= 1024;
-            unit++;
-        }
-
-        var number = unit == 0 || value >= 10 ? Math.Round(value).ToString("0", CultureInfo.InvariantCulture) : value.ToString("0.#", CultureInfo.InvariantCulture);
-        return $"{number} {units[unit]}";
+        var usage = Sizes.Describe(quota?.Usage ?? 0);
+        return quota?.Limit is { } limit ? $"Storage: {usage} of {Sizes.Describe(limit)} used" : $"Storage: {usage} used; the account has no limit";
     }
 }

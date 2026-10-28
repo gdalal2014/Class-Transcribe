@@ -1,4 +1,5 @@
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe;

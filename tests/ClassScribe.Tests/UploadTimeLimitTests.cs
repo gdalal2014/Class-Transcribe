@@ -49,7 +49,7 @@ public class UploadTimeLimitTests
         var upload = _folder.File("Kalam.upload.wav");
         WriteAudio(upload, TimeSpan.FromHours(hours));
 
-        var limit = UploadTimeLimit.For(upload, WavSegmentWriter.HeaderSize + hours * BytesPerHour, new ElevenLabsOptions());
+        var limit = UploadTimeLimit.For(upload, WavHeader.Size + hours * BytesPerHour, new ElevenLabsOptions());
 
         Assert.That(limit, Is.EqualTo(TimeSpan.FromMinutes(minutes)));
     }

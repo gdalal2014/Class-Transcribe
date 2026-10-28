@@ -8,6 +8,9 @@ namespace ClassScribe.Settings;
 /// </summary>
 public static class DefaultSettings
 {
+    /// <summary>The name of ClassScribe's plain one-line console format, which the console's formatter is registered under.</summary>
+    public const string PlainFormatterName = "plain";
+
     /// <summary>
     /// The Logging keys and their defaults: ClassScribe's own lines at Information, the Microsoft and System categories at
     /// Warning, which keeps the HttpClient's chatter out of the window, and the plain one-line console format.
@@ -17,6 +20,6 @@ public static class DefaultSettings
         ["Logging:LogLevel:Default"] = "Information",
         ["Logging:LogLevel:Microsoft"] = "Warning",
         ["Logging:LogLevel:System"] = "Warning",
-        ["Logging:Console:FormatterName"] = PlainConsoleFormatter.FormatterName
+        ["Logging:Console:FormatterName"] = PlainFormatterName
     };
 }

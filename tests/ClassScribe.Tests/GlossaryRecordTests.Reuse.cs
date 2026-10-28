@@ -1,6 +1,7 @@
 using System.Text;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;

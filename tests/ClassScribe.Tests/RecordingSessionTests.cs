@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Windows;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1113,7 +1114,7 @@ public partial class RecordingSessionTests
             result = session.Stop();                        // so the last save of the header fails
         }
 
-        Assert.That(File.ReadAllBytes(result.SegmentPaths.Single())[WavSegmentWriter.HeaderSize..], Is.EqualTo(TestAudio.Shorts(1, 2, 3, 4, 5)));
+        Assert.That(File.ReadAllBytes(result.SegmentPaths.Single())[WavHeader.Size..], Is.EqualTo(TestAudio.Shorts(1, 2, 3, 4, 5)));
         Assert.That(result.Duration.TotalSeconds, Is.EqualTo(5 / 16000.0).Within(0.000001));
         Assert.That(_log.Problems, Has.Some.Contains("Could not finish writing"));
     }
@@ -1151,7 +1152,7 @@ public partial class RecordingSessionTests
         Assert.That(writing.WriteFailing, Is.False, "the first write after the break works");
         Assert.That(_log.Problems, Has.Some.Contains("for the pause"));
         Assert.That(result.SegmentPaths, Has.Count.EqualTo(2));
-        Assert.That(new FileInfo(result.SegmentPaths[0]).Length, Is.EqualTo(WavSegmentWriter.HeaderSize + 48_000L));
+        Assert.That(new FileInfo(result.SegmentPaths[0]).Length, Is.EqualTo(WavHeader.Size + 48_000L));
         Assert.That(TestAudio.ReadWav(result.SegmentPaths[1]).Samples, Is.EqualTo(Enumerable.Repeat((short)400, 1600)));
         Assert.That(result.Duration.TotalSeconds, Is.EqualTo(1.6).Within(0.000001));
     }
@@ -1179,7 +1180,7 @@ public partial class RecordingSessionTests
         var result = session.Stop();
 
         Assert.That(_log.Problems, Has.Some.StartsWith($"Could not bring {Path.GetFileName(_files.Segment(1))} on disk up to date"));
-        Assert.That(File.ReadAllBytes(_files.Segment(1))[WavSegmentWriter.HeaderSize..], Is.EqualTo(TestAudio.Shorts(1000, -1000, 7, -7)));
+        Assert.That(File.ReadAllBytes(_files.Segment(1))[WavHeader.Size..], Is.EqualTo(TestAudio.Shorts(1000, -1000, 7, -7)));
         Assert.That(TestAudio.ReadWav(result.SegmentPaths.Single()).Samples, Is.EqualTo(new short[] { 1000, -1000, 7, -7 }));
         Assert.That(result.Duration.TotalSeconds, Is.EqualTo(4 / 16000.0).Within(0.000001));
     }

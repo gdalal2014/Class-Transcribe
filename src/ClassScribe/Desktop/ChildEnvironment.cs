@@ -8,7 +8,7 @@ namespace ClassScribe.Desktop;
 /// video window (design 3.2 and 4.1). It is this process's environment without the ElevenLabs key, so that the key never
 /// reaches another program; the recorder alone, which is ClassScribe, inherits the environment as it is.
 /// </summary>
-public static class ChildEnvironment
+internal static class ChildEnvironment
 {
     /// <summary>
     /// <paramref name="current"/>, this process's environment, without ELEVENLABS_API_KEY or any setting of the ElevenLabs

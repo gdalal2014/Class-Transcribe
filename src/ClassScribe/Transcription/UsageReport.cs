@@ -182,8 +182,3 @@ public sealed class UsageReport(IElevenLabsAccount account, TimeProvider time, I
     /// <summary>A count of credits with thousands separated, such as 43,362.</summary>
     private static string Number(long count) => count.ToString("N0", CultureInfo.InvariantCulture);
 }
-
-/// <summary>What one transcript cost the account, read from its credits before and after it.</summary>
-/// <param name="Credits">The credits the transcript used.</param>
-/// <param name="Left">The credits left this period afterwards; null when the account has no limit.</param>
-public sealed record UsageCharge(long Credits, long? Left);

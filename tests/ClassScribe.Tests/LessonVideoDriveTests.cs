@@ -139,7 +139,7 @@ public sealed class LessonVideoDriveTests
 
         await UploadAsync();
 
-        var size = DriveCommand.Size(new FileInfo(_lesson.LessonVideo).Length);
+        var size = Sizes.Describe(new FileInfo(_lesson.LessonVideo).Length);
         Assert.That(_world.Lines, Has.Member($"Sending the lesson's video ({size}) to Google Drive."));
     }
 
@@ -258,7 +258,7 @@ public sealed class LessonVideoDriveTests
                 Path.GetFileName(_lesson.Segment(1)), Path.GetFileName(_lesson.CameraPiece(TimeSpan.Zero)), Path.GetFileName(_lesson.CameraPiece(TimeSpan.FromMinutes(20)))
             }));
             Assert.That(freed.Bytes, Is.EqualTo(wav + pieces));
-            Assert.That(_world.Lines, Has.Some.StartsWith($"Freed the camera's 2 pieces of {_lesson.BaseName} ({DriveCommand.Size(pieces)}): its lesson video is on Google Drive, checked"));
+            Assert.That(_world.Lines, Has.Some.StartsWith($"Freed the camera's 2 pieces of {_lesson.BaseName} ({Sizes.Describe(pieces)}): its lesson video is on Google Drive, checked"));
         }
     }
 

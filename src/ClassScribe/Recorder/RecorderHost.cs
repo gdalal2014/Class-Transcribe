@@ -5,6 +5,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Link;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
@@ -13,12 +14,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Recorder;
-
-/// <summary>What a window hands the recorder it starts, as the recorder's host is built from it.</summary>
-/// <param name="RunId">The run (see <see cref="RunIds"/>).</param>
-/// <param name="Request">What to record.</param>
-/// <param name="Settings">The settings to record with, by name, as the window checked them: never the API key, which only the environment carries.</param>
-public sealed record RecorderStart(string RunId, RecordRequest Request, IReadOnlyDictionary<string, string?> Settings);
 
 /// <summary>
 /// The recorder process: ClassScribe started as <c>ClassScribe.exe --recorder &lt;run id&gt;</c> by a window, with no

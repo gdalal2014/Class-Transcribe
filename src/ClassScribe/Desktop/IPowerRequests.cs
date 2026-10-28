@@ -45,7 +45,7 @@ public interface IPowerSource
 /// The power requests on a system other than Windows, where there is none to make: a hold asks for nothing, and what it
 /// needs is never read. ClassScribe can only transcribe there, since recording needs Windows.
 /// </summary>
-internal sealed class NoPowerRequests : IPowerRequests
+public sealed class NoPowerRequests : IPowerRequests
 {
     /// <inheritdoc />
     public IDisposable Hold(string reason, Func<PowerNeeds> needs) => new NoHold();
@@ -64,7 +64,7 @@ internal sealed class NoPowerRequests : IPowerRequests
 /// Where the computer takes its power from, on a system other than Windows, which ClassScribe does not ask: counted as
 /// battery, as Windows' own answer is when Windows cannot say. Nothing reads it there (see <see cref="NoPowerRequests"/>).
 /// </summary>
-internal sealed class UnknownPowerSource : IPowerSource
+public sealed class UnknownPowerSource : IPowerSource
 {
     /// <inheritdoc />
     public bool OnBattery => true;

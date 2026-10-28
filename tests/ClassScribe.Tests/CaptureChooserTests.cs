@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 

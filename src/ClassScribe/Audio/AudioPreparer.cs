@@ -6,53 +6,6 @@ using NAudio.Wave;
 namespace ClassScribe.Audio;
 
 /// <summary>
-/// The tracks of a recording as they go into the upload: the main track, which is the class, or your microphone in
-/// person, and your microphone's track when it was recorded with the class; each as its segment files in recording
-/// order, and the microphone's empty when the recording has no such track.
-/// </summary>
-/// <param name="Main">The segments of the main track, in recording order.</param>
-/// <param name="Microphone">The segments of your microphone's track, in recording order; empty when there is none.</param>
-public sealed record UploadTracks(IReadOnlyList<string> Main, IReadOnlyList<string> Microphone);
-
-/// <summary>Builds the file that gets uploaded.</summary>
-public interface IAudioPreparer
-{
-    /// <summary>
-    /// Mixes the tracks of a recording into one 16 kHz mono 16-bit WAV at <paramref name="outputPath"/>: the class and
-    /// your microphone summed sample for sample from their common start, the shorter padded with silence at its end, so
-    /// that both are heard where the recording placed them. A microphone track with no files is left out without a
-    /// word; one with files that never rose above <see cref="AudioPreparer.MicrophoneSoundThreshold"/> is left out and
-    /// the log says that your microphone stayed silent. Either way the main track is then prepared exactly as
-    /// <see cref="Prepare(IReadOnlyList{string}, string, CancellationToken)"/> prepares it. A preparation that fails
-    /// or is cancelled leaves no file behind.
-    /// </summary>
-    /// <param name="tracks">The segments of each track, in the order they are joined.</param>
-    /// <param name="outputPath">Where the upload file goes. Nothing may be there yet.</param>
-    /// <param name="cancellationToken">Checked after every second of audio, so Ctrl+C stops even a long class at once.</param>
-    /// <exception cref="NoAudioException">The microphone's track was left out, and the main track holds no samples, or nothing but digital silence.</exception>
-    /// <exception cref="FormatException">The microphone's track was left out, and none of the main track's files is a WAV file this app can read.</exception>
-    /// <exception cref="IOException">A file is already at <paramref name="outputPath"/>. It is left as it is.</exception>
-    /// <exception cref="OperationCanceledException">The token was cancelled.</exception>
-    void Prepare(UploadTracks tracks, string outputPath, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Joins the WAV files into one 16 kHz mono 16-bit WAV at <paramref name="outputPath"/>. A preparation
-    /// that fails or is cancelled leaves no file behind.
-    /// </summary>
-    /// <param name="wavPaths">The WAV files, in the order they are joined.</param>
-    /// <param name="outputPath">Where the upload file goes. Nothing may be there yet.</param>
-    /// <param name="cancellationToken">Checked after every second of audio, so Ctrl+C stops even a long file at once.</param>
-    /// <exception cref="NoAudioException">The files could be read, but they hold no samples, or nothing but digital silence.</exception>
-    /// <exception cref="FormatException">None of the files is a WAV file this app can read.</exception>
-    /// <exception cref="IOException">A file is already at <paramref name="outputPath"/>. It is left as it is.</exception>
-    /// <exception cref="OperationCanceledException">The token was cancelled.</exception>
-    void Prepare(IReadOnlyList<string> wavPaths, string outputPath, CancellationToken cancellationToken);
-}
-
-/// <summary>The audio files were read without trouble, but they hold nothing to transcribe.</summary>
-public sealed class NoAudioException(string message) : Exception(message);
-
-/// <summary>
 /// Resamples recorded segments to 16 kHz mono and joins them, and mixes your microphone's track into the class's
 /// where there is one. That is the format speech models work in, and it makes a two-hour class a 230 MB upload.
 /// </summary>
@@ -391,10 +344,10 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
     /// </summary>
     private WaveStream OpenWave(FileStream file, string path)
     {
-        Span<byte> header = stackalloc byte[WavSegmentWriter.HeaderSize];
+        Span<byte> header = stackalloc byte[WavHeader.Size];
         var read = file.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
-        if (read == header.Length && WavSegmentWriter.TryReadHeader(header, out var sampleRate))
-            return new WaveData(file, WavSegmentWriter.HeaderSize, file.Length, new WaveFormat(sampleRate, 16, 1));
+        if (read == header.Length && WavHeader.TryRead(header, out var sampleRate))
+            return new WaveData(file, WavHeader.Size, file.Length, new WaveFormat(sampleRate, 16, 1));
 
         file.Position = 0;
         WaveFormat format;

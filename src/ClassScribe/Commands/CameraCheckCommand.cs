@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

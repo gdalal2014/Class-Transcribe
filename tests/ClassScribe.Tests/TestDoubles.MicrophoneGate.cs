@@ -199,7 +199,7 @@ internal sealed class FakeOwnProcesses(params int[] ownIds) : IOwnProcesses
 {
     /// <inheritdoc />
     public bool IsOwn(int processId, string? processName) =>
-        ownIds.Contains(processId) || string.Equals(processName, OwnProcesses.ProgramName, StringComparison.OrdinalIgnoreCase);
+        ownIds.Contains(processId) || string.Equals(processName, ProgramFiles.Name, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Looks as a test scripts them for the gate, each stamped where the test says, on the clock the packets are stamped with.</summary>

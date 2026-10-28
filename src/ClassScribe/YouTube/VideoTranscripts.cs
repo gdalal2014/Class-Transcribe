@@ -3,6 +3,7 @@ using System.Net;
 using ClassScribe.Commands;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.DependencyInjection;
@@ -204,7 +205,7 @@ public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wa
         string? why = null;
         if (folders.KeptAnswerOf(files) is { } kept)
             why = $"ElevenLabs' answer, paid for, was kept for it meanwhile in {kept}; it is not sent again. To lay it out for free: {CommandLine.Rebuild(kept)}";
-        else if (ClassFolders.IsBeingWritten(files) || journal.List().Any(run => (run.IsRecordingNow || run.IsTranscribingNow) && ListCommand.IsRunOf(run.Record, files)))
+        else if (ClassFolders.IsBeingWritten(files) || journal.List().Any(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files)))
             why = "it is being recorded or transcribed elsewhere now, so it is not sent from here";
         if (why is null) return null;
 
@@ -225,14 +226,9 @@ public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wa
         var projected = (long)Math.Round(charged.Credits * rest.TotalSeconds / first.Length.TotalSeconds, MidpointRounding.AwayFromZero);
         var left = charged.Left is { } credits ? $"; {Number(credits)} are left this period" : "";
         logger.LogInformation("The first transcript used {Credits} credits for {Length}; the other {Count} ({Rest}) would use about {Projected} at that rate{Left}",
-            Number(charged.Credits), Durations.Format(first.Length), others.Count, Hours(rest), Number(projected), left);
+            Number(charged.Credits), Durations.Format(first.Length), others.Count, Durations.Hours(rest), Number(projected), left);
     }
 
-    /// <summary>A length as hours and minutes, such as 8 h 39 min, or minutes alone under an hour.</summary>
-    internal static string Hours(TimeSpan length) =>
-        length >= TimeSpan.FromHours(1)
-            ? string.Create(CultureInfo.InvariantCulture, $"{(int)length.TotalHours} h {length.Minutes} min")
-            : string.Create(CultureInfo.InvariantCulture, $"{Math.Max(1, (int)Math.Round(length.TotalMinutes))} min");
 
     /// <summary>A count of credits with thousands separated, such as 43,362.</summary>
     private static string Number(long count) => count.ToString("N0", CultureInfo.InvariantCulture);

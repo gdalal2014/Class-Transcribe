@@ -67,7 +67,7 @@ public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer fre
             }
         }
 
-        if (recordings.Count > 1) logger.LogInformation("Freed {Size} on this laptop in all", DriveCommand.Size(freed));
+        if (recordings.Count > 1) logger.LogInformation("Freed {Size} on this laptop in all", Sizes.Describe(freed));
         return refused ? 1 : 0;
     }
 
@@ -96,7 +96,7 @@ public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer fre
         var here = ClassFolders.RecordingsByAnyFileIn(folder);
         var inFolders = Directory.EnumerateDirectories(folder)
             .Order(StringComparer.OrdinalIgnoreCase)
-            .Where(inner => !string.Equals(Path.GetFileName(inner), MicCheckLog.FolderName, StringComparison.OrdinalIgnoreCase) && !ClassFolders.IsDateFolderName(Path.GetFileName(inner)))
+            .Where(inner => !string.Equals(Path.GetFileName(inner), FolderNames.MicCheck, StringComparison.OrdinalIgnoreCase) && !FolderNames.IsDateFolder(Path.GetFileName(inner)))
             .Select(inner => (Folder: inner, Recordings: ClassFolders.RecordingsByAnyFileIn(inner)))
             .ToList();
 

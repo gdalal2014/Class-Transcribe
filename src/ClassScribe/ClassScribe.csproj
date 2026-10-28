@@ -34,4 +34,11 @@
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The tests see the internals: the COM and P/Invoke declarations they drive through fakes, the constructors that take
+       those fakes, and the helpers only the adapters use (architecture 1.4 and 6.2; the move puts this item in
+       src/Directory.Build.props, for all four projects). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="ClassScribe.Tests" />
+  </ItemGroup>
+
 </Project>

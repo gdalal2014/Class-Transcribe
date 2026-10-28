@@ -1,5 +1,3 @@
-using System.Collections.Frozen;
-using System.Globalization;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Settings;
@@ -9,65 +7,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Storage;
-
-/// <summary>A recording, as the menu and the list command list it.</summary>
-/// <param name="Files">The recording's files.</param>
-/// <param name="LastRecordedUtc">When audio was last written to it, on either track.</param>
-/// <param name="Length">Length of the recording: that of its longest track, every segment read to its end (see <see cref="ClassFolders.LengthOnDisk"/>).</param>
-/// <param name="HasTranscript">True when it has been transcribed at least once.</param>
-/// <param name="KeptAnswer">
-/// The newest answer ElevenLabs was paid for that did not become a transcript (see
-/// <see cref="RecordingFiles.FindKeptAnswers"/>), kept beside the recording or in the recordings folder; null when there is none.
-/// </param>
-/// <param name="BeingWritten">
-/// True while it is being recorded, in this window or another: a recorder still writes the newest segment of one of its
-/// tracks (see <see cref="ClassFolders.IsBeingWritten"/>). It is not transcribed until it has stopped.
-/// </param>
-/// <param name="Parts">
-/// How many parts it was made in: one, and one more for each time it was taken up again after it stopped, as its resume
-/// notes say (see <see cref="ClassMarks.PartsOf"/>).
-/// </param>
-/// <param name="HasMicrophone">True when your microphone was recorded with the class, on a track of its own: the .mic.wav files.</param>
-/// <param name="OnDrive">
-/// The recording's audio when it is on Google Drive alone, checked, and none of it is left on this laptop (see
-/// <see cref="IAudioOnDrive"/>): its transcripts can be read and rebuilt, and transcribing it again needs the audio back.
-/// Null while its audio is on this laptop.
-/// </param>
-/// <param name="Video">
-/// The YouTube video it is the recording of, from its source file (see <see cref="RecordingFiles.Source"/>); null for a
-/// class's recording, and for a video's whose source file cannot be read.
-/// </param>
-/// <param name="LessonVideo">What its files say of a lesson's finished video (see <see cref="ClassFolders.LessonVideoStateOf"/>): none for a recording without the camera.</param>
-public sealed record RecordedClass(RecordingFiles Files, DateTime LastRecordedUtc, TimeSpan Length, bool HasTranscript, string? KeptAnswer, bool BeingWritten,
-    int Parts = 1, bool HasMicrophone = false, AudioOnDrive? OnDrive = null, VideoSource? Video = null, LessonVideoState LessonVideo = LessonVideoState.None);
-
-/// <summary>
-/// What a recording's files say of a lesson's finished video (teach-video 6.9 and 6.15): decided from the files alone, so that
-/// one rule covers a crash, a session Windows ended, a cancel, a time limit, a failure and a record-only lesson. A camera's
-/// piece or a video's <c>.partial</c> held open for writing is never counted.
-/// </summary>
-public enum LessonVideoState
-{
-    /// <summary>No camera's piece and no finished video: a recording without the camera.</summary>
-    None,
-
-    /// <summary>The finished video is there, and no piece is newer than it.</summary>
-    Made,
-
-    /// <summary>Pieces and no finished video, or a piece newer than the video, as a continued lesson's: its video is still to be made.</summary>
-    NotMade
-}
-
-/// <summary>
-/// A recording that a new run of the same name may continue as its next part, because it stopped recently with neither a
-/// transcript nor an answer from ElevenLabs paid for, as after a crash, a closed window or a restart (see
-/// <see cref="ClassFolders.FindContinuable"/>).
-/// </summary>
-/// <param name="Files">The recording's files, which the run that continues it writes into.</param>
-/// <param name="Length">Its length on disk (see <see cref="ClassFolders.LengthOnDisk"/>): where the run that continues it starts.</param>
-/// <param name="StoppedUtc">When its audio was last written, on either track.</param>
-/// <param name="Parts">How many parts it was made in so far (see <see cref="ClassMarks.PartsOf"/>).</param>
-public sealed record ContinueCandidate(RecordingFiles Files, TimeSpan Length, DateTimeOffset StoppedUtc, int Parts);
 
 /// <summary>
 /// Where recordings and transcripts go: under Recording:OutputFolder, or under the recordings folder given for one run
@@ -94,23 +33,11 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// <summary>What is known of recordings' audio kept on Google Drive alone.</summary>
     private readonly IAudioOnDrive _onDrive = audioOnDrive ?? NoAudioOnDrive.Instance;
 
-    /// <summary>How a date folder's name writes the local date a class started on: 2026-10-17.</summary>
-    public const string DateFolderFormat = "yyyy-MM-dd";
-
     /// <summary>The folder name a transcribed file gets when nothing usable is left of its own name, as with ".mp3".</summary>
     private const string Untitled = "Untitled";
 
     /// <summary>ERROR_SHARING_VIOLATION as an HRESULT: what opening a file reports when the way another program holds it open does not allow that.</summary>
     private const int SharingViolation = unchecked((int)0x80070020);
-
-    /// <summary>
-    /// The names Windows keeps for devices, alone or followed by an extension, so that no file or folder
-    /// can have them. The list is Microsoft's: https://learn.microsoft.com/windows/win32/fileio/naming-a-file
-    /// </summary>
-    private static readonly FrozenSet<string> DeviceNames = FrozenSet.Create(StringComparer.OrdinalIgnoreCase,
-        "CON", "PRN", "AUX", "NUL",
-        "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "COM¹", "COM²", "COM³",
-        "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT¹", "LPT²", "LPT³");
 
     /// <summary>
     /// How <see cref="ListRecent"/> looks into the folders under the root: a folder ClassScribe may not open,
@@ -157,10 +84,10 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// </summary>
     public RecordingFiles CreateRecording(string name, string? root = null)
     {
-        var safe = SafeName(name);
+        var safe = FolderNames.SafeName(name);
         if (safe.Length == 0) throw new ArgumentException("A name is needed.", nameof(name));
 
-        // The path of the folder Windows actually made, in case it tidied the name in a way SafeName did not.
+        // The path of the folder Windows actually made, in case it tidied the name in a way FolderNames.SafeName did not.
         var course = Directory.CreateDirectory(Path.Combine(RootOf(root), safe)).FullName;
         var started = time.GetUtcNow();
         var date = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(started, time.LocalTimeZone).DateTime);
@@ -182,12 +109,12 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// </summary>
     public RecordingFiles CreateRecordingIn(string folder, string name)
     {
-        var safe = SafeName(name);
+        var safe = FolderNames.SafeName(name);
         if (safe.Length == 0) throw new ArgumentException("A name is needed.", nameof(name));
 
         var full = Directory.CreateDirectory(folder).FullName;
         var trimmed = Path.TrimEndingDirectorySeparator(full);
-        var course = IsDateFolderName(Path.GetFileName(trimmed)) && Path.GetDirectoryName(trimmed) is { } parent ? parent : trimmed;
+        var course = FolderNames.IsDateFolder(Path.GetFileName(trimmed)) && Path.GetDirectoryName(trimmed) is { } parent ? parent : trimmed;
         var started = time.GetUtcNow();
         var files = RecordingFiles.ForNew(trimmed, safe, started);
         while (CourseHasBaseName(course, files.BaseName))
@@ -212,7 +139,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// </summary>
     public RecordingFiles CreateForFile(string sourcePath, string? root = null)
     {
-        var name = SafeName(Path.GetFileNameWithoutExtension(sourcePath));
+        var name = FolderNames.SafeName(Path.GetFileNameWithoutExtension(sourcePath));
         return CreateRecording(name.Length > 0 ? name : Untitled, root);
     }
 
@@ -248,7 +175,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     {
         RefuseUnlessBaseName(baseName);
 
-        var safe = SafeName(name);
+        var safe = FolderNames.SafeName(name);
         var course = FolderOf(root, safe) ?? Path.Combine(root, safe);
         if (!Directory.Exists(course)) return Open(course, baseName);
 
@@ -281,7 +208,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// </summary>
     public ContinueCandidate? FindContinuable(string name, RecordingMode mode, TimeSpan within, string? root = null, bool camera = false)
     {
-        var safe = SafeName(name);
+        var safe = FolderNames.SafeName(name);
         if (within <= TimeSpan.Zero || safe.Length == 0) return null;
         if (FolderOf(RootOf(root), safe) is not { } course) return null;
 
@@ -408,32 +335,11 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
     /// <summary>
     /// The folders whose recordings <paramref name="folder"/> stands for: itself, which holds the recordings of the old
-    /// layout flat in the folder of their name, and then its date folders, by name (see <see cref="IsDateFolderName"/>).
+    /// layout flat in the folder of their name, and then its date folders, by name (see <see cref="FolderNames.IsDateFolder"/>).
     /// Its other folders, such as one of slides, are passed over. The folder is read strictly, so one that cannot be read
     /// is an error.
     /// </summary>
     public static IReadOnlyList<string> RecordingFoldersIn(string folder) => [folder, .. DateFoldersIn(folder, Strict)];
-
-    /// <summary>The name of the date folder of <paramref name="date"/>: 2026-10-17, and 2026-10-17 (2) from the second class of a name that day.</summary>
-    public static string DateFolderName(DateOnly date, int copy = 1)
-    {
-        var day = date.ToString(DateFolderFormat, CultureInfo.InvariantCulture);
-        return copy == 1 ? day : string.Create(CultureInfo.InvariantCulture, $"{day} ({copy})");
-    }
-
-    /// <summary>
-    /// True when <paramref name="name"/> is a date folder's name: the date of a real day as yyyy-MM-dd, alone or followed by
-    /// a space and a number in brackets, as in 2026-10-17 (2). Any other name, such as Slides, is not.
-    /// </summary>
-    public static bool IsDateFolderName(string name) => DateFolderMatch(name) is not null;
-
-    /// <summary>
-    /// The name of <paramref name="folder"/> when it is the date folder of a later class of its day, such as
-    /// 2026-10-17 (2), which the list shows to tell the day's classes apart; null for any other folder, the day's first
-    /// date folder included.
-    /// </summary>
-    public static string? LaterClassOfItsDay(string folder) =>
-        Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)) is var name && DateFolderMatch(name) is { } match && match.Groups["copy"].Success ? name : null;
 
     /// <summary>
     /// The folders that hold the copy of a recording kept in <paramref name="recordingFolder"/> under ClassScribe's own
@@ -447,7 +353,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         var own = Path.GetFileName(folder);
         if (own.Length == 0) return [];
 
-        return IsDateFolderName(own) && Path.GetFileName(Path.GetDirectoryName(folder)) is { Length: > 0 } course ? [course, own] : [own];
+        return FolderNames.IsDateFolder(own) && Path.GetFileName(Path.GetDirectoryName(folder)) is { Length: > 0 } course ? [course, own] : [own];
     }
 
     /// <summary>
@@ -554,29 +460,12 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// </summary>
     public static TimeSpan MeasureSegment(string path)
     {
-        Span<byte> header = stackalloc byte[WavSegmentWriter.HeaderSize];
+        Span<byte> header = stackalloc byte[WavHeader.Size];
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         var read = file.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
-        if (read < header.Length || !WavSegmentWriter.TryReadHeader(header, out var sampleRate)) return TimeSpan.Zero;
+        if (read < header.Length || !WavHeader.TryRead(header, out var sampleRate)) return TimeSpan.Zero;
 
-        return TimeSpan.FromSeconds((file.Length - WavSegmentWriter.HeaderSize) / 2.0 / sampleRate);
-    }
-
-    /// <summary>
-    /// Cleans a name for use as a folder and file name: the characters Windows forbids go, runs of
-    /// spaces become one, and trailing dots go, as Windows would drop them from a folder's name. A name
-    /// Windows keeps for a device, such as NUL or COM1, gets an underscore after it. The result is empty
-    /// when nothing usable is left.
-    /// </summary>
-    public static string SafeName(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var kept = new string([.. name.Where(c => !invalid.Contains(c))]);
-        var tidy = string.Join(' ', kept.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).TrimEnd('.', ' ');
-
-        // Windows 11 reads "nul" as the device, and Windows 10 "nul.backup" and "nul .backup" too, so the part before the first dot decides.
-        var device = tidy.Split('.')[0].TrimEnd(' ');
-        return DeviceNames.Contains(device) ? tidy.Insert(device.Length, "_") : tidy;
+        return TimeSpan.FromSeconds((file.Length - WavHeader.Size) / 2.0 / sampleRate);
     }
 
     /// <summary>
@@ -599,7 +488,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// <summary>The date folders in <paramref name="folder"/>, by name, read as <paramref name="how"/> says; its other folders are passed over.</summary>
     private static IEnumerable<string> DateFoldersIn(string folder, EnumerationOptions how) =>
         Directory.EnumerateDirectories(folder, "*", how)
-            .Where(dated => IsDateFolderName(Path.GetFileName(dated)))
+            .Where(dated => FolderNames.IsDateFolder(Path.GetFileName(dated)))
             .Order(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -613,7 +502,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     {
         for (var copy = 1; ; copy++)
         {
-            var name = DateFolderName(date, copy);
+            var name = FolderNames.DateFolderName(date, copy);
             if (IsFree(Path.Combine(course, name))) return name;
         }
     }
@@ -941,18 +830,4 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// <summary>A reference to an environment variable, such as %USERPROFILE%.</summary>
     [GeneratedRegex(@"%(?<name>[^%\\/]+)%", RegexOptions.CultureInvariant)]
     private static partial Regex VariableReference();
-
-    /// <summary>The match of <paramref name="name"/> as a date folder's name, its date that of a real day; null when it is no date folder's name.</summary>
-    private static Match? DateFolderMatch(string name) =>
-        DateFolderShape().Match(name) is { Success: true } match
-        && DateOnly.TryParseExact(match.Groups["date"].Value, DateFolderFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
-            ? match
-            : null;
-
-    /// <summary>
-    /// The shape of a date folder's name: four, two and two digits for the date, then for a later class of the day a space
-    /// and a number in brackets. Digits are 0 to 9 only, and \z ends the match at the very end.
-    /// </summary>
-    [GeneratedRegex(@"^(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})(?<copy> \([0-9]{1,9}\))?\z", RegexOptions.CultureInvariant)]
-    private static partial Regex DateFolderShape();
 }

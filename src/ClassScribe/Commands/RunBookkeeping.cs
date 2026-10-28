@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using ClassScribe.Desktop;
-using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -75,28 +75,6 @@ public interface ICrashWarnings
     /// before theirs. Disposing the result stops the warning.
     /// </summary>
     IDisposable Register(Action<object> onCrash);
-}
-
-/// <summary>
-/// The warning .NET gives as an exception nobody caught takes the process down (AppDomain.UnhandledException), to each
-/// registered warning in the order they were registered, before the process ends.
-/// </summary>
-public sealed class AppDomainCrashWarnings : ICrashWarnings
-{
-    /// <inheritdoc />
-    public IDisposable Register(Action<object> onCrash)
-    {
-        UnhandledExceptionEventHandler crashing = (_, e) => onCrash(e.ExceptionObject);
-        AppDomain.CurrentDomain.UnhandledException += crashing;
-        return new Registration(crashing);
-    }
-
-    /// <summary>One warning; disposing it, once or more, unhooks it.</summary>
-    private sealed class Registration(UnhandledExceptionEventHandler crashing) : IDisposable
-    {
-        /// <summary>Unhooks the warning; unhooking it again does nothing.</summary>
-        public void Dispose() => AppDomain.CurrentDomain.UnhandledException -= crashing;
-    }
 }
 
 /// <summary>
@@ -502,7 +480,7 @@ public sealed class RunBookkeeping(
         var now = time.GetUtcNow();
         var (processId, processStartedUtc) = ThisProcess();
         var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, processId, processStartedUtc, Environment.ProcessPath ?? AppContext.BaseDirectory,
-            BuildInfo.Build, LinkProtocol.Version, current?.PipeName, current?.Home ?? RunHome.InWindow, request, files.BaseName, files.Folder,
+            BuildInfo.Build, LinkVersion.Current, current?.PipeName, current?.Home ?? RunHome.InWindow, request, files.BaseName, files.Folder,
             RunState.Recording, now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
         RunHandle run;
         try

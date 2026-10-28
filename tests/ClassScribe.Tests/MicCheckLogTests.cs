@@ -28,7 +28,7 @@ public class MicCheckLogTests
     public void TearDown() => _root.Dispose();
 
     /// <summary>The mic-check folder under the recordings folder.</summary>
-    private string MicCheckFolder => _root.File(MicCheckLog.FolderName);
+    private string MicCheckFolder => _root.File(FolderNames.MicCheck);
 
     /// <summary>
     /// The log is mic-check_&lt;local start time&gt;.log in the folder given, which is created; its name is no recording's, and a

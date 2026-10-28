@@ -415,7 +415,7 @@ public class TranscribeCommandTests
     private static string DateFolderIn(string named)
     {
         var dated = Directory.GetDirectories(named).Single();
-        Assert.That(ClassFolders.IsDateFolderName(Path.GetFileName(dated)), Is.True, $"{dated} is a date folder");
+        Assert.That(FolderNames.IsDateFolder(Path.GetFileName(dated)), Is.True, $"{dated} is a date folder");
         return dated;
     }
 

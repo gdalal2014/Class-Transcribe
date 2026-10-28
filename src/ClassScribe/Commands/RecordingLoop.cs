@@ -3,6 +3,7 @@ using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -36,9 +37,6 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
     /// <see cref="ConsoleUserSignals"/>). A single press, made by mistake, does not.
     /// </summary>
     public static readonly TimeSpan SecondPressWithin = TimeSpan.FromSeconds(5);
-
-    /// <summary>How often the run file's heartbeat is written while recording.</summary>
-    public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
 
     /// <summary>What the log says when a second's work fails.</summary>
     private const string TickFailure = "Could not check on the recording; it goes on, and the next second checks again";
@@ -209,7 +207,7 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMark
         if (found.StopBecause is { } cause) Stop(cause);
 
         var now = time.GetTimestamp();
-        if (_run is not null && time.GetElapsedTime(_lastHeartbeat, now) >= HeartbeatInterval)
+        if (_run is not null && time.GetElapsedTime(_lastHeartbeat, now) >= RunTimings.HeartbeatInterval)
         {
             _lastHeartbeat = now;
             _run.Heartbeat(snapshot.Position);

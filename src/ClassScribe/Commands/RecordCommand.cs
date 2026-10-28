@@ -4,6 +4,7 @@ using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -415,7 +416,7 @@ public sealed class RecordCommand(
     /// What shows the transcription's progress after <paramref name="stopping"/>, the state the recording stopped in: each
     /// step and percent goes to the window's title and taskbar as the run's state (PREPARING, UPLOADING 40%, TRANSCRIBING),
     /// and into the run file's heartbeat, so that the menu and the list can say how far a transcription in the background
-    /// is; the heartbeat at each step, at the first percent, and then at most every <see cref="RecordingLoop.HeartbeatInterval"/>
+    /// is; the heartbeat at each step, at the first percent, and then at most every <see cref="RunTimings.HeartbeatInterval"/>
     /// on the steady clock, since the percent changes many times a second. Runs on the upload's thread, and never throws.
     /// </summary>
     private Action<TranscriptionStep, int?> Follow(RecorderState stopping)
@@ -438,7 +439,7 @@ public sealed class RecordCommand(
             lock (gate)
             {
                 var now = time.GetTimestamp();
-                due = step != lastStep || (shown is not null) != (lastPercent is not null) || time.GetElapsedTime(lastHeartbeat, now) >= RecordingLoop.HeartbeatInterval;
+                due = step != lastStep || (shown is not null) != (lastPercent is not null) || time.GetElapsedTime(lastHeartbeat, now) >= RunTimings.HeartbeatInterval;
                 if (due) (lastStep, lastPercent, lastHeartbeat) = (step, shown, now);
             }
 
