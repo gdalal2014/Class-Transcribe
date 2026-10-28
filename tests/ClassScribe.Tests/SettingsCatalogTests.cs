@@ -52,6 +52,34 @@ public class SettingsCatalogTests
         }
     }
 
+    /// <summary>
+    /// The vendors' values made settings (architecture 7.2) are in the catalog by themselves, reflected from the options, each
+    /// of its kind and at its default, beside the setting it goes with: each API version after its base address, the glossary's
+    /// limits after the glossary, the longest file after them, and Google's sign-in page after its token address. So settings
+    /// list, get, set and reset, the full copy and the recorder's snapshot all have them.
+    /// </summary>
+    [Test]
+    public void The_catalog_holds_the_vendors_values_beside_the_settings_they_go_with()
+    {
+        var names = SettingsCatalog.Keys.Select(key => key.Name).ToList();
+        string[] added =
+        [
+            "ElevenLabs:ApiVersion", "ElevenLabs:MaxKeyterms", "ElevenLabs:KeytermCharacterLimit", "ElevenLabs:MaxKeytermWords", "ElevenLabs:LongestFileHours",
+            "Drive:ApiVersion", "Drive:AuthorizationUrl"
+        ];
+
+        Assert.That(names[names.IndexOf("ElevenLabs:BaseUrl") + 1], Is.EqualTo("ElevenLabs:ApiVersion"));
+        Assert.That(names.SkipWhile(name => name != "ElevenLabs:KeytermsFile").Skip(1).Take(4),
+            Is.EqualTo(new[] { "ElevenLabs:MaxKeyterms", "ElevenLabs:KeytermCharacterLimit", "ElevenLabs:MaxKeytermWords", "ElevenLabs:LongestFileHours" }));
+        Assert.That(names[names.IndexOf("Drive:ApiBaseUrl") + 1], Is.EqualTo("Drive:ApiVersion"));
+        Assert.That(names[names.IndexOf("Drive:OAuthBaseUrl") + 1], Is.EqualTo("Drive:AuthorizationUrl"));
+        Assert.That(added.Select(name => (SettingsCatalog.Find(name)!.Kind, SettingsCatalog.Show(SettingsCatalog.Find(name)!.Default))), Is.EqualTo(new[]
+        {
+            (SettingKind.Text, "v1"), (SettingKind.WholeNumber, "1000"), (SettingKind.WholeNumber, "50"), (SettingKind.WholeNumber, "5"), (SettingKind.Number, "10"),
+            (SettingKind.Text, "v3"), (SettingKind.Text, "https://accounts.google.com/o/oauth2/v2/auth")
+        }));
+    }
+
     /// <summary>A map's entry is found by its key path, in any case, and a name that is no entry is not.</summary>
     [Test]
     public void A_maps_entry_is_found_by_its_key_path()

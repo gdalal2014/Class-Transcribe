@@ -64,6 +64,17 @@ public interface IDriveApi
         [Body] HttpContent piece, CancellationToken cancellationToken);
 }
 
+/// <summary>What this build's Drive calls were written for, beside the routes that make them.</summary>
+public static class DriveApi
+{
+    /// <summary>
+    /// The version of the Drive API this build's requests and answers were written for (architecture 7.3): the default of
+    /// Drive:ApiVersion, and the one any other is warned against, since a new version brings new shapes, which are compiled
+    /// into <see cref="DriveJson"/>.
+    /// </summary>
+    public const string WrittenFor = "v3";
+}
+
 /// <summary>The Refit settings <see cref="IGoogleOAuthApi"/> and <see cref="IDriveApi"/> are used with, in the app and in the tests.</summary>
 public static class DriveApiSettings
 {

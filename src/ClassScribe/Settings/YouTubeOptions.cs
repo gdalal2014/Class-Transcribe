@@ -41,8 +41,10 @@ public sealed partial class YouTubeOptions
     public string BrowserPath { get; init; } = "";
 
     /// <summary>
-    /// The longest a video is recorded for as it plays, in hours, ads included: its recording stops there. From 0.25 to 9, and
-    /// not above Recording:StopAfterHours.
+    /// The longest a video is recorded for as it plays, in hours, ads included: its recording stops there. From 0.25 to 24. One
+    /// above an hour less than one file to ElevenLabs holds (ElevenLabs:LongestFileHours) is warned about and held there (see
+    /// <see cref="Transcription.TranscriptionLimits.VideoLimit"/>), and one above Recording:StopAfterHours is warned about, as
+    /// the safety stop ends the video first.
     /// </summary>
     public double LongestVideoHours { get; init; } = 4;
 
@@ -55,8 +57,11 @@ public sealed partial class YouTubeOptions
     /// <summary>The smallest <see cref="LongestVideoHours"/> may be: a quarter of an hour.</summary>
     public const double ShortestLongestVideoHours = 0.25;
 
-    /// <summary>The largest <see cref="LongestVideoHours"/> may be: 9 hours, under what ElevenLabs takes in one file.</summary>
-    public const double LargestLongestVideoHours = 9;
+    /// <summary>
+    /// The largest <see cref="LongestVideoHours"/> may be: a day. What one file to ElevenLabs holds bounds it further, by a
+    /// warning and a clamp rather than a refusal (architecture 7.2, question 10).
+    /// </summary>
+    public const double LargestLongestVideoHours = 24;
 
     /// <summary>
     /// True when <paramref name="entry"/> is a channel as these settings name them: UC and 22 of A-Z, a-z, 0-9, _ and -, or an

@@ -73,6 +73,21 @@ public sealed class DriveOptions
     /// </summary>
     public string ApiBaseUrl { get; init; } = "https://www.googleapis.com/";
 
+    /// <summary>
+    /// The version of the Drive API the calls go to, in the middle of their paths, as v3 in /drive/v3/files and
+    /// /upload/drive/v3/files: v and one to three digits. An upload session's address must name it too. One other than the
+    /// version this build's requests and answers were written for (<see cref="DriveApi.WrittenFor"/>) is warned about, as
+    /// Drive may refuse them or answer in another shape. A release that moves the default adds a
+    /// <see cref="Settings.DefaultChanges"/> row.
+    /// </summary>
+    public string ApiVersion { get; init; } = "v3";
+
     /// <summary>The base address of Google's token and revoke endpoints; the same rule as <see cref="ApiBaseUrl"/>.</summary>
     public string OAuthBaseUrl { get; init; } = "https://oauth2.googleapis.com/";
+
+    /// <summary>
+    /// Google's sign-in page, which the sign-in opens in the browser with its parameters, in the window only: a full address,
+    /// since it is on a host of its own; the same rule as <see cref="ApiBaseUrl"/>.
+    /// </summary>
+    public string AuthorizationUrl { get; init; } = "https://accounts.google.com/o/oauth2/v2/auth";
 }

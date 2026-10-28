@@ -37,6 +37,17 @@ public interface IElevenLabsApi
         CancellationToken cancellationToken);
 }
 
+/// <summary>What this build's ElevenLabs requests were written for, beside the routes that make them.</summary>
+public static class ElevenLabsApi
+{
+    /// <summary>
+    /// The version of ElevenLabs' API this build's requests and answers were written for (architecture 7.3): the default of
+    /// ElevenLabs:ApiVersion, and the one any other is warned against, since a new version brings new shapes, which are
+    /// compiled into <see cref="ElevenLabsJson"/>.
+    /// </summary>
+    public const string WrittenFor = "v1";
+}
+
 /// <summary>The Refit settings <see cref="IElevenLabsApi"/> is used with, in the app and in the tests.</summary>
 public static class ElevenLabsApiSettings
 {

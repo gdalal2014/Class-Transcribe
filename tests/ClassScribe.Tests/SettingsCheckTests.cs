@@ -3,6 +3,7 @@ using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
 using ClassScribe.Drive;
 using ClassScribe.Settings;
+using ClassScribe.Transcription;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;
@@ -86,6 +87,10 @@ public class SettingsCheckTests
     [TestCase("Transcript:ShowGapsLongerThanSeconds", "1 minute", "a whole number")]
     [TestCase("Drive:Enabled", "after the class", "true or false")]
     [TestCase("Drive:LessonVideos", "on", "true or false")]
+    [TestCase("ElevenLabs:MaxKeyterms", "1,000", "a whole number")]
+    [TestCase("ElevenLabs:KeytermCharacterLimit", "fifty", "a whole number")]
+    [TestCase("ElevenLabs:MaxKeytermWords", "5.5", "a whole number")]
+    [TestCase("ElevenLabs:LongestFileHours", "10h", "a number written with a dot")]
     public void A_value_that_cannot_be_read_is_reported_by_its_setting(string setting, string value, string expected)
     {
         var problems = Problems(new() { [setting] = value });
@@ -174,25 +179,67 @@ public class SettingsCheckTests
     }
 
     /// <summary>
-    /// The safety stop is from 0 to 9.5 hours. ElevenLabs takes at most 10 hours of audio in one file, and ClassScribe
-    /// sends at most 9.5, so a later stop would make a recording too long to transcribe; 0 turns the stop off. A value
-    /// outside that range is refused with the range, an example, the reason and what 0 does.
+    /// The safety stop is from 0 to 24 hours (architecture 7.2, question 10): 0 turns the stop off, and a stop later than one
+    /// file to ElevenLabs can hold is no longer refused, since a refused file would stop a class, but warned about and held
+    /// there (see <see cref="A_safety_stop_above_what_one_file_holds_is_warned_about_and_held_there"/>). A value outside the
+    /// range is refused with the range, an example and what 0 does.
     /// </summary>
     [TestCase("0", true)]
     [TestCase("0.5", true)]
     [TestCase("9", true)]
     [TestCase("9.5", true)]
-    [TestCase("9.6", false)]
-    [TestCase("24", false)]
+    [TestCase("9.6", true)]
+    [TestCase("12", true)]
+    [TestCase("24", true)]
+    [TestCase("24.1", false)]
+    [TestCase("25", false)]
     [TestCase("-1", false)]
     [TestCase("NaN", false)]
     [TestCase("Infinity", false)]
-    public void The_safety_stop_is_from_0_to_9_and_a_half_hours(string value, bool usable)
+    public void The_safety_stop_is_from_0_to_24_hours(string value, bool usable)
     {
         var problems = Problems(new() { ["Recording:StopAfterHours"] = value });
 
         Assert.That(problems, usable ? Is.Empty : Has.One.EqualTo(
-            $"Recording:StopAfterHours is {value}; it must be from 0 to 9.5 (hours), such as 9. ElevenLabs takes at most 10 hours of audio in one file; 0 turns the safety stop off."));
+            $"Recording:StopAfterHours is {value}; it must be from 0 to 24 (hours), such as 9. 0 turns the safety stop off."));
+    }
+
+    /// <summary>
+    /// A safety stop later than one file to ElevenLabs can hold, less the half hour ClassScribe keeps in hand, is warned
+    /// about, never refused: the recording stops there instead, which the warning says. At 9.5 hours, or with the stop off,
+    /// nothing is said.
+    /// </summary>
+    [TestCase("12", "9.5")]
+    [TestCase("9.6", "9.5")]
+    [TestCase("24", "9.5")]
+    public void A_safety_stop_above_what_one_file_holds_is_warned_about_and_held_there(string value, string stopsAt)
+    {
+        Dictionary<string, string?> settings = new() { ["Recording:StopAfterHours"] = value };
+
+        Assert.That(Problems(settings), Is.Empty);
+        Assert.That(Warnings(settings), Is.EqualTo(new[]
+        {
+            $"Recording:StopAfterHours is {value}, above what one file to ElevenLabs can hold: recordings stop at {stopsAt} hours, half an hour within ElevenLabs:LongestFileHours (10)"
+        }));
+        Assert.That(Warnings(new() { ["Recording:StopAfterHours"] = "9.5" }), Is.Empty);
+        Assert.That(Warnings(new() { ["Recording:StopAfterHours"] = "0" }), Is.Empty);
+    }
+
+    /// <summary>
+    /// The longest file lowered to 5 hours refuses nothing anywhere: the default safety stop of 9 hours is held to 4.5 hours,
+    /// with a warning, and a video's 4 hours fit within the hour kept below the file, so they are not mentioned.
+    /// </summary>
+    [Test]
+    public void Lowering_the_longest_file_to_5_hours_stops_recordings_at_4_and_a_half_and_refuses_nothing()
+    {
+        Dictionary<string, string?> settings = new() { ["ElevenLabs:LongestFileHours"] = "5" };
+
+        Assert.That(Problems(settings), Is.Empty);
+        Assert.That(Warnings(settings), Is.EqualTo(new[]
+        {
+            "Recording:StopAfterHours is 9, above what one file to ElevenLabs can hold: recordings stop at 4.5 hours, half an hour within ElevenLabs:LongestFileHours (5)"
+        }));
+        Assert.That(TranscriptionLimits.From(new ElevenLabsOptions { LongestFileHours = 5 }).SafetyStop(new RecordingOptions().StopAfterHours), Is.EqualTo(TimeSpan.FromHours(4.5)));
     }
 
     /// <summary>
@@ -421,6 +468,7 @@ public class SettingsCheckTests
     [TestCase("ElevenLabs:RetryDelaySeconds", "-1")]
     [TestCase("ElevenLabs:BaseUrl", "api.elevenlabs.io")]
     [TestCase("ElevenLabs:BaseUrl", "ftp://api.elevenlabs.io/")]
+    [TestCase("ElevenLabs:BaseUrl", "http://api.elevenlabs.io/")]
     [TestCase("ElevenLabs:ModelId", " ")]
     [TestCase("ElevenLabs:SlowestUploadMbps", "0")]
     [TestCase("ElevenLabs:SlowestUploadMbps", "-1")]
@@ -727,7 +775,11 @@ public class SettingsCheckTests
     [TestCase("", false)]
     public void Google_addresses_must_be_https_or_a_local_stub(string value, bool usable)
     {
-        foreach (var (setting, example) in new[] { ("Drive:ApiBaseUrl", "https://www.googleapis.com/"), ("Drive:OAuthBaseUrl", "https://oauth2.googleapis.com/") })
+        foreach (var (setting, example) in new[]
+                 {
+                     ("Drive:ApiBaseUrl", "https://www.googleapis.com/"), ("Drive:OAuthBaseUrl", "https://oauth2.googleapis.com/"),
+                     ("Drive:AuthorizationUrl", "https://accounts.google.com/o/oauth2/v2/auth")
+                 })
         {
             var problems = Problems(new() { [setting] = value });
 
@@ -735,5 +787,161 @@ public class SettingsCheckTests
                 ? Is.Empty
                 : Is.EqualTo(new[] { $"{setting} is \"{value}\"; it must be an https address, such as {example}, or http://127.0.0.1:<port>/ for a local stub." }));
         }
+    }
+
+    // ------------------------------------------------------------------ the vendors' values (architecture 7.2)
+
+    /// <summary>
+    /// The vendors' values that were in code are settings now, at the values the code held: the API versions this build's
+    /// requests and answers were written for, ElevenLabs' documented limits of a glossary and of one file, and Google's sign-in
+    /// page. The defaults pass, and nothing is said about them.
+    /// </summary>
+    [Test]
+    public void The_vendors_values_have_the_defaults_the_code_held()
+    {
+        var elevenLabs = new ElevenLabsOptions();
+        var drive = new DriveOptions();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That((elevenLabs.ApiVersion, drive.ApiVersion), Is.EqualTo(("v1", "v3")));
+            Assert.That((elevenLabs.ApiVersion, drive.ApiVersion), Is.EqualTo((ElevenLabsApi.WrittenFor, DriveApi.WrittenFor)), "the versions this build was written for");
+            Assert.That(new KeytermLimits(elevenLabs.MaxKeyterms, elevenLabs.KeytermCharacterLimit, elevenLabs.MaxKeytermWords), Is.EqualTo(KeytermLimits.ElevenLabs));
+            Assert.That((elevenLabs.MaxKeyterms, elevenLabs.KeytermCharacterLimit, elevenLabs.MaxKeytermWords), Is.EqualTo((1000, 50, 5)));
+            Assert.That(elevenLabs.LongestFileHours, Is.EqualTo(10));
+            Assert.That(TimeSpan.FromHours(elevenLabs.LongestFileHours), Is.EqualTo(TranscriptionLimits.ElevenLabs.LongestFile));
+            Assert.That(drive.AuthorizationUrl, Is.EqualTo("https://accounts.google.com/o/oauth2/v2/auth"));
+            Assert.That(Problems([]), Is.Empty);
+            Assert.That(Warnings([]), Is.Empty);
+        }
+    }
+
+    /// <summary>
+    /// An API version goes into the address of every request, so it is v and one to three digits, nothing else: a slash, a
+    /// space, a capital V or the digits alone are refused, with an example; a version this build was not written for is only
+    /// warned about (see <see cref="An_API_version_other_than_the_one_this_build_was_written_for_is_warned_about"/>).
+    /// </summary>
+    [TestCase("v1", true)]
+    [TestCase("v2", true)]
+    [TestCase("v123", true)]
+    [TestCase("v1/../x", false)]
+    [TestCase("1", false)]
+    [TestCase("V1", false)]
+    [TestCase(" v1", false)]
+    [TestCase("v", false)]
+    [TestCase("v1234", false)]
+    [TestCase("", false)]
+    public void An_API_version_is_v_and_one_to_three_digits(string value, bool usable)
+    {
+        foreach (var (setting, example) in new[] { ("ElevenLabs:ApiVersion", "v1"), ("Drive:ApiVersion", "v3") })
+        {
+            var problems = Problems(new() { [setting] = value });
+
+            Assert.That(problems, usable
+                ? Is.Empty
+                : Is.EqualTo(new[] { $"{setting} is \"{value}\"; it must be v and one to three digits, such as {example}, as it goes into the address of every request." }));
+        }
+    }
+
+    /// <summary>
+    /// A version other than the one this build's requests and answers were written for is accepted, with a warning that names
+    /// both and how to put it back, since the service may refuse the requests or answer in another shape.
+    /// </summary>
+    [Test]
+    public void An_API_version_other_than_the_one_this_build_was_written_for_is_warned_about()
+    {
+        Dictionary<string, string?> settings = new() { ["ElevenLabs:ApiVersion"] = "v2", ["Drive:ApiVersion"] = "v4" };
+
+        Assert.That(Problems(settings), Is.Empty);
+        Assert.That(Warnings(settings), Is.EqualTo(new[]
+        {
+            "ElevenLabs:ApiVersion is v2, but this build's requests and answers were written for v1, so ElevenLabs may refuse them or answer in a shape ClassScribe cannot read. ClassScribe settings reset ElevenLabs:ApiVersion puts it back",
+            "Drive:ApiVersion is v4, but this build's requests and answers were written for v3, so Google Drive may refuse them or answer in a shape ClassScribe cannot read. ClassScribe settings reset Drive:ApiVersion puts it back"
+        }));
+        Assert.That(Warnings(new() { ["ElevenLabs:ApiVersion"] = "v1", ["Drive:ApiVersion"] = "v3" }), Is.Empty);
+    }
+
+    /// <summary>
+    /// The glossary's limits and the longest file are refused only outside a sane range (question 10): from 1 to 10,000
+    /// terms, a term shorter than 2 to 1,000 characters, 1 to 50 words, and 1 to 24 hours in one file.
+    /// </summary>
+    [TestCase("ElevenLabs:MaxKeyterms", "1", true)]
+    [TestCase("ElevenLabs:MaxKeyterms", "10000", true)]
+    [TestCase("ElevenLabs:MaxKeyterms", "0", false)]
+    [TestCase("ElevenLabs:MaxKeyterms", "10001", false)]
+    [TestCase("ElevenLabs:KeytermCharacterLimit", "2", true)]
+    [TestCase("ElevenLabs:KeytermCharacterLimit", "1000", true)]
+    [TestCase("ElevenLabs:KeytermCharacterLimit", "1", false)]
+    [TestCase("ElevenLabs:KeytermCharacterLimit", "1001", false)]
+    [TestCase("ElevenLabs:MaxKeytermWords", "1", true)]
+    [TestCase("ElevenLabs:MaxKeytermWords", "50", true)]
+    [TestCase("ElevenLabs:MaxKeytermWords", "0", false)]
+    [TestCase("ElevenLabs:MaxKeytermWords", "51", false)]
+    [TestCase("ElevenLabs:LongestFileHours", "1", true)]
+    [TestCase("ElevenLabs:LongestFileHours", "24", true)]
+    [TestCase("ElevenLabs:LongestFileHours", "0.5", false)]
+    [TestCase("ElevenLabs:LongestFileHours", "25", false)]
+    [TestCase("ElevenLabs:LongestFileHours", "NaN", false)]
+    public void The_vendors_limits_are_refused_only_outside_a_sane_range(string setting, string value, bool usable)
+    {
+        var problems = Problems(new() { [setting] = value });
+
+        if (usable)
+        {
+            Assert.That(problems, Is.Empty);
+            return;
+        }
+
+        Assert.That(problems, Has.Count.EqualTo(1));
+        Assert.That(problems[0], Does.StartWith($"{setting} is {value}; it must be from "));
+    }
+
+    /// <summary>
+    /// A limit set above ElevenLabs' own is warned about, never refused: ElevenLabs would refuse the whole request, perhaps
+    /// after an hour of upload, which the warning says, with how to put the limit back. At ElevenLabs' own value nothing is said.
+    /// </summary>
+    [TestCase("ElevenLabs:MaxKeyterms", "2000", "1000 terms in one glossary")]
+    [TestCase("ElevenLabs:KeytermCharacterLimit", "60", "terms shorter than 50 characters")]
+    [TestCase("ElevenLabs:MaxKeytermWords", "6", "terms of at most 5 words")]
+    [TestCase("ElevenLabs:LongestFileHours", "12", "10 hours of audio in one file")]
+    public void A_limit_above_ElevenLabs_own_is_warned_about_not_refused(string setting, string value, string documented)
+    {
+        Dictionary<string, string?> settings = new() { [setting] = value };
+
+        Assert.That(Problems(settings), Is.Empty);
+        Assert.That(Warnings(settings), Has.One.EqualTo(
+            $"{setting} is {value}, above what ElevenLabs takes ({documented}): it refuses the whole request over it, perhaps after an hour of upload. ClassScribe settings reset {setting} puts it back"));
+    }
+
+    /// <summary>ElevenLabs' own limits, and any below them, bring no warning.</summary>
+    [Test]
+    public void ElevenLabs_own_limits_and_lower_ones_bring_no_warning()
+    {
+        Assert.That(Warnings(new()
+        {
+            ["ElevenLabs:MaxKeyterms"] = "1000",
+            ["ElevenLabs:KeytermCharacterLimit"] = "20",
+            ["ElevenLabs:MaxKeytermWords"] = "5",
+            ["ElevenLabs:LongestFileHours"] = "10"
+        }), Is.Empty);
+    }
+
+    /// <summary>
+    /// ElevenLabs' address must be https, or http only to this computer, for a local stub: the API key travels in a header of
+    /// every request, so a mistyped http:// to anywhere else would send it unencrypted (architecture 7.2).
+    /// </summary>
+    [TestCase("https://api.elevenlabs.io/", true)]
+    [TestCase("http://127.0.0.1:5001/", true)]
+    [TestCase("http://localhost:5001/", true)]
+    [TestCase("http://example.com/", false)]
+    [TestCase("http://api.elevenlabs.io/", false)]
+    [TestCase("api.elevenlabs.io", false)]
+    public void ElevenLabs_address_must_be_https_or_a_local_stub(string value, bool usable)
+    {
+        var problems = Problems(new() { ["ElevenLabs:BaseUrl"] = value });
+
+        Assert.That(problems, usable
+            ? Is.Empty
+            : Is.EqualTo(new[] { $"ElevenLabs:BaseUrl is \"{value}\"; it must be an https address, such as https://api.elevenlabs.io/, or http://127.0.0.1:<port>/ for a local stub." }));
     }
 }
