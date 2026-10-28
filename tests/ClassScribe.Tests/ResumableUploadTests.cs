@@ -78,7 +78,7 @@ public class ResumableUploadTests
     {
         var drive = _world.Drive();
         var address = UploadAddress.TryParse(await drive.StartUploadAsync(new DriveFileMetadata("a.wav", "audio/wav", [_folder.Id], null), "audio/wav", 1_000_000, CancellationToken.None),
-            "https://www.googleapis.com/", revisionOf: null)!;
+            "https://www.googleapis.com/", DriveApi.WrittenFor, revisionOf: null)!;
         using var content = new MemoryStream(Bytes(1_000_000));
 
         Assert.That(async () => await drive.SendPieceAsync(address, () => new PieceContent(content, 0, 300_000, content.Length), DriveClient.CallLimit, CancellationToken.None),
@@ -300,7 +300,31 @@ public class ResumableUploadTests
 
         Assert.That(_world.Google.Requests.Where(request => request.Host == "uploads.example.com"), Is.Empty);
         Assert.That(_world.Google.Requests.Where(request => request.IsPiece).Select(request => request.Host).Distinct(), Is.EqualTo(new[] { "www.googleapis.com" }));
-        Assert.That(_world.Lines, Has.Member("The upload of Mantiq.wav begun earlier names an address that is not Google Drive's own, so it is not used; the upload starts again"));
+        Assert.That(_world.Lines, Has.Member(KeptAddressNotUsed));
+        Assert.That(_world.Google.Uploaded.Single().Content, Is.EqualTo(content));
+    }
+
+    /// <summary>What is said of a kept session whose address is not Drive's own as the settings now give it.</summary>
+    private const string KeptAddressNotUsed =
+        "The upload of Mantiq.wav begun earlier names an address that is not Google Drive's own at Drive:ApiBaseUrl and Drive:ApiVersion as they are now, so it is not used; the upload starts again";
+
+    /// <summary>
+    /// A kept session begun under another version of the Drive API, before Drive:ApiVersion changed (here back to v3 from
+    /// v4), is on Drive's own host but not at the version the settings now give, so it is not used, and the warning names
+    /// both settings that decide Drive's address; a new session at the version the settings give takes its place, and
+    /// nothing goes to the old one.
+    /// </summary>
+    [Test]
+    public async Task A_kept_session_of_another_api_version_is_not_used_and_the_warning_names_the_version()
+    {
+        var content = Bytes(1000);
+        var kept = new UploadSession("https://www.googleapis.com/upload/drive/v4/files?uploadType=resumable&upload_id=abc", _world.Time.GetUtcNow(), content.Length,
+            Convert.ToHexStringLower(MD5.HashData(content)), 0, null);
+
+        await SendAsync(content, kept);
+
+        Assert.That(_world.Lines, Has.Member(KeptAddressNotUsed));
+        Assert.That(_world.Google.Requests.Where(request => request.Path.Contains("/v4/", StringComparison.Ordinal)), Is.Empty);
         Assert.That(_world.Google.Uploaded.Single().Content, Is.EqualTo(content));
     }
 
@@ -354,7 +378,37 @@ public class ResumableUploadTests
     [TestCase("not an address", null, false)]
     public void Only_Drives_own_upload_address_passes(string address, string? revisionOf, bool passes)
     {
-        Assert.That(UploadAddress.TryParse(address, "https://www.googleapis.com/", revisionOf) is not null, Is.EqualTo(passes));
+        Assert.That(UploadAddress.TryParse(address, "https://www.googleapis.com/", "v3", revisionOf) is not null, Is.EqualTo(passes));
+    }
+
+    /// <summary>
+    /// The path an upload session's address must have names the version of the Drive API the settings give (architecture 7.3):
+    /// with Drive:ApiVersion at v4, a session under /upload/drive/v4/files passes, a new file's and a revision's alike, and
+    /// one under v3, the version this build was written for, does not; with v3, the other way round.
+    /// </summary>
+    [TestCase("https://www.googleapis.com/upload/drive/v4/files?uploadType=resumable&upload_id=AB", "v4", null, true)]
+    [TestCase("https://www.googleapis.com/upload/drive/v4/files/file-1?uploadType=resumable&upload_id=AB", "v4", "file-1", true)]
+    [TestCase("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=AB", "v4", null, false)]
+    [TestCase("https://www.googleapis.com/upload/drive/v4/files?uploadType=resumable&upload_id=AB", "v3", null, false)]
+    public void An_upload_address_must_name_the_version_the_settings_give(string address, string version, string? revisionOf, bool passes)
+    {
+        Assert.That(UploadAddress.TryParse(address, "https://www.googleapis.com/", version, revisionOf) is not null, Is.EqualTo(passes));
+    }
+
+    /// <summary>
+    /// The upload checks the session's address against the version its settings give: with Drive:ApiVersion at v4, a session
+    /// Drive starts under v3 is not at Drive's own address, so nothing is sent there and the upload is refused in words.
+    /// </summary>
+    [Test]
+    public void The_upload_checks_the_session_address_against_the_version_the_settings_give()
+    {
+        var upload = new ResumableUpload(_world.Drive(), _world.Retry(), TestOptions.Create(new DriveOptions { ApiVersion = "v4" }), _world.Time, _world.Log<ResumableUpload>())
+            { PieceSize = GoogleWorld.PieceSize };
+
+        var failure = Assert.ThrowsAsync<GoogleDriveException>(async () => await upload.SendAsync(Source(Bytes(1000)), NewFile, null, _watch, CancellationToken.None))!;
+
+        Assert.That(failure.Message, Does.Contain("that is not its own"));
+        Assert.That(_world.Google.Pieces, Is.Empty, "nothing was sent to an address the settings do not name");
     }
 
     /// <summary>An upload address as text never shows its upload id.</summary>

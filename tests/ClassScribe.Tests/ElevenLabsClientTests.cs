@@ -88,6 +88,21 @@ public class ElevenLabsClientTests
         Assert.That(request.Body, Does.Match("name=\"?file\"?; filename=\"?audio\\.wav\"?"));
     }
 
+    /// <summary>
+    /// The upload goes to the version of ElevenLabs' API the settings give, the first part of its path (architecture 7.3):
+    /// v1 by default, v2 when ElevenLabs:ApiVersion says so, under the base address as it is.
+    /// </summary>
+    [TestCase("v1", "https://api.elevenlabs.io/v1/speech-to-text")]
+    [TestCase("v2", "https://api.elevenlabs.io/v2/speech-to-text")]
+    public async Task The_upload_goes_to_the_version_the_settings_give(string version, string address)
+    {
+        _handler.Enqueue(HttpStatusCode.OK, Answer);
+
+        await CreateClient(new ElevenLabsOptions { ApiKey = "test-key", RetryDelaySeconds = 0, ApiVersion = version }).TranscribeAsync(_audioPath, [], CancellationToken.None);
+
+        Assert.That(_handler.Requests.Single().Uri!.AbsoluteUri, Is.EqualTo(address));
+    }
+
     /// <summary>Settings that are off by default are sent once they are switched on.</summary>
     [Test]
     public async Task Optional_settings_are_sent_when_configured()

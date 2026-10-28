@@ -122,9 +122,10 @@ public sealed class RecordingOptions
     public int ContinueWithinMinutes { get; init; } = 60;
 
     /// <summary>
-    /// The safety stop: a recording stops by itself after this many hours, with a warning 15 minutes before. ElevenLabs
-    /// takes at most 10 hours of audio in one file, and a recording left running by mistake must not run all night. 0
-    /// turns the stop off; at most 9.5.
+    /// The safety stop: a recording stops by itself after this many hours, with a warning 15 minutes before, so that a
+    /// recording left running by mistake does not run all night, and stays short enough to send in one file. 0 turns the stop
+    /// off; at most 24. A stop later than half an hour less than one file to ElevenLabs holds (ElevenLabs:LongestFileHours) is
+    /// warned about, and the recording stops there instead (see <see cref="Transcription.TranscriptionLimits.SafetyStop"/>).
     /// </summary>
     public double StopAfterHours { get; init; } = 9;
 

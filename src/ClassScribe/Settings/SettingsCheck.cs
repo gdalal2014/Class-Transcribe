@@ -43,6 +43,18 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     /// <summary>The most Recording:ContinueWithinMinutes may be: a day.</summary>
     private const int LongestContinueWithinMinutes = 1440;
 
+    /// <summary>The latest Recording:StopAfterHours may be: a day. What one file to ElevenLabs holds bounds it further, by a warning and a clamp.</summary>
+    private const double LatestStopAfterHours = 24;
+
+    /// <summary>The most ElevenLabs:MaxKeyterms may be: ten times what ElevenLabs takes.</summary>
+    private const int MostKeyterms = 10_000;
+
+    /// <summary>The most ElevenLabs:KeytermCharacterLimit may be: twenty times what ElevenLabs takes.</summary>
+    private const int LongestKeytermCharacterLimit = 1000;
+
+    /// <summary>The most ElevenLabs:MaxKeytermWords may be: ten times what ElevenLabs takes.</summary>
+    private const int MostKeytermWords = 50;
+
     /// <summary>The name of ClassScribe's own process, which the microphone must never follow.</summary>
     private const string OwnProcessName = "ClassScribe";
 
@@ -80,13 +92,12 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
             problems.Add(string.Create(CultureInfo.InvariantCulture,
                 $"{Name(recordingSection, nameof(RecordingOptions.ContinueWithinMinutes))} is {continueWithin}; it must be from 0 to {LongestContinueWithinMinutes} (a day), such as 60. 0 never offers to continue a recording."));
 
-        // ElevenLabs takes at most 10 hours of audio in one file, and ClassScribe sends at most the longest recording the
-        // workflow allows: a later safety stop would let a recording grow too long to transcribe. 0 turns the stop off.
+        // A day at most; 0 turns the stop off. A stop later than one file to ElevenLabs can hold is not refused, since a refused
+        // file would stop a class over it: it is warned about and held there (see FindWarnings and TranscriptionLimits).
         var stopAfter = recording.StopAfterHours;
-        var latestStop = TranscriptionWorkflow.LongestRecording.TotalHours;
-        if (!double.IsFinite(stopAfter) || stopAfter < 0 || stopAfter > latestStop)
+        if (!double.IsFinite(stopAfter) || stopAfter < 0 || stopAfter > LatestStopAfterHours)
             problems.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{Name(recordingSection, nameof(RecordingOptions.StopAfterHours))} is {stopAfter}; it must be from 0 to {latestStop} (hours), such as 9. ElevenLabs takes at most 10 hours of audio in one file; 0 turns the safety stop off."));
+                $"{Name(recordingSection, nameof(RecordingOptions.StopAfterHours))} is {stopAfter}; it must be from 0 to {LatestStopAfterHours} (hours), such as 9. 0 turns the safety stop off."));
 
         // The microphone track follows the app named here. Empty, it would follow nothing and record nothing; naming
         // ClassScribe, whose own capture holds the microphone for the whole class, it would follow ClassScribe and record
@@ -116,9 +127,10 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
 
         const string elevenLabsSection = ElevenLabsOptions.SectionName;
         var elevenLabs = Bind<ElevenLabsOptions>(configuration, elevenLabsSection, problems);
-        var baseUrl = Name(elevenLabsSection, nameof(ElevenLabsOptions.BaseUrl));
-        if (!Uri.TryCreate(elevenLabs.BaseUrl, UriKind.Absolute, out var address) || address.Scheme is not ("https" or "http"))
-            problems.Add($"{baseUrl} is \"{elevenLabs.BaseUrl}\"; it must be a web address, such as https://api.elevenlabs.io/.");
+
+        // The key travels in a header of every request, so plain http goes to this computer alone, for a local stub.
+        CheckLocalOrHttpsAddress(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.BaseUrl)), elevenLabs.BaseUrl, new ElevenLabsOptions().BaseUrl);
+        CheckApiVersion(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.ApiVersion)), elevenLabs.ApiVersion, ElevenLabsApi.WrittenFor);
 
         if (string.IsNullOrWhiteSpace(elevenLabs.ModelId))
             problems.Add($"{Name(elevenLabsSection, nameof(ElevenLabsOptions.ModelId))} is empty; it names the ElevenLabs model, such as scribe_v2.");
@@ -128,6 +140,14 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
             problems.Add($"{keytermsFile} is null; write a glossary file, such as %APPDATA%\\ClassScribe\\keyterms-islamic-sciences.txt, or \"\" to send no glossary.");
         else
             CheckPath(problems, keytermsFile, elevenLabs.KeytermsFile);
+
+        // ElevenLabs' own limits are refused only outside a sane range; one above ElevenLabs' value is warned about (see
+        // FindWarnings), since a refused file would stop a class over a glossary or a file limit (question 10).
+        CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.MaxKeyterms)), elevenLabs.MaxKeyterms, 1, MostKeyterms);
+        CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.KeytermCharacterLimit)), elevenLabs.KeytermCharacterLimit, 2, LongestKeytermCharacterLimit);
+        CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.MaxKeytermWords)), elevenLabs.MaxKeytermWords, 1, MostKeytermWords);
+        CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.LongestFileHours)), elevenLabs.LongestFileHours,
+            ElevenLabsOptions.ShortestLongestFileHours, ElevenLabsOptions.LargestLongestFileHours, "hours", "10");
 
         // A day is far more than an upload and its transcript take; HttpClient itself stops at about 24 days.
         CheckRange(problems, Name(elevenLabsSection, nameof(ElevenLabsOptions.TimeoutMinutes)), elevenLabs.TimeoutMinutes, 1, 1440);
@@ -169,9 +189,10 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
 
     /// <summary>
     /// The Drive section: the folder's name must be a plain name, which Drive takes as it is; a piece is from 1 to 256 MiB
-    /// (Drive:Upload, an enum, is checked by its names when the section is bound); and Google's addresses must be https, or
-    /// http only to this computer, for a local stub in a dry run: the client secret and the tokens go there, so an address
-    /// elsewhere without encryption is refused.
+    /// (Drive:Upload, an enum, is checked by its names when the section is bound); Google's addresses, its sign-in page among
+    /// them, must be https, or http only to this computer, for a local stub in a dry run: the client secret and the tokens go
+    /// there, so an address elsewhere without encryption is refused; the sign-in page is its address alone, without a query
+    /// or a fragment; and the API version is v and one to three digits.
     /// </summary>
     private static void CheckDrive(IConfiguration configuration, Found problems)
     {
@@ -192,16 +213,33 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
 
         var defaults = new DriveOptions();
         CheckLocalOrHttpsAddress(problems, Name(driveSection, nameof(DriveOptions.ApiBaseUrl)), drive.ApiBaseUrl, defaults.ApiBaseUrl);
+        CheckApiVersion(problems, Name(driveSection, nameof(DriveOptions.ApiVersion)), drive.ApiVersion, DriveApi.WrittenFor);
         CheckLocalOrHttpsAddress(problems, Name(driveSection, nameof(DriveOptions.OAuthBaseUrl)), drive.OAuthBaseUrl, defaults.OAuthBaseUrl);
+        CheckSignInPage(problems, Name(driveSection, nameof(DriveOptions.AuthorizationUrl)), drive.AuthorizationUrl, defaults.AuthorizationUrl);
     }
+
+    /// <summary>
+    /// Adds a problem when the API version <paramref name="value"/> is not v and one to three digits, with
+    /// <paramref name="example"/>: it goes into the path of every request, so nothing else may reach it.
+    /// </summary>
+    private static void CheckApiVersion(Found problems, string name, string? value, string example)
+    {
+        if (!IsApiVersion(value))
+            problems.Add($"{name} is \"{value}\"; it must be v and one to three digits, such as {example}, as it goes into the address of every request.");
+    }
+
+    /// <summary>True when <paramref name="value"/> is v and one to three digits, as v1 and v3 are, and nothing else.</summary>
+    private static bool IsApiVersion(string? value) =>
+        value is { Length: >= 2 and <= 4 } && value[0] == 'v' && value.AsSpan(1).IndexOfAnyExceptInRange('0', '9') < 0;
 
     /// <summary>
     /// The YouTube section: yt-dlp's path and Chrome's, when given, must each be a full path to an .exe that is there; each
     /// channel in YouTube:MayDownloadChannels and YouTube:CourseChannels must be a UC id or an @handle, and none may be in
     /// both, since a course's channel is never downloaded; the longest a video is recorded for is from a quarter of an hour
-    /// to 9 hours (one above the safety stop is a warning, see <see cref="FindWarnings"/>); and the address the
-    /// titles are read from must be https, or http to this computer only, for a local stub. YouTube:DriveUpload, an enum, is
-    /// checked by its names when the section is bound, and a list written as one value as a value that cannot be read.
+    /// to 24 hours (one above the safety stop, or above what one file to ElevenLabs holds less an hour, is a warning, see
+    /// <see cref="FindWarnings"/>); and the address the titles are read from must be https, or http to this computer only, for
+    /// a local stub. YouTube:DriveUpload, an enum, is checked by its names when the section is bound, and a list written as one
+    /// value as a value that cannot be read.
     /// </summary>
     private static void CheckYouTube(IConfiguration configuration, Found problems)
     {
@@ -213,8 +251,8 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
         CheckExe(problems, Name(youTubeSection, nameof(YouTubeOptions.BrowserPath)), youTube.BrowserPath,
             "chrome.exe, such as C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "Chrome's", "install Chrome");
 
-        // A video's recording stops at this length. One above the safety stop is only warned about (see FindWarnings): a
-        // refusal would hold up every class over a setting of the videos', and the safety stop ends the video first anyway.
+        // A video's recording stops at this length. One above the safety stop, or above what one file to ElevenLabs holds less
+        // an hour, is only warned about (see FindWarnings): a refusal would hold up every class over a setting of the videos'.
         CheckRange(problems, Name(youTubeSection, nameof(YouTubeOptions.LongestVideoHours)), youTube.LongestVideoHours,
             YouTubeOptions.ShortestLongestVideoHours, YouTubeOptions.LargestLongestVideoHours, "hours", "4");
 
@@ -263,28 +301,47 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     /// <summary>
     /// Adds a problem when <paramref name="value"/> is not an https address, nor an http one to 127.0.0.1 or localhost, with
     /// the service's own address, <paramref name="example"/>, as the example: a request's answer, or a secret, must never
-    /// travel unencrypted beyond this computer.
+    /// travel unencrypted beyond this computer. Returns whether the address passed.
     /// </summary>
-    private static void CheckLocalOrHttpsAddress(Found problems, string name, string? value, string example)
+    private static bool CheckLocalOrHttpsAddress(Found problems, string name, string? value, string example)
     {
         var usable = Uri.TryCreate(value, UriKind.Absolute, out var address)
             && (address.Scheme == Uri.UriSchemeHttps
                 || (address.Scheme == Uri.UriSchemeHttp && (address.IsLoopback || address.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase))));
         if (!usable)
             problems.Add($"{name} is \"{value}\"; it must be an https address, such as {example}, or http://127.0.0.1:<port>/ for a local stub.");
+        return usable;
+    }
+
+    /// <summary>
+    /// Adds a problem when Google's sign-in page, <paramref name="value"/>, is not an address <see cref="CheckLocalOrHttpsAddress"/>
+    /// takes, or carries a query or a fragment (? or #), with <paramref name="example"/>: the sign-in adds its own parameters,
+    /// the drive.file scope among them, which stays in code so that the settings can never ask for more of the Drive
+    /// (architecture 7.4), and a parameter of the page's own could come before them. One problem at most.
+    /// </summary>
+    private static void CheckSignInPage(Found problems, string name, string? value, string example)
+    {
+        if (CheckLocalOrHttpsAddress(problems, name, value, example) && value!.AsSpan().IndexOfAny('?', '#') >= 0)
+            problems.Add($"{name} is \"{value}\"; it must be the address of Google's sign-in page alone, without ? or #, such as {example}, as ClassScribe adds the sign-in's own parameters to it.");
     }
 
     /// <summary>
     /// Lists what is worth saying about <paramref name="configuration"/> without refusing it: an API key written into the
-    /// settings, which is never used; where the recordings go, for Recording:OutputFolder and each saved class's own
-    /// folder (see <see cref="FolderWarnings"/>); and a YouTube video's longest recording above the safety stop, which then
-    /// ends it first.
+    /// settings, which is never used; an API version this build was not written for; a limit of ElevenLabs' set above
+    /// ElevenLabs' own value; where the recordings go, for Recording:OutputFolder and each saved class's own folder (see
+    /// <see cref="FolderWarnings"/>); a safety stop, or a YouTube video's longest recording, above what one file to ElevenLabs
+    /// can hold, which is then held there (see <see cref="TranscriptionLimits"/>); and a YouTube video's longest recording
+    /// above the safety stop, which then ends it first. A value the check refuses is a problem, never also a warning.
     /// </summary>
     public IReadOnlyList<string> FindWarnings(IConfiguration configuration)
     {
         List<string> warnings = [];
         if (ApiKeyFromEnvironment.IsSetElsewhere(configuration))
             warnings.Add($"{ElevenLabsOptions.ApiKeySetting} is set in the settings, in appsettings.json or as an environment variable. It is not used: the key is read only from {ElevenLabsOptions.ApiKeyVariable}. Remove it from the file, so it cannot end up in git or be shared by mistake");
+
+        WarnOfAnotherVersion(warnings, configuration, Name(ElevenLabsOptions.SectionName, nameof(ElevenLabsOptions.ApiVersion)), ElevenLabsApi.WrittenFor, "ElevenLabs");
+        WarnOfAnotherVersion(warnings, configuration, Name(DriveOptions.SectionName, nameof(DriveOptions.ApiVersion)), DriveApi.WrittenFor, "Google Drive");
+        WarnOfElevenLabsLimits(warnings, configuration);
 
         var outputFolderName = Name(RecordingOptions.SectionName, nameof(RecordingOptions.OutputFolder));
         warnings.AddRange(FolderWarnings(outputFolderName, configuration[outputFolderName]));
@@ -294,22 +351,98 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
                 warnings.AddRange(FolderWarnings($"{SettingsCatalog.ClassesSection}:{saved.Key}:{ClassFields.OutputFolder}", own));
         }
 
-        // A video's longest recording above the safety stop is not refused, since a refusal would hold up every class over a
-        // setting of the videos'; the safety stop then ends a video first, which is said here.
-        var longestName = Name(YouTubeOptions.SectionName, nameof(YouTubeOptions.LongestVideoHours));
+        WarnOfTheStops(warnings, configuration);
+        return warnings;
+    }
+
+    /// <summary>
+    /// The warning for the API version <paramref name="name"/> when it is one this build's requests and answers were not
+    /// written for, <paramref name="writtenFor"/>: <paramref name="service"/> may refuse them, or answer in another shape.
+    /// A version of another shape is a problem, not a warning.
+    /// </summary>
+    private static void WarnOfAnotherVersion(List<string> warnings, IConfiguration configuration, string name, string writtenFor, string service)
+    {
+        if (configuration[name] is { } version && IsApiVersion(version) && version != writtenFor)
+            warnings.Add($"{name} is {version}, but this build's requests and answers were written for {writtenFor}, so {service} may refuse them or answer in a shape ClassScribe cannot read. ClassScribe settings reset {name} puts it back");
+    }
+
+    /// <summary>
+    /// The warnings for ElevenLabs' limits set above ElevenLabs' own values (question 10): a glossary's terms, their length and
+    /// words, and the audio in one file. ElevenLabs refuses the whole request over one, perhaps after an hour of upload.
+    /// </summary>
+    private static void WarnOfElevenLabsLimits(List<string> warnings, IConfiguration configuration)
+    {
+        var own = KeytermLimits.ElevenLabs;
+        const string section = ElevenLabsOptions.SectionName;
+        WarnAboveElevenLabs(warnings, Name(section, nameof(ElevenLabsOptions.MaxKeyterms)), Whole(configuration[Name(section, nameof(ElevenLabsOptions.MaxKeyterms))]),
+            own.MaxTerms, MostKeyterms, string.Create(CultureInfo.InvariantCulture, $"{own.MaxTerms} terms in one glossary"));
+        WarnAboveElevenLabs(warnings, Name(section, nameof(ElevenLabsOptions.KeytermCharacterLimit)), Whole(configuration[Name(section, nameof(ElevenLabsOptions.KeytermCharacterLimit))]),
+            own.CharacterLimit, LongestKeytermCharacterLimit, string.Create(CultureInfo.InvariantCulture, $"terms shorter than {own.CharacterLimit} characters"));
+        WarnAboveElevenLabs(warnings, Name(section, nameof(ElevenLabsOptions.MaxKeytermWords)), Whole(configuration[Name(section, nameof(ElevenLabsOptions.MaxKeytermWords))]),
+            own.MaxWords, MostKeytermWords, string.Create(CultureInfo.InvariantCulture, $"terms of at most {own.MaxWords} words"));
+
+        var fileHours = TranscriptionLimits.ElevenLabs.LongestFile.TotalHours;
+        WarnAboveElevenLabs(warnings, Name(section, nameof(ElevenLabsOptions.LongestFileHours)), Hours(configuration[Name(section, nameof(ElevenLabsOptions.LongestFileHours))]),
+            fileHours, ElevenLabsOptions.LargestLongestFileHours, string.Create(CultureInfo.InvariantCulture, $"{fileHours} hours of audio in one file"));
+    }
+
+    /// <summary>
+    /// Adds the warning for the limit <paramref name="name"/> when its <paramref name="value"/> is above ElevenLabs' own,
+    /// <paramref name="own"/>, which <paramref name="documented"/> says in words, and not above <paramref name="largest"/>, past
+    /// which it is a problem instead.
+    /// </summary>
+    private static void WarnAboveElevenLabs(List<string> warnings, string name, double? value, double own, double largest, string documented)
+    {
+        if (value is not { } set || set <= own || set > largest) return;
+
+        warnings.Add(string.Create(CultureInfo.InvariantCulture,
+            $"{name} is {set}, above what ElevenLabs takes ({documented}): it refuses the whole request over it, perhaps after an hour of upload. ClassScribe settings reset {name} puts it back"));
+    }
+
+    /// <summary>
+    /// The warnings about when a recording stops (question 10): a safety stop, or a YouTube video's longest recording, above
+    /// what one file to ElevenLabs can hold, less the half hour or the hour ClassScribe keeps in hand, is held there, which is
+    /// said; and a video's longest recording above the safety stop is not refused, since a refusal would hold up every class
+    /// over a setting of the videos', but the safety stop then ends a video first, which is said too. Values the check refuses
+    /// are left to its problems; a file limit it refuses counts as its default, as a recording without it would.
+    /// </summary>
+    private static void WarnOfTheStops(List<string> warnings, IConfiguration configuration)
+    {
+        var fileName = Name(ElevenLabsOptions.SectionName, nameof(ElevenLabsOptions.LongestFileHours));
+        var limits = Hours(configuration[fileName]) is { } fileHours and >= ElevenLabsOptions.ShortestLongestFileHours and <= ElevenLabsOptions.LargestLongestFileHours
+            ? TranscriptionLimits.From(new ElevenLabsOptions { LongestFileHours = fileHours })
+            : TranscriptionLimits.From(new ElevenLabsOptions());
+        var file = limits.LongestFile.TotalHours;
+
         var stopName = Name(RecordingOptions.SectionName, nameof(RecordingOptions.StopAfterHours));
-        var longest = Hours(configuration[longestName]) ?? new YouTubeOptions().LongestVideoHours;
         var stop = Hours(configuration[stopName]) ?? new RecordingOptions().StopAfterHours;
-        if (stop > 0 && longest > stop)
+        var stopUsable = stop is >= 0 and <= LatestStopAfterHours;
+        if (stopUsable && limits.HoldsTheStop(stop))
+            warnings.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{stopName} is {stop}, above what one file to ElevenLabs can hold: recordings stop at {limits.LongestRecording.TotalHours} hours, half an hour within {fileName} ({file})"));
+
+        var longestName = Name(YouTubeOptions.SectionName, nameof(YouTubeOptions.LongestVideoHours));
+        var longest = Hours(configuration[longestName]) ?? new YouTubeOptions().LongestVideoHours;
+        if (longest is < YouTubeOptions.ShortestLongestVideoHours or > YouTubeOptions.LargestLongestVideoHours) return;
+
+        if (limits.HoldsTheVideo(longest))
+            warnings.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{longestName} is {longest}, above what one file to ElevenLabs can hold: a video's recording stops at {limits.LongestVideo.TotalHours} hours, an hour within {fileName} ({file})"));
+
+        // A stop held by the file limit always comes after a video's limit, which is held an hour within it, so here the stop
+        // is the one written.
+        if (stopUsable && limits.SafetyStop(stop) is { } safety && limits.VideoLimit(longest) > safety)
             warnings.Add(string.Create(CultureInfo.InvariantCulture,
                 $"{longestName} is {longest}, above {stopName} ({stop}), so a YouTube video's recording stops at {stop} hours, at the safety stop. Make {longestName} at most {stop} if that is not what you want"));
-
-        return warnings;
     }
 
     /// <summary>A number of hours as a setting's text gives it; null when it is not given, or is not a finite number.</summary>
     private static double? Hours(string? text) =>
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) && double.IsFinite(hours) ? hours : null;
+
+    /// <summary>A whole number as a setting's text gives it; null when it is not given, or is not a whole number.</summary>
+    private static double? Whole(string? text) =>
+        int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) ? number : null;
 
     /// <summary>
     /// What is worth saying about the recordings folder <paramref name="value"/>, which the setting <paramref name="name"/>

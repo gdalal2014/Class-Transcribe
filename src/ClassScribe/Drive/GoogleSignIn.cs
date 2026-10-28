@@ -1,6 +1,7 @@
 using System.Net;
 using ClassScribe.Commands;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Drive;
 
@@ -34,14 +35,11 @@ public enum SignOutOutcome
 /// required in what was granted; Drive asked who the account is, and ClassScribe's folder found or made, before the sign-in
 /// is kept. The client is imported from the file Google offers and kept as soon as it is read, so a second try needs no file.
 /// The address goes to the window only, and no secret (the client secret, the code, the verifier, the state, a token) is
-/// ever logged. One per run.
+/// ever logged. Google's sign-in page is Drive:AuthorizationUrl, of the run's settings (architecture 7.2). One per run.
 /// </summary>
 public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGoogleCredentialStore store, DriveClient drive, DriveFolders folders,
-    ILoopbackReceiver receiver, IBrowser browser, IConsoleUi ui, TimeProvider time, ILogger<GoogleSignIn> logger)
+    ILoopbackReceiver receiver, IBrowser browser, IConsoleUi ui, IOptionsSnapshot<DriveOptions> options, TimeProvider time, ILogger<GoogleSignIn> logger)
 {
-    /// <summary>Google's sign-in page for apps.</summary>
-    public const string AuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
-
     /// <summary>The only scope ClassScribe asks for: the files and folders it makes itself, nothing else in the Drive.</summary>
     public const string DriveFileScope = "https://www.googleapis.com/auth/drive.file";
 
@@ -98,7 +96,7 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
         using (var listener = receiver.Open())
         {
             redirect = listener.RedirectUri.AbsoluteUri;
-            var address = AuthorizationAddress(client.Id, redirect, Pkce.ChallengeFor(verifier), state);
+            var address = AuthorizationAddress(options.Value.AuthorizationUrl, client.Id, redirect, Pkce.ChallengeFor(verifier), state);
 
             // The address holds the sign-in's state: it goes to the window, never to the log.
             ui.WriteLine("Opening Google's sign-in in your browser...");
@@ -397,10 +395,13 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
         scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(DriveFileScope, StringComparer.Ordinal) == true;
 
     /// <summary>
-    /// Google's sign-in address for this sign-in: the client, the loopback redirect address, a code, drive.file alone, the S256
-    /// challenge, the state, prompt=consent (so a second sign-in gets a fresh refresh token) and offline access.
+    /// Google's sign-in address for this sign-in: the sign-in page <paramref name="page"/> (Drive:AuthorizationUrl), with the
+    /// client, the loopback redirect address, a code, drive.file alone, the S256 challenge, the state, prompt=consent (so a
+    /// second sign-in gets a fresh refresh token) and offline access, and nothing else: a query or fragment of the page's
+    /// address, which the settings check refuses, is left out, so that no parameter of the settings' can come before these
+    /// and ask for more of the Drive (architecture 7.4).
     /// </summary>
-    internal static Uri AuthorizationAddress(string clientId, string redirect, string challenge, string state)
+    internal static Uri AuthorizationAddress(string page, string clientId, string redirect, string challenge, string state)
     {
         (string Name, string Value)[] parameters =
         [
@@ -414,7 +415,8 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
             ("prompt", "consent"),
             ("access_type", "offline")
         ];
-        return new Uri($"{AuthorizationEndpoint}?{string.Join("&", parameters.Select(parameter => $"{parameter.Name}={Uri.EscapeDataString(parameter.Value)}"))}");
+        var alone = new Uri(page.Trim()).GetLeftPart(UriPartial.Path);
+        return new Uri($"{alone}?{string.Join("&", parameters.Select(parameter => $"{parameter.Name}={Uri.EscapeDataString(parameter.Value)}"))}");
     }
 
     /// <summary>A small page of its own, with nothing loaded from elsewhere, that says <paramref name="text"/>.</summary>

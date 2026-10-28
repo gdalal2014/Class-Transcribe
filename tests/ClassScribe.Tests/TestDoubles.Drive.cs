@@ -262,13 +262,18 @@ public sealed partial class FakeGoogle : HttpMessageHandler
     }
 
     /// <summary>
-    /// Plays Google's consent page for the authorization address <paramref name="address"/>: checks that it is Google's,
-    /// keeps its parameters, and hands out a code for that client, redirect address and challenge.
+    /// The sign-in page the authorization address must lead to, without its query: Google's accounts page, unless a test
+    /// points Drive:AuthorizationUrl elsewhere and says so here.
+    /// </summary>
+    public string AuthorizationPage { get; set; } = "https://accounts.google.com/o/oauth2/v2/auth";
+
+    /// <summary>
+    /// Plays Google's consent page for the authorization address <paramref name="address"/>: checks that it is the sign-in page
+    /// (<see cref="AuthorizationPage"/>), keeps its parameters, and hands out a code for that client, redirect address and challenge.
     /// </summary>
     public string Authorize(Uri address)
     {
-        Assert.That(address.Host, Is.EqualTo("accounts.google.com"), "the sign-in goes to Google's accounts page");
-        Assert.That(address.AbsolutePath, Is.EqualTo("/o/oauth2/v2/auth"));
+        Assert.That(address.GetLeftPart(UriPartial.Path), Is.EqualTo(AuthorizationPage), "the sign-in goes to the sign-in page, Google's accounts page unless the settings say otherwise");
         var parameters = HttpUtility.ParseQueryString(address.Query);
         lock (_gate)
         {
@@ -1222,14 +1227,14 @@ public sealed class GoogleWorld : IDisposable
     public GoogleTokens Tokens() => new(Cache, OAuth, Store, Time, Log<GoogleTokens>());
 
     /// <summary>Drive, through the fake Google.</summary>
-    public DriveClient Drive() => new(Api, Tokens(), Time, Log<DriveClient>());
+    public DriveClient Drive() => new(Api, Tokens(), Options, Time, Log<DriveClient>());
 
     /// <summary>ClassScribe's folder on Drive, remembered in the temporary ClassScribe folder.</summary>
     public DriveFolders Folders() => new(Drive(), Options, Runtime.Folder, Log<DriveFolders>());
 
     /// <summary>The sign-in, with everything above, its local times in US Eastern time, so that a date it shows is the same on every machine.</summary>
     public GoogleSignIn SignIn(IBrowser? browser = null, ILoopbackReceiver? receiver = null) =>
-        new(OAuth, Tokens(), Store, Drive(), Folders(), receiver ?? Receiver, browser ?? Browser, Ui, ZonedClock.Eastern(Time), Log<GoogleSignIn>());
+        new(OAuth, Tokens(), Store, Drive(), Folders(), receiver ?? Receiver, browser ?? Browser, Ui, Options, ZonedClock.Eastern(Time), Log<GoogleSignIn>());
 
     /// <summary>
     /// The drive command, with everything above and Ctrl+C played by <paramref name="signals"/>, its local times in US Eastern

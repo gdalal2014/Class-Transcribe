@@ -4,16 +4,20 @@ using System.Text;
 namespace ClassScribe.Transcription;
 
 /// <summary>
-/// What ElevenLabs takes in one request's glossary (architecture 7.2 and 8.2): at most <paramref name="MaxTerms"/> terms, each
-/// shorter than <paramref name="CharacterLimit"/> characters and of at most <paramref name="MaxWords"/> words. Today's values
-/// are ElevenLabs' own (<see cref="ElevenLabs"/>); slice 2 of the architecture makes them settings.
+/// What one request's glossary may hold (architecture 7.2 and 8.2): at most <paramref name="MaxTerms"/> terms, each shorter
+/// than <paramref name="CharacterLimit"/> characters and of at most <paramref name="MaxWords"/> words. The run's settings give
+/// them (ElevenLabs:MaxKeyterms, KeytermCharacterLimit and MaxKeytermWords), ElevenLabs' own (<see cref="ElevenLabs"/>) by
+/// default; the rules never read settings themselves.
 /// </summary>
 /// <param name="MaxTerms">The most terms one request takes.</param>
 /// <param name="CharacterLimit">A term must be shorter than this many characters.</param>
 /// <param name="MaxWords">The most words in one term.</param>
 public sealed record KeytermLimits(int MaxTerms, int CharacterLimit, int MaxWords)
 {
-    /// <summary>ElevenLabs' documented limits: a thousand terms, each shorter than fifty characters, of at most five words.</summary>
+    /// <summary>
+    /// ElevenLabs' documented limits: a thousand terms, each shorter than fifty characters, of at most five words. The
+    /// settings' defaults, and what a limit set above them is warned against.
+    /// </summary>
     public static KeytermLimits ElevenLabs { get; } = new(1000, 50, 5);
 }
 

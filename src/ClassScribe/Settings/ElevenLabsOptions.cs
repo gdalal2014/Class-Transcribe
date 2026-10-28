@@ -18,8 +18,26 @@ public sealed class ElevenLabsOptions
     /// </summary>
     public string ApiKey { get; init; } = "";
 
-    /// <summary>Base address of the API.</summary>
+    /// <summary>The longest file the settings take, in hours: <see cref="LongestFileHours"/> is from 1.</summary>
+    public const double ShortestLongestFileHours = 1;
+
+    /// <summary>The longest file the settings take, in hours: <see cref="LongestFileHours"/> is at most a day.</summary>
+    public const double LargestLongestFileHours = 24;
+
+    /// <summary>
+    /// Base address of the API: an https address, or http to 127.0.0.1 or localhost only, for a local stub in a dry run, since
+    /// the key travels in a header of every request.
+    /// </summary>
     public string BaseUrl { get; init; } = "https://api.elevenlabs.io/";
+
+    /// <summary>
+    /// The version of ElevenLabs' API the requests go to, the first part of their path, as v1 in /v1/speech-to-text: v and one
+    /// to three digits. One other than the version this build's requests and answers were written for
+    /// (Transcription.ElevenLabsApi.WrittenFor) is warned about, as ElevenLabs may refuse them or answer in another shape:
+    /// moving to a new version is still a change of the code. A release that moves the default adds a
+    /// <see cref="DefaultChanges"/> row.
+    /// </summary>
+    public string ApiVersion { get; init; } = "v1";
 
     /// <summary>Transcription model.</summary>
     public string ModelId { get; init; } = "scribe_v2";
@@ -41,6 +59,32 @@ public sealed class ElevenLabsOptions
     /// as it starts and kept with it (see <see cref="Transcription.GlossaryChoice"/>).
     /// </summary>
     public string KeytermsFile { get; init; } = "";
+
+    /// <summary>
+    /// The most terms one request's glossary sends; the rest of a longer glossary is left out, with a warning. ElevenLabs takes
+    /// 1,000. From 1 to 10,000: one above ElevenLabs' own is warned about, since ElevenLabs refuses the whole request over it.
+    /// </summary>
+    public int MaxKeyterms { get; init; } = 1000;
+
+    /// <summary>
+    /// A term of the glossary must be shorter than this many characters, or it is left out, with a warning. ElevenLabs takes
+    /// terms shorter than 50. From 2 to 1,000: one above ElevenLabs' own is warned about.
+    /// </summary>
+    public int KeytermCharacterLimit { get; init; } = 50;
+
+    /// <summary>
+    /// The most words in a term of the glossary; a longer term is left out, with a warning. ElevenLabs takes 5. From 1 to 50:
+    /// one above ElevenLabs' own is warned about.
+    /// </summary>
+    public int MaxKeytermWords { get; init; } = 5;
+
+    /// <summary>
+    /// The most audio one file to ElevenLabs may hold, in hours: ElevenLabs takes 10. ClassScribe sends at most half an hour
+    /// less, refusing a longer recording before anything is prepared; the safety stop (Recording:StopAfterHours) comes there
+    /// at the latest, and a YouTube video's recording (YouTube:LongestVideoHours) an hour less (see
+    /// <see cref="Transcription.TranscriptionLimits"/>). From 1 to 24: one above ElevenLabs' own is warned about.
+    /// </summary>
+    public double LongestFileHours { get; init; } = 10;
 
     /// <summary>
     /// The least time one request is given, covering the upload and the wait for the transcript. A longer upload gets

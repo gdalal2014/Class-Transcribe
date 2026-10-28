@@ -140,21 +140,47 @@ public class YouTubeSettingsCheckTests
         Assert.That(Problems(new() { ["YouTube:BrowserPath"] = shortcut }).Single(), Does.Contain(".exe"));
     }
 
-    /// <summary>The longest a video is recorded for is from a quarter of an hour to 9 hours.</summary>
+    /// <summary>
+    /// The longest a video is recorded for is from a quarter of an hour to 24 hours (architecture 7.2, question 10): one
+    /// longer than one file to ElevenLabs can hold is no longer refused, but warned about and held there (see
+    /// <see cref="A_longest_video_above_what_one_file_holds_is_warned_about_and_held_there"/>).
+    /// </summary>
     [TestCase("0.25", true)]
     [TestCase("9", true)]
+    [TestCase("9.5", true)]
+    [TestCase("24", true)]
     [TestCase("0.2", false)]
-    [TestCase("9.5", false)]
+    [TestCase("24.5", false)]
     [TestCase("-1", false)]
     [TestCase("NaN", false)]
-    public void The_longest_video_is_from_a_quarter_of_an_hour_to_9_hours(string hours, bool passes)
+    public void The_longest_video_is_from_a_quarter_of_an_hour_to_24_hours(string hours, bool passes)
     {
         var problems = Problems(new() { ["YouTube:LongestVideoHours"] = hours });
 
         if (passes)
             Assert.That(problems, Is.Empty);
         else
-            Assert.That(problems.Single(), Does.StartWith("YouTube:LongestVideoHours is").And.Contain("from 0.25 to 9"));
+            Assert.That(problems.Single(), Does.StartWith("YouTube:LongestVideoHours is").And.Contain("from 0.25 to 24"));
+    }
+
+    /// <summary>
+    /// A video's longest recording above an hour less than one file to ElevenLabs can hold is warned about, never refused:
+    /// a video's recording stops there instead, which the warning says. At 9 hours, nothing is said.
+    /// </summary>
+    [TestCase("12", "9")]
+    [TestCase("9.5", "9")]
+    public void A_longest_video_above_what_one_file_holds_is_warned_about_and_held_there(string hours, string stopsAt)
+    {
+        // The safety stop is off, so that only this warning is given.
+        Dictionary<string, string?> settings = new() { ["YouTube:LongestVideoHours"] = hours, ["Recording:StopAfterHours"] = "0" };
+
+        Assert.That(Problems(settings), Is.Empty);
+        Assert.That(new SettingsCheck().FindWarnings(new ConfigurationBuilder().AddInMemoryCollection(settings).Build()), Is.EqualTo(new[]
+        {
+            $"YouTube:LongestVideoHours is {hours}, above what one file to ElevenLabs can hold: a video's recording stops at {stopsAt} hours, an hour within ElevenLabs:LongestFileHours (10)"
+        }));
+        Assert.That(new SettingsCheck().FindWarnings(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["YouTube:LongestVideoHours"] = "9" }).Build()),
+            Is.Empty);
     }
 
     /// <summary>

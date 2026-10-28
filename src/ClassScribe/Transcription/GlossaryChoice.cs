@@ -47,18 +47,23 @@ public sealed record GlossaryUse(string Path, string From, IReadOnlyList<string>
 /// A value that is empty, or none in any case, means no glossary; a relative file is taken from the settings folder (see
 /// <see cref="IGlossaryFiles.Resolve"/>). One line says which glossary, at a run's start and before each upload. A glossary
 /// never stops a recording or costs a transcript: a file that is not there, or cannot be read, gives a warning and no
-/// terms, and a record that cannot be read or written is said, and nothing else changes. One per run, with the settings of
-/// its scope.
+/// terms, and a record that cannot be read or written is said, and nothing else changes. Its terms are read under the limits
+/// the settings give (ElevenLabs:MaxKeyterms, KeytermCharacterLimit and MaxKeytermWords, architecture 7.2), which travel to
+/// <see cref="KeytermRules"/> as a <see cref="KeytermLimits"/>. One per run, with the settings of its scope.
 /// </summary>
 /// <param name="files">The glossary's files and the recording's record.</param>
 /// <param name="classes">The saved classes, as the settings in force hold them; a recorder's hold none.</param>
-/// <param name="elevenLabs">The run's ElevenLabs settings, for ElevenLabs:KeytermsFile.</param>
+/// <param name="elevenLabs">The run's ElevenLabs settings, for ElevenLabs:KeytermsFile and the glossary's limits.</param>
 /// <param name="time">The clock the record's times are written by.</param>
 /// <param name="logger">Where the glossary's line and its warnings go.</param>
 public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, IOptionsSnapshot<ElevenLabsOptions> elevenLabs, TimeProvider time, ILogger<GlossaryChoice> logger)
 {
     /// <summary>The setting that names the glossary of every recording no class names one for.</summary>
     public const string SettingName = $"{ElevenLabsOptions.SectionName}:{nameof(ElevenLabsOptions.KeytermsFile)}";
+
+    /// <summary>What one request's glossary may hold, by the run's settings.</summary>
+    private KeytermLimits Limits =>
+        new(elevenLabs.Value.MaxKeyterms, elevenLabs.Value.KeytermCharacterLimit, elevenLabs.Value.MaxKeytermWords);
 
     /// <summary>Where a glossary given to the command came from, in words.</summary>
     public const string CommandName = "transcribe --keyterms";
@@ -285,7 +290,7 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
             return Loaded.None;
         }
 
-        var read = KeytermRules.Read(text.Lines, KeytermLimits.ElevenLabs);
+        var read = KeytermRules.Read(text.Lines, Limits);
         if (say)
         {
             SayLeftOut(read);
@@ -327,7 +332,7 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
             return null;
         }
 
-        var read = KeytermRules.Read(text.Lines, KeytermLimits.ElevenLabs);
+        var read = KeytermRules.Read(text.Lines, Limits);
         SayLeftOut(read);
         if (string.Equals(text.Sha256, decided.Sha256, StringComparison.OrdinalIgnoreCase))
             logger.LogInformation("Glossary: {Name}, {AsDecided} ({Then} then, {Now} now)", SavedClass.GlossaryName(decided.Path), AsDecided, Count(decided.Terms), read.Terms.Count);
@@ -341,7 +346,7 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
     private void SayLeftOut(KeytermList read)
     {
         foreach (var skipped in read.Skipped) logger.LogWarning("Skipping keyterm on line {Line} ({Term}): {Problem}", skipped.Line, skipped.Term, skipped.Problem);
-        if (read.OverLimit) logger.LogWarning("The keyterms file has more than {MaxTerms} terms; the rest are ignored", KeytermLimits.ElevenLabs.MaxTerms);
+        if (read.OverLimit) logger.LogWarning("The keyterms file has more than {MaxTerms} terms; the rest are ignored", Limits.MaxTerms);
     }
 
     /// <summary>

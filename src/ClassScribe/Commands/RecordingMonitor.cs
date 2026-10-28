@@ -5,6 +5,7 @@ using ClassScribe.Audio.Microphones;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Condition = (string Name, ClassScribe.Commands.AttentionLevel Level, string Short, string Text);
@@ -164,9 +165,13 @@ public static class MicrophoneWords
 /// for a run of the class alone.
 /// </param>
 /// <param name="youTube">The run's YouTube settings, for the longest a video is recorded for; null for the default.</param>
+/// <param name="elevenLabs">
+/// The run's ElevenLabs settings, for what one file to ElevenLabs holds, which holds the safety stop and a video's longest
+/// recording (see <see cref="TranscriptionLimits"/>); null for the default.
+/// </param>
 public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOptionsSnapshot<RecordingOptions> recording, MicrophoneAdvice advice,
     ILoopbackCaptureProvider outputs, BluetoothMicrophoneWatch bluetooth, TimeProvider time, YouTube.VideoPlayback? video = null,
-    IOptionsSnapshot<YouTubeOptions>? youTube = null)
+    IOptionsSnapshot<YouTubeOptions>? youTube = null, IOptionsSnapshot<ElevenLabsOptions>? elevenLabs = null)
 {
     /// <summary>How long nothing may be recorded, other than while paused, before it is an Alert. A device being replaced takes less.</summary>
     public static readonly TimeSpan NotRecordingAlertAfter = TimeSpan.FromSeconds(15);
@@ -708,8 +713,10 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// Watches the two stops a recording makes by itself. --minutes counts on the steady clock from the start, so time paused
     /// or asleep counts, and Windows setting its time of day does not. The safety stop (Recording:StopAfterHours, 0 for none)
     /// comes once the recording has run that long, or reached that length with the parts of it recorded before this run,
-    /// whichever comes first: ElevenLabs takes at most 10 hours of audio in one file, and a recording left running by mistake
-    /// must not run all night. It is warned about once, 15 minutes before. Returns why the recording stops now, if it does,
+    /// whichever comes first, and no later than ClassScribe sends in one file to ElevenLabs, ElevenLabs:LongestFileHours less
+    /// half an hour (see <see cref="TranscriptionLimits.SafetyStop"/>): a recording left running by mistake must not run all
+    /// night, nor grow too long to transcribe. It is warned about once, 15 minutes before, and its lines say what one file
+    /// holds as the settings give it, and when the file held the stop back. Returns why the recording stops now, if it does,
     /// and when it stops by the time of day, when that is due.
     /// </summary>
     private (string? StopBecause, DateTimeOffset? StopsAtUtc) WatchStops(RecordingSnapshot snapshot, MonitorContext context, RecordingOptions options, long now,
@@ -719,6 +726,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         DateTimeOffset? stopsAt = null;
         var ran = time.GetElapsedTime(context.StartedTimestamp, now);
         var utcNow = time.GetUtcNow();
+        var limits = Limits();
 
         if (context.Request.Minutes is { } minutes)
         {
@@ -732,22 +740,24 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
             }
         }
 
-        if (options.StopAfterHours > 0)
+        if (limits.SafetyStop(options.StopAfterHours) is { } safety)
         {
-            var limit = TimeSpan.FromHours(options.StopAfterHours);
-            var left = Shorter(limit - ran, limit - snapshot.Position);
+            var left = Shorter(safety - ran, safety - snapshot.Position);
+            var setting = $"{RecordingOptions.SectionName}:{nameof(RecordingOptions.StopAfterHours)}";
+            var why = limits.HoldsTheStop(options.StopAfterHours)
+                ? string.Create(CultureInfo.InvariantCulture, $"{setting} is {options.StopAfterHours}, above what one file to ElevenLabs can hold")
+                : setting;
+            var file = $"ElevenLabs takes at most {DescribeLength(limits.LongestFile)} of audio in one file";
             if (left <= TimeSpan.Zero)
             {
                 if (stopBecause is null && !_stopSaid)
-                    lines.Add((LogLevel.Warning,
-                        $"This recording stops now, after {DescribeLength(limit)} (Recording:StopAfterHours): ElevenLabs takes at most 10 hours of audio in one file. Start a new recording to record more"));
+                    lines.Add((LogLevel.Warning, $"This recording stops now, after {DescribeLength(safety)} ({why}): {file}. Start a new recording to record more"));
                 stopBecause ??= RunEndCause.SafetyStop;
             }
             else if (left <= SafetyWarningBefore && !_safetyWarned)
             {
                 _safetyWarned = true;
-                lines.Add((LogLevel.Warning,
-                    $"This recording stops by itself in {DescribeLength(left)}, after {DescribeLength(limit)} (Recording:StopAfterHours): ElevenLabs takes at most 10 hours of audio in one file"));
+                lines.Add((LogLevel.Warning, $"This recording stops by itself in {DescribeLength(left)}, after {DescribeLength(safety)} ({why}): {file}"));
             }
 
             if (_safetyWarned || left <= TimeSpan.Zero)
@@ -764,6 +774,8 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// <summary>
     /// A YouTube video's own ends (see <see cref="VideoEndWatch"/>), for a video's run: why it stops now, or null; nothing for a
     /// class's run. A stop is said once; the looks after it, until the loop stops, give the same cause and say nothing more.
+    /// The longest a video is recorded for is YouTube:LongestVideoHours, held an hour within what one file to ElevenLabs holds
+    /// (see <see cref="TranscriptionLimits.VideoLimit"/>), which its line says when it does.
     /// </summary>
     private string? WatchTheVideo(RecordingSnapshot snapshot, MonitorContext context, TimeSpan silenceWarning, long now, List<(LogLevel Level, string Text)> lines,
         List<Condition> conditions)
@@ -771,10 +783,16 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         if (_videoEnds is null) return null;
         if (_videoStopped is not null) return _videoStopped;
 
-        var longest = TimeSpan.FromHours((youTube?.Value ?? new YouTubeOptions()).LongestVideoHours);
-        _videoStopped = _videoEnds.Look(snapshot, context, now, _awakeSince, silenceWarning, longest, lines, conditions);
+        var hours = (youTube?.Value ?? new YouTubeOptions()).LongestVideoHours;
+        var limits = Limits();
+        var setting = $"{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.LongestVideoHours)}";
+        var why = limits.HoldsTheVideo(hours) ? string.Create(CultureInfo.InvariantCulture, $"{setting} is {hours}, above what one file to ElevenLabs can hold") : setting;
+        _videoStopped = _videoEnds.Look(snapshot, context, now, _awakeSince, silenceWarning, limits.VideoLimit(hours), why, lines, conditions);
         return _videoStopped;
     }
+
+    /// <summary>What one file to ElevenLabs holds, and the limits that follow, by the run's ElevenLabs settings.</summary>
+    private TranscriptionLimits Limits() => TranscriptionLimits.From(elevenLabs?.Value ?? new ElevenLabsOptions());
 
     /// <summary>The line for a time ClassScribe did not run, from the last look before it to the first after it, in local time.</summary>
     private string FreezeLine(Freeze freeze) => freeze.Slept

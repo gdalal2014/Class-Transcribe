@@ -46,7 +46,7 @@ public class VideoTranscriptRunTests
         var progress = new TranscriptionProgress();
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, TestGlossaries.Choice(_world.ElevenLabs),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), _world.ClassFolders, new ClassMarks(NullLogger<ClassMarks>.Instance),
-            _world.Recording, progress, usage, _world.Log<TranscriptionWorkflow>());
+            _world.Recording, _world.ElevenLabs, progress, usage, _world.Log<TranscriptionWorkflow>());
         return new VideoTranscriptRun(workflow, new TranscriptionRuns(_world.Runtime.Journal, _world.Runtime.Time, _world.Log<TranscriptionRuns>()), progress, usage,
             _world.Drive, _world.RecorderLog, _world.Log<VideoTranscriptRun>());
     }

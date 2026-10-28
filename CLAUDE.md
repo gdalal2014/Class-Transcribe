@@ -183,7 +183,11 @@ advice after a format error (10 A).
   `Drive/DriveServices.cs` with the base address from `Drive:OAuthBaseUrl` / `Drive:ApiBaseUrl` read
   when the client is made, `HttpClient.Timeout` off (each call has 60 s of its own), no redirects,
   the keep-alive connect callback, and `RemoveAllLoggers()` so Microsoft.Extensions.Http never logs
-  their requests. Every call returns `HttpResponseMessage`; the bearer is passed per call as
+  their requests. The API version is a path parameter of every ElevenLabs and Drive route
+  (`/{apiVersion}/speech-to-text`, `/drive/{apiVersion}/...`, `/upload/drive/{apiVersion}/...`), filled
+  from `ElevenLabs:ApiVersion` and `Drive:ApiVersion` by `ElevenLabsClient`, `ElevenLabsAccount` and
+  `DriveClient`; `ElevenLabsApi.WrittenFor` and `DriveApi.WrittenFor`, beside the routes, are the
+  versions the request and answer shapes were written for. Every call returns `HttpResponseMessage`; the bearer is passed per call as
   `[Header("Authorization")]` ("Bearer " + token, as the ElevenLabs key is), so `DriveClient` can
   renew a refused token (401) once and repeat the call. YouTube's is `IYouTubeOEmbedApi` (`YouTubeJson`,
   the record path's titles, `GET /oembed?url=<watch link>&format=json`), registered in
@@ -453,7 +457,13 @@ advice after a format error (10 A).
   above, `StubHttpHandler` for oEmbed at a stub address, and never the real `ToolLocator`'s or
   `BrowserLocator`'s folders (their `LocalAppData`, `ProgramFiles` and the like are given).
 - Keep `README.md` in step when behaviour changes, including its troubleshooting rows when a log
-  message is added or changed. The lines the README quotes for the cost and the Bluetooth warning are
+  message is added or changed. The lines it quotes for the vendors' values are worded in
+  `SettingsCheck` (the API versions' refusal and warning, the limits above ElevenLabs' own, the
+  safety stop and a video's limit held by the file limit), `RecordingMonitor.WatchStops` (the safety
+  stop's lines, built from `ElevenLabs:LongestFileHours`), `VideoEndWatch` (the video's limit),
+  `TranscriptionWorkflow.RefuseIfTooLong` and `DownloadGuard` (the file limit's words); reword them
+  with its Settings table and the rows of The settings and the menu, While recording, Transcribing and
+  YouTube videos. The lines the README quotes for the cost and the Bluetooth warning are
   worded in `TranscriptionCost.Describe`, `UsageReport` (`RefusedAdvice` is a public const),
   `RebuildCommand.NothingCharged` and `RecordingMonitor.BluetoothText`; reword them and the README's
   rows (Transcribing, Making a transcript again, While recording) together. The Google Drive lines it
@@ -513,7 +523,9 @@ plan wins.
   brings it back). A feature goes into `develop` only when it may reach a class with the next release.
 - A release is `release/<version>`, cut from `develop` once its steps are merged, one open at a time. The cut is one
   commit: the `<Version>` line in `src/ClassScribe/ClassScribe.csproj` (and, from step 1, the version of each
-  `DefaultChanges` row left empty). Then its weekday dry run through the kit, from the release's own worktree, which
+  `DefaultChanges` row left empty). Its checklist names the vendors' defaults (architecture 7.1): one the release moves
+  (an address, an API version, the model, a price, one of ElevenLabs' limits) has a `DefaultChanges` row, as
+  `DefaultChangesTests.A_vendors_default_that_moves_needs_a_row` demands. Then its weekday dry run through the kit, from the release's own worktree, which
   records the commit it tested. The finish: `main` merged into it first when `main` holds a hotfix it lacks, and the
   suite run again; when its head is not the commit the dry run tested (that merge, or a fix after the dry run), a
   five-minute kit run (`-Short`) on the head first; then in the checkout `git merge --ff-only release/<version>`,
@@ -712,8 +724,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   this recording takes the file put there, or another through `transcribe --again --keyterms`. A
   glossary that is not there or cannot be read, and a record that cannot be read (left as it is) or
   written, never stop a recording or cost a transcript. The term
-  rules are `KeytermRules` (pure: `Read`, `Validate`, `Words`), with `KeytermLimits.ElevenLabs` (1000
-  terms, under 50 characters, 5 words) until slice 2 makes them settings. A saved class may name its
+  rules are `KeytermRules` (pure: `Read`, `Validate`, `Words`), with the `KeytermLimits` that
+  `GlossaryChoice` builds from the run's `ElevenLabs:MaxKeyterms`, `KeytermCharacterLimit` and
+  `MaxKeytermWords` (`KeytermLimits.ElevenLabs` by default: 1000 terms, under 50 characters, 5 words,
+  ElevenLabs' own, which a higher setting is warned against). A saved class may name its
   own (`Classes:<name>:KeytermsFile`, a file or `none`; never makes the class unusable; `class
   add|set --keyterms`, `--clear keyterms`, menu C's last question, `class show --json`'s `glossary`,
   the menu's header for one that is not there). The `.glossary.json` is a file of the recording
@@ -813,7 +827,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   wording once a transcript is saved, the camera's restart race) to 4,667, all passing. From `af7be41` the glossary out of
   the app (architecture slice 1) grew on `feature/glossary-out` to 4,610, all passing, with 4 Explicit `DryRunKit` tests
   (one a whole dry run with a named glossary), and on with its review's repairs; rebased on `develop` with the lesson's
-  video, the count is 4,751, all passing, in about four minutes. The uploads by
+  video, the count is 4,751, all passing, in about four minutes. The vendors' values in the settings
+  (architecture slice 2, `feature/vendor-settings`) bring it to 4,849, and the review's repairs to them
+  (a recording the held safety stop ended still sent, the file limit's wiring proved, the sign-in page
+  without a query, a kept upload's version named) to 4,880, all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -854,7 +871,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, 3 min 4 s for 4,180
   with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, 3 min 32 s for 4,538 with
   settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
-  app on 28 October, plus the build).
+  app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
+  with the review's repairs to them, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1073,8 +1091,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   rebuild. `UploadTimeLimit` gives each try 10 minutes plus the upload at
   `ElevenLabs:SlowestUploadMbps` plus a quarter of the audio, rounded to the minute, never below
   `ElevenLabs:TimeoutMinutes` (2 h of audio: 71 minutes); `HttpClient.Timeout` is off, as
-  `ElevenLabsClient` holds the limit. A recording longer than `TranscriptionWorkflow.LongestRecording`
-  (9.5 h) is refused before anything is prepared, measured by the class track alone (the
+  `ElevenLabsClient` holds the limit. A recording longer than `ElevenLabs:LongestFileHours` less half an
+  hour (`TranscriptionLimits.LongestRecording`, 9.5 h by default) and the minute past it
+  (`TranscriptionLimits.Overrun`, `Sends`: a recording the safety stop ended there runs a moment past
+  its stop, and a download's audio up to 2 s past its video) is refused before anything is
+  prepared, its message built from the setting, measured by the class track alone (the
   microphone's track is as long; the advice says to copy the `.mic.wav` files along). With `.mic.wav`
   files the workflow hands `AudioPreparer.Prepare(UploadTracks)` both tracks, which mixes them into
   one 16 kHz mono track from position 0 without gain, clamped at full scale, and leaves out a
@@ -1139,7 +1160,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with exit 1 while the user's file is missing). A changed default
   needs a row in `DefaultChanges.Rows` (old, new, version), which `settings list` and the menu's header
   show for a file holding the old one (`Recording:MicrophoneFollows`, `chrome` to `auto`, is the
-  first; `ElevenLabs:KeytermsFile`, `keyterms.txt` to `""`, the second, shown as `newer default: ""`). Saved classes are `Classes:<name>:<field>` in the same file (`SavedClasses`, a singleton
+  first; `ElevenLabs:KeytermsFile`, `keyterms.txt` to `""`, the second, shown as `newer default: ""`). A vendor's default
+  that moves needs one too: `DefaultChangesTests.A_vendors_default_that_moves_needs_a_row` holds the addresses, the API
+  versions, the model, the prices and ElevenLabs' limits to the defaults they first shipped with, or to a row. Saved classes are `Classes:<name>:<field>` in the same file (`SavedClasses`, a singleton
   reading `IConfiguration` at each use; `ClassFields.All` in order; unknown fields kept; each class
   checked on its own, so an unusable one never holds up the rest or the file); `ClassChoices` applies
   the command line's or the menu's answers in groups. Menu C's E takes its Enter answers from the
@@ -1162,7 +1185,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   gives program, user and state folders in temporary folders, and `FakeOutputFolderFacts` stands in
   for the folders' facts. Environment overrides such as
   `ElevenLabs__BaseUrl` work; one that fails the check stops the start, since it cannot be fixed
-  while ClassScribe runs. Warnings are given once per process: a key in the settings, and a
+  while ClassScribe runs. Warnings are given once per process: a key in the settings, an API version
+  other than the one the build was written for, a limit of ElevenLabs' above its own, a safety stop or a
+  video's limit held by the file limit (see the vendors' values below), and a
   recordings folder (`Recording:OutputFolder` or a class's `OutputFolder`) inside OneDrive, Google
   Drive for desktop or Dropbox, at a drive's root, the user folder itself, or holding `AppData` or
   `Windows` (`SettingsCheck.FolderWarnings`, over `IOutputFolderFacts`). `SettingsReloader.Snapshot` gives the Recording, ElevenLabs (never the
@@ -1192,10 +1217,32 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   refuses a value it does not know, and a key it does not know it passes over.
   The cost line's settings are `ElevenLabs:PricePerHourUsd` (0.22) and
   `ElevenLabs:KeytermsPricePerHourUsd` (0.05), each from 0 to 100 dollars an hour, and
-  `ElevenLabs:ReadAccountUsage` (true). The Drive section (`DriveOptions`, `Drive/`): `Drive:FolderName`
+  `ElevenLabs:ReadAccountUsage` (true). The vendors' values (architecture slice 2, design 7.2, with
+  Gulzar's answers 9 A and 10 A): `ElevenLabs:ApiVersion` (`v1`) and `Drive:ApiVersion` (`v3`), refused
+  unless `v` and one to three digits (they go into every request's path) and warned about, naming
+  `settings reset`, when not `ElevenLabsApi.WrittenFor` or `DriveApi.WrittenFor`;
+  `ElevenLabs:MaxKeyterms` (1000; 1 to 10,000), `KeytermCharacterLimit` (50; 2 to 1,000),
+  `MaxKeytermWords` (5; 1 to 50) and `LongestFileHours` (10; 1 to 24), each refused only outside its
+  range and warned about above ElevenLabs' own, as ElevenLabs then refuses the whole request;
+  `Drive:AuthorizationUrl` (Google's sign-in page, which `GoogleSignIn` opens; `CheckSignInPage`:
+  `CheckLocalOrHttpsAddress`, and no `?` or `#`, so no parameter of the settings' can come before the
+  `drive.file` scope, which stays in code);
+  and `ElevenLabs:BaseUrl`, now https or http to a loopback address only, since the key travels in a
+  header. `TranscriptionLimits` (`Transcription/`, built by `From(ElevenLabsOptions)`) is the file limit
+  and what follows from it: `LongestRecording`, half an hour less (`ClassFolders.FindContinuable`,
+  `DownloadGuard`, and with the minute of `Overrun` the workflow's refusal, `Sends`, so that the
+  recording a stop held there ends, which runs a moment past it, is still sent); `SafetyStop`,
+  `Recording:StopAfterHours` (0 to 24) held at `LongestRecording`; and `VideoLimit`, `YouTube:LongestVideoHours` held an hour within the
+  file and never below a quarter of an hour (the monitor and `VideoBatch`'s plan). A setting bounded
+  by another is warned about and held, never refused (`SettingsCheck.WarnOfTheStops`), so lowering the
+  file limit never stops a command; the monitor's, the plan's, the guard's and the workflow's words are
+  built from the values. `RecordingMonitor`, `ClassFolders` (`IOptionsMonitor`) and `DownloadGuard` take
+  the ElevenLabs settings as an optional last argument, the defaults when not given. The half hour and
+  the hour are ClassScribe's own margins, in code. The Drive section (`DriveOptions`, `Drive/`): `Drive:FolderName`
   (`ClassScribe`; not empty, at most 100 characters, no control characters; names the root folder
   only when it is first made), `Drive:ApiBaseUrl` and `Drive:OAuthBaseUrl` (Google's; https, or
-  http only to a loopback address, for a stub), `Drive:Upload` (`Everything` or `WithoutAudio`, by
+  http only to a loopback address, for a stub), `Drive:ApiVersion` and `Drive:AuthorizationUrl` (above),
+  `Drive:Upload` (`Everything` or `WithoutAudio`, by
   name), `Drive:ChunkMegabytes` (8; from 1 to 256 MiB) and `Drive:Enabled` (true: each class goes
   into the queue as its run starts and up after it, and a transcript made later sends its new files;
   false: nothing is queued or sent by itself, only 9 and `drive upload` upload) and `Drive:LessonVideos` (false: a
@@ -1206,9 +1253,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (lists of UC ids or @handles, `YouTubeOptions.IsChannel`; an entry in both is refused, and a scalar
   where a list belongs is refused by `Expected`), `YouTube:DriveUpload` (`Everything`, the default, or
   `WithoutAudio`, by name; `RecordingUpload.SendsAudio` reads it for a recording with a source file in
-  place of `Drive:Upload`), `YouTube:LongestVideoHours` (4; from 0.25 to 9; above
-  `Recording:StopAfterHours` it is a warning from `FindWarnings`, never a refusal, since a refused file
-  would hold up every class over a setting of the videos', and the plan then names the safety stop)
+  place of `Drive:Upload`), `YouTube:LongestVideoHours` (4; from 0.25 to 24; above
+  `ElevenLabs:LongestFileHours` less an hour it is held there, and above `Recording:StopAfterHours` the
+  safety stop ends a video first: each a warning from `FindWarnings`, never a refusal, since a refused
+  file would hold up every class over a setting of the videos', and the plan then names what decides)
   and `YouTube:OEmbedBaseUrl` (`https://www.youtube.com/`; https, or http only to a loopback address:
   `CheckLocalOrHttpsAddress`, which Drive's addresses use too). The profile folder, the silence that
   ends a video (2 minutes), the pause between videos (his Enter) and separate Deno and FFmpeg paths are
@@ -1221,8 +1269,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   refused, at most 64 KB, never quoted) is imported and stored at once (same client id: only the
   secret is taken and the sign-in kept). The listener (`ILoopbackReceiver`,
   `HttpListenerLoopbackReceiver` on `http://127.0.0.1:<free port>/`, five tries) and the browser
-  (`IBrowser`, `ShellBrowser`, which never logs the address) are seams. The address carries PKCE
-  S256, `drive.file` alone, `prompt=consent` and `access_type=offline`; the wait is 5 minutes on the
+  (`IBrowser`, `ShellBrowser`, which never logs the address) are seams. The address is
+  `Drive:AuthorizationUrl` (Google's sign-in page, read from the run's settings; a query or fragment of
+  it, which the check refuses, is left out) and carries PKCE S256, `drive.file` alone, `prompt=consent`
+  and `access_type=offline`, and no other parameter; the wait is 5 minutes on the
   `TimeProvider`, Esc or Ctrl+C gives up (a cancel), any request without the state gets 400 and the
   wait goes on, `access_denied` ends it. After the exchange, `drive.file` must be granted and a
   refresh token given; the sign-in is stored first, then Drive's about is read and the root folder
@@ -1314,7 +1364,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   5xx, 403 rate limits) waits as `DriveRetry` says (2, 4 ... 64 s plus up to 1 s, 8 attempts) and
   asks the session `bytes */size`; 404/410 starts a new session once; a kept session is used only
   for the same size, MD5 and target, under six days old, at Drive's own address
-  (`UploadAddress.TryParse` against `Drive:ApiBaseUrl`: scheme, host, port, path); a piece may take
+  (`UploadAddress.TryParse` against `Drive:ApiBaseUrl` and `Drive:ApiVersion`: scheme, host, port, and the path
+  `upload/drive/<version>/files`); a piece may take
   the longer of 2 minutes and its bytes at 0.25 Mbit/s. `DriveClient` classes refusals:
   `DriveProblem.Busy` (retried), `Full` (`storageQuotaExceeded`; `uploadLimitExceeded`,
   `dailyLimitExceeded`: the recording's next automatic try a day later), else `Refused`.
@@ -1450,7 +1501,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   at a time 10 to 20 s apart at random and at most 60 begun an hour; the first failure that stops the
   fetching stops the reads too), `DownloadGuard.Judge` (the first that applies: a course channel by UC
   id, `/channel/` address or @handle; a sign-in by availability or `age_limit`; `is_live`,
-  `is_upcoming`, `post_live`; no length; over 9.5 h; `ChannelUnknown` while `CourseChannels` names any
+  `is_upcoming`, `post_live`; no length; over `ElevenLabs:LongestFileHours` less half an hour, 9.5 h by
+  default, its words built from it (`TranscriptionLimits`); `ChannelUnknown` while `CourseChannels` names any
   and the read names no channel; `MayDownloadChannels`; public; else a word, or `ready (--allow-unlisted)`
   for one `AllowUnlistedTakes`: unlisted, of a known channel), the plan (`DownloadPlan.Lines`,
   `ReadyLines` with `Waiting for your word`, `FetchLines`; `PlanRoom` with `ClassReserve`, room for a
@@ -1487,7 +1539,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   the key, `BrowserLocator.Find` (`YouTube:BrowserPath` alone when set; else App Paths under HKLM then
   HKCU; else Program Files, Program Files (x86), `%LOCALAPPDATA%`), the titles (`OEmbedTitles`), the
   index, the plan (`VideoPlan`: the worst case at the shorter of `YouTube:LongestVideoHours` and
-  `Recording:StopAfterHours`, named), Y in the menu (which opens the first at once), then per video:
+  `Recording:StopAfterHours`, each held by the file limit as the monitor holds it, named), Y in the menu (which opens the first at once), then per video:
   `ClassWait`; the `Next: ... Enter opens it; S stops ...` prompt (Enter, S or Esc, Ctrl+C twice, never
   a window without his key; `--yes` asks it before the first too); `ClassWait` again after Enter;
   `VideoWindow.OpenAsync` (`IProcessStarter.StartBrowser` with `VideoWindow.Arguments`:
@@ -1519,7 +1571,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   two minutes of silence after sound, from the last sound, freeze and pause, never while paused,
   `VideoSilent`, warned at the shorter of `Recording:SilenceWarningSeconds` and 60 s in place of the
   usual warning; 4 nothing heard in 5 minutes, `NothingPlayed`, with `PressPlay` as a Notice from 30
-  s; 5 `YouTube:LongestVideoHours` of recording or running, `VideoLimit`), from `RecordingStatus.HeardSound`
+  s; 5 `YouTube:LongestVideoHours` of recording or running, held an hour within `ElevenLabs:LongestFileHours`
+  (`TranscriptionLimits.VideoLimit`, its line naming why when held), `VideoLimit`), from `RecordingStatus.HeardSound`
   and `TrackSnapshot.HeardSound`, and skips the Bluetooth watch for it. `VideoPlayback.PlayedTitle` (the
   window's title once it stood 5 s with sound) names the source file and the transcript over
   oEmbed's; `VideoTitles.Plain` takes control characters out of every word from YouTube, and `Clean`
@@ -1944,7 +1997,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ProcessLoopback.cs` and `CaptureGapWatch.cs` as before.
 - `src/ClassScribe/Transcription`: ElevenLabs client (a Refit interface plus `ElevenLabsClient`
   around it), the shared answer parser (`ElevenLabsAnswer`), the upload's time limit
-  (`UploadTimeLimit`), the glossary (`KeytermRules` and `KeytermLimits`, `IGlossaryFiles` and
+  (`UploadTimeLimit`), what one file holds (`TranscriptionLimits`), the glossary (`KeytermRules` and `KeytermLimits`, `IGlossaryFiles` and
   `GlossaryFiles` with `GlossaryJson`, `GlossaryRecord`, and `GlossaryChoice` with `GlossaryPick` and
   `GlossaryUse`), transcript formatter, workflow (rebuild included),
   `TranscriptionProgress` (scoped: the workflow and the client report preparing, uploading at a
@@ -2119,5 +2172,13 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with a course's glossary), `TranscribeCommandTests` (`--keyterms` reaching the upload),
   `RebuildCommandTests`, `DryRunScriptTests` and `DryRunWholeTests`;
   `TestGlossaries.Choice` builds the resolver for tests that build the workflow by hand (over
-  `FailingGlossaryFiles` for an error nobody expects), and `TestGlossaries.Classes` the saved classes. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
+  `FailingGlossaryFiles` for an error nobody expects), and `TestGlossaries.Classes` the saved classes. The vendors'
+  values' tests (architecture slice 2): `TranscriptionLimitsTests`, and additions to `SettingsCheckTests` (each new
+  setting's range and warning, the API versions, `ElevenLabs:BaseUrl`, the safety stop held and the file limit lowered to 5
+  hours refusing nothing), `YouTubeSettingsCheckTests`, `SettingsCatalogTests`, `DefaultChangesTests` (a vendor's default
+  that moves needs a row), `KeytermRulesTests`, `GlossaryChoiceTests`, `TranscriptionWorkflowTests`, `RecordingMonitorTests`,
+  `VideoRecordingMonitorTests`, `VideoBatchTests`, `ClassFoldersTests`, `DownloadGuardTests`, `GoogleSignInTests`
+  (`FakeGoogle.AuthorizationPage`), `ResumableUploadTests` (`UploadAddress` with the version), and the routes the
+  versions make over `StubHttpHandler` in `ElevenLabsClientTests`, `ElevenLabsAccountTests` and `DriveClientTests`
+  (`StubHttpHandler.Enqueue(Func<HttpResponseMessage>)` for an answer with a Location). `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
   guard. The test project sees ClassScribe's internals (`InternalsVisibleTo` in `CoreAudioInterop.cs`).

@@ -60,8 +60,12 @@ public class VideoRecordingMonitorTests
             Video = YouTubeTestRuns.Video() with { Obtained = VideoSource.Recorded, BrowserProcessId = Root, BrowserStartedUtc = TestRuns.Start }
         };
 
-    /// <summary>Makes the monitor for <paramref name="request"/> (a video's unless given), as the loop starts it now, the playback begun as the run begins it.</summary>
-    private void Begin(RecordingOptions? options = null, YouTubeOptions? youTube = null, RecordRequest? request = null)
+    /// <summary>
+    /// Makes the monitor for <paramref name="request"/> (a video's unless given), as the loop starts it now, the playback begun
+    /// as the run begins it; <paramref name="elevenLabs"/> are the ElevenLabs settings, for what one file holds, the defaults
+    /// unless given.
+    /// </summary>
+    private void Begin(RecordingOptions? options = null, YouTubeOptions? youTube = null, RecordRequest? request = null, ElevenLabsOptions? elevenLabs = null)
     {
         request ??= VideoRequest();
         _playback = new VideoPlayback(_runtime.Processes, _windows, new ProcessFamily(new FakeProcessTree()), _runtime.Journal, _time, NullLogger<VideoPlayback>.Instance);
@@ -70,7 +74,7 @@ public class VideoRecordingMonitorTests
             new FakeOwnProcesses(Laptop.OwnProcess), _time, NullLogger<BluetoothMicrophoneWatch>.Instance);
         _monitor = new RecordingMonitor(new FreezeWatch(new FakeSystemTimes(_time), _time, NullLogger<FreezeWatch>.Instance), new FakeFreeSpace(),
             TestOptions.Create(options ?? new RecordingOptions { StatusIntervalSeconds = 3600 }), new MicrophoneAdvice(new FakeRegistryValues(), NullLogger<MicrophoneAdvice>.Instance),
-            new FakeCaptureProvider(), bluetooth, _time, _playback, TestOptions.Create(youTube ?? new YouTubeOptions()));
+            new FakeCaptureProvider(), bluetooth, _time, _playback, TestOptions.Create(youTube ?? new YouTubeOptions()), TestOptions.Create(elevenLabs ?? new ElevenLabsOptions()));
         _context = new MonitorContext(request, @"D:\Classes\Risala", _time.GetUtcNow(), _time.GetTimestamp(), TimeSpan.Zero);
     }
 
@@ -249,6 +253,22 @@ public class VideoRecordingMonitorTests
         Assert.That(ticks[^1].StopBecause, Is.EqualTo(RunEndCause.VideoLimit));
         Assert.That(ticks.Count, Is.EqualTo(900));
         Assert.That(Texts(ticks), Is.EqualTo(new[] { "This video has played for 15 minutes (YouTube:LongestVideoHours); stopping" }));
+    }
+
+    /// <summary>
+    /// Rule 7 is held to what one file to ElevenLabs can hold, less an hour (architecture 7.2): with a file of an hour and a
+    /// quarter, a video set to half an hour stops at 15 minutes, and the line says why it stops there.
+    /// </summary>
+    [Test]
+    public void Rule_7_is_held_an_hour_within_what_one_file_holds()
+    {
+        Begin(youTube: new YouTubeOptions { LongestVideoHours = 0.5 }, elevenLabs: new ElevenLabsOptions { LongestFileHours = 1.25 });
+
+        var ticks = Run(1000, second => Window(position: TimeSpan.FromSeconds(second)));
+
+        Assert.That(ticks[^1].StopBecause, Is.EqualTo(RunEndCause.VideoLimit));
+        Assert.That(ticks.Count, Is.EqualTo(900));
+        Assert.That(Texts(ticks), Is.EqualTo(new[] { "This video has played for 15 minutes (YouTube:LongestVideoHours is 0.5, above what one file to ElevenLabs can hold); stopping" }));
     }
 
     /// <summary>

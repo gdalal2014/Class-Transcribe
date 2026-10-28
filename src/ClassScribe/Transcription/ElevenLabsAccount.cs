@@ -81,7 +81,7 @@ public sealed class ElevenLabsAccount(IElevenLabsApi api, IOptionsSnapshot<Eleve
         using var limited = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, limit.Token);
         try
         {
-            using var response = await api.GetSubscriptionAsync(settings.ApiKey.Trim(), limited.Token);
+            using var response = await api.GetSubscriptionAsync(settings.ApiKey.Trim(), settings.ApiVersion, limited.Token);
             var body = await response.Content.ReadAsStringAsync(limited.Token);
             var status = (int)response.StatusCode;
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)

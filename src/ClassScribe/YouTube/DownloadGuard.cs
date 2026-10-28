@@ -44,19 +44,25 @@ public sealed record GuardVerdict(GuardVerdictKind Kind, string Words, string? A
 /// The guard on downloads (design 3.5): each video gets the first verdict that applies. A video of a channel in
 /// YouTube:CourseChannels, by its UC id or its @handle, is never downloaded. One that needs a sign-in (private, members' or
 /// Premium videos, those that need a sign-in, and any restricted by age) is left out: ClassScribe never signs in. A stream
-/// that is live, upcoming or still being processed is not finished yet. One whose length is unknown, or longer than
-/// ElevenLabs takes in one file, is left out. A video of a channel in YouTube:MayDownloadChannels is ready, and so is a public
-/// one. An unlisted video, or one yt-dlp is not sure is public, needs Gulzar's word for that video, since course pages embed
-/// unlisted videos: given in the menu, or, for every video yt-dlp says is unlisted, by --allow-unlisted, which never overrides
-/// any refusal above and never takes a video yt-dlp is not sure of. While YouTube:CourseChannels names channels, a video whose
-/// read names no channel cannot be checked against them, so it needs his word in the menu, public or not, and --allow-unlisted
-/// never gives it.
+/// that is live, upcoming or still being processed is not finished yet. One whose length is unknown, or longer than the
+/// longest recording ClassScribe makes for one file to ElevenLabs (ElevenLabs:LongestFileHours less half an hour, see
+/// <see cref="TranscriptionLimits.LongestRecording"/>), is left out; the seconds its audio may run past the video's length
+/// are within what is still sent (<see cref="TranscriptionLimits.Overrun"/>). A video of a channel in YouTube:MayDownloadChannels is
+/// ready, and so is a public one. An unlisted video, or one yt-dlp is not sure is public, needs Gulzar's word for that
+/// video, since course pages embed unlisted videos: given in the menu, or, for every video yt-dlp says is unlisted, by
+/// --allow-unlisted, which never overrides any refusal above and never takes a video yt-dlp is not sure of. While
+/// YouTube:CourseChannels names channels, a video whose read names no channel cannot be checked against them, so it needs
+/// his word in the menu, public or not, and --allow-unlisted never gives it.
 /// </summary>
 /// <param name="options">The YouTube settings of the batch's run.</param>
-public sealed class DownloadGuard(YouTubeOptions options)
+/// <param name="limits">What one file to ElevenLabs holds, by the batch's ElevenLabs settings; ElevenLabs' own when not given.</param>
+public sealed class DownloadGuard(YouTubeOptions options, TranscriptionLimits? limits = null)
 {
     /// <summary>The verdict on a video whose channel is not known while YouTube:CourseChannels names channels.</summary>
     public const string ChannelUnknown = "channel unknown: needs your word";
+
+    /// <summary>The longest video downloaded: the longest recording made for one file, which is sent with the seconds its audio may run past the video's length.</summary>
+    private readonly TimeSpan _longest = (limits ?? TranscriptionLimits.ElevenLabs).LongestRecording;
 
     /// <summary>The availabilities that need a sign-in.</summary>
     private static readonly HashSet<string> SignedIn = new(StringComparer.OrdinalIgnoreCase) { "private", "subscriber_only", "premium_only", "needs_auth" };
@@ -75,8 +81,8 @@ public sealed class DownloadGuard(YouTubeOptions options)
             return new(GuardVerdictKind.NotFinished, "not finished yet: left out", AcceptedBy: null);
         if (info.Length is not { } length)
             return new(GuardVerdictKind.UnknownLength, "length unknown: left out", AcceptedBy: null);
-        if (length > TranscriptionWorkflow.LongestRecording)
-            return new(GuardVerdictKind.TooLong, "longer than 9 h 30 min: left out", AcceptedBy: null);
+        if (length > _longest)
+            return new(GuardVerdictKind.TooLong, $"longer than {VideoPlan.Hours(_longest)}: left out", AcceptedBy: null);
 
         // The course's channels cannot be told from a channel the read does not name: such a video is taken on his word alone.
         if (options.CourseChannels.Length > 0 && !KnowsChannel(info))

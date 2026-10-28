@@ -142,14 +142,18 @@ public partial class RecordCommandTests
     /// the process or the session wait for the log as long as <paramref name="handlerLogPatience"/> says, or as long as the
     /// app's do. A lesson's video is made by <paramref name="lessonVideos"/>, with what Drive makes of it from
     /// <paramref name="lessonDrive"/>, when given. The glossary's resolver has no saved classes, as a recorder's, and reads
-    /// <paramref name="glossaryFiles"/> when given, else the real files.
+    /// <paramref name="glossaryFiles"/> when given, else the real files. The safety stop comes after
+    /// <paramref name="stopAfterHours"/> (Recording:StopAfterHours), and one file to ElevenLabs holds
+    /// <paramref name="longestFileHours"/> (ElevenLabs:LongestFileHours), for the monitor and the workflow alike, as the app
+    /// hands both the run's settings; the settings' defaults unless given. The upload copy is made by the real preparer, or by
+    /// <paramref name="preparer"/> when given, for a recording of hours whose 16 kHz copy would take a gigabyte.
     /// </summary>
     private RecordCommand CreateCommand(
         string apiKey = "test-key", TimeProvider? time = null, bool openWhenDone = false, string? outputFolder = null, KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
         bool blockShutdown = true, IRecordingFactory? recordings = null, RuntimeFolder? runtimeFolder = null, ILogger<RecordCommand>? logger = null,
         IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown, YouTube.VideoPlayback? video = null,
         IVideoYield? yield = null, Camera.LessonVideoMaker? lessonVideos = null, Drive.LessonVideoDrive? lessonDrive = null,
-        IGlossaryFiles? glossaryFiles = null)
+        IGlossaryFiles? glossaryFiles = null, double? stopAfterHours = null, double? longestFileHours = null, IAudioPreparer? preparer = null)
     {
         time ??= TimeProvider.System;
         var recording = TestOptions.Create(new RecordingOptions
@@ -159,21 +163,28 @@ public partial class RecordCommandTests
             OpenTranscriptWhenDone = openWhenDone,
             KeepScreenOn = keepScreenOn,
             BlockShutdown = blockShutdown,
-            ClassAppMute = classAppMute
+            ClassAppMute = classAppMute,
+            StopAfterHours = stopAfterHours ?? new RecordingOptions().StopAfterHours
         });
-        var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = _folder.File("no-glossary.txt") });
+        var elevenLabs = TestOptions.Create(new ElevenLabsOptions
+        {
+            ApiKey = apiKey,
+            KeytermsFile = _folder.File("no-glossary.txt"),
+            LongestFileHours = longestFileHours ?? new ElevenLabsOptions().LongestFileHours
+        });
         var folders = new ClassFolders(recording, time, NullLogger<ClassFolders>.Instance);
         var marks = new ClassMarks(NullLogger<ClassMarks>.Instance);
         var usage = new UsageReport(_account, time, _usageLog);
         var glossaries = TestGlossaries.Choice(elevenLabs, logger: _glossaryLog, time: time, files: glossaryFiles);
         var workflow = new TranscriptionWorkflow(
-            new AudioPreparer(NullLogger<AudioPreparer>.Instance),
+            preparer ?? new AudioPreparer(NullLogger<AudioPreparer>.Instance),
             _client.Object,
             glossaries,
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             marks,
             recording,
+            elevenLabs,
             _progress,
             usage,
             NullLogger<TranscriptionWorkflow>.Instance);
@@ -185,7 +196,7 @@ public partial class RecordCommandTests
             .Set(MicrophoneAdvice.DuckingKey, MicrophoneAdvice.DuckingValue, 3);
         var bluetooth = new BluetoothMicrophoneWatch(new FakeMicrophoneSessions(), new FakeMicrophoneProvider(), new FakeOwnProcesses(), time, NullLogger<BluetoothMicrophoneWatch>.Instance);
         var monitor = new RecordingMonitor(new FreezeWatch(_times, time, NullLogger<FreezeWatch>.Instance), new FakeFreeSpace(), recording,
-            new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _provider, bluetooth, time, video, TestOptions.Create(new YouTubeOptions()));
+            new MicrophoneAdvice(registry, NullLogger<MicrophoneAdvice>.Instance), _provider, bluetooth, time, video, TestOptions.Create(new YouTubeOptions()), elevenLabs);
         var loop = new RecordingLoop(_ui, _signals, marks, monitor, status, time, _loopLog);
 
         var ownFolder = runtimeFolder ?? _runtime.Folder;
@@ -1699,7 +1710,8 @@ public partial class RecordCommandTests
     /// <summary>
     /// A recording longer than ElevenLabs takes in one file is refused before anything is sent, and because a new try
     /// would be refused the same way, the hint says where the audio is rather than how to try again. The recording is
-    /// nine and a half hours and a second long, captured at 10 Hz so that its file stays small.
+    /// nine and a half hours, a minute and a second long, past the minute a recording may run beyond them, captured at 10 Hz
+    /// so that its file stays small.
     /// </summary>
     [Test]
     public async Task A_recording_too_long_to_send_is_not_offered_for_another_try()
@@ -1708,7 +1720,7 @@ public partial class RecordCommandTests
         _capture = _provider.Enqueue(new FakeAudioCapture(new AudioFormat(10, 1, 16, false)));
         var run = CreateCommand().RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
-        _capture.Deliver(TestAudio.Shorts([.. Enumerable.Repeat((short)1000, (int)new TimeSpan(9, 30, 1).TotalSeconds * 10)]));
+        _capture.Deliver(TestAudio.Shorts([.. Enumerable.Repeat((short)1000, (int)new TimeSpan(9, 31, 1).TotalSeconds * 10)]));
         _signals.RequestStop();
 
         Assert.ThrowsAsync<RecordingTooLongException>(async () => await run);
@@ -1717,6 +1729,37 @@ public partial class RecordCommandTests
         Assert.That(_log.Messages, Has.None.Contains("try the transcript again"));
         Assert.That(_log.Messages, Has.None.Contains(CommandLine.Transcribe(Recording())));
         Assert.That(RunFile().Outcome!.RetryCommand, Is.Null);
+    }
+
+    /// <summary>
+    /// A recording the safety stop ended is transcribed, though it runs past the stop: the loop looks once a second, and the
+    /// audio goes on arriving until the capture closes. Held by what one file to ElevenLabs holds (architecture 7.2, question
+    /// 10), the stop comes exactly at the longest recording sent: Recording:StopAfterHours 12 with ElevenLabs' own 10 hours
+    /// stops at 9 hours 30 minutes, and the default 9 hours with ElevenLabs:LongestFileHours 5 at 4 hours 30 minutes. The
+    /// real loop and monitor stop the real recording, here a second and a half past the stop, and the real workflow measures
+    /// it and sends it. Its audio is captured at 10 Hz, so that its file stays small, and its upload copy is a stand-in's,
+    /// since the real 16 kHz copy of hours would take a gigabyte.
+    /// </summary>
+    [TestCase(10, 12)]
+    [TestCase(5, 9)]
+    public async Task A_recording_the_held_safety_stop_ended_is_transcribed(double longestFileHours, double stopAfterHours)
+    {
+        var stop = TranscriptionLimits.From(new ElevenLabsOptions { LongestFileHours = longestFileHours }).SafetyStop(stopAfterHours)!.Value;
+        var time = new ManualTimeProvider(TestRuns.Start);
+        _provider = new FakeCaptureProvider();
+        _capture = _provider.Enqueue(new FakeAudioCapture(new AudioFormat(10, 1, 16, false)));
+        var run = CreateCommand(time: time, stopAfterHours: stopAfterHours, longestFileHours: longestFileHours, preparer: Mocks.AudioPreparer().Object)
+            .RunAsync("Kalam", transcribe: true);
+        await Wait.UntilAsync(() => _capture.Started);
+        _capture.Deliver(TestAudio.Shorts([.. Enumerable.Repeat((short)1000, (int)Math.Round((stop + TimeSpan.FromSeconds(1.5)).TotalSeconds * 10))]));
+
+        await time.AdvanceUntilAsync(() => run.IsCompleted, TimeSpan.FromSeconds(1), timeoutSeconds: 30);
+
+        Assert.That(await run, Is.EqualTo(0));
+        Assert.That(RunFile().EndedBy, Is.EqualTo(RunEndCause.SafetyStop));
+        Assert.That(UploadTimeLimit.AudioLength(Recording()), Is.GreaterThan(stop), "the recording runs past its stop");
+        _client.Verify(Calls.AnyTranscription, Times.Once);
+        Assert.That(RunFile().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
     }
 
     /// <summary>

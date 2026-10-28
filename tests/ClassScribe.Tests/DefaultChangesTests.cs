@@ -66,6 +66,46 @@ public class DefaultChangesTests
         Assert.That(DefaultChanges.HeldIn(new Dictionary<string, string?> { ["ElevenLabs:KeytermsFile"] = "" }), Is.Empty);
     }
 
+    /// <summary>
+    /// The vendors' defaults as they first shipped in the settings, as the settings file writes them: the addresses, the API
+    /// versions, the model, the prices and ElevenLabs' limits (architecture 7.1). A release that moves one adds a row.
+    /// </summary>
+    private static readonly Dictionary<string, string> VendorDefaultsFirstShipped = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ElevenLabs:BaseUrl"] = "https://api.elevenlabs.io/",
+        ["ElevenLabs:ApiVersion"] = "v1",
+        ["ElevenLabs:ModelId"] = "scribe_v2",
+        ["ElevenLabs:MaxKeyterms"] = "1000",
+        ["ElevenLabs:KeytermCharacterLimit"] = "50",
+        ["ElevenLabs:MaxKeytermWords"] = "5",
+        ["ElevenLabs:LongestFileHours"] = "10",
+        ["ElevenLabs:PricePerHourUsd"] = "0.22",
+        ["ElevenLabs:KeytermsPricePerHourUsd"] = "0.05",
+        ["Drive:ApiBaseUrl"] = "https://www.googleapis.com/",
+        ["Drive:ApiVersion"] = "v3",
+        ["Drive:OAuthBaseUrl"] = "https://oauth2.googleapis.com/",
+        ["Drive:AuthorizationUrl"] = "https://accounts.google.com/o/oauth2/v2/auth",
+        ["YouTube:OEmbedBaseUrl"] = "https://www.youtube.com/"
+    };
+
+    /// <summary>
+    /// A vendor's default that moves needs a row (architecture 7.1, the release cut's checklist): the user's file is a full
+    /// copy that keeps the old value, so without a row nothing would tell him that ElevenLabs or Google moved on. Each vendor
+    /// value's default in code is still the one it first shipped with, or the latest row of that setting names it as the newer
+    /// default. When this fails, add the row to <see cref="DefaultChanges.Rows"/> (its version empty on a feature branch).
+    /// </summary>
+    [Test]
+    public void A_vendors_default_that_moves_needs_a_row()
+    {
+        foreach (var (name, first) in VendorDefaultsFirstShipped)
+        {
+            var now = SettingsCatalog.Show(SettingsCatalog.Find(name)?.Default);
+            var row = DefaultChanges.Rows.LastOrDefault(change => change.Key.Equals(name, StringComparison.OrdinalIgnoreCase));
+            Assert.That(now == first || row?.NewDefault == now, Is.True,
+                $"{name}'s default is {now}, not the {first} it first shipped with, and no row of DefaultChanges names it: a vendor's default that moves needs a row");
+        }
+    }
+
     /// <summary>A row without a version, as on a feature branch, is described without one; the menu's line counts one or several.</summary>
     [Test]
     public void The_words_name_the_newer_default_and_count_them()

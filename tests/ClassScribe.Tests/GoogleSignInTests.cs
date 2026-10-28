@@ -65,6 +65,29 @@ public class GoogleSignInTests
         Assert.That(sent["access_type"], Is.EqualTo("offline"));
     }
 
+    /// <summary>
+    /// The browser goes to the sign-in page Drive:AuthorizationUrl names (architecture 7.2), a local stub's in a dry run, with
+    /// the sign-in's own parameters after it and no others: a query or fragment of the page's address, which the settings
+    /// check refuses, is left out, so that a scope of its own can never come before drive.file and ask for more (7.4).
+    /// </summary>
+    [TestCase("http://127.0.0.1:5007/o/oauth2/v2/auth")]
+    [TestCase("http://127.0.0.1:5007/o/oauth2/v2/auth?hl=ar")]
+    [TestCase("http://127.0.0.1:5007/o/oauth2/v2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive&prompt=none")]
+    [TestCase("http://127.0.0.1:5007/o/oauth2/v2/auth#consent")]
+    public async Task The_browser_goes_to_the_sign_in_page_the_settings_name(string page)
+    {
+        _world.Options.Set(new DriveOptions { AuthorizationUrl = page });
+        _world.Google.AuthorizationPage = "http://127.0.0.1:5007/o/oauth2/v2/auth";
+
+        await SignInAsync();
+
+        var address = _world.Browser.Opened.Single();
+        var sent = HttpUtility.ParseQueryString(address.Query);
+        Assert.That(address.GetLeftPart(UriPartial.Path), Is.EqualTo("http://127.0.0.1:5007/o/oauth2/v2/auth"));
+        Assert.That(sent.AllKeys.Order(), Is.EqualTo(new[] { "access_type", "client_id", "code_challenge", "code_challenge_method", "prompt", "redirect_uri", "response_type", "scope", "state" }));
+        Assert.That((sent["client_id"], sent["scope"], sent["prompt"], address.Fragment), Is.EqualTo((FakeGoogle.ClientId, "https://www.googleapis.com/auth/drive.file", "consent", "")));
+    }
+
     /// <summary>The exchange sends the code, the client, the verifier and the redirect address exactly as the browser was sent it.</summary>
     [Test]
     public async Task The_exchange_sends_the_verifier_and_the_same_redirect_address()

@@ -16,7 +16,9 @@ public sealed record DefaultChange(string Key, string OldDefault, string NewDefa
 /// The defaults later builds changed (build-plan amendment 38). The user's settings file is a full copy of every setting, so a
 /// default a later build changes does not reach it: a value equal to an old default may be a choice, and ClassScribe never
 /// changes it by itself. Instead the menu's header says how many settings hold an older default, settings list marks each
-/// with the newer one, and settings reset takes it.
+/// with the newer one, and settings reset takes it. A release that moves a vendor's default (an address, an API version, the
+/// model, a price or one of ElevenLabs' limits) adds a row, as every other default change does (architecture 7.1): the release
+/// cut's checklist names it, and a test fails on a vendor's default moved without one.
 /// </summary>
 public static class DefaultChanges
 {

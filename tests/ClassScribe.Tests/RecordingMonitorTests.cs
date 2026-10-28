@@ -62,13 +62,14 @@ public partial class RecordingMonitorTests
     /// <summary>
     /// Makes the monitor with <paramref name="options"/> (the defaults unless given) for <paramref name="request"/> (the
     /// tests' request unless given), as the recording loop starts it now; <paramref name="microphone"/> is what the
-    /// recording says about your microphone beyond its snapshot, when it has one.
+    /// recording says about your microphone beyond its snapshot, when it has one; <paramref name="elevenLabs"/> are the
+    /// ElevenLabs settings, for what one file holds, the defaults unless given.
     /// </summary>
-    private void Begin(RecordingOptions? options = null, RecordRequest? request = null, IMicrophoneRecording? microphone = null)
+    private void Begin(RecordingOptions? options = null, RecordRequest? request = null, IMicrophoneRecording? microphone = null, ElevenLabsOptions? elevenLabs = null)
     {
         var bluetooth = new BluetoothMicrophoneWatch(_sessions, _microphones, new FakeOwnProcesses(Laptop.OwnProcess), _time, NullLogger<BluetoothMicrophoneWatch>.Instance);
         _monitor = new RecordingMonitor(new FreezeWatch(_times, _time, NullLogger<FreezeWatch>.Instance), _space, TestOptions.Create(options ?? new RecordingOptions()),
-            new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _outputs, bluetooth, _time);
+            new MicrophoneAdvice(_registry, NullLogger<MicrophoneAdvice>.Instance), _outputs, bluetooth, _time, elevenLabs: TestOptions.Create(elevenLabs ?? new ElevenLabsOptions()));
         _context = new MonitorContext(request ?? TestRuns.Request(TestRuns.Id()), Folder, _time.GetUtcNow(), _time.GetTimestamp(), TimeSpan.Zero, microphone);
     }
 
@@ -636,6 +637,48 @@ public partial class RecordingMonitorTests
         Assert.That(Texts(ticks[0]), Has.Some.StartsWith("This recording stops by itself in 71 seconds, after 72 seconds"));
         Assert.That(ticks.Take(71).Select(tick => tick.StopBecause), Has.All.Null);
         Assert.That(ticks[^1].StopBecause, Is.EqualTo(RunEndCause.SafetyStop));
+    }
+
+    /// <summary>
+    /// A safety stop later than one file to ElevenLabs can hold, less half an hour, is held there (architecture 7.2, question
+    /// 10): with Recording:StopAfterHours at 12 the recording is warned about at 9 hours 15 minutes and stops at 9 hours 30
+    /// minutes, and the lines say why it stops there.
+    /// </summary>
+    [Test]
+    public void A_safety_stop_above_what_one_file_holds_comes_at_the_longest_recording_sent()
+    {
+        Begin(new RecordingOptions { StopAfterHours = 12 });
+
+        var early = Tick(Recording(position: new TimeSpan(9, 14, 59)));
+        var warned = Tick(Recording(position: new TimeSpan(9, 15, 0)));
+        var stop = Tick(Recording(position: new TimeSpan(9, 30, 0)));
+
+        Assert.That(Texts(early), Is.Empty);
+        Assert.That(warned.Lines, Is.EqualTo(new[]
+        {
+            (LogLevel.Warning, "This recording stops by itself in 15 minutes, after 9 hours 30 minutes (Recording:StopAfterHours is 12, above what one file to ElevenLabs can hold): ElevenLabs takes at most 10 hours of audio in one file")
+        }));
+        Assert.That(stop.StopBecause, Is.EqualTo(RunEndCause.SafetyStop));
+        Assert.That(stop.Lines, Has.Some.EqualTo((LogLevel.Warning,
+            "This recording stops now, after 9 hours 30 minutes (Recording:StopAfterHours is 12, above what one file to ElevenLabs can hold): ElevenLabs takes at most 10 hours of audio in one file. Start a new recording to record more")));
+    }
+
+    /// <summary>
+    /// The file limit the settings give is the one the lines name: with ElevenLabs:LongestFileHours at 5, the default safety
+    /// stop of 9 hours comes at 4 hours 30 minutes, and the lines say 5 hours, not 10.
+    /// </summary>
+    [Test]
+    public void The_safety_stop_comes_and_is_said_by_the_file_limit_the_settings_give()
+    {
+        Begin(new RecordingOptions { StopAfterHours = 9 }, elevenLabs: new ElevenLabsOptions { LongestFileHours = 5 });
+
+        var before = Tick(Recording(position: new TimeSpan(4, 29, 59)));
+        var stop = Tick(Recording(position: new TimeSpan(4, 30, 0)));
+
+        Assert.That(before.StopBecause, Is.Null);
+        Assert.That(stop.StopBecause, Is.EqualTo(RunEndCause.SafetyStop));
+        Assert.That(Texts(stop), Has.Some.EqualTo(
+            "This recording stops now, after 4 hours 30 minutes (Recording:StopAfterHours is 9, above what one file to ElevenLabs can hold): ElevenLabs takes at most 5 hours of audio in one file. Start a new recording to record more"));
     }
 
     /// <summary>With Recording:StopAfterHours 0 the recording never stops by itself.</summary>

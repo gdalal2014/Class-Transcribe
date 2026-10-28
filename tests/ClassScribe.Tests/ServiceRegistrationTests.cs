@@ -175,6 +175,40 @@ public class ServiceRegistrationTests
             Is.EqualTo((true, ReopenWindow.OnCloseAndProblems, true, 60, 9.0)));
     }
 
+    /// <summary>
+    /// The class folders the app builds read ElevenLabs:LongestFileHours from the settings (architecture 7.2), never ElevenLabs'
+    /// own 10 hours: with a file of 5 hours, a recording of 4 hours 31 minutes that stopped a moment ago is not offered to
+    /// continue, as it could no longer be sent whole, while one of 4 hours 29 minutes is. Its audio is written at 10 Hz, so
+    /// the hours take a few hundred kilobytes.
+    /// </summary>
+    [Test]
+    public void The_class_folders_take_the_file_limit_from_the_settings()
+    {
+        using var app = BuildApp(new()
+        {
+            ["Recording:OutputFolder"] = _folder.File("Recordings"),
+            ["ElevenLabs:LongestFileHours"] = "5"
+        });
+        var folders = app.Services.GetRequiredService<ClassFolders>();
+        var files = folders.CreateRecording("Kalam");
+
+        WriteSilence(files, new TimeSpan(4, 31, 0));
+        var tooLong = folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60));
+        WriteSilence(files, new TimeSpan(4, 29, 0));
+        var offered = folders.FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60));
+
+        Assert.That(tooLong, Is.Null);
+        Assert.That(offered?.Length, Is.EqualTo(new TimeSpan(4, 29, 0)));
+    }
+
+    /// <summary>Writes <paramref name="length"/> of silence as the first segment of <paramref name="files"/>, at 10 Hz, with the recorder's own writer.</summary>
+    private static void WriteSilence(RecordingFiles files, TimeSpan length)
+    {
+        File.Delete(files.Segment(1));
+        using var writer = new WavSegmentWriter(files.Segment(1), 10);
+        writer.Write(new byte[(int)length.TotalSeconds * 10 * 2]);
+    }
+
     /// <summary>The app, the menu, the gate and the transcribe command resolve without an audio device; commands resolve inside a run's scope.</summary>
     [Test]
     public void The_app_and_the_transcribe_command_resolve_without_an_audio_device()

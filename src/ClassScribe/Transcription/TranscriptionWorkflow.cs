@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
+using ClassScribe.Commands;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.YouTube;
@@ -14,7 +15,7 @@ namespace ClassScribe.Transcription;
 public sealed record TranscriptFiles(string TranscriptPath, string JsonPath);
 
 /// <summary>
-/// A recording is longer than ElevenLabs takes in one file (see <see cref="TranscriptionWorkflow.LongestRecording"/>), so
+/// A recording is longer than ClassScribe sends in one file to ElevenLabs (see <see cref="TranscriptionLimits.Sends"/>), so
 /// nothing of it was prepared or sent. Trying again would find the same length.
 /// </summary>
 public sealed class RecordingTooLongException(string message) : Exception(message);
@@ -33,16 +34,11 @@ public sealed class TranscriptionWorkflow(
     ClassFolders folders,
     ClassMarks marks,
     IOptionsSnapshot<RecordingOptions> recording,
+    IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TranscriptionProgress progress,
     UsageReport usage,
     ILogger<TranscriptionWorkflow> logger)
 {
-    /// <summary>
-    /// The longest recording sent in one upload. ElevenLabs takes at most 10 hours of audio per file; half an hour is kept
-    /// in hand, so that a recording is refused here, before anything is prepared, rather than by ElevenLabs.
-    /// </summary>
-    public static readonly TimeSpan LongestRecording = TimeSpan.FromHours(9.5);
-
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     /// <summary>
@@ -61,13 +57,13 @@ public sealed class TranscriptionWorkflow(
     /// microphone is the main track, under the recording's plain names, and there is nothing to mix. A recording whose
     /// class track was never written, because the class could not be recorded while your microphone could, has only the
     /// .mic.wav files, and they are sent on their own, as in person. A recording transcribed before keeps its earlier
-    /// transcript and gets the next copy. A recording longer than <see cref="LongestRecording"/> is refused before
-    /// anything is prepared. The upload copy is removed when the run ends, after a failure or a cancel as well, unless
-    /// Recording:KeepUploadFile keeps it. The glossary is the one decided when the recording started (see
-    /// <see cref="GlossaryChoice"/>).
+    /// transcript and gets the next copy. A recording longer than ElevenLabs:LongestFileHours less half an hour, and the minute a
+    /// recording may run past it (see <see cref="TranscriptionLimits.Sends"/>), is refused before anything is prepared. The
+    /// upload copy is removed when the run ends, after a failure or a cancel as well, unless Recording:KeepUploadFile keeps it.
+    /// The glossary is the one decided when the recording started (see <see cref="GlossaryChoice"/>).
     /// </summary>
     /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
-    /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
+    /// <exception cref="RecordingTooLongException">The recording is longer than one file sends, ElevenLabs:LongestFileHours less half an hour and the minute past it (see <see cref="TranscriptionLimits.Sends"/>).</exception>
     public Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, CancellationToken cancellationToken) =>
         TranscribeRecordingAsync(files, keyterms: null, cancellationToken);
 
@@ -77,7 +73,7 @@ public sealed class TranscriptionWorkflow(
     /// or none), over the one decided when the recording started.
     /// </summary>
     /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
-    /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
+    /// <exception cref="RecordingTooLongException">The recording is longer than one file sends, ElevenLabs:LongestFileHours less half an hour and the minute past it (see <see cref="TranscriptionLimits.Sends"/>).</exception>
     public Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, string? keyterms, CancellationToken cancellationToken) =>
         TranscribeRecordingAsync(files, keyterms, run: null, cancellationToken);
 
@@ -87,7 +83,7 @@ public sealed class TranscriptionWorkflow(
     /// which is sent when the recording's record gives none, as the start line named it (see <see cref="GlossaryChoice.ForTranscript"/>).
     /// </summary>
     /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
-    /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
+    /// <exception cref="RecordingTooLongException">The recording is longer than one file sends, ElevenLabs:LongestFileHours less half an hour and the minute past it (see <see cref="TranscriptionLimits.Sends"/>).</exception>
     public async Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, string? keyterms, GlossaryPick? run, CancellationToken cancellationToken)
     {
         string? upload = null;
@@ -262,20 +258,23 @@ public sealed class TranscriptionWorkflow(
     }
 
     /// <summary>
-    /// Refuses a recording whose sent track's segments, <paramref name="segments"/>, hold more than <see cref="LongestRecording"/>
-    /// of audio together, before anything is prepared. Each segment is read to its end, as the preparer reads it (see
-    /// <see cref="UploadTimeLimit.AudioLength"/>); a file the recorder did not write counts as empty, as it does in the
-    /// list of recordings. The microphone's segments beside the class, <paramref name="microphone"/>, are not measured:
+    /// Refuses a recording whose sent track's segments, <paramref name="segments"/>, hold more audio together than one file
+    /// sends, ElevenLabs:LongestFileHours less half an hour and the minute a recording may run past it, as one the safety stop
+    /// ended there does (see <see cref="TranscriptionLimits.Sends"/>), before anything is prepared, with the limits in words
+    /// from the settings. Each segment is read to its end, as the preparer
+    /// reads it (see <see cref="UploadTimeLimit.AudioLength"/>); a file the recorder did not write counts as empty, as it
+    /// does in the list of recordings. The microphone's segments beside the class, <paramref name="microphone"/>, are not measured:
     /// they only decide the advice. A folder holding the copied .wav files alone looks like a class-only recording, which
     /// would drop your microphone from every piece without a word, so when the recording has a microphone track the
     /// message says to copy the matching .mic.wav files along with them; a recording that is the microphone's files
     /// alone (<paramref name="microphoneAlone"/>) is transcribed by one of them, since a folder is read by its .wav files.
     /// </summary>
-    private static void RefuseIfTooLong(RecordingFiles files, IReadOnlyList<string> segments, IReadOnlyList<string> microphone, bool microphoneAlone)
+    private void RefuseIfTooLong(RecordingFiles files, IReadOnlyList<string> segments, IReadOnlyList<string> microphone, bool microphoneAlone)
     {
+        var limits = TranscriptionLimits.From(elevenLabs.Value);
         var length = TimeSpan.Zero;
         foreach (var segment in segments) length += UploadTimeLimit.AudioLength(segment) ?? TimeSpan.Zero;
-        if (length <= LongestRecording) return;
+        if (limits.Sends(length)) return;
 
         var advice = microphoneAlone
             ? "copy some of its .mic.wav files into a folder of their own and transcribe one of them there by its path."
@@ -283,7 +282,7 @@ public sealed class TranscriptionWorkflow(
                 ? "copy some of its .wav files into a folder of their own and transcribe that folder."
                 : "copy some of its .wav files into a folder of their own, with the matching .mic.wav files of your microphone beside them under the same names, and transcribe that folder; without the .mic.wav files only the class is sent.";
         throw new RecordingTooLongException(
-            $"{files.BaseName} holds {Durations.Format(length)} of audio, and ElevenLabs takes at most 10 hours per file, so ClassScribe sends at most 9 and a half hours. Nothing was prepared or sent. To transcribe it in pieces, {advice}");
+            $"{files.BaseName} holds {Durations.Format(length)} of audio, and ElevenLabs takes at most {RecordingMonitor.DescribeLength(limits.LongestFile)} per file ({ElevenLabsOptions.SectionName}:{nameof(ElevenLabsOptions.LongestFileHours)}), so ClassScribe sends at most {RecordingMonitor.DescribeLength(limits.LongestRecording)}. Nothing was prepared or sent. To transcribe it in pieces, {advice}");
     }
 
     /// <summary>Makes the smaller upload copy of a WAV file. Returns false when the file should be uploaded as it is.</summary>
