@@ -75,6 +75,6 @@ public static partial class FolderNames
     [GeneratedRegex(@"^(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})(?<copy> \([0-9]{1,9}\))?\z", RegexOptions.CultureInvariant)]
     private static partial Regex DateFolderShape();
 
-    /// <summary>The folder under the recordings folder the logs go in.</summary>
+    /// <summary>The folder under the recordings folder that the microphone check's logs go in.</summary>
     public const string MicCheck = "mic-check";
 }
