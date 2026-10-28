@@ -95,7 +95,7 @@ public sealed class RecorderHost
     /// </summary>
     public async Task<int> RunAsync(string runId, string? apiKey)
     {
-        using var log = new RecorderLog(Time, Path.Combine(Folder.Root, RecorderLog.StartupFileName));
+        using var log = new RecorderLog(Time, Path.Combine(Folder.Root, IRunLog.StartupFileName));
         using var bootstrap = Loggers(log, settings: null);
         var logger = bootstrap.CreateLogger<RecorderHost>();
         try

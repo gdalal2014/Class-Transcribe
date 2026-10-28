@@ -31,6 +31,7 @@ public class RecorderLauncherTests
     private FakeJobInspector _jobs = null!;
     private TestOptions<RecordingOptions> _options = null!;
     private RecordingLogger<RecorderLauncher> _log = null!;
+    private RecorderLog _recorderLog = null!;
 
     /// <summary>Makes ClassScribe's own folder in a temporary folder, the pretend processes, no job, and the default settings.</summary>
     [SetUp]
@@ -42,15 +43,20 @@ public class RecorderLauncherTests
         _jobs = new FakeJobInspector();
         _options = TestOptions.Create(new RecordingOptions());
         _log = new RecordingLogger<RecorderLauncher>();
+        _recorderLog = new RecorderLog(_runtime.Time);
     }
 
-    /// <summary>Deletes the temporary folder.</summary>
+    /// <summary>Lets go of the window's log and deletes the temporary folder.</summary>
     [TearDown]
-    public void TearDown() => _runtime.Dispose();
+    public void TearDown()
+    {
+        _recorderLog.Dispose();
+        _runtime.Dispose();
+    }
 
     /// <summary>The launcher under test, over ClassScribe's own folder in the temporary folder, or over <paramref name="folder"/>.</summary>
     private RecorderLauncher Launcher(RuntimeFolder? folder = null) =>
-        new(_starter, _jobs, folder ?? _runtime.Folder, _runtime.Journal, _options, _runtime.Time, _log);
+        new(_starter, _jobs, folder ?? _runtime.Folder, _runtime.Journal, _recorderLog, _options, _runtime.Time, _log);
 
     /// <summary>Starts the run <see cref="RunId"/> and waits for the answer, moving the clock a second at a time while the launcher waits for the recorder.</summary>
     private async Task<LaunchResult> StartAsync(RecordRequest? request = null)

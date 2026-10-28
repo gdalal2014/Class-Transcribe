@@ -48,6 +48,7 @@ public partial class RecordStarterTests
     private List<FakeDriveAutoUpload> _drives = null!;
     private ServiceProvider _services = null!;
     private RecordingLogger<RecordStarter> _log = null!;
+    private RecorderLog _recorderLog = null!;
     private FakeVideoYield _videoYield = null!;
 
     /// <summary>The camera's start the starter is given; null, as most tests have it, for none.</summary>
@@ -78,6 +79,7 @@ public partial class RecordStarterTests
             .AddScoped<IDriveAutoUpload>(_ => NewDrive())
             .BuildServiceProvider(validateScopes: true);
         _log = new RecordingLogger<RecordStarter>();
+        _recorderLog = new RecorderLog(_runtime.Time);
         _videoYield = new FakeVideoYield();
         _camera = null;
         _glossary = null;
@@ -87,6 +89,7 @@ public partial class RecordStarterTests
     [TearDown]
     public void TearDown()
     {
+        _recorderLog.Dispose();
         _services.Dispose();
         _settingsFolder.Dispose();
         _recordings.Dispose();
@@ -97,7 +100,7 @@ public partial class RecordStarterTests
     private RecordStarter Starter(RuntimeFolder? folder = null)
     {
         var clock = ZonedClock.Eastern(_runtime.Time);
-        var launcher = new RecorderLauncher(_starter, _jobs, folder ?? _runtime.Folder, _runtime.Journal, _options, clock, new RecordingLogger<RecorderLauncher>());
+        var launcher = new RecorderLauncher(_starter, _jobs, folder ?? _runtime.Folder, _runtime.Journal, _recorderLog, _options, clock, new RecordingLogger<RecorderLauncher>());
         var question = new ContinueQuestion(new ClassFolders(_options, clock, new RecordingLogger<ClassFolders>()), new RecordingFolder(), _runtime.Journal, _ui, _options, clock,
             new RecordingLogger<ContinueQuestion>());
         return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Reloader, new RecordingFolder(), _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log,

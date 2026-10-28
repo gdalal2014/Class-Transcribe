@@ -44,7 +44,7 @@ namespace ClassScribe.Recorder;
 /// Where the lines go until the recording's log is named: recorder.log for the recorder. Null for a window, which keeps
 /// those lines in memory only, for the recording's log.
 /// </param>
-public sealed class RecorderLog(TimeProvider time, string? startupFile = null) : IDisposable
+public sealed class RecorderLog(TimeProvider time, string? startupFile = null) : IRunLog, IDisposable
 {
     /// <summary>How many lines the log holds in memory for the windows. A class makes a few hundred.</summary>
     public const int Capacity = 20_000;
@@ -57,9 +57,6 @@ public sealed class RecorderLog(TimeProvider time, string? startupFile = null) :
     /// older generation (recorder.old.log), in place of the one before, and a new start-up file is begun.
     /// </summary>
     public const long StartupFileLimit = 1024 * 1024;
-
-    /// <summary>The start-up file's name. The recorder keeps it in %LOCALAPPDATA%\ClassScribe.</summary>
-    public const string StartupFileName = "recorder.log";
 
     /// <summary>How long <see cref="Dispose"/> waits, unless told otherwise, for the lines still waiting to reach the file.</summary>
     internal static readonly TimeSpan DefaultDrainPatience = TimeSpan.FromSeconds(5);
@@ -396,6 +393,29 @@ public sealed class RecorderLog(TimeProvider time, string? startupFile = null) :
 
         if (writeFiles) StartWriting();
         done.Task.Wait(DrainPatience);
+    }
+
+    /// <summary>
+    /// The last <paramref name="count"/> lines that are not empty of the start-up log at <paramref name="path"/>, oldest
+    /// first, when the file was last written at <paramref name="writtenSince"/> or after; empty when it was written before
+    /// that, or there is no such file. The file is read sharing everything, as the recorder may still write it. A file that
+    /// cannot be read throws its failure (see <see cref="IRunLog.LastStartupLines"/>).
+    /// </summary>
+    public IReadOnlyList<string> LastStartupLines(string path, DateTimeOffset writtenSince, int count)
+    {
+        if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < writtenSince.UtcDateTime) return [];
+
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(file);
+        var lines = new Queue<string>(count);
+        while (reader.ReadLine() is { } line)
+        {
+            if (line.Length == 0) continue;
+            if (lines.Count == count) lines.Dequeue();
+            lines.Enqueue(line);
+        }
+
+        return [.. lines];
     }
 
     /// <summary>

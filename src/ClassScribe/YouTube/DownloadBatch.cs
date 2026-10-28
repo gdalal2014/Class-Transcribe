@@ -32,7 +32,7 @@ public sealed class DownloadBatch(
     IBatchPace pace,
     DownloadedAudio audio,
     IClassFolders classFolders,
-    RecorderLog log,
+    IRunLog log,
     IDriveRoom driveRoom,
     IDriveAutoUpload drive,
     IFreeSpace freeSpace,

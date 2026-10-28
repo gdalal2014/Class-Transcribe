@@ -4,6 +4,7 @@ using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;
@@ -12,8 +13,9 @@ namespace ClassScribe.Tests;
 /// The contracts of the ports of runs (architecture 4.3, slice 3b2) over their real adapters, in temporary folders that stand
 /// for %LOCALAPPDATA%\ClassScribe: ClassScribe's own folder (<see cref="IRuntimeFolder"/>), one recording at a time
 /// (<see cref="IRecordingLock"/>), the run and request files (<see cref="IRunJournal"/>) and one run's file while the run
-/// lasts (<see cref="IRunHandle"/>), written whole as RecorderJson writes it and with the journal's retries; and that the
-/// window's host and the recorder's resolve each port to the very adapter they hold.
+/// lasts (<see cref="IRunHandle"/>), written whole as RecorderJson writes it and with the journal's retries, and the run's
+/// log (<see cref="IRunLog"/>: the copy into the recording's log, and the start-up log's last lines); and that the window's
+/// host and the recorder's resolve each port to the very adapter they hold.
 /// </summary>
 [TestFixture]
 public class RecorderPortTests
@@ -251,8 +253,74 @@ public class RecorderPortTests
     }
 
     /// <summary>
+    /// The log port takes lines without waiting, copies the lines since the mark into the recording's log once it is named,
+    /// names it while it lasts, and sends the lines after its end nowhere, with nothing lost and no file failure.
+    /// </summary>
+    [Test]
+    public void The_log_port_copies_the_lines_since_the_mark_into_the_recordings_log()
+    {
+        using var adapter = new RecorderLog(_runtime.Time);
+        IRunLog log = adapter;
+        var path = _temp.File("Kalam_2026-10-15_23-00-02Z.log");
+
+        log.Write(LogLevel.Information, "before the run");
+        log.KeepFromNow();
+        log.Write(LogLevel.Information, "the run's first line");
+        log.WriteFileTo(path);
+        var named = log.NamedFile;
+        log.Write(LogLevel.Warning, "a line while named");
+        var flushed = log.Flush(TimeSpan.FromSeconds(10));
+        log.EndFile();
+        log.Write(LogLevel.Information, "after the end");
+        log.Flush(TimeSpan.FromSeconds(10));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(named, Is.EqualTo(path));
+            Assert.That(log.NamedFile, Is.Null, "no recording's log is named after its end");
+            Assert.That(flushed, Is.True);
+            Assert.That(File.ReadAllText(path), Is.EqualTo($"the run's first line{Environment.NewLine}a line while named{Environment.NewLine}"), "the lines from the mark on, and none after the end");
+            Assert.That(log.LostFileLines, Is.EqualTo(0), "a line with no file to go to is held in memory, not lost");
+            Assert.That(log.FirstFileFailure, Is.Null);
+        });
+    }
+
+    /// <summary>
+    /// The log port reads the last lines of a recorder's start-up log for a window: the last so many that are not empty,
+    /// oldest first, only when the file was written since the recorder started; nothing for a file written before that or
+    /// not there; and a file it cannot read throws.
+    /// </summary>
+    [Test]
+    public void The_log_port_reads_the_last_lines_of_a_startup_log_written_since_a_time()
+    {
+        var startup = Path.Combine(_runtime.Folder.Root, IRunLog.StartupFileName);
+        using (var recorder = new RecorderLog(_runtime.Time, startup))
+        {
+            foreach (var line in new[] { "one", "", "two", "three", "four", "", "five", "six", "seven" }) recorder.Write(LogLevel.Information, line);
+            recorder.Flush(TimeSpan.FromSeconds(10));
+        }
+
+        var written = new DateTimeOffset(File.GetLastWriteTimeUtc(startup), TimeSpan.Zero);
+        var held = _temp.File("held.log");
+        File.WriteAllText(held, "a line");
+        using var holder = new FileStream(held, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        using var adapter = new RecorderLog(_runtime.Time);
+        IRunLog window = adapter;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(IRunLog.StartupFileName, Is.EqualTo("recorder.log"));
+            Assert.That(window.LastStartupLines(startup, written - TimeSpan.FromSeconds(2), 5), Is.EqualTo(new[] { "three", "four", "five", "six", "seven" }), "the last five that are not empty");
+            Assert.That(window.LastStartupLines(startup, written + TimeSpan.FromSeconds(1), 5), Is.Empty, "written before the recorder started");
+            Assert.That(window.LastStartupLines(_temp.File("none.log"), DateTimeOffset.MinValue, 5), Is.Empty, "no such file");
+            Assert.That(() => window.LastStartupLines(held, DateTimeOffset.MinValue, 5), Throws.InstanceOf<IOException>(), "a file another program holds without sharing");
+        });
+    }
+
+    /// <summary>
     /// Both hosts resolve each port to the adapter they hold: the window's to the folder registered last (a test's, as
-    /// ClassScribe's own folder), the lock over it and the journal over it; the recorder's to the folder it was given.
+    /// ClassScribe's own folder), the lock over it, the journal over it and the log; the recorder's to the folder and the
+    /// log it was given.
     /// </summary>
     [Test]
     public void Both_hosts_resolve_the_ports_to_the_adapters_they_hold()
@@ -272,7 +340,10 @@ public class RecorderPortTests
                 Assert.That(services.GetRequiredService<IRuntimeFolder>(), Is.SameAs(_runtime.Folder), $"{name}: ClassScribe's own folder");
                 Assert.That(services.GetRequiredService<IRecordingLock>(), Is.SameAs(services.GetRequiredService<RecordingLock>()), $"{name}: the lock");
                 Assert.That(services.GetRequiredService<IRunJournal>(), Is.SameAs(services.GetRequiredService<RunJournal>()), $"{name}: the journal");
+                Assert.That(services.GetRequiredService<IRunLog>(), Is.SameAs(services.GetRequiredService<RecorderLog>()), $"{name}: the log");
             }
+
+            Assert.That(recorder.Services.GetRequiredService<IRunLog>(), Is.SameAs(log), "the recorder: the log it was given");
         });
     }
 }

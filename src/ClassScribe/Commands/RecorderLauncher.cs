@@ -57,7 +57,7 @@ public abstract record LaunchResult
 /// job where the job allows it and inside it again only where the recorder outlives the window there too, then the wait
 /// until the recorder's run file says it records. Closing this window is said to be safe only where it is.
 /// </summary>
-public sealed class RecorderLauncher(IProcessStarter starter, IJobInspector jobs, IRuntimeFolder folder, IRunJournal journal,
+public sealed class RecorderLauncher(IProcessStarter starter, IJobInspector jobs, IRuntimeFolder folder, IRunJournal journal, IRunLog log,
     IOptionsMonitor<RecordingOptions> options, TimeProvider time, ILogger<RecorderLauncher> logger)
 {
     /// <summary>How long a recorder has to answer, by its run file, before the start counts as failed: 20 seconds, as for a window connecting to it.</summary>
@@ -275,21 +275,10 @@ public sealed class RecorderLauncher(IProcessStarter starter, IJobInspector jobs
     /// </summary>
     private string LastLogLines(StartedProcess process)
     {
-        var path = Path.Combine(folder.Root, RecorderLog.StartupFileName);
+        var path = Path.Combine(folder.Root, IRunLog.StartupFileName);
         try
         {
-            if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < (process.StartedUtc - IProcessLiveness.StartTimeTolerance).UtcDateTime) return "";
-
-            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var reader = new StreamReader(file);
-            var lines = new Queue<string>(QuotedLogLines);
-            while (reader.ReadLine() is { } line)
-            {
-                if (line.Length == 0) continue;
-                if (lines.Count == QuotedLogLines) lines.Dequeue();
-                lines.Enqueue(line);
-            }
-
+            var lines = log.LastStartupLines(path, process.StartedUtc - IProcessLiveness.StartTimeTolerance, QuotedLogLines);
             return lines.Count == 0 ? "" : $"{Environment.NewLine}The last lines of {path}:{string.Concat(lines.Select(line => $"{Environment.NewLine}  {line}"))}";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

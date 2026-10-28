@@ -98,7 +98,7 @@ public interface ICrashWarnings
 public sealed class RunBookkeeping(
     IRecordingLock recordingLock,
     IRunJournal journal,
-    RecorderLog log,
+    IRunLog log,
     IPowerRequests power,
     IPowerSource battery,
     ISessionEvents session,

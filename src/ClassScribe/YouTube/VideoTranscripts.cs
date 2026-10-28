@@ -60,7 +60,7 @@ public sealed class VideoTranscriptRun(
     TranscriptionProgress progress,
     UsageReport usage,
     IDriveAutoUpload drive,
-    RecorderLog log,
+    IRunLog log,
     ILogger<VideoTranscriptRun> logger)
 {
     /// <summary>Transcribes <paramref name="video"/>'s recording (see <see cref="IVideoTranscriber.TranscribeAsync"/>).</summary>
