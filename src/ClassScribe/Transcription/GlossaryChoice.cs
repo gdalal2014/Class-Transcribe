@@ -33,7 +33,7 @@ namespace ClassScribe.Transcription;
 /// <param name="elevenLabs">The run's ElevenLabs settings, for ElevenLabs:KeytermsFile and the glossary's limits.</param>
 /// <param name="time">The clock the record's times are written by.</param>
 /// <param name="logger">Where the glossary's line and its warnings go.</param>
-public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, IOptionsSnapshot<ElevenLabsOptions> elevenLabs, TimeProvider time, ILogger<GlossaryChoice> logger)
+public sealed class GlossaryChoice(IGlossaryFiles files, ISavedClasses classes, IOptionsSnapshot<ElevenLabsOptions> elevenLabs, TimeProvider time, ILogger<GlossaryChoice> logger)
 {
     /// <summary>The setting that names the glossary of every recording no class names one for.</summary>
     public const string SettingName = $"{ElevenLabsOptions.SectionName}:{nameof(ElevenLabsOptions.KeytermsFile)}";

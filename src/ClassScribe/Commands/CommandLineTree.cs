@@ -97,7 +97,7 @@ public enum CommandKind
 /// recordings folder is the default.
 /// </summary>
 public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand menu, IConsoleUi ui, TimeProvider time, TextWriter output, TextWriter errors,
-    Settings.SavedClasses? classes = null, Microsoft.Extensions.Options.IOptionsMonitor<Settings.RecordingOptions>? recording = null)
+    Settings.ISavedClasses? classes = null, Microsoft.Extensions.Options.IOptionsMonitor<Settings.RecordingOptions>? recording = null)
 {
     /// <summary>The exit code of a command line with a mistake in it.</summary>
     public const int Mistake = 2;
@@ -805,7 +805,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         };
         if (choices.ApplyTo(fields) is { } mix) return Refuse(parsed, $"{mix}, over the saved class \"{entry.Name}\"");
 
-        var chosen = Settings.SavedClasses.Check(entry.Name, fields);
+        var chosen = Settings.SavedClass.Check(entry.Name, fields);
         if (chosen.Class is not { } ready)
             return Refuse(parsed, $"The saved class \"{entry.Name}\" cannot be used{(entry.Usable ? " with these options" : "")}: {string.Join(" ", chosen.Problems)}");
 

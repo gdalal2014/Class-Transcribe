@@ -339,7 +339,7 @@ public class ClassesMenuTests
         var set = (ClassRequest.Set)_changed.Single();
         var fields = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { [ClassFields.Course] = "Broken", [ClassFields.App] = "chrome", [ClassFields.Device] = "Speakers" };
         Assert.That(set.Choices.ApplyTo(fields), Is.Null);
-        Assert.That(SavedClasses.Check("Broken", fields).Class, Is.EqualTo(new SavedClass("Broken", "Broken", RecordingMode.Class, new ClassSource.Automatic(), null, null, null, true, null, null)));
+        Assert.That(SavedClass.Check("Broken", fields).Class, Is.EqualTo(new SavedClass("Broken", "Broken", RecordingMode.Class, new ClassSource.Automatic(), null, null, null, true, null, null)));
     }
 
     /// <summary>D and a number removes the class after Y, and keeps it for any other key.</summary>

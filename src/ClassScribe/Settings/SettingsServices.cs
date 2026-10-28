@@ -23,8 +23,10 @@ public static class SettingsServices
         services.AddSingleton<IOutputFolderFacts>(_ => new OutputFolderFacts());
         services.AddSingleton<SettingsCheck>();
 
-        // The saved classes, read from the settings in force at each use, as the gate last accepted them.
+        // The saved classes, read from the settings in force at each use, as the gate last accepted them; the use cases and
+        // the window's menus take them through their port (architecture 4.3).
         services.AddSingleton<SavedClasses>();
+        services.AddSingleton<ISavedClasses>(provider => provider.GetRequiredService<SavedClasses>());
         return services;
     }
 

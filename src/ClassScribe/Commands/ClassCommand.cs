@@ -96,7 +96,7 @@ public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, S
     public static string? NameProblem(string name) =>
         name.Length == 0 ? "A saved class needs a name, such as \"Mantiq\"."
         : FolderNames.SafeName(name) != name ? $"\"{name}\" cannot be a class's name: it holds characters Windows does not allow in a folder's name (\\ / : * ? \" < > |), or spaces or dots at its end."
-        : name.Length > SavedClasses.LongestName ? $"\"{name}\" is {name.Length} characters long; a class's name may be at most {SavedClasses.LongestName}."
+        : name.Length > SavedClass.LongestName ? $"\"{name}\" is {name.Length} characters long; a class's name may be at most {SavedClass.LongestName}."
         : null;
 
     /// <summary>class list: a line per saved class, what it records or why it cannot be used; or JSON alone.</summary>
@@ -357,7 +357,7 @@ public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, S
     /// <summary>What the class <paramref name="name"/> with <paramref name="fields"/> records, in words; or why it cannot be used.</summary>
     private static string Describe(string name, Dictionary<string, string?> fields)
     {
-        var entry = SavedClasses.Check(name, fields);
+        var entry = SavedClass.Check(name, fields);
         return entry.Class?.Describe() ?? string.Join(" ", entry.Problems);
     }
 

@@ -40,7 +40,7 @@ public sealed class MenuCommand(
     IDesktop desktop,
     TimeProvider time,
     ILogger<MenuCommand> logger,
-    SavedClasses? classes = null,
+    ISavedClasses? classes = null,
     SettingsWriter? writer = null,
     Transcription.IGlossaryFiles? glossaries = null)
 {

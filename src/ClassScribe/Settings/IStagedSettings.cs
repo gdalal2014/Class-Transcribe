@@ -23,7 +23,7 @@ public interface IStagedSettings : IDisposable
     /// <summary>What the check would warn about.</summary>
     IReadOnlyList<string> Warnings { get; }
 
-    /// <summary>The saved classes the file holds, each checked on its own (see <see cref="SavedClassEntry"/>); none when it cannot be read.</summary>
+    /// <summary>The saved classes the file holds, each checked on its own (see <see cref="SavedClass.Check"/>); none when it cannot be read.</summary>
     IReadOnlyList<SavedClassEntry> Classes { get; }
 
     /// <summary>Why the saved class <paramref name="name"/> cannot be used, in any case; empty when it can, or is not there.</summary>

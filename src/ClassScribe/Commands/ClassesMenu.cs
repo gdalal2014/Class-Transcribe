@@ -26,7 +26,7 @@ namespace ClassScribe.Commands;
 /// <param name="ui">The window the questions are asked in.</param>
 /// <param name="time">The clock a new run's id is stamped with.</param>
 /// <param name="cameras">The cameras, for the camera question in person; null asks none.</param>
-public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICommandRunner commands, IClassFolders folders, ILoopbackCaptureProvider devices,
+public sealed class ClassesMenu(ISavedClasses classes, SettingsPlaces places, ICommandRunner commands, IClassFolders folders, ILoopbackCaptureProvider devices,
     IMicrophoneProvider microphones, IConsoleUi ui, TimeProvider time, ICameraProvider? cameras = null)
 {
     /// <summary>How many entries a list offers, so that one digit picks one.</summary>

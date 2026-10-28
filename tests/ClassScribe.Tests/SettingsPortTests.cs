@@ -1,4 +1,5 @@
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -230,9 +231,54 @@ public class SettingsPortTests
     }
 
     /// <summary>
+    /// The saved classes through their port over the real adapter (<see cref="ISavedClasses"/> over <see cref="SavedClasses"/>):
+    /// every class as the settings in force hold it, checked on its own, in the order of their names; found by name in any
+    /// case and never by a prefix; the classes a typed name may mean, by name or by course; a class's fields as the settings
+    /// hold them; and, for a class the settings in force lack, the file as it is now, or nothing while it cannot be read.
+    /// </summary>
+    [Test]
+    public void The_saved_classes_are_read_from_the_settings_in_force_and_from_the_file()
+    {
+        Store.Change("three classes", document =>
+        {
+            document.Set("Classes:Mantiq:Course", "Mantiq");
+            document.Set("Classes:Mantiq:App", "chrome");
+            document.Set("Classes:Kalam (Zoom):Course", "Kalam");
+            document.Set("Classes:Kalam (Zoom):App", "zoom");
+            document.Set("Classes:Broken:Course", "Broken");
+            document.Set("Classes:Broken:App", "zoom");
+            document.Set("Classes:Broken:Device", "Speakers");
+            return SettingsEdit.Changed("saved");
+        });
+        ISavedClasses classes = new SavedClasses(_files.Configuration, _files.SettingsFile, _files.Reloader, NullLogger<SavedClasses>.Instance);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(classes.All().Select(entry => (entry.Name, entry.Usable)), Is.EqualTo(new[] { ("Broken", false), ("Kalam (Zoom)", true), ("Mantiq", true) }));
+            Assert.That(classes.Find(" mantiq ")?.Class?.Source, Is.EqualTo(new ClassSource.App("chrome")));
+            Assert.That(classes.Find("Broken")?.Problems, Is.EqualTo(new[] { "App and Device are both set; a class records one app or one output device." }));
+            Assert.That(classes.Find("Kalam"), Is.Null, "exactly, never by a prefix");
+            Assert.That(classes.Matching("KALAM").Select(entry => entry.Name), Is.EqualTo(new[] { "Kalam (Zoom)" }), "by its course");
+            Assert.That(classes.Matching("mantiq").Select(entry => entry.Name), Is.EqualTo(new[] { "Mantiq" }), "by its name");
+            Assert.That(classes.Matching("Nobody"), Is.Empty);
+            Assert.That(classes.FieldsOf("MANTIQ"), Is.EqualTo(new Dictionary<string, string?> { ["Course"] = "Mantiq", ["App"] = "chrome" }));
+            Assert.That(classes.FieldsOf("Nobody"), Is.Null);
+        });
+
+        _files.WriteUser("""{ "Classes": { "Risala": { "Course": "Risala" } } }""");
+        Assert.That(classes.Find("Risala"), Is.Null, "the settings in force have not read the file again");
+        Assert.That(classes.FindInFile(" risala ")?.Class?.Course, Is.EqualTo("Risala"), "the file as it is now");
+        Assert.That(classes.FindInFile("Mantiq"), Is.Null, "gone from the file");
+        _files.WriteUser("{ not json");
+        Assert.That(classes.FindInFile("Risala"), Is.Null, "a file that is not valid JSON");
+        Assert.That(new SavedClasses(_files.Configuration).FindInFile("Risala"), Is.Null, "no file to read, as in most tests");
+    }
+
+    /// <summary>
     /// The window's host resolves the port to one store for the process, over the writer and the reloader the host itself
     /// holds: a change through it reaches the settings every part reads. The recorder's host has no store, as it has no
-    /// writer: a recorder records with the snapshot its window handed over.
+    /// writer: a recorder records with the snapshot its window handed over. Both resolve the saved classes' port to the
+    /// adapter they hold.
     /// </summary>
     [Test]
     public void The_window_resolves_the_store_over_its_own_adapters_and_the_recorder_has_none()
@@ -253,5 +299,7 @@ public class SettingsPortTests
         Assert.That(window.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>().CurrentValue.FlushSeconds, Is.EqualTo(7), "written and reloaded through the host's own writer and reloader");
         Assert.That(window.Services.GetRequiredService<SettingsReloader>().Last!.Path, Is.EqualTo(places.UserFile));
         Assert.That(recorder.Services.GetService<ISettingsStore>(), Is.Null, "a recorder never writes the settings");
+        foreach (var (name, services) in new[] { ("the window", window.Services), ("the recorder", recorder.Services) })
+            Assert.That(services.GetRequiredService<ISavedClasses>(), Is.SameAs(services.GetRequiredService<SavedClasses>()), $"{name}: the saved classes");
     }
 }

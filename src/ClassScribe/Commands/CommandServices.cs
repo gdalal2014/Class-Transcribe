@@ -58,7 +58,7 @@ public static class CommandServices
             provider.GetRequiredService<TimeProvider>(),
             Console.Out,
             Console.Error,
-            provider.GetRequiredService<Settings.SavedClasses>(),
+            provider.GetRequiredService<Settings.ISavedClasses>(),
             provider.GetRequiredService<IOptionsMonitor<Settings.RecordingOptions>>()));
         services.AddTransient<App>();
         return services;
