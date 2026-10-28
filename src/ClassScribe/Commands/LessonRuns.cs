@@ -26,10 +26,11 @@ public static class LessonRuns
 
     /// <summary>
     /// True when <paramref name="run"/>'s lesson has its video still to make, by its files, and nothing is making it now: pieces
-    /// without a video, or a piece newer than the video (see <see cref="ClassFolders.LessonVideoStateOf"/>).
+    /// without a video, or a piece newer than the video (see <see cref="IClassFolders.LessonVideoStateOf"/>), read through
+    /// <paramref name="folders"/>.
     /// </summary>
-    public static bool VideoNotMade(RunRecord run) =>
-        IsLesson(run) && FilesOf(run) is { } files && ClassFolders.LessonVideoStateOf(files) == LessonVideoState.NotMade && !ClassFolders.IsLessonVideoBeingMade(files);
+    public static bool VideoNotMade(RunRecord run, IClassFolders folders) =>
+        IsLesson(run) && FilesOf(run) is { } files && folders.LessonVideoStateOf(files) == LessonVideoState.NotMade && !folders.IsLessonVideoBeingMade(files);
 
     /// <summary>The command that makes <paramref name="run"/>'s lesson video, free, by one of its files.</summary>
     public static string FinishVideoCommand(RunRecord run) =>

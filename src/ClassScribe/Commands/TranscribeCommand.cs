@@ -47,7 +47,8 @@ public sealed record TranscribeRequest(string Path, string? OutputRoot = null, b
 public sealed class TranscribeCommand(
     TranscriptionWorkflow workflow,
     UsageReport usage,
-    ClassFolders folders,
+    IClassFolders folders,
+    IFileProbe probe,
     IUserSignals signals,
     IDesktop desktop,
     IPowerRequests power,
@@ -68,10 +69,10 @@ public sealed class TranscribeCommand(
         // Nothing is recording here, so the first Ctrl+C should already cancel the upload.
         signals.RequestStop();
 
-        var fullPath = Path.GetFullPath(request.Path);
-        if (Directory.Exists(fullPath)) return await TranscribeFolderAsync(fullPath, request);
+        var fullPath = probe.FullPath(request.Path);
+        if (probe.DirectoryExists(fullPath)) return await TranscribeFolderAsync(fullPath, request);
 
-        if (File.Exists(fullPath))
+        if (probe.FileExists(fullPath))
         {
             // A recording with audio of either track: the class's .wav files, or your microphone's .mic.wav files alone when the class could not be recorded.
             var recorded = RecordingFiles.TryParse(fullPath);
@@ -94,14 +95,14 @@ public sealed class TranscribeCommand(
 
     /// <summary>
     /// Transcribes the recording started last in <paramref name="folder"/> and its date folders (see
-    /// <see cref="ClassFolders.FindNewest"/>): for a course's folder the newest class in either layout, for a date folder
+    /// <see cref="IClassFolders.FindNewest"/>): for a course's folder the newest class in either layout, for a date folder
     /// its own. When the newest is one whose audio is on Google Drive alone, that is said, rather than an older one sent in
     /// its place. The folder's other recordings without a transcript are named before anything is sent and again once the
     /// transcript is saved, so that none is missed: a class split by a crash, for one, is two recordings.
     /// </summary>
     private async Task<int> TranscribeFolderAsync(string folder, TranscribeRequest request)
     {
-        var newest = ClassFolders.FindNewest(folder);
+        var newest = folders.FindNewest(folder);
         if (folders.NewestWithAudioOnDriveIn(folder) is { } onDrive && (newest is null || onDrive.Files.StartedUtc > newest.StartedUtc))
         {
             SayAudioIsOnDrive(onDrive.Files, onDrive.Audio);
@@ -175,7 +176,7 @@ public sealed class TranscribeCommand(
     /// </summary>
     private bool Refuses(RecordingFiles files, TranscribeRequest request)
     {
-        if (ClassFolders.IsBeingWritten(files))
+        if (folders.IsBeingWritten(files))
         {
             logger.LogError("{Recording} is being recorded now; transcribe it once it has stopped", files.BaseName);
             return true;

@@ -24,18 +24,18 @@ public sealed record FreedAudio(RecordingFiles Files, IReadOnlyList<string> Dele
 /// so the recording counts as done and safe on Drive, never as waiting. A lesson's camera pieces go too once its finished
 /// video's copy on Drive is checked the same way (amendment 47: they are kept for Drive only while the video goes there),
 /// only those the video holds (none newer than it), and never the finished video itself. A lesson whose video is still to
-/// be made (see <see cref="ClassFolders.LessonVideoStateOf"/>), as a continued lesson's whose newest part has a piece newer
+/// be made (see <see cref="IClassFolders.LessonVideoStateOf"/>), as a continued lesson's whose newest part has a piece newer
 /// than its video, keeps everything while its sound is here: making the video needs both (see <see cref="VideoStillToMake"/>).
 /// One per run.
 /// </summary>
-public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, TimeProvider time, ILogger<LocalAudioFreer> logger)
+public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, IClassFolders folders, TimeProvider time, ILogger<LocalAudioFreer> logger)
 {
     /// <summary>ERROR_SHARING_VIOLATION as an HRESULT: another program holds the file in a way that does not allow this open.</summary>
     private const int SharingViolation = unchecked((int)0x80070020);
 
     /// <summary>
     /// Why nothing of the lesson <paramref name="files"/> is freed while its video is still to be made (a camera's piece
-    /// without a video, or newer than it, see <see cref="ClassFolders.LessonVideoStateOf"/>): making it needs both its sound and
+    /// without a video, or newer than it, see <see cref="IClassFolders.LessonVideoStateOf"/>): making it needs both its sound and
     /// its pieces. Names the command that makes it, free.
     /// </summary>
     public static string VideoStillToMake(RecordingFiles files) =>
@@ -52,7 +52,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     {
         if (uploads.Busy(files) is { } busy) return Refuse(files, $"{files.BaseName} {busy}, so none of its audio was deleted.");
         if (UploadCopyInUse(files)) return Refuse(files, $"{files.BaseName} is being transcribed now, so none of its audio was deleted.");
-        if (ClassFolders.LessonVideoStateOf(files) == LessonVideoState.NotMade && (files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0))
+        if (folders.LessonVideoStateOf(files) == LessonVideoState.NotMade && (files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0))
             return Refuse(files, VideoStillToMake(files));
 
         var manifest = manifests.Read(files);
@@ -73,7 +73,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
 
         // A YouTube video's audio that YouTube:DriveUpload keeps off Drive was never sent: it is not on Drive to free, and
         // that is no refusal, since the video can be fetched again.
-        if (ClassFolders.IsVideo(files) && !uploads.SendsAudio(files) && !audio.Any(path => manifest?.File(Path.GetFileName(path)) is { IsVerified: true }))
+        if (folders.IsVideo(files) && !uploads.SendsAudio(files) && !audio.Any(path => manifest?.File(Path.GetFileName(path)) is { IsVerified: true }))
         {
             logger.LogInformation(
                 "{Recording} is a YouTube video's recording; its audio is not on Drive (YouTube:DriveUpload), so it stays. Delete it by hand if you need the room; the video can be fetched again.",
@@ -106,7 +106,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         foreach (var (path, entry) in checkedFiles)
         {
             var size = new FileInfo(path).Length;
-            var seconds = entry.Seconds ?? ClassFolders.MeasureSegment(path).TotalSeconds;
+            var seconds = entry.Seconds ?? folders.MeasureSegment(path).TotalSeconds;
             try
             {
                 File.Delete(path);

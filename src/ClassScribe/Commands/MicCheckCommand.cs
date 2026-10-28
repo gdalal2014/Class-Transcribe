@@ -26,7 +26,7 @@ namespace ClassScribe.Commands;
 /// <param name="time">The clock: the interval, the time of day on the lines, and the gaps between looks.</param>
 /// <param name="logger">The app's log; what Gulzar reads goes to the window and the check's own file.</param>
 public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsageRecord record, IProcessNames names, IOwnProcesses own,
-    ClassFolders folders, IConsoleUi ui, IWindowSignals window, IUserSignals signals, TimeProvider time, ILogger<MicCheckCommand> logger) : IMicCheckRun
+    IClassFolders folders, IConsoleUi ui, IWindowSignals window, IUserSignals signals, TimeProvider time, ILogger<MicCheckCommand> logger) : IMicCheckRun
 {
     /// <summary>The time between two looks: the longest a change can go unseen, as MicWatch had it.</summary>
     public static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(250);
@@ -60,7 +60,7 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
     /// </summary>
     public async Task<int> RunAsync(MicCheckRequest request, CancellationToken cancellationToken)
     {
-        var folder = string.IsNullOrWhiteSpace(request.LogFolder) ? Path.Combine(folders.Root, FolderNames.MicCheck) : ClassFolders.RootFor(request.LogFolder);
+        var folder = string.IsNullOrWhiteSpace(request.LogFolder) ? Path.Combine(folders.Root, FolderNames.MicCheck) : folders.RootFor(request.LogFolder);
         var started = Now();
         MicCheckLog log;
         try

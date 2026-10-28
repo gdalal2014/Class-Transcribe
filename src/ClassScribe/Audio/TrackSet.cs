@@ -114,13 +114,14 @@ public sealed record MicrophoneTrack(RecordingSession Session, MicrophoneSource 
 /// <param name="classTrack">The class's session, on the main track; null in person.</param>
 /// <param name="microphone">Your microphone's track: beside the class, or the main track in person; null when the class is recorded alone, which a track set never is.</param>
 /// <param name="freezes">Finds the times ClassScribe did not run, which are cut out of the clock.</param>
+/// <param name="folders">The recordings' library: how much a track already holds on disk when the run continues a recording.</param>
 /// <param name="logger">The log.</param>
 /// <param name="camera">
 /// Starts the lesson's camera track into the recording's files at the run's offset, on the clock; null for a recording
 /// without the camera's picture.
 /// </param>
 /// <param name="time">The clock the wait for the camera's stop is timed on; the system's when none is given.</param>
-public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack, MicrophoneTrack? microphone, FreezeWatch freezes, ILogger<TrackSet> logger,
+public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack, MicrophoneTrack? microphone, FreezeWatch freezes, IClassFolders folders, ILogger<TrackSet> logger,
     Func<RecordingFiles, TimeSpan, RecordingClock, Camera.ICameraTrack>? camera = null, TimeProvider? time = null)
     : IRecording, IMicrophoneRecording, ICameraRecording
 {
@@ -582,8 +583,8 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
     }
 
     /// <summary>How much <paramref name="track"/> already holds on disk when the run continues a recording at <paramref name="offset"/>; zero for a new recording.</summary>
-    private static TimeSpan LengthOnDisk(RecordingFiles files, Track track, TimeSpan offset) =>
-        offset > TimeSpan.Zero ? files.FindSegments(track).Aggregate(TimeSpan.Zero, (length, segment) => length + ClassFolders.MeasureSegment(segment)) : TimeSpan.Zero;
+    private TimeSpan LengthOnDisk(RecordingFiles files, Track track, TimeSpan offset) =>
+        offset > TimeSpan.Zero ? folders.TrackLength(files, track) : TimeSpan.Zero;
 
     /// <summary>Stops the running sessions in parallel, each padded to <paramref name="end"/>, and returns what each recorded: the main track's, and the track beside it when there is one.</summary>
     private (RecordingResult Main, RecordingResult? Second) StopTracks(TimeSpan end)

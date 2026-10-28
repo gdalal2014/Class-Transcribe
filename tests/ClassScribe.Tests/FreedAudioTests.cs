@@ -61,7 +61,7 @@ public class FreedAudioTests
     private TranscribeCommand Transcribe()
     {
         var folders = _world.ClassFolders();
-        return new TranscribeCommand(Workflow(folders), new UsageReport(new FakeElevenLabsAccount(), _world.Time, NullLogger<UsageReport>.Instance), folders, new FakeUserSignals(),
+        return new TranscribeCommand(Workflow(folders), new UsageReport(new FakeElevenLabsAccount(), _world.Time, NullLogger<UsageReport>.Instance), folders, new FileProbe(), new FakeUserSignals(),
             new Mock<IDesktop>().Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), _world.Recording, TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test" }),
             ZonedTimeProvider.EasternSummer, _transcribeLog);
     }
@@ -128,7 +128,7 @@ public class FreedAudioTests
     public async Task Rebuilding_a_freed_class_works_from_its_saved_answer()
     {
         var folders = _world.ClassFolders();
-        var rebuild = new RebuildCommand(Workflow(folders), folders, new Mock<IDesktop>().Object, new FakeDriveAutoUpload(), _world.Recording, NullLogger<RebuildCommand>.Instance);
+        var rebuild = new RebuildCommand(Workflow(folders), folders, new FileProbe(), new Mock<IDesktop>().Object, new FakeDriveAutoUpload(), _world.Recording, NullLogger<RebuildCommand>.Instance);
 
         Assert.That(await rebuild.RunAsync(_mantiq.Folder, open: false), Is.EqualTo(0));
 

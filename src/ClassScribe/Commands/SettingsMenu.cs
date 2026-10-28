@@ -21,7 +21,7 @@ namespace ClassScribe.Commands;
 /// <param name="commands">Runs settings open.</param>
 /// <param name="ui">The window the questions are asked in.</param>
 /// <param name="time">The clock, for the date of the next class in the preview.</param>
-public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, ClassFolders folders, IOptionsSnapshot<RecordingOptions> recording, SettingsReloader reloader,
+public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, IClassFolders folders, IOptionsSnapshot<RecordingOptions> recording, SettingsReloader reloader,
     ICommandRunner commands, IConsoleUi ui, TimeProvider time)
 {
     /// <summary>Shows the screen and does what is picked. Returns the exit code, 0.</summary>
@@ -77,7 +77,7 @@ public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, C
         }
 
         // Taken as Recording:OutputFolder takes a path: a relative one from the user's folder, not the window's current one.
-        var folder = ClassFolders.RootFor(typed);
+        var folder = folders.RootFor(typed);
         var course = folders.ListRecent(1).FirstOrDefault()?.Files.Name ?? "Mantiq";
         ui.WriteLine($"The next class of {course} would go to {Path.Combine(folder, course, FolderNames.DateFolderName(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(time.GetUtcNow(), time.LocalTimeZone).DateTime)))}.");
 

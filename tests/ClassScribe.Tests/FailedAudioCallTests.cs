@@ -411,6 +411,7 @@ public sealed class FailedAudioCallTests
     private TrackSetFactory Factory(ILoopbackCaptureProvider loopback, IMicrophoneSessions sessions, FakeMicrophoneProvider? microphones = null, RecordingOptions? options = null,
         FakeMicrophoneUsageRecord? record = null) =>
         new(loopback, microphones ?? new FakeMicrophoneProvider(), sessions, record ?? new FakeMicrophoneUsageRecord(), new FakeProcessNames(), new FakeOwnProcesses(Laptop.OwnProcess),
+            new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance),
             new FreezeWatch(new FakeSystemTimes(_time), _time, NullLogger<FreezeWatch>.Instance), TestOptions.Create(options ?? new RecordingOptions()),
             TestOptions.Create(new TranscriptOptions()), _time, _logs);
 

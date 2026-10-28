@@ -20,7 +20,7 @@ public sealed class YouTubeMenuMemory
 /// stream's link, which only D takes; the rest go on. The recordings folder is Recording:OutputFolder, as for the menu's
 /// classes.
 /// </summary>
-public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.ClassFolders folders, YouTubeMenuMemory memory, Transcription.GlossaryChoice glossaries,
+public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.IClassFolders folders, YouTubeMenuMemory memory, Transcription.GlossaryChoice glossaries,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs)
 {
     /// <summary>Asks for the batch and runs it. Returns the exit code; 0 when Esc went back.</summary>

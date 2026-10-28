@@ -4,6 +4,7 @@ using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -24,6 +25,7 @@ namespace ClassScribe.Audio;
 /// <param name="usage">Reads Windows' microphone usage record, for the watch.</param>
 /// <param name="names">Names processes, for the watch.</param>
 /// <param name="own">Tells ClassScribe's own processes, whose microphone sessions never count as an app's.</param>
+/// <param name="folders">The recordings' library, for how much a track already holds on disk when the run continues a recording.</param>
 /// <param name="freezes">The run's watch for times ClassScribe did not run, which the recording clock cuts out.</param>
 /// <param name="options">The run's recording settings.</param>
 /// <param name="transcript">The run's transcript settings: how long a stretch with nothing playing must be for a heading, in a recording of the class alone.</param>
@@ -49,6 +51,7 @@ public sealed class TrackSetFactory(
     IMicrophoneUsageRecord usage,
     IProcessNames names,
     IOwnProcesses own,
+    IClassFolders folders,
     FreezeWatch freezes,
     IOptionsSnapshot<RecordingOptions> options,
     IOptionsSnapshot<TranscriptOptions> transcript,
@@ -91,10 +94,10 @@ public sealed class TrackSetFactory(
             case RecordingMode.ClassAndMicrophone:
                 var rule = FollowRuleFor(source, settings);
                 var theClass = ClassSession(source, new TrackSpec(Track.Main, TrackPlacement.ClockAligned), clock);
-                return new TrackSet(clock, theClass, MicrophoneTrack(source, Track.Microphone, rule, settings, clock), freezes, loggers.CreateLogger<TrackSet>(), time: time);
+                return new TrackSet(clock, theClass, MicrophoneTrack(source, Track.Microphone, rule, settings, clock), freezes, folders, loggers.CreateLogger<TrackSet>(), time: time);
 
             case RecordingMode.Microphone:
-                return new TrackSet(clock, classTrack: null, MicrophoneTrack(source, Track.Main, follows: null, settings, clock), freezes, loggers.CreateLogger<TrackSet>(),
+                return new TrackSet(clock, classTrack: null, MicrophoneTrack(source, Track.Main, follows: null, settings, clock), freezes, folders, loggers.CreateLogger<TrackSet>(),
                     CameraFor(source, settings), time);
 
             default:

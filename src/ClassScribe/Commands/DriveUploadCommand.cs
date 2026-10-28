@@ -1,3 +1,4 @@
+using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -17,7 +18,7 @@ namespace ClassScribe.Commands;
 /// asked for is done; 1 when something failed, or waits, or there was nothing to take; a cancel (Esc, Ctrl+C) is let through,
 /// for App to turn into 130, with everything left waiting. Nothing records here, so a first Ctrl+C cancels. One per run.
 /// </summary>
-public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer freer, IUserSignals signals, ILogger<DriveUploadCommand> logger)
+public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer freer, IClassFolders folders, IFileProbe probe, IUserSignals signals, ILogger<DriveUploadCommand> logger)
 {
     /// <summary>
     /// Uploads the recordings <paramref name="path"/> names, then the rest of the queue whose next try is due; with no path,
@@ -77,27 +78,27 @@ public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer fre
     /// </summary>
     private IReadOnlyList<RecordingFiles> RecordingsAt(string path, string doing)
     {
-        var fullPath = Path.GetFullPath(path);
-        if (File.Exists(fullPath))
+        var fullPath = probe.FullPath(path);
+        if (probe.FileExists(fullPath))
         {
-            if (RecordingFiles.TryParse(fullPath) is { } recording) return [recording with { Folder = ClassFolders.AsOnDisk(recording.Folder) }];
+            if (RecordingFiles.TryParse(fullPath) is { } recording) return [recording with { Folder = folders.AsOnDisk(recording.Folder) }];
 
             logger.LogError("{File} is not a file of a ClassScribe recording, so there is nothing {Doing} from it", fullPath, doing);
             return [];
         }
 
-        if (!Directory.Exists(fullPath))
+        if (!probe.DirectoryExists(fullPath))
         {
             logger.LogError("Nothing found at {Path}", fullPath);
             return [];
         }
 
-        var folder = ClassFolders.AsOnDisk(fullPath);
-        var here = ClassFolders.RecordingsByAnyFileIn(folder);
-        var inFolders = Directory.EnumerateDirectories(folder)
+        var folder = folders.AsOnDisk(fullPath);
+        var here = folders.RecordingsByAnyFileIn(folder);
+        var inFolders = folders.FoldersIn(folder)
             .Order(StringComparer.OrdinalIgnoreCase)
             .Where(inner => !string.Equals(Path.GetFileName(inner), FolderNames.MicCheck, StringComparison.OrdinalIgnoreCase) && !FolderNames.IsDateFolder(Path.GetFileName(inner)))
-            .Select(inner => (Folder: inner, Recordings: ClassFolders.RecordingsByAnyFileIn(inner)))
+            .Select(inner => (Folder: inner, Recordings: folders.RecordingsByAnyFileIn(inner)))
             .ToList();
 
         // A course's, a class's or an old flat folder: its own recordings, its other folders, as of slides, passed over.
@@ -121,7 +122,7 @@ public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer fre
     /// </summary>
     private void SayLeftAtTop(RecordingFiles files, string folder)
     {
-        var names = Directory.EnumerateFiles(folder, $"{files.BaseName}*")
+        var names = folders.FilesIn(folder)
             .Where(path => string.Equals(RecordingFiles.TryParse(path)?.BaseName, files.BaseName, StringComparison.OrdinalIgnoreCase))
             .Select(Path.GetFileName)
             .Order(StringComparer.OrdinalIgnoreCase)

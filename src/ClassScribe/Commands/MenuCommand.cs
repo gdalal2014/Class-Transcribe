@@ -31,7 +31,7 @@ public sealed class MenuCommand(
     RunGate gate,
     SettingsFile settings,
     IOptionsMonitor<ElevenLabsOptions> elevenLabs,
-    ClassFolders folders,
+    IClassFolders folders,
     ILoopbackCaptureProvider devices,
     SourceChoice choice,
     RecordingNamePrompt prompt,
@@ -70,7 +70,7 @@ public sealed class MenuCommand(
     /// A menu without the report at the start, for the callers that do not pass one yet: it reports nothing and never
     /// finds a recording in progress (see <see cref="NoStartupReport"/>). The container uses the other constructor.
     /// </summary>
-    internal MenuCommand(ICommandRunner commands, IConsoleUi ui, RunGate gate, SettingsFile settings, IOptionsMonitor<ElevenLabsOptions> elevenLabs, ClassFolders folders,
+    internal MenuCommand(ICommandRunner commands, IConsoleUi ui, RunGate gate, SettingsFile settings, IOptionsMonitor<ElevenLabsOptions> elevenLabs, IClassFolders folders,
         ILoopbackCaptureProvider devices, SourceChoice choice, RecordingNamePrompt prompt, IDesktop desktop, TimeProvider time, ILogger<MenuCommand> logger)
         : this(commands, new NoStartupReport(), ui, gate, settings, elevenLabs, folders, devices, choice, prompt, desktop, time, logger)
     {
@@ -452,7 +452,7 @@ public sealed class MenuCommand(
             if (offer.Back) return;
             if (offer.Class is { } saved)
             {
-                var root = saved.OutputFolder is { } own ? ClassFolders.RootFor(own) : folders.Root;
+                var root = saved.OutputFolder is { } own ? folders.RootFor(own) : folders.Root;
                 await commands.RecordAsync(new RecordRequest(RunIds.New(time.GetUtcNow()), saved.Course, transcribe, saved.Plan, root, ContinueChoice.Ask,
                     ContinueBaseName: null, Minutes: null, Open: true, ClassName: saved.Name), StartOrigin.Menu);
                 return;
@@ -714,7 +714,7 @@ public sealed class MenuCommand(
         var fullPath = Path.GetFullPath(path);
         if (Directory.Exists(fullPath))
         {
-            var newest = ClassFolders.FindNewest(fullPath);
+            var newest = folders.FindNewest(fullPath);
             return folders.NewestWithAudioOnDriveIn(fullPath) is { } onDrive && (newest is null || onDrive.Files.StartedUtc > newest.StartedUtc) ? onDrive.Files : newest;
         }
 

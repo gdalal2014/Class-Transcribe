@@ -5,7 +5,7 @@ namespace ClassScribe.Storage;
 /// <summary>A recording, as the menu and the list command list it.</summary>
 /// <param name="Files">The recording's files.</param>
 /// <param name="LastRecordedUtc">When audio was last written to it, on either track.</param>
-/// <param name="Length">Length of the recording: that of its longest track, every segment read to its end (see <see cref="ClassFolders.LengthOnDisk"/>).</param>
+/// <param name="Length">Length of the recording: that of its longest track, every segment read to its end (see <c>IClassFolders.LengthOnDisk</c>).</param>
 /// <param name="HasTranscript">True when it has been transcribed at least once.</param>
 /// <param name="KeptAnswer">
 /// The newest answer ElevenLabs was paid for that did not become a transcript (see
@@ -13,7 +13,7 @@ namespace ClassScribe.Storage;
 /// </param>
 /// <param name="BeingWritten">
 /// True while it is being recorded, in this window or another: a recorder still writes the newest segment of one of its
-/// tracks (see <see cref="ClassFolders.IsBeingWritten"/>). It is not transcribed until it has stopped.
+/// tracks (see <c>IClassFolders.IsBeingWritten</c>). It is not transcribed until it has stopped.
 /// </param>
 /// <param name="Parts">
 /// How many parts it was made in: one, and one more for each time it was taken up again after it stopped, as its resume
@@ -29,7 +29,7 @@ namespace ClassScribe.Storage;
 /// The YouTube video it is the recording of, from its source file (see <see cref="RecordingFiles.Source"/>); null for a
 /// class's recording, and for a video's whose source file cannot be read.
 /// </param>
-/// <param name="LessonVideo">What its files say of a lesson's finished video (see <see cref="ClassFolders.LessonVideoStateOf"/>): none for a recording without the camera.</param>
+/// <param name="LessonVideo">What its files say of a lesson's finished video (see <c>IClassFolders.LessonVideoStateOf</c>): none for a recording without the camera.</param>
 public sealed record RecordedClass(RecordingFiles Files, DateTime LastRecordedUtc, TimeSpan Length, bool HasTranscript, string? KeptAnswer, bool BeingWritten,
     int Parts = 1, bool HasMicrophone = false, AudioOnDrive? OnDrive = null, VideoSource? Video = null, LessonVideoState LessonVideo = LessonVideoState.None);
 
@@ -53,10 +53,10 @@ public enum LessonVideoState
 /// <summary>
 /// A recording that a new run of the same name may continue as its next part, because it stopped recently with neither a
 /// transcript nor an answer from ElevenLabs paid for, as after a crash, a closed window or a restart (see
-/// <see cref="ClassFolders.FindContinuable"/>).
+/// <c>IClassFolders.FindContinuable</c>).
 /// </summary>
 /// <param name="Files">The recording's files, which the run that continues it writes into.</param>
-/// <param name="Length">Its length on disk (see <see cref="ClassFolders.LengthOnDisk"/>): where the run that continues it starts.</param>
+/// <param name="Length">Its length on disk (see <c>IClassFolders.LengthOnDisk</c>): where the run that continues it starts.</param>
 /// <param name="StoppedUtc">When its audio was last written, on either track.</param>
 /// <param name="Parts">How many parts it was made in so far (see <see cref="ClassMarks.PartsOf"/>).</param>
 public sealed record ContinueCandidate(RecordingFiles Files, TimeSpan Length, DateTimeOffset StoppedUtc, int Parts);

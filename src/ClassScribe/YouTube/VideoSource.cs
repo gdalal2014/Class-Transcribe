@@ -9,7 +9,7 @@ public sealed record VideoPlaylist(string Id, string? Title, int Position);
 /// <summary>
 /// A video's source file, &lt;base&gt;.source.json beside its recording (design 2.3): what the video is, where it came from,
 /// how its audio was obtained and on whose word, and how the recording ended. A recording with one is a video's, which the
-/// class machinery never takes for a class (see <see cref="Storage.ClassFolders.IsVideo"/>), and whose transcript is headed
+/// class machinery never takes for a class (see <c>IClassFolders.IsVideo</c>), and whose transcript is headed
 /// by the video's title and link.
 /// </summary>
 /// <param name="Kind">Always <see cref="YouTubeKind"/>.</param>

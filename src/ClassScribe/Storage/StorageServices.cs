@@ -14,6 +14,9 @@ public static class StorageServices
     public static IServiceCollection AddStorage(this IServiceCollection services)
     {
         services.AddSingleton<ClassFolders>();
+
+        // The recordings' library as the use cases reach it: the same instance behind its port.
+        services.AddSingleton<IClassFolders>(provider => provider.GetRequiredService<ClassFolders>());
         services.AddSingleton<ClassMarks>();
         services.AddSingleton<IFreeSpace, FreeSpace>();
 

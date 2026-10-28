@@ -214,7 +214,7 @@ public partial class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance, video),
-            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
+            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new FileProbe(), _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
     }
 
     /// <summary>

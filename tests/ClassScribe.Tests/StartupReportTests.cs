@@ -78,7 +78,7 @@ public partial class StartupReportTests
 
     /// <summary>What the report reads of Google Drive's queue: the store, and the manifests in ClassScribe's own folder.</summary>
     private DriveQueueReport DriveQueue() =>
-        new(_store, Manifests(), _runtime.Journal, TestOptions.Create(new DriveOptions()), ZonedClock.Eastern(_runtime.Time));
+        new(_store, Manifests(), _runtime.Journal, new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), TestOptions.Create(new DriveOptions()), ZonedClock.Eastern(_runtime.Time));
 
     /// <summary>The upload manifests in ClassScribe's own folder.</summary>
     private UploadManifests Manifests() => new(_runtime.Folder, _runtime.Time, NullLogger<UploadManifests>.Instance);

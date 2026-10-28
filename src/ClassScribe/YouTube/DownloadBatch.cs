@@ -31,7 +31,7 @@ public sealed class DownloadBatch(
     IToolRunner tools,
     IBatchPace pace,
     DownloadedAudio audio,
-    ClassFolders classFolders,
+    IClassFolders classFolders,
     RecorderLog log,
     IDriveRoom driveRoom,
     IDriveAutoUpload drive,
@@ -114,7 +114,7 @@ public sealed class DownloadBatch(
         var (audioBytes, stagingBytes) = DownloadPlan.BytesOf([.. videos.Where(video => video.IsReady)]);
         var room = Room(request.OutputRoot, audioBytes, stagingBytes);
         var plan = DownloadPlan.Lines(videos, request.Links.Count, playlists, request.Transcribe, glossary, elevenLabs.Value, accountLine, room,
-            await DriveLineAsync(audioBytes, cancellationToken));
+            await DriveLineAsync(audioBytes, cancellationToken), classFolders);
         foreach (var line in plan) ui.WriteLine(line);
 
         if (request.Confirmation == BatchConfirmation.PlanOnly) return 0;
@@ -147,7 +147,7 @@ public sealed class DownloadBatch(
 
         var exitCode = Summarize(request, videos);
         var anythingNew = batchFolder is not null || videos.Any(video => video.Transcript is { Step: TranscriptStep.Transcribed });
-        batch.OpenCourse(anythingNew ? Path.Combine(ClassFolders.RootFor(request.OutputRoot), FolderNames.SafeName(request.Name)) : null, request.Open);
+        batch.OpenCourse(anythingNew ? Path.Combine(classFolders.RootFor(request.OutputRoot), FolderNames.SafeName(request.Name)) : null, request.Open);
         return exitCode;
     }
 

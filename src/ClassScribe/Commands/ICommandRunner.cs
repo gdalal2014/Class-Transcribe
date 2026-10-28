@@ -366,7 +366,7 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         if (!Has<RunJournal>()) return null;
 
         var fullPath = Path.GetFullPath(path);
-        var files = Directory.Exists(fullPath) ? ClassFolders.FindNewest(fullPath)
+        var files = Directory.Exists(fullPath) ? services.GetRequiredService<IClassFolders>().FindNewest(fullPath)
             : File.Exists(fullPath) ? RecordingFiles.TryParse(fullPath)
             : null;
         if (files is null) return null;

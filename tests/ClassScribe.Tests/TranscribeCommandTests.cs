@@ -85,7 +85,7 @@ public class TranscribeCommandTests
             usage,
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new TranscribeCommand(workflow, usage, folders, _signals, _desktop.Object, _power, _powerSource, _drive, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
+        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), _signals, _desktop.Object, _power, _powerSource, _drive, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
     }
 
     /// <summary>

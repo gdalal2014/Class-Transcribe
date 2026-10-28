@@ -22,7 +22,7 @@ public sealed record ContinueAnswer(bool GoBack, RecordingFiles? Continue, strin
 /// none and starts a new one; --new starts a new one without a word; neither starts a new one, with a line on how to
 /// continue the other one instead. Only a recording that may be continued is ever offered (see <see cref="Find"/>).
 /// </summary>
-public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, IConsoleUi ui, IOptionsSnapshot<RecordingOptions> recording,
+public sealed class ContinueQuestion(IClassFolders folders, RunJournal journal, IConsoleUi ui, IOptionsSnapshot<RecordingOptions> recording,
     TimeProvider time, ILogger<ContinueQuestion> logger)
 {
     /// <summary>
@@ -89,7 +89,7 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
         FindContinuable(folders, journal, name, mode, Within(), root, logger, ifUnreadable: "a new recording starts", camera);
 
     /// <summary>
-    /// The recording a new run of <paramref name="name"/> may continue: the one <see cref="ClassFolders.FindContinuable"/>
+    /// The recording a new run of <paramref name="name"/> may continue: the one <see cref="IClassFolders.FindContinuable"/>
     /// offers, the newest of the name, stopped no more than <paramref name="within"/> ago without a transcript, unless the
     /// run files hold it back, which see what the files cannot: a run that still owns it, recording, stopping or being
     /// transcribed, and a run that recorded it with other tracks, such as in person where this run records the class, both a
@@ -101,7 +101,7 @@ public sealed class ContinueQuestion(ClassFolders folders, RunJournal journal, I
     /// the camera is continued with it even when it holds no piece, the new part writing the first; when no run file of the
     /// recording is left, the camera's pieces decide.
     /// </summary>
-    internal static ContinueCandidate? FindContinuable(ClassFolders folders, RunJournal journal, string name, RecordingMode mode, TimeSpan within, string root,
+    internal static ContinueCandidate? FindContinuable(IClassFolders folders, RunJournal journal, string name, RecordingMode mode, TimeSpan within, string root,
         ILogger logger, string ifUnreadable, bool camera = false)
     {
         ContinueCandidate? candidate;

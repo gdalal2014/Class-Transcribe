@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -17,7 +18,8 @@ namespace ClassScribe.Commands;
 /// </summary>
 public sealed partial class RebuildCommand(
     TranscriptionWorkflow workflow,
-    ClassFolders folders,
+    IClassFolders folders,
+    IFileProbe probe,
     IDesktop desktop,
     IDriveAutoUpload drive,
     IOptionsSnapshot<RecordingOptions> recording,
@@ -32,10 +34,10 @@ public sealed partial class RebuildCommand(
     /// </summary>
     public async Task<int> RunAsync(string path, bool open)
     {
-        var fullPath = Path.GetFullPath(path);
+        var fullPath = probe.FullPath(path);
         RecordingFiles files;
         string? answer = null;
-        if (Directory.Exists(fullPath))
+        if (probe.DirectoryExists(fullPath))
         {
             if (FindInFolder(fullPath) is not { } found)
             {
@@ -45,7 +47,7 @@ public sealed partial class RebuildCommand(
 
             files = found;
         }
-        else if (File.Exists(fullPath))
+        else if (probe.FileExists(fullPath))
         {
             if (Recognise(fullPath) is not { } recognised)
             {
@@ -85,7 +87,7 @@ public sealed partial class RebuildCommand(
     /// <summary>
     /// The recording a folder stands for: the one started last among those with a saved answer, or, when none has one, the
     /// one started last. The recordings of a folder are those in it and in its date folders (see
-    /// <see cref="ClassFolders.RecordingFoldersIn"/>), so a course's folder stands for its recordings in both layouts and a
+    /// <see cref="IClassFolders.RecordingFoldersIn"/>), so a course's folder stands for its recordings in both layouts and a
     /// date folder for its own. A recording counts by any of its files, so one whose audio was deleted since counts, and
     /// so does one known only by an answer kept as unread, though that is no saved answer. Each recording started later
     /// than the one rebuilt is named with the reason it was passed over, so that the one rebuilt is not taken for it. Null
@@ -94,8 +96,8 @@ public sealed partial class RebuildCommand(
     /// </summary>
     private RecordingFiles? FindInFolder(string folder)
     {
-        var found = ClassFolders.RecordingFoldersIn(folder)
-            .SelectMany(Directory.EnumerateFiles)
+        var found = folders.RecordingFoldersIn(folder)
+            .SelectMany(folders.FilesIn)
             .Select(file => (Folder: Path.GetDirectoryName(file)!, Match: FileOfARecording().Match(Path.GetFileName(file))))
             .Where(file => file.Match.Success && !file.Match.Groups["record"].Success)
             .ToList();
@@ -148,7 +150,7 @@ public sealed partial class RebuildCommand(
     /// ElevenLabs, whose transcript then goes beside it under its name. An answer of a recording is laid out where that
     /// recording is (see <see cref="WhereRecorded"/>). Null for any other file.
     /// </summary>
-    private static (RecordingFiles Files, string? Answer)? Recognise(string path)
+    private (RecordingFiles Files, string? Answer)? Recognise(string path)
     {
         var folder = Path.GetDirectoryName(path)!;
         var name = Path.GetFileName(path);
@@ -171,19 +173,19 @@ public sealed partial class RebuildCommand(
     /// recording, with its marks and the time it was recorded, and the recording counts as transcribed. When it is in
     /// none of those places, the files beside the answer.
     /// </summary>
-    private static RecordingFiles WhereRecorded(RecordingFiles files)
+    private RecordingFiles WhereRecorded(RecordingFiles files)
     {
         if (IsThere(files)) return files;
 
         var course = Path.Combine(files.Folder, files.Name);
-        if (!Directory.Exists(course)) return files;
+        if (!probe.DirectoryExists(course)) return files;
 
-        return ClassFolders.RecordingFoldersIn(course).Select(folder => files with { Folder = folder }).FirstOrDefault(IsThere) ?? files;
+        return folders.RecordingFoldersIn(course).Select(folder => files with { Folder = folder }).FirstOrDefault(IsThere) ?? files;
     }
 
     /// <summary>True when the recording's audio, marks or a transcript of it are in its <see cref="RecordingFiles.Folder"/>.</summary>
-    private static bool IsThere(RecordingFiles files) =>
-        files.FindSegments().Count > 0 || File.Exists(files.Marks) || TranscriptCopies.Transcripts(files).Count > 0;
+    private bool IsThere(RecordingFiles files) =>
+        files.FindSegments().Count > 0 || probe.FileExists(files.Marks) || TranscriptCopies.Transcripts(files).Count > 0;
 
     /// <summary>
     /// Says that the recording has no saved answer to rebuild from. When an answer from an earlier try that was paid for

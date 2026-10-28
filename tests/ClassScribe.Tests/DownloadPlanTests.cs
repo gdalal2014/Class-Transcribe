@@ -1,6 +1,8 @@
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using ClassScribe.YouTube;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;
 
@@ -122,7 +124,8 @@ public class DownloadPlanTests
 
         var lines = DownloadPlan.Lines(videos, links: 1, ["Risala, the creed"], transcribe: true, keyterms: 75, new ElevenLabsOptions(),
             "ElevenLabs account: 43,362 of 100,000 credits used this period; 56,638 left", new PlanRoom(158_760_044, 230_760_044, @"C:\", 2_000_000_000, @"C:\", 2_000_000_000),
-            "Google Drive: everything, the audio included (YouTube:DriveUpload), about 151 MB of audio.");
+            "Google Drive: everything, the audio included (YouTube:DriveUpload), about 151 MB of audio.",
+            new ClassFolders(TestOptions.Create(new RecordingOptions()), TimeProvider.System, NullLogger<ClassFolders>.Instance));
 
         Assert.That(lines[0], Is.EqualTo("Read 2 videos from 1 link (1 playlist, \"Risala, the creed\"):"));
         Assert.That(lines[2], Does.StartWith("  01  Part 1  Your Channel  01:00:00  public").And.EndWith("ready"));

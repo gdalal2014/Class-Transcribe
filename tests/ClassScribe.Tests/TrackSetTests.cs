@@ -70,7 +70,8 @@ public sealed class TrackSetTests
 
     /// <summary>The factory under test, over the simulated devices and microphones, with <paramref name="options"/> or the default settings, and <paramref name="transcript"/> or the default transcript settings.</summary>
     private TrackSetFactory Factory(RecordingOptions? options = null, TranscriptOptions? transcript = null) =>
-        new(_class, _microphones, _sessions, _record, _names, new FakeOwnProcesses(Laptop.OwnProcess), _freezes,
+        new(_class, _microphones, _sessions, _record, _names, new FakeOwnProcesses(Laptop.OwnProcess),
+            new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), _freezes,
             TestOptions.Create(options ?? new RecordingOptions()), TestOptions.Create(transcript ?? new TranscriptOptions()), _time, _logs);
 
     /// <summary>A plan for the class and your microphone, from <paramref name="source"/> or the device the class plays on, following <paramref name="follows"/> when given.</summary>

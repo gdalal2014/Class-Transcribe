@@ -47,7 +47,7 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 
 /// <summary>
 /// Uploads one recording to Google Drive, into the folder that mirrors its own on the laptop (see
-/// <see cref="ClassFolders.DriveLevelsOf"/>): every file <see cref="RecordingFiles.TryParse"/> takes for one of its own, but
+/// <see cref="IClassFolders.DriveLevelsOf"/>): every file <see cref="RecordingFiles.TryParse"/> takes for one of its own, but
 /// the temporary upload copy, and with Drive:Upload WithoutAudio not its .wav files; files in the folder that are not the
 /// recording's, such as the class's PDFs, are never touched. In this order: the transcripts, ElevenLabs' answers, the
 /// marks, the class's audio, the microphone's, the log, and last a lesson's finished video, only with Drive:LessonVideos on
@@ -74,6 +74,7 @@ public sealed partial class RecordingUpload(
     DriveRetry retry,
     UploadManifests manifests,
     RunJournal journal,
+    IClassFolders classFolders,
     RecorderLog log,
     IOptionsSnapshot<DriveOptions> options,
     IOptionsSnapshot<YouTubeOptions> youTube,
@@ -100,6 +101,9 @@ public sealed partial class RecordingUpload(
 
     /// <summary>How a step is asked again, for the steps of a run.</summary>
     private DriveRetry Retry => retry;
+
+    /// <summary>The recordings' library, for a run of this upload.</summary>
+    private IClassFolders Library => classFolders;
 
     /// <summary>The manifests, for the steps of a run.</summary>
     private UploadManifests Manifests => manifests;
@@ -215,15 +219,18 @@ public sealed partial class RecordingUpload(
     /// is stopping or transcribes it, in the background or in a window, says so in its run file; a recorder without one
     /// still holds its newest segment open for writing.
     /// </summary>
-    public string? Busy(RecordingFiles files) => BusyIn(journal.List(), files);
+    public string? Busy(RecordingFiles files) => BusyIn(journal.List(), files, classFolders);
 
-    /// <summary>Why <paramref name="files"/> cannot go up now, among <paramref name="runs"/>, the runs the journal lists (see <see cref="Busy"/>); null when it can.</summary>
-    public static string? BusyIn(IReadOnlyList<RunView> runs, RecordingFiles files)
+    /// <summary>
+    /// Why <paramref name="files"/> cannot go up now, among <paramref name="runs"/>, the runs the journal lists (see
+    /// <see cref="Busy"/>), its files read through <paramref name="folders"/>; null when it can.
+    /// </summary>
+    public static string? BusyIn(IReadOnlyList<RunView> runs, RecordingFiles files, IClassFolders folders)
     {
         var live = runs.FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files));
         if (live is { IsTranscribingNow: true }) return "is being transcribed now";
-        if (live is null && ClassFolders.IsLessonVideoBeingMade(files)) return LessonVideoBeingMade;
-        if (live is not null || ClassFolders.IsBeingWritten(files)) return "is being recorded now";
+        if (live is null && folders.IsLessonVideoBeingMade(files)) return LessonVideoBeingMade;
+        if (live is not null || folders.IsBeingWritten(files)) return "is being recorded now";
 
         return null;
     }
@@ -233,10 +240,10 @@ public sealed partial class RecordingUpload(
 
     /// <summary>
     /// True when the audio of <paramref name="files"/> goes up: for a class's recording as Drive:Upload says, for a YouTube
-    /// video's (see <see cref="ClassFolders.IsVideo"/>) as YouTube:DriveUpload says, everything by default.
+    /// video's (see <see cref="IClassFolders.IsVideo"/>) as YouTube:DriveUpload says, everything by default.
     /// </summary>
     public bool SendsAudio(RecordingFiles files) =>
-        (ClassFolders.IsVideo(files) ? youTube.Value.DriveUpload : options.Value.Upload) == DriveUploadScope.Everything;
+        (classFolders.IsVideo(files) ? youTube.Value.DriveUpload : options.Value.Upload) == DriveUploadScope.Everything;
 
     /// <summary>
     /// The files of <paramref name="files"/> that go up, in the order they go: every file of the recording but the upload
@@ -399,7 +406,7 @@ public sealed partial class RecordingUpload(
             foreach (var known in locals.Except(pending)) owner.Logger.LogDebug("{Name} is already on Google Drive", Path.GetFileName(known));
             if (pending.Count == 0) return Finish(problem: null, alreadyThere: true);
 
-            var levels = ClassFolders.DriveLevelsOf(ClassFolders.AsOnDisk(files.Folder));
+            var levels = owner.Library.DriveLevelsOf(owner.Library.AsOnDisk(files.Folder));
             var location = await owner.Retry.RunAsync(token => owner.Folders.FindOrCreatePathAsync(levels, token), "find the recording's folder", cancellationToken);
             _manifest = _manifest with { DriveFolderId = location.Folder.Id, DrivePath = location.Path };
             Save();
@@ -520,7 +527,7 @@ public sealed partial class RecordingUpload(
             await using var content = await OpenAsync(path, name, media, cancellationToken);
             var size = content.Length;
             var md5 = entry.Md5 is { } known && entry.Size == size && entry.LastWriteUtc == lastWrite ? known : await Md5Async(content, cancellationToken);
-            var seconds = audio ? entry.Seconds is { } measured && entry.Size == size ? measured : ClassFolders.MeasureSegment(path).TotalSeconds : (double?)null;
+            var seconds = audio ? entry.Seconds is { } measured && entry.Size == size ? measured : owner.Library.MeasureSegment(path).TotalSeconds : (double?)null;
             entry = Put(entry with { Size = size, LastWriteUtc = lastWrite, Md5 = md5, Seconds = seconds, FreedUtc = null });
 
             if (await TargetOfAsync(entry, name, media, RecordingFiles.IsLessonVideo(path), location, cancellationToken) is not { } target)

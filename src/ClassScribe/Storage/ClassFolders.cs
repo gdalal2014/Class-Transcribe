@@ -17,7 +17,9 @@ namespace ClassScribe.Storage;
 /// folder, its own files and those of its date folders count, and no other folder, such as one of slides. Nothing is
 /// ever moved or overwritten. It also finds a recording that a new run may continue as its next part, and lists the
 /// recordings, those whose audio is on Google Drive alone included (see <paramref name="audioOnDrive"/>). It lives as long
-/// as the app, and reads the setting at each use, so a change counts as soon as the settings have been read again.
+/// as the app, and reads the setting at each use, so a change counts as soon as the settings have been read again. It is
+/// the library behind <see cref="IClassFolders"/>, through which the use cases reach it; its statics, pure functions of the
+/// disk, are the port's members too, implemented over them for the use cases, and called directly by Infrastructure.
 /// </summary>
 /// <param name="options">The Recording settings, read at each use.</param>
 /// <param name="time">The clock, in the run's time zone, for the date folders.</param>
@@ -28,7 +30,7 @@ namespace ClassScribe.Storage;
 /// up to (see <see cref="TranscriptionLimits"/>); the defaults when they are not given.
 /// </param>
 public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> options, TimeProvider time, ILogger<ClassFolders> logger, IAudioOnDrive? audioOnDrive = null,
-    IOptionsMonitor<ElevenLabsOptions>? elevenLabs = null)
+    IOptionsMonitor<ElevenLabsOptions>? elevenLabs = null) : IClassFolders
 {
     /// <summary>What is known of recordings' audio kept on Google Drive alone.</summary>
     private readonly IAudioOnDrive _onDrive = audioOnDrive ?? NoAudioOnDrive.Instance;
@@ -250,6 +252,16 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// continues the recording starts there.
     /// </summary>
     public TimeSpan LengthOnDisk(RecordingFiles files) => LongestTrack(files.FindSegments(), files.FindSegments(Track.Microphone));
+
+    /// <inheritdoc />
+    public TimeSpan TrackLength(RecordingFiles files, Track track) =>
+        files.FindSegments(track).Aggregate(TimeSpan.Zero, (length, segment) => length + MeasureSegment(segment));
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> FilesIn(string folder) => [.. Directory.EnumerateFiles(folder)];
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> FoldersIn(string folder) => [.. Directory.EnumerateDirectories(folder)];
 
     /// <summary>
     /// Every recording under <paramref name="root"/> (the recordings folder given for the listing, or the root when that
@@ -830,4 +842,39 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// <summary>A reference to an environment variable, such as %USERPROFILE%.</summary>
     [GeneratedRegex(@"%(?<name>[^%\\/]+)%", RegexOptions.CultureInvariant)]
     private static partial Regex VariableReference();
+
+    // The port's members over the statics above, for the use cases, which reach the disk through the port alone.
+
+    /// <inheritdoc />
+    string IClassFolders.RootFor(string? outputFolder) => RootFor(outputFolder);
+
+    /// <inheritdoc />
+    bool IClassFolders.IsVideo(RecordingFiles files) => IsVideo(files);
+
+    /// <inheritdoc />
+    RecordingFiles? IClassFolders.FindNewest(string folder) => FindNewest(folder);
+
+    /// <inheritdoc />
+    IReadOnlyList<string> IClassFolders.RecordingFoldersIn(string folder) => RecordingFoldersIn(folder);
+
+    /// <inheritdoc />
+    IReadOnlyList<string> IClassFolders.DriveLevelsOf(string recordingFolder) => DriveLevelsOf(recordingFolder);
+
+    /// <inheritdoc />
+    string IClassFolders.AsOnDisk(string folder) => AsOnDisk(folder);
+
+    /// <inheritdoc />
+    IReadOnlyList<RecordingFiles> IClassFolders.RecordingsByAnyFileIn(string folder) => RecordingsByAnyFileIn(folder);
+
+    /// <inheritdoc />
+    bool IClassFolders.IsBeingWritten(RecordingFiles files) => IsBeingWritten(files);
+
+    /// <inheritdoc />
+    bool IClassFolders.IsLessonVideoBeingMade(RecordingFiles files) => IsLessonVideoBeingMade(files);
+
+    /// <inheritdoc />
+    LessonVideoState IClassFolders.LessonVideoStateOf(RecordingFiles files) => LessonVideoStateOf(files);
+
+    /// <inheritdoc />
+    TimeSpan IClassFolders.MeasureSegment(string path) => MeasureSegment(path);
 }

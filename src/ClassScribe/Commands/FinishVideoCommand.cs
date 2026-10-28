@@ -27,7 +27,8 @@ public sealed record FinishVideoRequest(string Path, bool Open = true);
 /// step 4, which adds both).
 /// </summary>
 public sealed class FinishVideoCommand(
-    ClassFolders folders,
+    IClassFolders folders,
+    IFileProbe probe,
     LessonVideoMaker maker,
     LessonVideoDrive lessonDrive,
     IDriveAutoUpload drive,
@@ -78,23 +79,23 @@ public sealed class FinishVideoCommand(
     /// The lesson <paramref name="path"/> names: one of its files, or in a folder (with its date folders) the newest recording
     /// that has camera pieces or a lesson's video; null when it names none.
     /// </summary>
-    private static RecordingFiles? LessonAt(string path)
+    private RecordingFiles? LessonAt(string path)
     {
-        if (File.Exists(path)) return RecordingFiles.TryParse(path);
-        if (!Directory.Exists(path)) return null;
+        if (probe.FileExists(path)) return RecordingFiles.TryParse(path);
+        if (!probe.DirectoryExists(path)) return null;
 
-        return ClassFolders.RecordingsByAnyFileIn(path)
-            .FirstOrDefault(files => files.FindCameraPieces().Count > 0 || File.Exists(files.LessonVideo));
+        return folders.RecordingsByAnyFileIn(path)
+            .FirstOrDefault(files => files.FindCameraPieces().Count > 0 || probe.FileExists(files.LessonVideo));
     }
 
     /// <summary>Why the video of <paramref name="files"/> cannot be made now, in words; null when it can.</summary>
     private string? Refusal(RecordingFiles files)
     {
-        if (ClassFolders.IsLessonVideoBeingMade(files)) return $"The video of {files.BaseName} is being made now; it appears in {files.Folder} once it has passed its check.";
-        if (ClassFolders.IsBeingWritten(files)) return $"{files.BaseName} is being recorded now; make its video once it has stopped.";
+        if (folders.IsLessonVideoBeingMade(files)) return $"The video of {files.BaseName} is being made now; it appears in {files.Folder} once it has passed its check.";
+        if (folders.IsBeingWritten(files)) return $"{files.BaseName} is being recorded now; make its video once it has stopped.";
         if (files.FindCameraPieces().Count == 0)
         {
-            return File.Exists(files.LessonVideo)
+            return probe.FileExists(files.LessonVideo)
                 ? $"{files.BaseName} has its video, {Path.GetFileName(files.LessonVideo)}, and no camera pieces left to make it again from."
                 : $"{files.BaseName} has no camera pieces, so it has no picture to make a video of.";
         }

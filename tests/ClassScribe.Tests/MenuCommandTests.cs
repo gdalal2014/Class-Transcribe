@@ -1530,6 +1530,7 @@ public class CommandRunnerTests
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_runtime.Time);
         services.AddSingleton(_runtime.Journal);
+        services.AddSingleton<IClassFolders>(Folders());
         if (withCommands)
         {
             services.AddScoped<IRecordStarter>(provider => Noted(provider, new FakeRecordStarter(_played, provider)));
@@ -1558,7 +1559,7 @@ public class CommandRunnerTests
     {
         var store = new FakeCredentialStore();
         var manifests = new UploadManifests(_runtime.Folder, _runtime.Time, NullLogger<UploadManifests>.Instance);
-        var queue = new DriveQueueReport(store, manifests, _runtime.Journal, TestOptions.Create(new DriveOptions()), _runtime.Time);
+        var queue = new DriveQueueReport(store, manifests, _runtime.Journal, Folders(), TestOptions.Create(new DriveOptions()), _runtime.Time);
         return new DriveMenu(_runner!, store, Folders(), manifests, queue, _ui, _runtime.Time);
     }
 
@@ -1586,7 +1587,7 @@ public class CommandRunnerTests
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, TestGlossaries.Choice(elevenLabs),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), folders, new ClassMarks(NullLogger<ClassMarks>.Instance), recording, elevenLabs,
             new TranscriptionProgress(), usage, NullLogger<TranscriptionWorkflow>.Instance);
-        return new TranscribeCommand(workflow, usage, folders, new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), recording, elevenLabs,
+        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), recording, elevenLabs,
             ZonedTimeProvider.EasternSummer, _transcribeLog);
     }
 

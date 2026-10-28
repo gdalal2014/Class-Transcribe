@@ -125,7 +125,8 @@ public sealed class RecorderSoakTests
 
     /// <summary>The track-set factory over the simulated devices and microphones, following chrome, whose mute Windows can see, so the microphone starts on.</summary>
     private TrackSetFactory Factory() =>
-        new(_class, _microphones, _sessions, _record, _names, new FakeOwnProcesses(Laptop.OwnProcess), _freezes,
+        new(_class, _microphones, _sessions, _record, _names, new FakeOwnProcesses(Laptop.OwnProcess),
+            new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), _freezes,
             TestOptions.Create(new RecordingOptions { MicrophoneFollows = "chrome", ClassAppMute = ClassAppMute.Visible }),
             TestOptions.Create(new TranscriptOptions()), _time, NullLoggerFactory.Instance);
 

@@ -32,7 +32,7 @@ namespace ClassScribe.Commands;
 /// settings have passed the check, as a menu choice does; O and F itself. The choice returned only says what was done; the
 /// caller does not carry it out again.
 /// </remarks>
-public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICommandRunner commands, RunGate gate, IConsoleUi ui, IDesktop desktop,
+public sealed class StartupReport(RunJournal journal, IClassFolders folders, ICommandRunner commands, RunGate gate, IConsoleUi ui, IDesktop desktop,
     IProcessLiveness liveness, DriveQueueReport drive, IOptionsMonitor<RecordingOptions> recording, TimeProvider time, ILogger<StartupReport> logger) : IStartupReport
 {
     /// <summary>Where the second offer on a line of offers begins, as in "  C  continue it now as its next part     T  transcribe what was recorded".</summary>
@@ -205,7 +205,7 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
     /// </summary>
     private async Task<StartupChoice?> OfferTheVideoAfterTheOutcomeAsync(RunView run, bool interactive)
     {
-        if (run.IsAlive || !LessonRuns.VideoNotMade(run.Record)) return null;
+        if (run.IsAlive || !LessonRuns.VideoNotMade(run.Record, folders)) return null;
 
         ui.WriteLine($"The lesson video of {RecordStarter.Named(run.Record)} was not made; its sound and its camera pieces are kept.");
         if (!interactive)
@@ -251,7 +251,7 @@ public sealed class StartupReport(RunJournal journal, ClassFolders folders, ICom
             }
 
             var lesson = LessonRuns.IsLesson(record);
-            var videoNotMade = LessonRuns.VideoNotMade(record);
+            var videoNotMade = LessonRuns.VideoNotMade(record, folders);
             var dealtWith =
                 runs.Any(other => other.Record.RunId != record.RunId && other.Record.StartedUtc >= record.StartedUtc && ContinueQuestion.Records(other.Record, files))
                     ? "a later run continued it"

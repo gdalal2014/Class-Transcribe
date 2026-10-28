@@ -62,7 +62,7 @@ public sealed class FinishVideoCommandTests
         var recording = TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path, OpenFolderWhenDone = true });
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance, new OnDrive(this));
         var starter = new FakeCameraProcessStarter { Run = (process, jobId) => new CameraHost { Media = _media }.RunAsync(jobId, process.ProcessStream, process.ProcessStream) };
-        return new FinishVideoCommand(folders, new LessonVideoMaker(starter, TimeProvider.System, _logs),
+        return new FinishVideoCommand(folders, new FileProbe(), new LessonVideoMaker(starter, TimeProvider.System, _logs),
             new LessonVideoDrive(new FakeCredentialStore(), TestOptions.Create(new DriveOptions())), _drive, _signals, _power, new FakePowerSource(), _desktop.Object, recording, _log);
     }
 

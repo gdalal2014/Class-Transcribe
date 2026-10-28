@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -77,7 +78,7 @@ public class RebuildCommandTests
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new RebuildCommand(workflow, folders, _desktop.Object, _drive, recording, _log);
+        return new RebuildCommand(workflow, folders, new FileProbe(), _desktop.Object, _drive, recording, _log);
     }
 
     /// <summary>Where a transcription's last line says what it cost, a rebuild's says that nothing was sent and nothing charged; the account is never read.</summary>

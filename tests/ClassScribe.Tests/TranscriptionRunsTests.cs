@@ -1,6 +1,7 @@
 using ClassScribe.Commands;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using ClassScribe.YouTube;
@@ -74,7 +75,7 @@ public class TranscriptionRunsTests
 
         var exitCode = await runner.TranscribeAsync(new TranscribeRequest(_files.Segment(1), FromCommandLine: true));
 
-        Assert.That(RecordingUpload.BusyIn(_runtime.Journal.List(), _files), Is.EqualTo("is being transcribed now"));
+        Assert.That(RecordingUpload.BusyIn(_runtime.Journal.List(), _files, new ClassFolders(TestOptions.Create(new RecordingOptions()), _runtime.Time, NullLogger<ClassFolders>.Instance)), Is.EqualTo("is being transcribed now"));
         Assert.That(exitCode, Is.EqualTo(1));
         Assert.That(log.Problems.Single(), Does.Contain("is being transcribed in another ClassScribe window"));
     }

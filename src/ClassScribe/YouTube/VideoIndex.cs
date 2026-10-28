@@ -28,7 +28,7 @@ public sealed class VideoIndex
     /// them. A folder that cannot be looked into, and a source file that cannot be read, are passed over, the second said at
     /// Debug: that video is then fetched again, which costs time, never a recording.
     /// </summary>
-    public static VideoIndex Read(string root, ClassFolders folders, ILogger logger)
+    public static VideoIndex Read(string root, IClassFolders folders, ILogger logger)
     {
         var index = new VideoIndex();
         if (!Directory.Exists(root)) return index;

@@ -41,7 +41,7 @@ public class DriveMenuTests
 
     /// <summary>Runs the menu, failing the test rather than waiting if it waits for a key that never comes.</summary>
     private Task<int> RunAsync() =>
-        new DriveMenu(_commands.Object, _store, _world.ClassFolders(), _world.Manifests(), new DriveQueueReport(_store, _world.Manifests(), _world.Runtime.Journal, _world.Options, ZonedClock.Eastern(_world.Time)),
+        new DriveMenu(_commands.Object, _store, _world.ClassFolders(), _world.Manifests(), new DriveQueueReport(_store, _world.Manifests(), _world.Runtime.Journal, _world.ClassFolders(), _world.Options, ZonedClock.Eastern(_world.Time)),
             _ui, ZonedTimeProvider.EasternSummer).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
 
     /// <summary>Signs the store in.</summary>
