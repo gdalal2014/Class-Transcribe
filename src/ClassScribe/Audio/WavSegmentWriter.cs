@@ -11,9 +11,6 @@ namespace ClassScribe.Audio;
 /// </summary>
 public sealed class WavSegmentWriter : IDisposable
 {
-    /// <summary>Size of the header this writer produces. The audio starts right after it.</summary>
-    public const int HeaderSize = 44;
-
     private const int BytesPerSample = 2;
 
     private readonly FileStream _stream;
@@ -50,34 +47,6 @@ public sealed class WavSegmentWriter : IDisposable
 
     /// <summary>Length of the audio written so far.</summary>
     public TimeSpan Duration => TimeSpan.FromSeconds(DataBytes / (double)(SampleRate * BytesPerSample));
-
-    /// <summary>
-    /// Recognises a header written by this class and reads its sample rate. The check on the two size
-    /// fields tells our files apart from other tools' WAV files, which may carry extra chunks after the audio.
-    /// </summary>
-    public static bool TryReadHeader(ReadOnlySpan<byte> header, out int sampleRate)
-    {
-        sampleRate = 0;
-        if (header.Length < HeaderSize) return false;
-
-        var ours = header[..4].SequenceEqual("RIFF"u8)
-            && header[8..12].SequenceEqual("WAVE"u8)
-            && header[12..16].SequenceEqual("fmt "u8)
-            && BinaryPrimitives.ReadUInt32LittleEndian(header[16..]) == 16
-            && BinaryPrimitives.ReadUInt16LittleEndian(header[20..]) == 1
-            && BinaryPrimitives.ReadUInt16LittleEndian(header[22..]) == 1
-            && BinaryPrimitives.ReadUInt16LittleEndian(header[34..]) == 16
-            && header[36..40].SequenceEqual("data"u8)
-            && BinaryPrimitives.ReadUInt32LittleEndian(header[4..]) == 36 + BinaryPrimitives.ReadUInt32LittleEndian(header[40..]);
-
-        if (!ours) return false;
-
-        var rate = BinaryPrimitives.ReadUInt32LittleEndian(header[24..]);
-        if (rate is 0 or > 768_000) return false;
-
-        sampleRate = (int)rate;
-        return true;
-    }
 
     /// <summary>Appends mono 16-bit PCM samples, handing them to Windows at once. A write that fails is not counted.</summary>
     public void Write(ReadOnlySpan<byte> mono16)
@@ -126,7 +95,7 @@ public sealed class WavSegmentWriter : IDisposable
     private void WriteHeader()
     {
         var dataSize = (uint)Math.Min(DataBytes, uint.MaxValue - 36);
-        Span<byte> header = stackalloc byte[HeaderSize];
+        Span<byte> header = stackalloc byte[WavHeader.Size];
         "RIFF"u8.CopyTo(header);
         BinaryPrimitives.WriteUInt32LittleEndian(header[4..], 36 + dataSize);
         "WAVE"u8.CopyTo(header[8..]);

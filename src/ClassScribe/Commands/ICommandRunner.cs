@@ -372,7 +372,7 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         if (files is null) return null;
 
         var busy = services.GetRequiredService<RunJournal>().List()
-            .FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && ListCommand.IsRunOf(run.Record, files));
+            .FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files));
         return busy is null ? null : (files, busy);
     }
 

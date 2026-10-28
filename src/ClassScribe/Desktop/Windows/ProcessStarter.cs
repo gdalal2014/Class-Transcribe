@@ -56,8 +56,6 @@ internal sealed record ThisProgram(string? ProcessPath, string AppFolder)
     /// <summary>The program this process runs.</summary>
     public static ThisProgram Current => new(Environment.ProcessPath, AppContext.BaseDirectory);
 
-    /// <summary>The file name of ClassScribe's dll, which dotnet runs: ClassScribe.dll.</summary>
-    public static string AppDll => typeof(ThisProgram).Assembly.GetName().Name + ".dll";
 
     /// <summary>
     /// The program to start and its whole command line, to run this program again with <paramref name="arguments"/>: the
@@ -69,7 +67,7 @@ internal sealed record ThisProgram(string? ProcessPath, string AppFolder)
         if (ProcessPath is not { } program) return null;
 
         return Path.GetFileNameWithoutExtension(program).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
-            ? (program, $"\"{program}\" \"{Path.Combine(AppFolder, AppDll)}\" {arguments}")
+            ? (program, $"\"{program}\" \"{Path.Combine(AppFolder, ProgramFiles.Dll)}\" {arguments}")
             : (program, $"\"{program}\" {arguments}");
     }
 }

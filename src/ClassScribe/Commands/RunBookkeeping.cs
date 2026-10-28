@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using ClassScribe.Desktop;
-using ClassScribe.Link;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
 using ClassScribe.Settings;
@@ -481,7 +480,7 @@ public sealed class RunBookkeeping(
         var now = time.GetUtcNow();
         var (processId, processStartedUtc) = ThisProcess();
         var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, processId, processStartedUtc, Environment.ProcessPath ?? AppContext.BaseDirectory,
-            BuildInfo.Build, LinkProtocol.Version, current?.PipeName, current?.Home ?? RunHome.InWindow, request, files.BaseName, files.Folder,
+            BuildInfo.Build, LinkVersion.Current, current?.PipeName, current?.Home ?? RunHome.InWindow, request, files.BaseName, files.Folder,
             RunState.Recording, now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
         RunHandle run;
         try

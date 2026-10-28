@@ -84,8 +84,8 @@ public class DownloadedAudioTests
         Assert.That(length, Is.EqualTo(TimeSpan.FromSeconds(3)));
         Assert.That(_target.FindSegments(), Is.EqualTo([_target.Segment(1)]));
         Assert.That(ClassFolders.MeasureSegment(_target.Segment(1)), Is.EqualTo(TimeSpan.FromSeconds(3)));
-        var header = File.ReadAllBytes(_target.Segment(1)).AsSpan(0, WavSegmentWriter.HeaderSize);
-        Assert.That(WavSegmentWriter.TryReadHeader(header, out var rate) ? rate : 0, Is.EqualTo(8000), "the source's own rate is kept");
+        var header = File.ReadAllBytes(_target.Segment(1)).AsSpan(0, WavHeader.Size);
+        Assert.That(WavHeader.TryRead(header, out var rate) ? rate : 0, Is.EqualTo(8000), "the source's own rate is kept");
         Assert.That(File.Exists(staged), Is.True, "the staged file is the batch's to delete");
     }
 

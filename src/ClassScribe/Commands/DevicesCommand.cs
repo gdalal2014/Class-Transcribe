@@ -214,7 +214,7 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     /// without a command; the registered <see cref="IOwnProcesses"/> answers the same question for the recorder.
     /// </summary>
     private static bool IsOwn(int processId, string? processName) =>
-        processId == Environment.ProcessId || string.Equals(processName, OwnProcesses.ProgramName, StringComparison.OrdinalIgnoreCase);
+        processId == Environment.ProcessId || string.Equals(processName, ProgramFiles.Name, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The option that picks <paramref name="microphone"/>: its whole name with --mic (--in-person takes it the same way); none for an input that is never recorded.</summary>
     private static string? MicOption(Microphone microphone) => microphone.IsLoopbackInput ? null : $"--mic \"{microphone.Name}\"";

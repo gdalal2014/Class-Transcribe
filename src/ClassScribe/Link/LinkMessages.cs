@@ -16,8 +16,8 @@ namespace ClassScribe.Link;
 /// </summary>
 public static class LinkProtocol
 {
-    /// <summary>The version of the protocol this build speaks.</summary>
-    public const int Version = 1;
+    /// <summary>The version of the protocol this build speaks (see <see cref="LinkVersion"/>, which every run file records).</summary>
+    public const int Version = LinkVersion.Current;
 
     /// <summary>The longest line either end takes, in bytes, not counting its line break: 64 KB. A longer line ends the connection.</summary>
     public const int MaxLineBytes = 64 * 1024;

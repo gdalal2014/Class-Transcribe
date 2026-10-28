@@ -42,12 +42,12 @@ public static class UploadTimeLimit
     /// </summary>
     public static TimeSpan? AudioLength(string path)
     {
-        Span<byte> header = stackalloc byte[WavSegmentWriter.HeaderSize];
+        Span<byte> header = stackalloc byte[WavHeader.Size];
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        if (file.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < header.Length || !WavSegmentWriter.TryReadHeader(header, out var sampleRate))
+        if (file.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < header.Length || !WavHeader.TryRead(header, out var sampleRate))
             return null;
 
         // Two bytes to a sample: the recorder writes mono 16-bit audio.
-        return TimeSpan.FromSeconds((file.Length - WavSegmentWriter.HeaderSize) / 2.0 / sampleRate);
+        return TimeSpan.FromSeconds((file.Length - WavHeader.Size) / 2.0 / sampleRate);
     }
 }

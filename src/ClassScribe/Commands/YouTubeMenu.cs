@@ -123,7 +123,7 @@ public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.C
             var typed = await ui.ReadLineAsync(CancellationToken.None);
             if (typed is null) return null;
 
-            var name = typed.Trim().Length == 0 && memory.LastCourse is { } again ? again : Storage.ClassFolders.SafeName(typed);
+            var name = typed.Trim().Length == 0 && memory.LastCourse is { } again ? again : Storage.FolderNames.SafeName(typed);
             if (name.Length > 0) return name;
 
             ui.WriteLine("A course's name is needed: its folder is named after it.");

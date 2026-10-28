@@ -35,8 +35,8 @@ public class DriveUploadCommandTests
         File.WriteAllText(Path.Combine(_world.Recordings.Path, "Mantiq", "Al-Sullam_al-munawraq_translated.pdf"), "%PDF");
         foreach (var empty in new[] { "2026-10-15_22-25-30", "2026-10-15_22-25-47", "2026-10-15_22-26-01" })
             Directory.CreateDirectory(Path.Combine(_world.Recordings.Path, empty));
-        Directory.CreateDirectory(Path.Combine(_world.Recordings.Path, MicCheckLog.FolderName));
-        File.WriteAllText(Path.Combine(_world.Recordings.Path, MicCheckLog.FolderName, "mic-check_2026-10-16_09-00-00.log"), "a check");
+        Directory.CreateDirectory(Path.Combine(_world.Recordings.Path, FolderNames.MicCheck));
+        File.WriteAllText(Path.Combine(_world.Recordings.Path, FolderNames.MicCheck, "mic-check_2026-10-16_09-00-00.log"), "a check");
     }
 
     /// <summary>Deletes the world's folders.</summary>
@@ -91,7 +91,7 @@ public class DriveUploadCommandTests
         Assert.That(_world.Google.FolderAt("Mantiq/2026-10-17 (2)"), Is.Not.Null);
         Assert.That(_world.Google.FolderAt("Kalam"), Is.Not.Null);
         Assert.That(_world.Lines, Has.Member($"{Path.Combine(_world.Recordings.Path, "2026-10-15_22-25-30")} holds no recording; it is passed over"));
-        Assert.That(_world.Lines.Where(line => line.Contains(MicCheckLog.FolderName, StringComparison.Ordinal)), Is.Empty);
+        Assert.That(_world.Lines.Where(line => line.Contains(FolderNames.MicCheck, StringComparison.Ordinal)), Is.Empty);
     }
 
     /// <summary>

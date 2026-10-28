@@ -34,7 +34,7 @@ public class DriveQueueReportTests
     public void TearDown() => _world.Dispose();
 
     /// <summary>The size of <paramref name="files"/> on this laptop, as the lines say it.</summary>
-    private static string SizeOf(params RecordingFiles[] files) => ClassScribe.Commands.DriveCommand.Size(files.Sum(recording => UploadManifests.OnDisk(recording).Bytes));
+    private static string SizeOf(params RecordingFiles[] files) => Sizes.Describe(files.Sum(recording => UploadManifests.OnDisk(recording).Bytes));
 
     /// <summary>Before Drive is set up, neither the header nor the report says anything of it.</summary>
     [Test]

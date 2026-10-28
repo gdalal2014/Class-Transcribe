@@ -127,20 +127,11 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     /// <summary>How often the free space is read again after the start.</summary>
     private static readonly TimeSpan SpaceCheckEvery = TimeSpan.FromMinutes(5);
 
-    /// <summary>At the start, room for less recording than this is warned about; a YouTube batch keeps this much room for a class.</summary>
-    public static readonly TimeSpan SpaceWarningBelow = TimeSpan.FromHours(3);
-
     /// <summary>Room for less recording than this is an Alert.</summary>
     private static readonly TimeSpan SpaceAlertBelow = TimeSpan.FromMinutes(30);
 
     /// <summary>How long before the safety stop it is warned about.</summary>
     private static readonly TimeSpan SafetyWarningBefore = TimeSpan.FromMinutes(15);
-
-    /// <summary>What an hour of one track takes on disk: 48 kHz, 16-bit, mono, about 346 MB.</summary>
-    private const long TrackBytesPerHour = 48_000L * 2 * 3600;
-
-    /// <summary>What an hour of the upload copy takes on disk: 16 kHz, 16-bit, mono, about 115 MB.</summary>
-    private const long UploadBytesPerHour = 16_000L * 2 * 3600;
 
     /// <summary>The words for a recording whose files cannot be written.</summary>
     private const string CannotWriteText = "The recording cannot be written to disk now; nothing is saved until it can be again. The errors above say why";
@@ -597,12 +588,6 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     }
 
     /// <summary>
-    /// The room a class of <paramref name="length"/> takes on its drive, as the checks below count it: its one track and the
-    /// upload copy. A YouTube batch keeps this much free for the next class (see <see cref="SpaceWarningBelow"/>).
-    /// </summary>
-    public static long RoomFor(TimeSpan length) => (long)Math.Ceiling(length.TotalHours * (TrackBytesPerHour + UploadBytesPerHour));
-
-    /// <summary>
     /// Reads the free space of the recording's drive and says how much recording still fits there, counting each track
     /// and the upload copy: room for less than 30 minutes needs attention until a later reading finds more, and at the
     /// <paramref name="first"/> reading, room for less than 3 hours is warned about. A drive that cannot be read is passed
@@ -617,7 +602,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         }
 
         var tracks = context.Request.Source.Mode == RecordingMode.ClassAndMicrophone ? 2 : 1;
-        var sound = tracks * TrackBytesPerHour + UploadBytesPerHour;
+        var sound = tracks * Room.TrackBytesPerHour + Room.UploadBytesPerHour;
         var camera = CameraBytesPerHour(context);
         var fits = TimeSpan.FromHours((double)Math.Max(0, bytes) / (sound + camera));
         var drive = Path.GetPathRoot(context.Folder) is { Length: > 0 } root ? root : context.Folder;
@@ -641,7 +626,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         }
 
         _spaceAlert = null;
-        if (first && fits < SpaceWarningBelow)
+        if (first && fits < Room.SpaceWarningBelow)
             lines.Add((LogLevel.Warning, $"Only about {DescribeLength(fits)} of recording fit on {drive} ({Size(bytes)} free). Free some space there before a long class"));
     }
 

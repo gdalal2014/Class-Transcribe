@@ -750,7 +750,7 @@ public partial class StartupReportTests
             LastTriedUtc = LastAudio.AddMinutes(1),
             LastError = "Google Drive could not be reached (No such host is known.)."
         });
-        return (files, DriveCommand.Size(UploadManifests.OnDisk(files).Bytes));
+        return (files, Sizes.Describe(UploadManifests.OnDisk(files).Bytes));
     }
 
     /// <summary>

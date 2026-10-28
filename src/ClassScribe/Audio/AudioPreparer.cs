@@ -344,10 +344,10 @@ public sealed class AudioPreparer(ILogger<AudioPreparer> logger) : IAudioPrepare
     /// </summary>
     private WaveStream OpenWave(FileStream file, string path)
     {
-        Span<byte> header = stackalloc byte[WavSegmentWriter.HeaderSize];
+        Span<byte> header = stackalloc byte[WavHeader.Size];
         var read = file.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
-        if (read == header.Length && WavSegmentWriter.TryReadHeader(header, out var sampleRate))
-            return new WaveData(file, WavSegmentWriter.HeaderSize, file.Length, new WaveFormat(sampleRate, 16, 1));
+        if (read == header.Length && WavHeader.TryRead(header, out var sampleRate))
+            return new WaveData(file, WavHeader.Size, file.Length, new WaveFormat(sampleRate, 16, 1));
 
         file.Position = 0;
         WaveFormat format;

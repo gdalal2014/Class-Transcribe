@@ -352,7 +352,7 @@ public class EndToEndTests
     {
         var dated = Directory.GetDirectories(Path.Combine(_recordings.Path, "Kalam")).Single();
         var started = RecordingFiles.TryParse(Directory.GetFiles(dated, "*.wav").First())!.StartedUtc!.Value;
-        Assert.That(Path.GetFileName(dated), Is.EqualTo(ClassFolders.DateFolderName(DateOnly.FromDateTime(started.ToLocalTime().DateTime))),
+        Assert.That(Path.GetFileName(dated), Is.EqualTo(FolderNames.DateFolderName(DateOnly.FromDateTime(started.ToLocalTime().DateTime))),
             "the date folder of the local date the class started on");
         return dated;
     }

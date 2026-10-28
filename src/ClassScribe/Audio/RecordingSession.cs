@@ -1530,7 +1530,7 @@ public sealed class RecordingSession(
     {
         try
         {
-            var audio = Math.Max(0, new FileInfo(path).Length - WavSegmentWriter.HeaderSize);
+            var audio = Math.Max(0, new FileInfo(path).Length - WavHeader.Size);
             return audio - audio % 2;
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)

@@ -83,7 +83,7 @@ public class WavSegmentWriterTests
         using var reader = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         var onDisk = new byte[reader.Length];
         reader.ReadExactly(onDisk);
-        Assert.That(onDisk[WavSegmentWriter.HeaderSize..], Is.EqualTo(packet));
+        Assert.That(onDisk[WavHeader.Size..], Is.EqualTo(packet));
         Assert.That(writer.DataBytes, Is.EqualTo(packet.Length));
     }
 
@@ -102,15 +102,15 @@ public class WavSegmentWriterTests
             writer.Write(TestAudio.Shorts(1, 2));
             using (var otherProgram = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
-                otherProgram.Lock(0, WavSegmentWriter.HeaderSize);
+                otherProgram.Lock(0, WavHeader.Size);
                 Assert.That(writer.Flush, Throws.InstanceOf<IOException>());
-                otherProgram.Unlock(0, WavSegmentWriter.HeaderSize);
+                otherProgram.Unlock(0, WavHeader.Size);
             }
 
             writer.Write(TestAudio.Shorts(3));
         }
 
-        Assert.That(File.ReadAllBytes(path)[WavSegmentWriter.HeaderSize..], Is.EqualTo(TestAudio.Shorts(1, 2, 3)));
+        Assert.That(File.ReadAllBytes(path)[WavHeader.Size..], Is.EqualTo(TestAudio.Shorts(1, 2, 3)));
         Assert.That(TestAudio.ReadWav(path).Samples, Is.EqualTo(new short[] { 1, 2, 3 }));
     }
 
@@ -131,9 +131,9 @@ public class WavSegmentWriterTests
     {
         var path = _folder.File("own.wav");
         TestAudio.WriteWav(path, 44100, [1, 2, 3]);
-        var header = File.ReadAllBytes(path).AsSpan(0, WavSegmentWriter.HeaderSize);
+        var header = File.ReadAllBytes(path).AsSpan(0, WavHeader.Size);
 
-        Assert.That(WavSegmentWriter.TryReadHeader(header, out var sampleRate), Is.True);
+        Assert.That(WavHeader.TryRead(header, out var sampleRate), Is.True);
         Assert.That(sampleRate, Is.EqualTo(44100));
     }
 
@@ -147,11 +147,11 @@ public class WavSegmentWriterTests
             writer.Write(new byte[8], 0, 8);
         }
 
-        var stereo = File.ReadAllBytes(path).AsSpan(0, WavSegmentWriter.HeaderSize);
-        var tooShort = new byte[WavSegmentWriter.HeaderSize - 1];
+        var stereo = File.ReadAllBytes(path).AsSpan(0, WavHeader.Size);
+        var tooShort = new byte[WavHeader.Size - 1];
 
-        Assert.That(WavSegmentWriter.TryReadHeader(stereo, out _), Is.False);
-        Assert.That(WavSegmentWriter.TryReadHeader(tooShort, out _), Is.False);
+        Assert.That(WavHeader.TryRead(stereo, out _), Is.False);
+        Assert.That(WavHeader.TryRead(tooShort, out _), Is.False);
     }
 
     /// <summary>A plain header that differs from its own in one field, and so describes other audio, is not taken for its own.</summary>
@@ -163,10 +163,10 @@ public class WavSegmentWriterTests
     {
         var path = _folder.File("almost.wav");
         TestAudio.WriteWav(path, 16000, [1, 2]);
-        var header = File.ReadAllBytes(path)[..WavSegmentWriter.HeaderSize];
+        var header = File.ReadAllBytes(path)[..WavHeader.Size];
         header[offset] = (byte)value;
 
-        Assert.That(WavSegmentWriter.TryReadHeader(header, out _), Is.False);
+        Assert.That(WavHeader.TryRead(header, out _), Is.False);
     }
 
     /// <summary>A file already at the path is never overwritten: creating the writer fails and the file is left as it was.</summary>

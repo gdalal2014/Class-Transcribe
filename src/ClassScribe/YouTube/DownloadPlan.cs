@@ -1,7 +1,6 @@
 using System.Globalization;
-using ClassScribe.Commands;
-using ClassScribe.Drive;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using ClassScribe.Transcription;
 
 namespace ClassScribe.YouTube;
@@ -150,12 +149,12 @@ public static class DownloadPlan
 
     /// <summary>
     /// The class a batch keeps room for on the recordings folder's drive: as long as a class's start warns below
-    /// (<see cref="RecordingMonitor.SpaceWarningBelow"/>), so that a batch never leaves the next class short of room.
+    /// (<see cref="Room.SpaceWarningBelow"/>), so that a batch never leaves the next class short of room.
     /// </summary>
-    public static readonly TimeSpan KeptForAClass = RecordingMonitor.SpaceWarningBelow;
+    public static readonly TimeSpan KeptForAClass = Room.SpaceWarningBelow;
 
-    /// <summary>The room a class of <see cref="KeptForAClass"/> takes, its track and its upload copy (see <see cref="RecordingMonitor.RoomFor"/>).</summary>
-    public static long ClassReserveBytes => RecordingMonitor.RoomFor(KeptForAClass);
+    /// <summary>The room a class of <see cref="KeptForAClass"/> takes, its track and its upload copy (see <see cref="Room.For"/>).</summary>
+    public static long ClassReserveBytes => Room.For(KeptForAClass);
 
     /// <summary>
     /// The plan's lines: <paramref name="videos"/> as read from <paramref name="links"/> links of which <paramref name="playlists"/>
@@ -187,7 +186,7 @@ public static class DownloadPlan
 
         lines.AddRange(ReadyLines(videos, transcribe, keyterms, prices));
         if (transcribe && before.Count > 0)
-            lines.Add($"Also transcribed: {Count(before.Count, "recording")} fetched before, {BatchTranscripts.Hours(beforeLength)}{CostOf(beforeLength, transcribe, keyterms, prices)}");
+            lines.Add($"Also transcribed: {Count(before.Count, "recording")} fetched before, {Durations.Hours(beforeLength)}{CostOf(beforeLength, transcribe, keyterms, prices)}");
         if (transcribe && accountLine is not null) lines.Add($"{accountLine}.");
 
         lines.AddRange(FetchLines(videos, transcribe, room));
@@ -213,11 +212,11 @@ public static class DownloadPlan
         if (ready.Count == 0 && waiting.Count == 0) return ["Nothing to download."];
 
         var readyLength = Sum(ready.Select(video => video.Length ?? TimeSpan.Zero));
-        List<string> lines = [ready.Count == 0 ? "Ready: 0 videos." : $"Ready: {Count(ready.Count, "video")}, {BatchTranscripts.Hours(readyLength)}{CostOf(readyLength, transcribe, keyterms, prices)}"];
+        List<string> lines = [ready.Count == 0 ? "Ready: 0 videos." : $"Ready: {Count(ready.Count, "video")}, {Durations.Hours(readyLength)}{CostOf(readyLength, transcribe, keyterms, prices)}"];
         if (waiting.Count > 0)
         {
             var waitingLength = Sum(waiting.Select(video => video.Length ?? TimeSpan.Zero));
-            lines.Add($"Waiting for your word: {Count(waiting.Count, "video")}, {BatchTranscripts.Hours(waitingLength)}{CostOf(waitingLength, transcribe, keyterms, prices)}");
+            lines.Add($"Waiting for your word: {Count(waiting.Count, "video")}, {Durations.Hours(waitingLength)}{CostOf(waitingLength, transcribe, keyterms, prices)}");
         }
 
         return lines;
@@ -234,12 +233,12 @@ public static class DownloadPlan
         if (ready.Count == 0) return [];
 
         List<string> lines = [$"{Count(ready.Count, "download")}: about {Minutes(DownloadTime(ready))}, 10 to 20 seconds apart, depending on your connection{(transcribe ? "; then the transcripts, a few minutes each" : "")}."];
-        var spare = room.RecordingsFree is { } free ? $", with {DriveCommand.Size(Math.Max(0, free - room.AudioBytes))} to spare" : "";
-        lines.Add($"Room: about {DriveCommand.Size(room.AudioBytes)} on {room.RecordingsDrive} for the audio (mono, at YouTube's own rate){spare}.");
+        var spare = room.RecordingsFree is { } free ? $", with {Sizes.Describe(Math.Max(0, free - room.AudioBytes))} to spare" : "";
+        lines.Add($"Room: about {Sizes.Describe(room.AudioBytes)} on {room.RecordingsDrive} for the audio (mono, at YouTube's own rate){spare}.");
         if (!room.Fits)
         {
             lines.Add(room.ClassReserve > 0
-                ? $"There is not room enough for the audio and its download while keeping room for a {Hours(KeptForAClass)} class (about {DriveCommand.Size(room.ClassReserve)}): free some room, or download fewer videos at a time."
+                ? $"There is not room enough for the audio and its download while keeping room for a {Hours(KeptForAClass)} class (about {Sizes.Describe(room.ClassReserve)}): free some room, or download fewer videos at a time."
                 : "There is not room enough for the audio and its download: free some room, or download fewer videos at a time.");
         }
 
@@ -286,7 +285,7 @@ public static class DownloadPlan
         foreach (var video in ready)
         {
             var seconds = (video.Length ?? TimeSpan.Zero).TotalSeconds;
-            var wav = (long)(seconds * (video.Info?.SourceRate ?? YtDlpInfo.HighestRate) * 2) + Audio.WavSegmentWriter.HeaderSize;
+            var wav = (long)(seconds * (video.Info?.SourceRate ?? YtDlpInfo.HighestRate) * 2) + Audio.WavHeader.Size;
             audio += wav;
             staging = Math.Max(staging, wav + (long)(seconds * 20_000));
         }
@@ -299,7 +298,7 @@ public static class DownloadPlan
 
     /// <summary>A length in minutes, or hours and minutes from an hour, rounded up.</summary>
     private static string Minutes(TimeSpan length) =>
-        length >= TimeSpan.FromHours(1) ? BatchTranscripts.Hours(length) : Count((long)Math.Ceiling(Math.Max(1, length.TotalMinutes)), "minute");
+        length >= TimeSpan.FromHours(1) ? Durations.Hours(length) : Count((long)Math.Ceiling(Math.Max(1, length.TotalMinutes)), "minute");
 
     /// <summary>The sum of <paramref name="lengths"/>.</summary>
     private static TimeSpan Sum(IEnumerable<TimeSpan> lengths) => lengths.Aggregate(TimeSpan.Zero, (sum, length) => sum + length);

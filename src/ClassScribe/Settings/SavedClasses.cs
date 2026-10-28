@@ -173,7 +173,7 @@ public sealed class SavedClasses(IConfiguration configuration, SettingsFile? fil
     /// </summary>
     private static void CheckName(List<string> problems, string what, string value)
     {
-        if (ClassFolders.SafeName(value) != value.Trim())
+        if (FolderNames.SafeName(value) != value.Trim())
             problems.Add($"{what}, \"{value}\", holds characters Windows does not allow in a folder's name, or spaces or dots at its end.");
         else if (value.Trim().Length > LongestName)
             problems.Add($"{what} is {value.Trim().Length} characters long; it may be at most {LongestName}.");

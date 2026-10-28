@@ -76,7 +76,7 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
     internal static IEnumerable<string> NotesOf(RecordedClass recorded)
     {
         if (recorded.Video is { } video) yield return $"\"{video.Title}\" (YouTube, {video.Obtained})";
-        if (ClassFolders.LaterClassOfItsDay(recorded.Files.Folder) is { } dateFolder) yield return $"in {dateFolder}";
+        if (FolderNames.LaterClassOfItsDay(recorded.Files.Folder) is { } dateFolder) yield return $"in {dateFolder}";
         if (recorded.Parts > 1) yield return $"{recorded.Parts} parts";
         if (recorded.HasMicrophone) yield return "class + microphone";
         if (recorded.LessonVideo == LessonVideoState.Made) yield return LessonVideoMadeNote;
@@ -89,15 +89,6 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
 
     /// <summary>The note of a lesson whose camera pieces wait to be joined with its sound.</summary>
     public const string LessonVideoNotMadeNote = "lesson video not made yet";
-
-    /// <summary>
-    /// True when <paramref name="run"/> records, or recorded, <paramref name="files"/>: its run file names the same
-    /// recording, by its folder and its base name, in any letter case, as Windows takes such names for one.
-    /// </summary>
-    internal static bool IsRunOf(RunRecord run, RecordingFiles files) =>
-        run is { Folder: { } folder, BaseName: { } baseName }
-        && string.Equals(baseName, files.BaseName, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(Path.TrimEndingDirectorySeparator(folder), Path.TrimEndingDirectorySeparator(files.Folder), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>When the recording started, in local time, as its name stamps it in UTC; empty for a name without a stamp.</summary>
     private string StartOf(RecordingFiles files) =>
@@ -133,5 +124,5 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
     /// recording continued after its recorder ended unexpectedly has the run that continued it as its newest, which says
     /// what is going on now.
     /// </summary>
-    private static RunView? NewestRunOf(RecordingFiles files, IReadOnlyList<RunView> runs) => runs.FirstOrDefault(run => IsRunOf(run.Record, files));
+    private static RunView? NewestRunOf(RecordingFiles files, IReadOnlyList<RunView> runs) => runs.FirstOrDefault(run => RunView.IsRunOf(run.Record, files));
 }

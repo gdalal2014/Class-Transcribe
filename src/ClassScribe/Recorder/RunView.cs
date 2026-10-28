@@ -1,4 +1,5 @@
 using ClassScribe.Runs;
+using ClassScribe.Storage;
 
 namespace ClassScribe.Recorder;
 
@@ -45,4 +46,13 @@ public sealed record RunView(RunRecord Record, bool IsAlive)
 
     /// <summary>The run is a YouTube video's, one of a batch's (see <see cref="VideoRequest"/>): never a class, and never continued as one.</summary>
     public bool IsVideo => Record.Request.Video is not null;
+
+    /// <summary>
+    /// True when <paramref name="run"/> records, or recorded, <paramref name="files"/>: its run file names the same
+    /// recording, by its folder and its base name, in any letter case, as Windows takes such names for one.
+    /// </summary>
+    public static bool IsRunOf(RunRecord run, RecordingFiles files) =>
+        run is { Folder: { } folder, BaseName: { } baseName }
+        && string.Equals(baseName, files.BaseName, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(Path.TrimEndingDirectorySeparator(folder), Path.TrimEndingDirectorySeparator(files.Folder), StringComparison.OrdinalIgnoreCase);
 }

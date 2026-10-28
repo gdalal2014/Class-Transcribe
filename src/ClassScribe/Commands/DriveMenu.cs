@@ -80,7 +80,7 @@ public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore st
         if (waiting.Count == 0) return "nothing waits now";
 
         var bytes = waiting.Sum(manifest => queue.OnDisk(manifest.Recording).Bytes);
-        return $"{(waiting.Count == 1 ? "1 recording" : $"{waiting.Count} recordings")}, {DriveCommand.Size(bytes)}";
+        return $"{(waiting.Count == 1 ? "1 recording" : $"{waiting.Count} recordings")}, {Sizes.Describe(bytes)}";
     }
 
     /// <summary>R: lists the recent recordings with where each stands with Drive, and uploads the one picked.</summary>
@@ -134,7 +134,7 @@ public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore st
         }
 
         var bytes = audio.Sum(path => new FileInfo(path).Length);
-        ui.WriteLine($"This deletes from this laptop the audio of {files.BaseName}: {string.Join(", ", audio.Select(Path.GetFileName))} ({DriveCommand.Size(bytes)}).");
+        ui.WriteLine($"This deletes from this laptop the audio of {files.BaseName}: {string.Join(", ", audio.Select(Path.GetFileName))} ({Sizes.Describe(bytes)}).");
         ui.WriteLine($"Each file is first checked again against its copy on Google Drive, in {manifest.DriveLocation}, which stays as it is. The transcripts, ElevenLabs' answers, the marks and the log stay here.");
         ui.WriteLine("Press Y to delete the audio from this laptop, or any other key to go back.");
         if ((await ui.ReadKeyAsync(CancellationToken.None))?.Key != ConsoleKey.Y) return 0;

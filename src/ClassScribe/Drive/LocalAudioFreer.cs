@@ -131,7 +131,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         if (deleted.Count > 0)
         {
             logger.LogInformation("Freed {Size} on this laptop: deleted {Count} of {Recording} ({Names}). Their copies stay on Google Drive, in {Location}; the transcripts, ElevenLabs' answers, the marks and the log stay here",
-                DriveCommand.Size(bytes), deleted.Count == 1 ? "1 audio file" : $"{deleted.Count} audio files", files.BaseName, string.Join(", ", deleted), manifest.DriveLocation);
+                Sizes.Describe(bytes), deleted.Count == 1 ? "1 audio file" : $"{deleted.Count} audio files", files.BaseName, string.Join(", ", deleted), manifest.DriveLocation);
         }
 
         return new FreedAudio(files, deleted, bytes, failure);
@@ -199,7 +199,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         if (deleted.Count > 0)
         {
             logger.LogInformation("Freed the camera's {Count} of {Recording} ({Size}): its lesson video is on Google Drive, checked, in {Location}; the video stays here too",
-                deleted.Count == 1 ? "1 piece" : $"{deleted.Count} pieces", files.BaseName, DriveCommand.Size(bytes), manifest.DriveLocation);
+                deleted.Count == 1 ? "1 piece" : $"{deleted.Count} pieces", files.BaseName, Sizes.Describe(bytes), manifest.DriveLocation);
         }
 
         return freed with { Deleted = [.. freed.Deleted, .. deleted], Bytes = freed.Bytes + bytes, Problem = freed.Problem ?? failure };

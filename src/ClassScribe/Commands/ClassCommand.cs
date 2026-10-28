@@ -94,7 +94,7 @@ public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, S
     /// </summary>
     public static string? NameProblem(string name) =>
         name.Length == 0 ? "A saved class needs a name, such as \"Mantiq\"."
-        : ClassFolders.SafeName(name) != name ? $"\"{name}\" cannot be a class's name: it holds characters Windows does not allow in a folder's name (\\ / : * ? \" < > |), or spaces or dots at its end."
+        : FolderNames.SafeName(name) != name ? $"\"{name}\" cannot be a class's name: it holds characters Windows does not allow in a folder's name (\\ / : * ? \" < > |), or spaces or dots at its end."
         : name.Length > SavedClasses.LongestName ? $"\"{name}\" is {name.Length} characters long; a class's name may be at most {SavedClasses.LongestName}."
         : null;
 
@@ -367,8 +367,8 @@ public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, S
     /// </summary>
     private IEnumerable<string> CourseChanged(string name, string oldCourse, string newCourse, string? classFolder)
     {
-        yield return $"The next class of {name} goes to a new folder, {ClassFolders.SafeName(newCourse)}\\..., with new file names and a new folder on Google Drive; continue will not offer recordings of {oldCourse}.";
-        var old = Path.Combine(ClassFolders.RootFor(classFolder ?? recording.Value.OutputFolder), ClassFolders.SafeName(oldCourse));
+        yield return $"The next class of {name} goes to a new folder, {FolderNames.SafeName(newCourse)}\\..., with new file names and a new folder on Google Drive; continue will not offer recordings of {oldCourse}.";
+        var old = Path.Combine(ClassFolders.RootFor(classFolder ?? recording.Value.OutputFolder), FolderNames.SafeName(oldCourse));
         if (Directory.Exists(old)) yield return $"The recordings of {oldCourse} stay where they are, in {old}.";
     }
 

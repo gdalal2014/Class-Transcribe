@@ -1,5 +1,6 @@
 using System.Text;
 using ClassScribe.Audio;
+using ClassScribe.Desktop;
 using ClassScribe.Runs;
 
 namespace ClassScribe.Commands;
@@ -170,6 +171,6 @@ public static class CommandLine
     /// </summary>
     private static string Command(string? processPath, string appFolder, string arguments) =>
         processPath is null || Path.GetFileNameWithoutExtension(processPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
-            ? $"dotnet {Quote(Path.Combine(appFolder, "ClassScribe.dll"))} {arguments}"
+            ? $"dotnet {Quote(Path.Combine(appFolder, ProgramFiles.Dll))} {arguments}"
             : $"& {Quote(processPath)} {arguments}";
 }

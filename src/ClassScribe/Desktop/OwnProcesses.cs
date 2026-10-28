@@ -7,9 +7,6 @@ namespace ClassScribe.Desktop;
 /// </summary>
 public sealed class OwnProcesses : IOwnProcesses
 {
-    /// <summary>The name of ClassScribe's program, which is ClassScribe's own however it was started.</summary>
-    public const string ProgramName = "ClassScribe";
-
     private readonly int _ownProcessId;
     private readonly string? _ownProcessName;
 
@@ -30,6 +27,6 @@ public sealed class OwnProcesses : IOwnProcesses
     public bool IsOwn(int processId, string? processName) =>
         processId == _ownProcessId
         || (processName is not null
-            && (string.Equals(processName, ProgramName, StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(processName, ProgramFiles.Name, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(processName, _ownProcessName, StringComparison.OrdinalIgnoreCase)));
 }

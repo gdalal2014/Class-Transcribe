@@ -1,4 +1,5 @@
 using System.Globalization;
+using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
@@ -11,8 +12,8 @@ namespace ClassScribe;
 /// </summary>
 public sealed class PlainConsoleFormatter() : ConsoleFormatter(FormatterName)
 {
-    /// <summary>The name this formatter is registered under.</summary>
-    public const string FormatterName = "plain";
+    /// <summary>The name this formatter is registered under: the plain format the settings name by default.</summary>
+    public const string FormatterName = DefaultSettings.PlainFormatterName;
 
     /// <inheritdoc />
     public override void Write<TState>(in LogEntry<TState> logEntry, IExternalScopeProvider? scopeProvider, TextWriter textWriter)

@@ -215,7 +215,7 @@ public sealed class LessonVideoMaker(ICameraProcessStarter starter, TimeProvider
 
     /// <summary>The end line of a video made (teach-video 6.13): its file, its length and size, with its sound, and a word to watch it first.</summary>
     public static string MadeLine(LessonVideoResult made) =>
-        $"The lesson's video: {System.IO.Path.GetFileName(made.Path)} ({Durations.Format(made.Length)}, {DriveCommand.Size(made.Bytes)}), with its sound. Watch it before you publish it.";
+        $"The lesson's video: {System.IO.Path.GetFileName(made.Path)} ({Durations.Format(made.Length)}, {Sizes.Describe(made.Bytes)}), with its sound. Watch it before you publish it.";
 
     /// <summary>The command that makes the video of <paramref name="files"/> again, by one of its files.</summary>
     private static string CommandOf(RecordingFiles files) =>

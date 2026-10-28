@@ -41,8 +41,6 @@ public sealed class OEmbedTitles(IYouTubeOEmbedApi api, TimeProvider time, ILogg
     /// <summary>The least time between the starts of two reads.</summary>
     public static readonly TimeSpan Every = TimeSpan.FromSeconds(1);
 
-    /// <summary>What the plan says of a video YouTube gave no title for.</summary>
-    public const string NoTitle = "YouTube gave no title for it (private, removed, or not embeddable); it is tried all the same";
 
     /// <summary>When the last read began, on the steady clock; null before the first.</summary>
     private long? _lastStart;

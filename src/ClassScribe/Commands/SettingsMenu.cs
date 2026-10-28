@@ -79,7 +79,7 @@ public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, C
         // Taken as Recording:OutputFolder takes a path: a relative one from the user's folder, not the window's current one.
         var folder = ClassFolders.RootFor(typed);
         var course = folders.ListRecent(1).FirstOrDefault()?.Files.Name ?? "Mantiq";
-        ui.WriteLine($"The next class of {course} would go to {Path.Combine(folder, course, ClassFolders.DateFolderName(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(time.GetUtcNow(), time.LocalTimeZone).DateTime)))}.");
+        ui.WriteLine($"The next class of {course} would go to {Path.Combine(folder, course, FolderNames.DateFolderName(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(time.GetUtcNow(), time.LocalTimeZone).DateTime)))}.");
 
         var change = writer.Set(RecordingOptions.SectionName + ":" + nameof(RecordingOptions.OutputFolder), folder);
         if (change.ExitCode != 0) return;

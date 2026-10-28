@@ -60,7 +60,7 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
     /// </summary>
     public async Task<int> RunAsync(MicCheckRequest request, CancellationToken cancellationToken)
     {
-        var folder = string.IsNullOrWhiteSpace(request.LogFolder) ? Path.Combine(folders.Root, MicCheckLog.FolderName) : ClassFolders.RootFor(request.LogFolder);
+        var folder = string.IsNullOrWhiteSpace(request.LogFolder) ? Path.Combine(folders.Root, FolderNames.MicCheck) : ClassFolders.RootFor(request.LogFolder);
         var started = Now();
         MicCheckLog log;
         try

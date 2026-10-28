@@ -254,7 +254,7 @@ public sealed class MicrophoneChangeTracker(IProcessNames names, IOwnProcesses o
 
         var image = names.Describe(session.ProcessId);
         var name = image?.Name ?? session.ImageName;
-        if (otherOwn) return ($"{name ?? OwnProcesses.ProgramName}, a recording in progress", image?.Path);
+        if (otherOwn) return ($"{name ?? ProgramFiles.Name}, a recording in progress", image?.Path);
         return name is null ? ("a process that cannot be looked at", null) : (name, image?.Path);
     }
 

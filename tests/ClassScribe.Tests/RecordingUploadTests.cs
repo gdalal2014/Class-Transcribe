@@ -79,7 +79,7 @@ public class RecordingUploadTests
             [$"{b}.md"] = "text/markdown", [$"{b}.json"] = "application/json", [$"{b}.marks.txt"] = "text/plain",
             [$"{b}.wav"] = "audio/wav", [$"{b}.mic.wav"] = "audio/wav", [$"{b}.log"] = "text/plain"
         }));
-        var size = DriveCommand.Size(onDrive.Sum(file => file.Content.Length));
+        var size = Sizes.Describe(onDrive.Sum(file => file.Content.Length));
         Assert.That(_world.Lines.Last(), Is.EqualTo($"{b} is on Google Drive: My Drive > ClassScribe > Mantiq > 2026-10-17 (6 files, {size}, each checked against Drive's MD5): https://drive.google.com/drive/folders/{DriveFolder.Id}"));
         Assert.That(_world.Lines, Has.Member($"Google Drive: uploading {b} (6 files, {size}) to ClassScribe/Mantiq/2026-10-17"));
     }
@@ -109,7 +109,7 @@ public class RecordingUploadTests
         await UploadAsync();
 
         var name = $"{_mantiq.BaseName}.wav";
-        var total = DriveCommand.Size(new FileInfo(_mantiq.Segment(1)).Length);
+        var total = Sizes.Describe(new FileInfo(_mantiq.Segment(1)).Length);
         Assert.That(_world.Lines.Where(line => line.StartsWith(name + ":", StringComparison.Ordinal)), Is.EqualTo(new[]
         {
             $"{name}: 30% (256 KB of {total})", $"{name}: 60% (512 KB of {total})"
