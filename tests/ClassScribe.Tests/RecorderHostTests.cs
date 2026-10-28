@@ -373,6 +373,29 @@ public partial class RecorderHostTests
     }
 
     /// <summary>
+    /// The recorder's safety stop follows the ElevenLabs:LongestFileHours of the settings the window handed over (architecture
+    /// 7.2), never ElevenLabs' own 10 hours: with a file of 5 hours, the default stop of 9 hours comes at 4 hours 30 minutes,
+    /// and the line names the 5 hours. The monitor the recorder's host makes is the one that reads it.
+    /// </summary>
+    [Test]
+    public async Task The_safety_stop_follows_the_file_limit_the_window_handed_over()
+    {
+        var snapshot = Snapshot();
+        snapshot["ElevenLabs:LongestFileHours"] = "5";
+        var request = WriteRequest(settings: snapshot);
+        var run = Host().RunAsync(request.RunId, apiKey: null);
+        var recording = await StartedAsync(run);
+        recording.Written = new TimeSpan(4, 30, 0);
+
+        await _time.AdvanceUntilAsync(() => run.IsCompleted, TimeSpan.FromSeconds(1), timeoutSeconds: 30);
+
+        Assert.That(await EndedAsync(run), Is.EqualTo(0));
+        Assert.That(RunFile(request.RunId).EndedBy, Is.EqualTo(RunEndCause.SafetyStop));
+        Assert.That(LoggedLines(), Has.Some.Contains(
+            "This recording stops now, after 4 hours 30 minutes (Recording:StopAfterHours is 9, above what one file to ElevenLabs can hold): ElevenLabs takes at most 5 hours of audio in one file"));
+    }
+
+    /// <summary>
     /// The run file is written only once the pipe is up: a window that finds the run file starting connects to the pipe at
     /// once, so a run file written first would send it to a pipe that does not exist yet.
     /// </summary>

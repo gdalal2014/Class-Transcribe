@@ -83,6 +83,24 @@ public class VideoBatchTests
     }
 
     /// <summary>
+    /// The plan holds the longest recording to the batch's own ElevenLabs:LongestFileHours, less an hour (architecture 7.2),
+    /// never to ElevenLabs' 10 hours: with a file of 5 hours, YouTube:LongestVideoHours at 6 is held to 4 hours, which comes
+    /// before the safety stop of 9 hours, itself held to 4 hours 30 minutes, and the plan says why.
+    /// </summary>
+    [Test]
+    public async Task The_plans_longest_recording_is_held_by_the_batchs_own_file_limit()
+    {
+        var elevenLabs = _world.ElevenLabs.Value;
+        _world.ElevenLabs.Set(new ElevenLabsOptions { ApiKey = elevenLabs.ApiKey, KeytermsFile = elevenLabs.KeytermsFile, LongestFileHours = 5 });
+        _world.YouTube.Set(new YouTubeOptions { LongestVideoHours = 6 });
+
+        Assert.That(await _world.RunAsync(_world.Request([First, Second], BatchConfirmation.PlanOnly)), Is.Zero);
+
+        Assert.That(_world.Screen, Has.Some.StartsWith(
+            "Each is recorded for as long as it plays, at most 4 hours (YouTube:LongestVideoHours is 6, above what one file to ElevenLabs can hold), ads included, so at most 8 hours for these 2:"));
+    }
+
+    /// <summary>
     /// The plan's price counts the glossary a recording of the course would be sent with, as the one resolver decides it
     /// (architecture 8.3): here a saved class of the course Risala names its own, of three terms, so each hour costs the
     /// glossary's price too.

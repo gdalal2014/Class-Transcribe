@@ -2,6 +2,7 @@ using System.Net;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using ClassScribe.YouTube;
@@ -113,6 +114,25 @@ public class DownloadBatchTests
         Assert.That(await _world.RunAsync(_world.Request([Link(First), Link(Second)], BatchConfirmation.PlanOnly)), Is.EqualTo(0));
 
         Assert.That(_world.Screen, Has.Some.EqualTo("Ready: 2 videos, 1 min: less than a cent to transcribe ($0.22 an hour plus $0.05 for the glossary of 3 terms)."));
+    }
+
+    /// <summary>
+    /// The guard takes the longest video from the batch's own ElevenLabs:LongestFileHours (architecture 7.2), never ElevenLabs'
+    /// 10 hours: with a file of 5 hours, a video of 4 hours 31 minutes is longer than the 4 hours 30 minutes a recording may
+    /// be, and the plan leaves it out in those words, while a short one is ready.
+    /// </summary>
+    [Test]
+    public async Task The_longest_video_is_held_to_the_batchs_own_file_limit()
+    {
+        var elevenLabs = _world.ElevenLabs.Value;
+        _world.ElevenLabs.Set(new ElevenLabsOptions { ApiKey = elevenLabs.ApiKey, KeytermsFile = elevenLabs.KeytermsFile, LongestFileHours = 5 });
+        _world.Tools.With(Third, YtDlpReadTests.Info(Third, "A long lesson", duration: (4 * 60 + 31) * 60), 3);
+
+        Assert.That(await _world.RunAsync(_world.Request([Link(Third), Link(First)], BatchConfirmation.PlanOnly)), Is.Zero);
+
+        Assert.That(_world.Screen.Single(line => line.Contains("A long lesson", StringComparison.Ordinal)), Does.EndWith("longer than 4 h 30 min: left out"));
+        Assert.That(_world.Screen.Single(line => line.Contains("The creed, part 1", StringComparison.Ordinal)), Does.EndWith("ready"));
+        Assert.That(_world.Tools.Downloads, Is.Empty);
     }
 
     /// <summary>A course's channel is never downloaded, --allow-unlisted or not; the plan says so, and the exit code is 1.</summary>
