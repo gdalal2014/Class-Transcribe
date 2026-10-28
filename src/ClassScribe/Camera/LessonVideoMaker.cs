@@ -18,6 +18,7 @@ namespace ClassScribe.Camera;
 /// for an argument; the sound and the transcript never depend on it.
 /// </summary>
 /// <param name="starter">Starts the camera process.</param>
+/// <param name="recordings">The lesson's files on disk, for the command that makes the video again.</param>
 /// <param name="time">The clock the limits are measured on.</param>
 /// <param name="loggers">Makes the log, under the category Camera.</param>
 public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFolder recordings, TimeProvider time, ILoggerFactory loggers)
