@@ -1,12 +1,15 @@
+using System.Globalization;
 using ClassScribe.Settings;
 using ClassScribe.Transcription;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;
 
 /// <summary>
 /// How much audio one file to ElevenLabs may hold, ElevenLabs:LongestFileHours (architecture 7.2), and what follows from it:
-/// the longest recording sent, half an hour within it, which is the latest the safety stop comes; and the longest a YouTube
-/// video is recorded for, an hour within it. The settings it bounds are held to it, never refused (question 10).
+/// the longest recording, half an hour within it, which is the latest the safety stop comes and is sent with the minute a
+/// recording may run past it; and the longest a YouTube video is recorded for, an hour within it. The settings it bounds are
+/// held to it, never refused (question 10).
 /// </summary>
 [TestFixture]
 public class TranscriptionLimitsTests
@@ -41,6 +44,54 @@ public class TranscriptionLimitsTests
     public void The_safety_stop_is_held_to_the_longest_recording_sent(double fileHours, double stopAfterHours, double stopsAtHours)
     {
         Assert.That(For(fileHours).SafetyStop(stopAfterHours), Is.EqualTo(TimeSpan.FromHours(stopsAtHours)));
+    }
+
+    /// <summary>
+    /// A recording may run a minute past the longest recording and still be sent, and not a second more: with ElevenLabs' own
+    /// 10 hours, 9 hours 31 minutes are sent and 9 hours 31 minutes and a second are not; with a file of 5 hours, 4 hours 31
+    /// minutes. A recording the safety stop ended runs a moment past its stop, which this takes in.
+    /// </summary>
+    [TestCase(10, "09:30:00", true)]
+    [TestCase(10, "09:30:01", true)]
+    [TestCase(10, "09:31:00", true)]
+    [TestCase(10, "09:31:01", false)]
+    [TestCase(5, "04:31:00", true)]
+    [TestCase(5, "04:31:01", false)]
+    public void A_recording_is_sent_up_to_a_minute_past_the_longest_recording(double fileHours, string length, bool sent)
+    {
+        Assert.That(TranscriptionLimits.Overrun, Is.EqualTo(TimeSpan.FromMinutes(1)));
+        Assert.That(For(fileHours).Sends(TimeSpan.Parse(length, CultureInfo.InvariantCulture)), Is.EqualTo(sent));
+    }
+
+    /// <summary>
+    /// Wherever the safety stop comes, held by the file or not, a recording a few seconds past it is still sent, so the stop
+    /// never makes a recording too long to transcribe.
+    /// </summary>
+    [TestCase(10, 9)]
+    [TestCase(10, 9.5)]
+    [TestCase(10, 12)]
+    [TestCase(10, 24)]
+    [TestCase(5, 9)]
+    [TestCase(1, 9)]
+    [TestCase(24, 24)]
+    public void A_recording_a_moment_past_its_safety_stop_is_sent(double fileHours, double stopAfterHours)
+    {
+        var limits = For(fileHours);
+
+        Assert.That(limits.Sends(limits.SafetyStop(stopAfterHours)!.Value + TimeSpan.FromSeconds(5)), Is.True);
+    }
+
+    /// <summary>
+    /// The guard takes a video as long as the longest recording, and its downloaded audio may be up to 2 seconds longer than
+    /// the video (DownloadedAudio.LengthTolerance): that audio is still sent, by the default file limit and a lowered one.
+    /// </summary>
+    [TestCase(10)]
+    [TestCase(5)]
+    public void A_downloaded_videos_audio_a_moment_past_the_longest_recording_is_sent(double fileHours)
+    {
+        var limits = For(fileHours);
+
+        Assert.That(limits.Sends(limits.LongestRecording + DownloadedAudio.LengthTolerance), Is.True);
     }
 
     /// <summary>0 hours turns the safety stop off, whatever the file holds, as it always has.</summary>

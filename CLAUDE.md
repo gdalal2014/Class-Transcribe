@@ -1089,7 +1089,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ElevenLabs:SlowestUploadMbps` plus a quarter of the audio, rounded to the minute, never below
   `ElevenLabs:TimeoutMinutes` (2 h of audio: 71 minutes); `HttpClient.Timeout` is off, as
   `ElevenLabsClient` holds the limit. A recording longer than `ElevenLabs:LongestFileHours` less half an
-  hour (`TranscriptionLimits.LongestRecording`, 9.5 h by default) is refused before anything is
+  hour (`TranscriptionLimits.LongestRecording`, 9.5 h by default) and the minute past it
+  (`TranscriptionLimits.Overrun`, `Sends`: a recording the safety stop ended there runs a moment past
+  its stop, and a download's audio up to 2 s past its video) is refused before anything is
   prepared, its message built from the setting, measured by the class track alone (the
   microphone's track is as long; the advice says to copy the `.mic.wav` files along). With `.mic.wav`
   files the workflow hands `AudioPreparer.Prepare(UploadTracks)` both tracks, which mixes them into
@@ -1222,9 +1224,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `Drive:AuthorizationUrl` (Google's sign-in page, which `GoogleSignIn` opens; `CheckLocalOrHttpsAddress`);
   and `ElevenLabs:BaseUrl`, now https or http to a loopback address only, since the key travels in a
   header. `TranscriptionLimits` (`Transcription/`, built by `From(ElevenLabsOptions)`) is the file limit
-  and what follows from it: `LongestRecording`, half an hour less (the workflow's refusal,
-  `ClassFolders.FindContinuable`, `DownloadGuard`); `SafetyStop`, `Recording:StopAfterHours` (0 to 24)
-  held at `LongestRecording`; and `VideoLimit`, `YouTube:LongestVideoHours` held an hour within the
+  and what follows from it: `LongestRecording`, half an hour less (`ClassFolders.FindContinuable`,
+  `DownloadGuard`, and with the minute of `Overrun` the workflow's refusal, `Sends`, so that the
+  recording a stop held there ends, which runs a moment past it, is still sent); `SafetyStop`,
+  `Recording:StopAfterHours` (0 to 24) held at `LongestRecording`; and `VideoLimit`, `YouTube:LongestVideoHours` held an hour within the
   file and never below a quarter of an hour (the monitor and `VideoBatch`'s plan). A setting bounded
   by another is warned about and held, never refused (`SettingsCheck.WarnOfTheStops`), so lowering the
   file limit never stops a command; the monitor's, the plan's, the guard's and the workflow's words are

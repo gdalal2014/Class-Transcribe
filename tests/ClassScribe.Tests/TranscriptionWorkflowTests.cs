@@ -358,12 +358,12 @@ public class TranscriptionWorkflowTests
     public void A_recording_with_only_the_microphones_files_is_measured_by_them()
     {
         File.Delete(_files.Segment(1));
-        WriteLongSegment(1, new TimeSpan(9, 30, 1), Track.Microphone);
+        WriteLongSegment(1, new TimeSpan(9, 31, 1), Track.Microphone);
         var workflow = CreateWorkflow();
 
         var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
-        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("copy some of its .mic.wav files into a folder of their own"));
+        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:31:01 of audio").And.Contain("copy some of its .mic.wav files into a folder of their own"));
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
     }
 
@@ -382,19 +382,20 @@ public class TranscriptionWorkflowTests
     }
 
     /// <summary>
-    /// A recording longer than nine and a half hours, here in two segments, is refused before anything is prepared or
-    /// sent: ElevenLabs takes at most 10 hours per file. The message gives the length and says what to do instead.
+    /// A recording longer than nine and a half hours and the minute a recording may run past them, here 9 hours 31 minutes
+    /// and a second in two segments, is refused before anything is prepared or sent: ElevenLabs takes at most 10 hours per
+    /// file. The message gives the length and says what to do instead.
     /// </summary>
     [Test]
     public void A_recording_longer_than_nine_and_a_half_hours_is_refused_before_anything_is_prepared_or_sent()
     {
         WriteLongSegment(1, new TimeSpan(4, 45, 0));
-        WriteLongSegment(2, new TimeSpan(4, 45, 1));
+        WriteLongSegment(2, new TimeSpan(4, 46, 1));
         var workflow = CreateWorkflow();
 
         var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
-        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("at most 10 hours per file").And.Contain("at most 9 hours 30 minutes")
+        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:31:01 of audio").And.Contain("at most 10 hours per file").And.Contain("at most 9 hours 30 minutes")
             .And.Contain("Nothing was prepared or sent"));
         Assert.That(error.Message, Does.Contain("copy some of its .wav files into a folder of their own and transcribe that folder").And.Not.Contain(".mic.wav"),
             "a recording without a microphone track gets the plain advice");
@@ -424,7 +425,7 @@ public class TranscriptionWorkflowTests
     [Test]
     public void A_recording_with_a_microphone_track_that_is_too_long_is_refused_before_anything_is_prepared()
     {
-        WriteLongSegment(1, new TimeSpan(9, 30, 1));
+        WriteLongSegment(1, new TimeSpan(9, 31, 1));
         WriteLongSegment(1, TimeSpan.FromSeconds(1), Track.Microphone);
         var workflow = CreateWorkflow();
 
@@ -444,13 +445,13 @@ public class TranscriptionWorkflowTests
     [Test]
     public void The_refusal_of_a_recording_with_a_microphone_track_says_to_copy_the_mic_wav_files_with_the_pieces()
     {
-        WriteLongSegment(1, new TimeSpan(9, 30, 1));
+        WriteLongSegment(1, new TimeSpan(9, 31, 1));
         WriteLongSegment(1, TimeSpan.FromSeconds(1), Track.Microphone);
         var workflow = CreateWorkflow();
 
         var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
-        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("Nothing was prepared or sent"));
+        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:31:01 of audio").And.Contain("Nothing was prepared or sent"));
         Assert.That(error.Message, Does.Contain("copy some of its .wav files into a folder of their own")
             .And.Contain("the matching .mic.wav files")
             .And.Contain("under the same names")
@@ -469,24 +470,44 @@ public class TranscriptionWorkflowTests
     }
 
     /// <summary>
-    /// The refusal comes at ElevenLabs:LongestFileHours less half an hour (architecture 7.2), and its words are built from
-    /// the setting: with a file of 5 hours, 4 hours 30 minutes and a second are refused before anything is prepared, and the
-    /// message names 5 hours, the setting and 4 hours 30 minutes; 4 hours 30 minutes are still sent.
+    /// A recording the safety stop ended is sent, though it runs a moment past the stop: the stop comes at the first look
+    /// after the recording reached it, a second apart, and the audio goes on arriving until the capture closes. Held by what
+    /// one file to ElevenLabs holds (architecture 7.2, question 10), the stop comes exactly at the longest recording: with
+    /// Recording:StopAfterHours 12 and ElevenLabs' own 10 hours at 9 hours 30 minutes, and with the default 9 hours and
+    /// ElevenLabs:LongestFileHours 5 at 4 hours 30 minutes. A recording a second and a half past either is sent.
+    /// </summary>
+    [TestCase(10, 12)]
+    [TestCase(5, 9)]
+    public async Task A_recording_the_held_safety_stop_ended_is_sent(double longestFileHours, double stopAfterHours)
+    {
+        var stop = TranscriptionLimits.From(new ElevenLabsOptions { LongestFileHours = longestFileHours }).SafetyStop(stopAfterHours)!.Value;
+        WriteLongSegment(1, stop + TimeSpan.FromSeconds(1.5));
+
+        await CreateWorkflow(longestFileHours: longestFileHours).TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
+    }
+
+    /// <summary>
+    /// The refusal comes at ElevenLabs:LongestFileHours less half an hour (architecture 7.2), and the minute a recording may
+    /// run past it, and its words are built from the setting: with a file of 5 hours, 4 hours 31 minutes and a second are
+    /// refused before anything is prepared, and the message names 5 hours, the setting and 4 hours 30 minutes; 4 hours 31
+    /// minutes are still sent.
     /// </summary>
     [Test]
     public async Task The_refusal_comes_at_the_setting_less_half_an_hour_and_says_so()
     {
         WriteLongSegment(1, new TimeSpan(2, 15, 0));
-        WriteLongSegment(2, new TimeSpan(2, 15, 1));
+        WriteLongSegment(2, new TimeSpan(2, 16, 1));
 
         var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await CreateWorkflow(longestFileHours: 5).TranscribeRecordingAsync(_files, CancellationToken.None));
 
         Assert.That(error!.Message, Does.StartWith(
-            $"{_files.BaseName} holds 04:30:01 of audio, and ElevenLabs takes at most 5 hours per file (ElevenLabs:LongestFileHours), so ClassScribe sends at most 4 hours 30 minutes. Nothing was prepared or sent."));
+            $"{_files.BaseName} holds 04:31:01 of audio, and ElevenLabs takes at most 5 hours per file (ElevenLabs:LongestFileHours), so ClassScribe sends at most 4 hours 30 minutes. Nothing was prepared or sent."));
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
         _client.Verify(Calls.AnyTranscription, Times.Never);
 
-        WriteLongSegment(2, new TimeSpan(2, 15, 0));
+        WriteLongSegment(2, new TimeSpan(2, 16, 0));
         await CreateWorkflow(longestFileHours: 5).TranscribeRecordingAsync(_files, CancellationToken.None);
         _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
     }

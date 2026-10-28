@@ -44,9 +44,10 @@ public sealed record GuardVerdict(GuardVerdictKind Kind, string Words, string? A
 /// The guard on downloads (design 3.5): each video gets the first verdict that applies. A video of a channel in
 /// YouTube:CourseChannels, by its UC id or its @handle, is never downloaded. One that needs a sign-in (private, members' or
 /// Premium videos, those that need a sign-in, and any restricted by age) is left out: ClassScribe never signs in. A stream
-/// that is live, upcoming or still being processed is not finished yet. One whose length is unknown, or longer than
-/// ClassScribe sends in one file to ElevenLabs (ElevenLabs:LongestFileHours less half an hour, see
-/// <see cref="TranscriptionLimits.LongestRecording"/>), is left out. A video of a channel in YouTube:MayDownloadChannels is
+/// that is live, upcoming or still being processed is not finished yet. One whose length is unknown, or longer than the
+/// longest recording ClassScribe makes for one file to ElevenLabs (ElevenLabs:LongestFileHours less half an hour, see
+/// <see cref="TranscriptionLimits.LongestRecording"/>), is left out; the seconds its audio may run past the video's length
+/// are within what is still sent (<see cref="TranscriptionLimits.Overrun"/>). A video of a channel in YouTube:MayDownloadChannels is
 /// ready, and so is a public one. An unlisted video, or one yt-dlp is not sure is public, needs Gulzar's word for that
 /// video, since course pages embed unlisted videos: given in the menu, or, for every video yt-dlp says is unlisted, by
 /// --allow-unlisted, which never overrides any refusal above and never takes a video yt-dlp is not sure of. While
@@ -60,7 +61,7 @@ public sealed class DownloadGuard(YouTubeOptions options, TranscriptionLimits? l
     /// <summary>The verdict on a video whose channel is not known while YouTube:CourseChannels names channels.</summary>
     public const string ChannelUnknown = "channel unknown: needs your word";
 
-    /// <summary>The longest video downloaded: the longest recording sent in one file.</summary>
+    /// <summary>The longest video downloaded: the longest recording made for one file, which is sent with the seconds its audio may run past the video's length.</summary>
     private readonly TimeSpan _longest = (limits ?? TranscriptionLimits.ElevenLabs).LongestRecording;
 
     /// <summary>The availabilities that need a sign-in.</summary>

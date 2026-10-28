@@ -2573,7 +2573,7 @@ The ones you are most likely to change:
 | `ElevenLabs:MaxKeyterms` | 1000 | The most terms one transcript's glossary sends; the rest of a longer glossary is left out, with a warning. ElevenLabs takes 1,000. From 1 to 10,000: above ElevenLabs' own it only brings a warning, since ElevenLabs then refuses the whole request, perhaps after an hour of upload. |
 | `ElevenLabs:KeytermCharacterLimit` | 50 | A glossary term must be shorter than this many characters, or it is left out with a warning. ElevenLabs takes terms shorter than 50. From 2 to 1,000; above 50 only brings a warning, as above. |
 | `ElevenLabs:MaxKeytermWords` | 5 | The most words in a glossary term; a longer one is left out with a warning. ElevenLabs takes 5. From 1 to 50; above 5 only brings a warning, as above. |
-| `ElevenLabs:LongestFileHours` | 10 | The most audio one file to ElevenLabs may hold, in hours: ElevenLabs takes 10. ClassScribe sends at most half an hour less (9 hours 30 minutes by default) and refuses a longer recording before anything is prepared; the safety stop comes there at the latest, a YouTube video's recording an hour less, a download longer than that is left out, and a recording that long is not offered to continue. The messages that say so name the hours this gives. From 1 to 24; above 10 only brings a warning, as above. Lowering it refuses nothing: `Recording:StopAfterHours` and `YouTube:LongestVideoHours` are held to it, with a warning. |
+| `ElevenLabs:LongestFileHours` | 10 | The most audio one file to ElevenLabs may hold, in hours: ElevenLabs takes 10. ClassScribe sends at most half an hour less (9 hours 30 minutes by default, and up to a minute more, since a recording the safety stop ended there runs a moment past it) and refuses a longer recording before anything is prepared; the safety stop comes there at the latest, a YouTube video's recording an hour less, a download longer than that is left out, and a recording that long is not offered to continue. The messages that say so name the hours this gives. From 1 to 24; above 10 only brings a warning, as above. Lowering it refuses nothing: `Recording:StopAfterHours` and `YouTube:LongestVideoHours` are held to it, with a warning. |
 | `ElevenLabs:TimeoutMinutes` | 60 | The least time one try is given: the upload, the transcription and the whole answer. A longer recording gets more; see [How long an upload may take](#how-long-an-upload-may-take). From 1 to 1440. |
 | `ElevenLabs:SlowestUploadMbps` | 1 | The slowest upload speed, in megabits per second, that the time limit allows for. If your line uploads more slowly, set it a little below that speed. From 0.1 to 1000. |
 | `ElevenLabs:PricePerHourUsd` | 0.22 | The API price of an hour of audio, in US dollars, for the estimate logged after each transcript: Scribe v2 on [ElevenLabs' API price list](https://elevenlabs.io/pricing/api). 0 logs the audio's length without a price. From 0 to 100. See [Cost and privacy](#cost-and-privacy). |
@@ -2714,7 +2714,8 @@ answer).
 A recording longer than 9 and a half hours is not sent at all, because ElevenLabs takes at most 10
 hours per file: nothing is prepared or uploaded, and the message says how to send it in pieces. Both
 come from `ElevenLabs:LongestFileHours`: ClassScribe sends at most half an hour less than it, and the
-message names the hours it gives.
+message names the hours it gives. A recording the safety stop ended there runs a moment past it, as
+the audio goes on arriving while it stops, so a minute past the limit is still sent.
 
 ## A program to double-click
 
