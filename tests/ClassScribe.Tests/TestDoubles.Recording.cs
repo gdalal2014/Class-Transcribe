@@ -1,5 +1,6 @@
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 
 namespace ClassScribe.Tests;

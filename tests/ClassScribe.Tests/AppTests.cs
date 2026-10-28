@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using Moq;
 

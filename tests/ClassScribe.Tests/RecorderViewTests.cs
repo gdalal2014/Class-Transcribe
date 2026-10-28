@@ -4,6 +4,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 using Moq;

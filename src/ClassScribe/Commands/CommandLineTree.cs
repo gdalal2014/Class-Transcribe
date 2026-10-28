@@ -8,6 +8,7 @@ using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
 using ClassScribe.Desktop;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 
 namespace ClassScribe.Commands;

@@ -1,5 +1,6 @@
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
+using ClassScribe.Runs;
 
 namespace ClassScribe.Tests;
 

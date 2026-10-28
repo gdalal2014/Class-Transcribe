@@ -4,6 +4,7 @@ using System.Runtime.Versioning;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
+using ClassScribe.Runs;
 using Microsoft.Extensions.Logging.Abstractions;
 using Win32Exception = System.ComponentModel.Win32Exception;
 

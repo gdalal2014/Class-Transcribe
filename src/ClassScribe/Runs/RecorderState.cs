@@ -1,6 +1,6 @@
 using ClassScribe.Audio.Microphones;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Runs;
 
 /// <summary>Where a run is, as the window's title, its taskbar button and the view of the run show it.</summary>
 public enum RecorderPhase
@@ -113,10 +113,3 @@ public sealed record RecorderState(RecorderPhase Phase, string Name, TimeSpan Po
 /// <param name="Size">The picture's size, such as 720p.</param>
 /// <param name="Dark">True while its picture has been black for 10 seconds.</param>
 public sealed record CameraState(string Name, bool Capturing, string? Problem, string? Size = null, bool Dark = false);
-
-/// <summary>Takes a run's state on every change and once a second, for the window's title and taskbar, or for the windows that show the run.</summary>
-public interface IRecorderStatusSink
-{
-    /// <summary>Passes <paramref name="state"/> on.</summary>
-    void Publish(RecorderState state);
-}

@@ -2,6 +2,7 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;

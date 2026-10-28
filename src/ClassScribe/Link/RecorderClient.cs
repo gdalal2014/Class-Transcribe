@@ -2,8 +2,8 @@ using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Link;

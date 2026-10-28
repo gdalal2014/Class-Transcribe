@@ -1,3 +1,5 @@
+using ClassScribe.Runs;
+
 namespace ClassScribe.Commands;
 
 /// <summary>What the start of a run with a camera decided (see <see cref="CameraStart"/>).</summary>

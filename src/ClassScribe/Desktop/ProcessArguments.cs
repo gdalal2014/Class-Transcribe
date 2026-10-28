@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using ClassScribe.Commands;
+using ClassScribe.Runs;
 
 namespace ClassScribe.Desktop;
 

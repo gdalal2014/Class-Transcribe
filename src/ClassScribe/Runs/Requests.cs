@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Runs;
 
 /// <summary>
 /// Where the class's sound comes from: the output device it plays on, found by ClassScribe; one output device, chosen by

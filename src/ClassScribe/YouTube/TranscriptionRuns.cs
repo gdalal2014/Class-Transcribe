@@ -3,6 +3,7 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging;

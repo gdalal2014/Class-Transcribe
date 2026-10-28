@@ -1,6 +1,6 @@
 using System.Text.Json;
 using ClassScribe.Audio.Microphones;
-using ClassScribe.Commands;
+using ClassScribe.Runs;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Camera;

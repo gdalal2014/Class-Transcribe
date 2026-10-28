@@ -1,4 +1,4 @@
-using ClassScribe.Commands;
+using ClassScribe.Runs;
 
 namespace ClassScribe.Desktop;
 

@@ -1,7 +1,7 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
-using ClassScribe.Commands;
+using ClassScribe.Runs;
 
 namespace ClassScribe.Settings;
 

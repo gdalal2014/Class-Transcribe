@@ -1,4 +1,4 @@
-using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

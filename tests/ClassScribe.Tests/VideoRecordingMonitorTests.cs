@@ -4,6 +4,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging;

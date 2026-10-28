@@ -3,6 +3,7 @@ using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
+using ClassScribe.Runs;
 using Moq;
 
 namespace ClassScribe.Tests;

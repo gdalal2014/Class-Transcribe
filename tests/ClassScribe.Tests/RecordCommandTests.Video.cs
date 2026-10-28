@@ -2,6 +2,7 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Storage;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;

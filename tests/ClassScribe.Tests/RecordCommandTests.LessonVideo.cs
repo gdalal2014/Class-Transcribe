@@ -3,6 +3,7 @@ using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 
 namespace ClassScribe.Tests;
 

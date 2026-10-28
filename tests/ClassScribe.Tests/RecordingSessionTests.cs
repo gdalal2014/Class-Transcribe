@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Windows;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;

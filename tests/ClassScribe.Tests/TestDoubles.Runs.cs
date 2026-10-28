@@ -2,6 +2,7 @@ using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 
 namespace ClassScribe.Tests;
 

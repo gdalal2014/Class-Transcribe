@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using ClassScribe.Desktop;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;

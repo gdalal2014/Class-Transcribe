@@ -723,7 +723,7 @@ public sealed class FakeCameraTrack(CameraTrackStart start, Audio.Timeline.Recor
 }
 
 /// <summary>What a recording with the camera says about it, as a test sets it: the OBSBOT recording at 720p unless the test says otherwise; letting it go is noted and given up.</summary>
-public sealed class FakeCameraRecording : Commands.ICameraRecording
+public sealed class FakeCameraRecording : Audio.ICameraRecording
 {
     private readonly Lock _gate = new();
     private readonly List<string> _letGo = [];
@@ -899,7 +899,7 @@ public sealed class FakeCameraProcessStarter : ICameraProcessStarter
     /// <inheritdoc />
     public ICameraProcess Start(string jobId)
     {
-        if (!Commands.RunIds.IsWellFormed(jobId)) throw new ArgumentException($"\"{jobId}\" is not a job id.", nameof(jobId));
+        if (!Runs.RunIds.IsWellFormed(jobId)) throw new ArgumentException($"\"{jobId}\" is not a job id.", nameof(jobId));
         var number = Interlocked.Increment(ref _entered) - 1;
         if (_held.TryRemove(number, out var held)) held.Wait();
         if (StartFailure is { } failure) throw failure;

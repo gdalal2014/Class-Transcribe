@@ -1,5 +1,5 @@
 using System.Text.Json;
-using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;

@@ -1,44 +1,6 @@
 using ClassScribe.Recorder;
 
-namespace ClassScribe.Commands;
-
-/// <summary>How a window shows a run.</summary>
-public enum ViewMode
-{
-    /// <summary>The window that started the run: it opens the results at the end.</summary>
-    Owner,
-
-    /// <summary>Another window showing the run, such as ClassScribe started again while it records.</summary>
-    Viewer,
-
-    /// <summary>A window the recorder opened by itself: it ignores every key until Enter.</summary>
-    Alert
-}
-
-/// <summary>Why a window stopped showing a run.</summary>
-public enum ViewEnd
-{
-    /// <summary>The run ended; its outcome says how.</summary>
-    RunEnded,
-
-    /// <summary>Esc: the window left the view, and the run carries on.</summary>
-    Left,
-
-    /// <summary>The recorder ended unexpectedly while the window showed it.</summary>
-    RecorderLost,
-
-    /// <summary>The recorder stopped answering, and the window stopped waiting for it.</summary>
-    NotAnswering,
-
-    /// <summary>The recorder was started by another build of ClassScribe, which speaks another protocol.</summary>
-    Refused
-}
-
-/// <summary>How showing a run ended.</summary>
-/// <param name="End">Why the window stopped showing it.</param>
-/// <param name="ExitCode">The exit code the run ended with, when it ended; null otherwise.</param>
-/// <param name="Outcome">How the run ended, when it ended; null otherwise.</param>
-public sealed record ViewResult(ViewEnd End, int? ExitCode, RunOutcome? Outcome);
+namespace ClassScribe.Runs;
 
 /// <summary>Shows a run in this window: what happened so far, then what happens, with the recording keys passed on to it.</summary>
 public interface IRunViewer
@@ -67,33 +29,6 @@ public interface IRecordRun
     /// <summary>Records as <paramref name="request"/> says, and returns the exit code.</summary>
     Task<int> RunAsync(RecordRequest request);
 }
-
-/// <summary>What the report at the start offers to do about a run that needs a decision, or about what waits for Google Drive.</summary>
-public enum StartupAction
-{
-    /// <summary>C: continue the recording as its next part.</summary>
-    Continue,
-
-    /// <summary>T: transcribe what was recorded.</summary>
-    Transcribe,
-
-    /// <summary>O: open the transcript made while no window showed the run.</summary>
-    Open,
-
-    /// <summary>F: forget the run, doing nothing about it.</summary>
-    Forget,
-
-    /// <summary>U: upload what waits to go up to Google Drive now.</summary>
-    Upload,
-
-    /// <summary>V: make a lesson's video now, free, from its camera pieces and its sound (teach-video 6.9).</summary>
-    MakeVideo
-}
-
-/// <summary>What was chosen in the report at the start.</summary>
-/// <param name="RunId">The run the choice is about; null for U, which is about what waits for Google Drive.</param>
-/// <param name="Action">What to do about it.</param>
-public sealed record StartupChoice(string? RunId, StartupAction Action);
 
 /// <summary>
 /// The report at the start: runs that ended unexpectedly, transcriptions interrupted, and outcomes nobody has seen yet,

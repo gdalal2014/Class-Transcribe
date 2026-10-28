@@ -1,6 +1,7 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Configuration;
 

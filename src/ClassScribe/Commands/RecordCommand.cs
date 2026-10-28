@@ -4,6 +4,7 @@ using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;

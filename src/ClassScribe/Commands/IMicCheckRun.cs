@@ -1,3 +1,5 @@
+using ClassScribe.Runs;
+
 namespace ClassScribe.Commands;
 
 /// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>

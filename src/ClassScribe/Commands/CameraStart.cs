@@ -1,5 +1,6 @@
 using ClassScribe.Audio;
 using ClassScribe.Camera;
+using ClassScribe.Runs;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Commands;

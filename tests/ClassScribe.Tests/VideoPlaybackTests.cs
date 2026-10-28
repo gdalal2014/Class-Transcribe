@@ -3,6 +3,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;

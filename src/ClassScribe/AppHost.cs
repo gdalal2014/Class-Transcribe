@@ -5,6 +5,7 @@ using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

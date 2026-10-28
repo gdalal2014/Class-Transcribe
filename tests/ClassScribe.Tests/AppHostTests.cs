@@ -5,6 +5,7 @@ using ClassScribe.Desktop.Windows;
 using ClassScribe.Drive;
 using ClassScribe.Link;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Configuration;

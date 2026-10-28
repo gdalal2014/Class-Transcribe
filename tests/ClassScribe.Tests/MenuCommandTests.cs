@@ -6,6 +6,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
+using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
