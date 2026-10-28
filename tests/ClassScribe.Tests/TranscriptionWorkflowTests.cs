@@ -102,6 +102,8 @@ public class TranscriptionWorkflowTests
             new TranscriptCopies(),
             new RecordingFolder(),
             new FileProbe(),
+            new ElevenLabsAnswer(),
+            new AudioFileFacts(),
             recording,
             elevenLabs,
             progress ?? new TranscriptionProgress(),

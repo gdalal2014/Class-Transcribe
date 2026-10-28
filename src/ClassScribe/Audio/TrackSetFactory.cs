@@ -26,6 +26,7 @@ namespace ClassScribe.Audio;
 /// <param name="names">Names processes, for the watch.</param>
 /// <param name="own">Tells ClassScribe's own processes, whose microphone sessions never count as an app's.</param>
 /// <param name="folders">The recordings' library, for how much a track already holds on disk when the run continues a recording.</param>
+/// <param name="writers">Opens each session's segment files.</param>
 /// <param name="freezes">The run's watch for times ClassScribe did not run, which the recording clock cuts out.</param>
 /// <param name="options">The run's recording settings.</param>
 /// <param name="transcript">The run's transcript settings: how long a stretch with nothing playing must be for a heading, in a recording of the class alone.</param>
@@ -52,6 +53,7 @@ public sealed class TrackSetFactory(
     IProcessNames names,
     IOwnProcesses own,
     IClassFolders folders,
+    ITrackWriterFactory writers,
     FreezeWatch freezes,
     IOptionsSnapshot<RecordingOptions> options,
     IOptionsSnapshot<TranscriptOptions> transcript,
@@ -121,7 +123,7 @@ public sealed class TrackSetFactory(
     private RecordingSession ClassSession(SourcePlan source, TrackSpec spec, RecordingClock? clock)
     {
         var chooser = new CaptureChooser(time, source.Class ?? new ClassSource.Automatic(), loggers.CreateLogger<CaptureChooser>(), video);
-        return new RecordingSession(new LoopbackSource(loopback, chooser), spec, clock, options, time, loggers.CreateLogger<RecordingSession>());
+        return new RecordingSession(new LoopbackSource(loopback, chooser), writers, spec, clock, options, time, loggers.CreateLogger<RecordingSession>());
     }
 
     /// <summary>
@@ -138,7 +140,7 @@ public sealed class TrackSetFactory(
         var tap = new MicrophoneProviderTap(microphones, hold is null ? null : hold.BeforeOpen);
         var chooser = new MicrophoneChooser(source.Microphone?.NamePart ?? settings.Microphone, time, loggers.CreateLogger<MicrophoneChooser>());
         var microphoneSource = new MicrophoneSource(tap, chooser, settings.MicrophoneProcessing);
-        var session = new RecordingSession(microphoneSource, new TrackSpec(track, TrackPlacement.ClockAligned), clock, options, time, loggers.CreateLogger<RecordingSession>());
+        var session = new RecordingSession(microphoneSource, writers, new TrackSpec(track, TrackPlacement.ClockAligned), clock, options, time, loggers.CreateLogger<RecordingSession>());
 
         var rule = follows ?? new FollowRule.None();
         var gate = new MicrophoneGate(settings.ClassAppMute, rule, time, loggers.CreateLogger<MicrophoneGate>());

@@ -126,7 +126,7 @@ public partial class RecordingLoopTests
     private async Task<IRecording> StartAsync(RecordingOptions? settings = null, ClassSource? source = null)
     {
         var options = TestOptions.Create(settings ?? Settings());
-        var recording = new ClassRecordingFactory(_provider, options, _time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
+        var recording = new ClassRecordingFactory(_provider, new WavTrackWriterFactory(), options, _time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
             NullLogger<ClassRecording>.Instance).Create(new SourcePlan(RecordingMode.Class, source ?? new ClassSource.Automatic(), Microphone: null));
         _recordings.Add(recording);
         recording.Start(_files, TimeSpan.Zero);

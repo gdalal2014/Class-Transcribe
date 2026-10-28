@@ -54,6 +54,7 @@ public class ElevenLabsClientTests
         return new ElevenLabsClient(
             api,
             TestOptions.Create(options ?? new ElevenLabsOptions { ApiKey = "test-key", RetryDelaySeconds = 0 }),
+            new AudioFileFacts(),
             progress ?? new TranscriptionProgress(),
             time ?? TimeProvider.System,
             logger ?? NullLogger<ElevenLabsClient>.Instance);

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
@@ -28,13 +27,14 @@ public sealed class TranscriptionWorkflow(
     ITranscriptCopies copies,
     IRecordingFolder recordings,
     IFileProbe probe,
+    ITranscriptAnswers answers,
+    IAudioFileFacts facts,
     IOptionsSnapshot<RecordingOptions> recording,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TranscriptionProgress progress,
     UsageReport usage,
     ILogger<TranscriptionWorkflow> logger)
 {
-    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     /// <summary>
     /// The line <see cref="TranscriptFormatter"/> writes under the title of a recording's transcript, such as "Recorded
@@ -193,7 +193,7 @@ public sealed class TranscriptionWorkflow(
             answer = answerPath ?? copies.NewestAnswer(files)
                 ?? throw new FileNotFoundException("This recording has no saved answer from ElevenLabs yet; transcribe it first.", files.Json());
 
-            var result = ElevenLabsAnswer.Parse(await File.ReadAllTextAsync(answer, cancellationToken), HttpStatusCode.OK);
+            var result = await answers.ReadAsync(answer, cancellationToken);
             var recordedUtc = IsRecording(files) ? files.StartedUtc : null;
             var classMarks = marks.Read(files);
             var rebuilt = copies.SaveRebuilt(files, formatter.Format(result, files.Name, recordedUtc, classMarks, ClassMark.PartsIn(classMarks), VideoOf(files)), logger);
@@ -252,7 +252,7 @@ public sealed class TranscriptionWorkflow(
     /// sends, ElevenLabs:LongestFileHours less half an hour and the minute a recording may run past it, as one the safety stop
     /// ended there does (see <see cref="TranscriptionLimits.Sends"/>), before anything is prepared, with the limits in words
     /// from the settings. Each segment is read to its end, as the preparer
-    /// reads it (see <see cref="UploadTimeLimit.AudioLength"/>); a file the recorder did not write counts as empty, as it
+    /// reads it (see <see cref="IAudioFileFacts.AudioLength"/>); a file the recorder did not write counts as empty, as it
     /// does in the list of recordings. The microphone's segments beside the class, <paramref name="microphone"/>, are not measured:
     /// they only decide the advice. A folder holding the copied .wav files alone looks like a class-only recording, which
     /// would drop your microphone from every piece without a word, so when the recording has a microphone track the
@@ -263,7 +263,7 @@ public sealed class TranscriptionWorkflow(
     {
         var limits = TranscriptionLimits.From(elevenLabs.Value);
         var length = TimeSpan.Zero;
-        foreach (var segment in segments) length += UploadTimeLimit.AudioLength(segment) ?? TimeSpan.Zero;
+        foreach (var segment in segments) length += facts.AudioLength(segment) ?? TimeSpan.Zero;
         if (limits.Sends(length)) return;
 
         var advice = microphoneAlone
@@ -387,9 +387,7 @@ public sealed class TranscriptionWorkflow(
             var target = recordings.NextFreeUnreadAnswer(place);
             try
             {
-                using (var writer = new StreamWriter(new FileStream(target, FileMode.CreateNew, FileAccess.Write), Utf8NoBom))
-                    writer.Write(answer);
-
+                answers.WriteNew(target, answer);
                 logger.LogWarning("ElevenLabs' answer is kept in {Path}. It has been paid for, so look there for the transcript's text before transcribing again, which is charged again", target);
                 return target;
             }

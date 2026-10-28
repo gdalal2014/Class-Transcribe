@@ -1,4 +1,5 @@
 using System.Globalization;
+using ClassScribe.Audio;
 using ClassScribe.Settings;
 using ClassScribe.Transcription;
 
@@ -103,7 +104,7 @@ public class TranscriptionCostTests
         var wav = folder.File("upload.wav");
         TestAudio.WriteWav(wav, 16000, new short[32000]);
 
-        var line = Describe(null, UploadTimeLimit.AudioLength(wav), 0);
+        var line = Describe(null, new AudioFileFacts().AudioLength(wav), 0);
 
         Assert.That(line, Is.EqualTo("ElevenLabs transcribed 2 seconds of audio (00:00:02): less than a cent at the API price, $0.22 an hour"));
         Assert.That(Describe(null, TodaysClass, 0), Is.EqualTo(WithoutKeyterms));

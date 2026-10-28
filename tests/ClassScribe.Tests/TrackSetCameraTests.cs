@@ -59,7 +59,7 @@ public sealed class TrackSetCameraTests
     /// <summary>The factory, over the fakes, with <paramref name="options"/> or the default settings, and the webcam holds when given.</summary>
     private TrackSetFactory Factory(RecordingOptions? options = null, WebcamHolds? webcams = null, ICameraRecorder? recorder = null) =>
         new(new FakeCaptureProvider(), _microphones, new FakeMicrophoneSessions(), new FakeMicrophoneUsageRecord(), new FakeProcessNames(), new FakeOwnProcesses(Laptop.OwnProcess),
-            new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance),
+            new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), new WavTrackWriterFactory(),
             _freezes, TestOptions.Create(options ?? new RecordingOptions()), TestOptions.Create(new TranscriptOptions()), _time, _logs, webcams: webcams,
             cameraRecorder: recorder ?? _cameras);
 

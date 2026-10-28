@@ -1,3 +1,4 @@
+using ClassScribe.Audio;
 using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -55,6 +56,8 @@ public class VideoTranscriptionWorkflowTests
             new TranscriptCopies(),
             new RecordingFolder(),
             new FileProbe(),
+            new ElevenLabsAnswer(),
+            new AudioFileFacts(),
             recording,
             TestOptions.Create(new ElevenLabsOptions()),
             new TranscriptionProgress(),

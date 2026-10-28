@@ -1,4 +1,5 @@
 using System.Net;
+using ClassScribe.Audio;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -18,6 +19,7 @@ namespace ClassScribe.Transcription;
 public sealed class ElevenLabsClient(
     IElevenLabsApi api,
     IOptionsSnapshot<ElevenLabsOptions> options,
+    IAudioFileFacts facts,
     TranscriptionProgress progress,
     TimeProvider time,
     ILogger<ElevenLabsClient> logger) : ITranscriptionClient
@@ -61,7 +63,7 @@ public sealed class ElevenLabsClient(
     private async Task<TranscriptionResult> SendOnceAsync(string audioPath, IReadOnlyList<string> keyterms, ElevenLabsOptions settings, CancellationToken cancellationToken)
     {
         await using var file = new FileStream(audioPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 81920, useAsync: true);
-        var limit = UploadTimeLimit.For(audioPath, file.Length, settings);
+        var limit = UploadTimeLimit.For(facts.AudioLength(audioPath), file.Length, settings);
         logger.LogInformation("Uploading {File} ({Megabytes:F1} MB) with {Keyterms} keyterms; time limit {Minutes} minutes",
             Path.GetFileName(audioPath), file.Length / 1_000_000.0, keyterms.Count, (long)limit.TotalMinutes);
 
@@ -95,7 +97,7 @@ public sealed class ElevenLabsClient(
             var counted = result.AudioDurationSecs is { } seconds && double.IsFinite(seconds) && seconds >= 0 && seconds < LongestCountedSeconds
                 ? TimeSpan.FromSeconds(seconds)
                 : (TimeSpan?)null;
-            var estimate = TranscriptionCost.Estimate(counted, UploadTimeLimit.AudioLength(audioPath), keyterms, settings);
+            var estimate = TranscriptionCost.Estimate(counted, facts.AudioLength(audioPath), keyterms, settings);
             logger.LogInformation("{Estimate}", TranscriptionCost.Describe(estimate));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

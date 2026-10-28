@@ -461,7 +461,7 @@ public class CameraHoldTests
         microphones = new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array, Obsbot);
         var freezes = new FreezeWatch(new FakeSystemTimes(_time), _time, NullLogger<FreezeWatch>.Instance);
         var factory = new TrackSetFactory(new FakeCaptureProvider(), microphones, new FakeMicrophoneSessions(), new FakeMicrophoneUsageRecord(), new FakeProcessNames(),
-            new FakeOwnProcesses(Laptop.OwnProcess), new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), freezes, TestOptions.Create(new RecordingOptions { WakeCameraMicrophone = wakeOn }),
+            new FakeOwnProcesses(Laptop.OwnProcess), new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), new WavTrackWriterFactory(), freezes, TestOptions.Create(new RecordingOptions { WakeCameraMicrophone = wakeOn }),
             TestOptions.Create(new TranscriptOptions()), _time, _logs, webcams: new WebcamHolds(_cameras, _starter, _time, _logs));
         return (TrackSet)factory.Create(new SourcePlan(RecordingMode.Microphone, Class: null, new MicrophoneChoice("OBSBOT")), new RecordingClock(_time));
     }

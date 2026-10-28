@@ -96,7 +96,7 @@ public sealed class CameraSoakTests
     public async Task A_lesson_s_picture_stays_with_its_sound_through_a_pause_a_sleep_and_a_lost_camera()
     {
         var factory = new TrackSetFactory(new FakeCaptureProvider(), _microphones, new FakeMicrophoneSessions(), new FakeMicrophoneUsageRecord(), new FakeProcessNames(),
-            new FakeOwnProcesses(Laptop.OwnProcess), new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), _freezes, TestOptions.Create(new RecordingOptions()), TestOptions.Create(new TranscriptOptions()), _time,
+            new FakeOwnProcesses(Laptop.OwnProcess), new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), new WavTrackWriterFactory(), _freezes, TestOptions.Create(new RecordingOptions()), TestOptions.Create(new TranscriptOptions()), _time,
             NullLoggerFactory.Instance, cameraRecorder: new CameraRecorder(new FakeCameraProvider(), _starter, _time, NullLoggerFactory.Instance));
         var plan = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT", "320x240"));
         var microphone = _microphones.Prepare(new FakeAudioCapture(Pcm16KMono, Obsbot.Name, Obsbot.Id) { DeliversContinuously = true });
@@ -163,7 +163,7 @@ public sealed class CameraSoakTests
     public async Task The_piece_ends_with_the_sound_though_the_sound_takes_seconds_to_stop()
     {
         var factory = new TrackSetFactory(new FakeCaptureProvider(), _microphones, new FakeMicrophoneSessions(), new FakeMicrophoneUsageRecord(), new FakeProcessNames(),
-            new FakeOwnProcesses(Laptop.OwnProcess), new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), _freezes, TestOptions.Create(new RecordingOptions()), TestOptions.Create(new TranscriptOptions()), _time,
+            new FakeOwnProcesses(Laptop.OwnProcess), new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), new WavTrackWriterFactory(), _freezes, TestOptions.Create(new RecordingOptions()), TestOptions.Create(new TranscriptOptions()), _time,
             NullLoggerFactory.Instance, cameraRecorder: new CameraRecorder(new FakeCameraProvider(), _starter, _time, NullLoggerFactory.Instance));
         var plan = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT", "320x240"));
         using var letGo = new ManualResetEventSlim();

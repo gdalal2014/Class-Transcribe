@@ -187,6 +187,8 @@ public partial class RecordCommandTests
             new TranscriptCopies(),
             new RecordingFolder(),
             new FileProbe(),
+            new ElevenLabsAnswer(),
+            new AudioFileFacts(),
             recording,
             elevenLabs,
             _progress,
@@ -215,7 +217,7 @@ public partial class RecordCommandTests
         _choice = new SourceChoice(recording);
 
         return new RecordCommand(
-            recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
+            recordings ?? new ClassRecordingFactory(_provider, new WavTrackWriterFactory(), recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance, video),
             loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new RecordingFolder(), new FileProbe(), _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
     }
@@ -1761,7 +1763,7 @@ public partial class RecordCommandTests
 
         Assert.That(await run, Is.EqualTo(0));
         Assert.That(RunFile().EndedBy, Is.EqualTo(RunEndCause.SafetyStop));
-        Assert.That(UploadTimeLimit.AudioLength(Recording()), Is.GreaterThan(stop), "the recording runs past its stop");
+        Assert.That(new AudioFileFacts().AudioLength(Recording()), Is.GreaterThan(stop), "the recording runs past its stop");
         _client.Verify(Calls.AnyTranscription, Times.Once);
         Assert.That(RunFile().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
     }

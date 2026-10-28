@@ -1,4 +1,5 @@
 using System.Net;
+using ClassScribe.Audio;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
@@ -46,7 +47,7 @@ public class VideoTranscriptRunTests
         var usage = new UsageReport(_world.Account, _world.Time, _world.Log<UsageReport>());
         var progress = new TranscriptionProgress();
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, TestGlossaries.Choice(_world.ElevenLabs),
-            new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), _world.ClassFolders, new ClassMarks(NullLogger<ClassMarks>.Instance), new TranscriptCopies(), new RecordingFolder(), new FileProbe(),
+            new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), _world.ClassFolders, new ClassMarks(NullLogger<ClassMarks>.Instance), new TranscriptCopies(), new RecordingFolder(), new FileProbe(), new ElevenLabsAnswer(), new AudioFileFacts(),
             _world.Recording, _world.ElevenLabs, progress, usage, _world.Log<TranscriptionWorkflow>());
         return new VideoTranscriptRun(workflow, new TranscriptionRuns(_world.Runtime.Journal, _world.Runtime.Time, _world.Log<TranscriptionRuns>()), progress, usage,
             _world.Drive, _world.RecorderLog, _world.Log<VideoTranscriptRun>());

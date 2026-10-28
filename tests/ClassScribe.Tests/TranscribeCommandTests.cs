@@ -82,6 +82,8 @@ public class TranscribeCommandTests
             new TranscriptCopies(),
             new RecordingFolder(),
             new FileProbe(),
+            new ElevenLabsAnswer(),
+            new AudioFileFacts(),
             recording,
             elevenLabs,
             new TranscriptionProgress(),

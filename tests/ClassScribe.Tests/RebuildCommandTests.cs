@@ -75,6 +75,8 @@ public class RebuildCommandTests
             new TranscriptCopies(),
             new RecordingFolder(),
             new FileProbe(),
+            new ElevenLabsAnswer(),
+            new AudioFileFacts(),
             recording,
             TestOptions.Create(new ElevenLabsOptions()),
             new TranscriptionProgress(),

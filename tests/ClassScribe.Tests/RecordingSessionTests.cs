@@ -54,7 +54,7 @@ public partial class RecordingSessionTests
         var settings = TestOptions.Create(options ?? new RecordingOptions());
         time ??= _time;
         var source = new SourceChoice(settings).Current.Class!;
-        return new RecordingSession(new LoopbackSource(_provider, new CaptureChooser(time, source, _chooserLog)), settings, time, _log);
+        return new RecordingSession(new LoopbackSource(_provider, new CaptureChooser(time, source, _chooserLog)), new WavTrackWriterFactory(), settings, time, _log);
     }
 
     /// <summary>Moves the clock on a second and waits for the device check that this sets off to begin.</summary>
@@ -1617,7 +1617,7 @@ public partial class RecordingSessionTests
         _provider.ConnectDevice("Speakers");                 // connected, but it cannot be opened
         var settings = TestOptions.Create(new RecordingOptions());
         var source = new PacedSource(new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog)), TimeSpan.FromSeconds(10));
-        using var session = new RecordingSession(source, settings, _time, _log);
+        using var session = new RecordingSession(source, new WavTrackWriterFactory(), settings, _time, _log);
 
         session.Start(_files);
         var atStart = _provider.DeviceQueries;
@@ -1643,7 +1643,7 @@ public partial class RecordingSessionTests
     {
         _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         var source = new PacedSource(new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog)), TimeSpan.FromSeconds(1));
-        var session = new RecordingSession(source, TestOptions.Create(new RecordingOptions()), _time, _log);
+        var session = new RecordingSession(source, new WavTrackWriterFactory(), TestOptions.Create(new RecordingOptions()), _time, _log);
 
         if (started)
         {
@@ -2061,7 +2061,7 @@ public partial class RecordingSessionTests
     {
         var settings = TestOptions.Create(new RecordingOptions());
         var source = new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog));
-        return new RecordingSession(source, new TrackSpec(Track.Main, TrackPlacement.Contiguous, noteGapsLongerThan), null, settings, _time, _log);
+        return new RecordingSession(source, new WavTrackWriterFactory(), new TrackSpec(Track.Main, TrackPlacement.Contiguous, noteGapsLongerThan), null, settings, _time, _log);
     }
 
     /// <summary>A packet's stamp <paramref name="seconds"/> after the test clock's zero, in its units of 100 nanoseconds.</summary>

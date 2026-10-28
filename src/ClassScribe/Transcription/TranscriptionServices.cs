@@ -30,6 +30,9 @@ public static class TranscriptionServices
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { ConnectCallback = ConnectWithKeepAliveAsync });
         services.AddTransient<ITranscriptionClient, ElevenLabsClient>();
 
+        // ElevenLabs' saved answers, read for a rebuild and kept when one could not become a transcript.
+        services.AddSingleton<ITranscriptAnswers, ElevenLabsAnswer>();
+
         // The glossary's files for the process.
         services.AddSingleton<IGlossaryFiles, GlossaryFiles>();
 

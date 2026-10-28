@@ -61,7 +61,7 @@ public sealed class RecordingSessionTimelineTests
         var settings = TestOptions.Create(options ?? new RecordingOptions());
         time ??= _time;
         var source = new SourceChoice(settings).Current.Class!;
-        return new RecordingSession(new LoopbackSource(_provider, new CaptureChooser(time, source, _chooserLog)),
+        return new RecordingSession(new LoopbackSource(_provider, new CaptureChooser(time, source, _chooserLog)), new WavTrackWriterFactory(),
             new TrackSpec(track, TrackPlacement.ClockAligned), clock ?? _clock, settings, time, _log);
     }
 
@@ -133,7 +133,7 @@ public sealed class RecordingSessionTimelineTests
         var settings = TestOptions.Create(new RecordingOptions());
         var source = new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog));
 
-        Assert.That(() => new RecordingSession(source, new TrackSpec(Track.Main, TrackPlacement.ClockAligned), null, settings, _time, _log),
+        Assert.That(() => new RecordingSession(source, new WavTrackWriterFactory(), new TrackSpec(Track.Main, TrackPlacement.ClockAligned), null, settings, _time, _log),
             Throws.ArgumentException);
     }
 
@@ -1161,7 +1161,7 @@ public sealed class RecordingSessionTimelineTests
     {
         var settings = TestOptions.Create(new RecordingOptions());
         var source = new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog));
-        using var contiguous = new RecordingSession(source, settings, _time, _log);
+        using var contiguous = new RecordingSession(source, new WavTrackWriterFactory(), settings, _time, _log);
 
         Assert.That(() => contiguous.SetGate(new FakePacketGate()), Throws.InvalidOperationException);
     }

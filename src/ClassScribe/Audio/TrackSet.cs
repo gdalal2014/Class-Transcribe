@@ -1,7 +1,6 @@
 using System.Runtime.ExceptionServices;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio.Timeline;
-using ClassScribe.Audio.Windows;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Storage;
@@ -52,7 +51,7 @@ public sealed class MicrophoneProviderTap(IMicrophoneProvider inner, Action<Micr
         beforeOpen?.Invoke(microphone);
         var capture = inner.CreateCapture(microphone, processing);
         var used = processing;
-        if (OperatingSystem.IsWindows() && capture is WasapiAudioCapture wasapi && wasapi.Processing is { } reported) used = reported;
+        if (capture.Processing is { } reported) used = reported;
 
         var opened = new MicrophoneOpened(microphone, used);
         lock (_gate) _last = opened;

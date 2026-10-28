@@ -51,7 +51,7 @@ public class ClassRecordingTests
 
     /// <summary>The factory under test: recordings of the simulated devices, on the test's clock, with the default settings.</summary>
     private ClassRecordingFactory Factory() =>
-        new(_provider, TestOptions.Create(new RecordingOptions()), _time, _sessionLog, _chooserLog, _log);
+        new(_provider, new WavTrackWriterFactory(), TestOptions.Create(new RecordingOptions()), _time, _sessionLog, _chooserLog, _log);
 
     /// <summary>A plan for the class alone, from <paramref name="source"/>.</summary>
     private static SourcePlan ClassFrom(ClassSource source) => new(RecordingMode.Class, source, Microphone: null);
@@ -482,7 +482,7 @@ public class ClassRecordingTests
     {
         var capture = _provider.Enqueue(new FakeAudioCapture(Pcm16KMono));
         var source = new LoopbackSource(_provider, new CaptureChooser(_time, new ClassSource.Automatic(), _chooserLog));
-        var session = new RecordingSession(source, new TrackSpec(Track.Main, TrackPlacement.Contiguous, TimeSpan.FromSeconds(60)), null,
+        var session = new RecordingSession(source, new WavTrackWriterFactory(), new TrackSpec(Track.Main, TrackPlacement.Contiguous, TimeSpan.FromSeconds(60)), null,
             TestOptions.Create(new RecordingOptions()), _time, _sessionLog);
         using var recording = new ClassRecording(session, _log);
         var notes = new List<TimelineNote>();

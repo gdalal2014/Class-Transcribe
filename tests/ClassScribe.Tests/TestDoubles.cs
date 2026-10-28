@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Net;
 using System.Text;
+using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Runs;
@@ -400,6 +401,9 @@ public sealed class FakeAudioCapture(AudioFormat format, string deviceName = "Fa
     /// False, the default, for one that hands over nothing while nothing plays, as an output device's loopback does.
     /// </summary>
     public bool DeliversContinuously { get; init; }
+
+    /// <summary>What the capture reports of the microphone's processing; null, the default, for a capture that reports nothing of it.</summary>
+    public MicrophoneProcessing? Processing { get; init; }
 
     /// <summary>Audio the device still holds when it is asked to stop. It is delivered during Dispose.</summary>
     public byte[]? FinalAudio { get; init; }
