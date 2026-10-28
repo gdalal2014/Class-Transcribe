@@ -12,7 +12,7 @@ namespace ClassScribe.Commands;
 /// through <see cref="ICommandRunner.ClassesMenuAsync"/>: a class's number records it now, as saved, through the same path
 /// as choices 1 and 2 (the camera's question and the continue question included); N adds a class, asking first whether to
 /// start from the Lesson video preset, then its name, its course, what it records, the microphone, in person the camera and
-/// its size, its recordings folder and whether to transcribe it; E and a number asks the same with the class's own answers
+/// its size, its recordings folder, whether to transcribe it and its own glossary; E and a number asks the same with the class's own answers
 /// for Enter; D and a number removes one, after Y. Every question goes back with Esc. Changes go through the class command,
 /// and so through the one writer, which checks them first; nothing a class recorded is ever touched. With more than nine
 /// classes, a number is typed and Enter pressed.
@@ -89,7 +89,7 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
 
     /// <summary>
     /// N: a new class, asked step by step: the preset (L for a lesson video, in person with a camera; Enter for none), the
-    /// name, the course, what it records, the microphone, the camera, the folder and whether to transcribe it; saved through
+    /// name, the course, what it records, the microphone, the camera, the folder, whether to transcribe it and the glossary; saved through
     /// class add, which says how to start it from PowerShell.
     /// </summary>
     private async Task<int> AddAsync()
@@ -152,7 +152,8 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
     /// <summary>
     /// The questions of N and E, with <paramref name="current"/>'s answers for Enter when it is given, and the Lesson video
     /// preset's when <paramref name="lesson"/>: the course; what it records; the microphone, and with the class the app it
-    /// follows; in person the camera and its size; the folder; and whether to transcribe it. Null for Esc at any of them.
+    /// follows; in person the camera and its size; the folder; whether to transcribe it; and its own glossary (a file, N for
+    /// none, - for ElevenLabs:KeytermsFile). Null for Esc at any of them.
     /// </summary>
     private async Task<ClassChoices?> AskAsync(string name, Kept? current, bool lesson)
     {
@@ -230,6 +231,16 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
         if (transcribeAnswer.Key == ConsoleKey.Y) transcribe = true;
         else if (transcribeAnswer.Key == ConsoleKey.N) transcribe = false;
 
+        var glossary = current?.KeytermsFile;
+        ui.Write($"Glossary, one term per line (Enter keeps {GlossaryWords(glossary)}; a file's path; N for none; - for ElevenLabs:KeytermsFile): ");
+        if (await ui.ReadLineAsync(CancellationToken.None) is not { } typedGlossary) return null;
+        string? keyterms = null;
+        if (Trimmed(typedGlossary) is { } answeredGlossary)
+        {
+            if (answeredGlossary == "-") clear.Add("keyterms");
+            else keyterms = answeredGlossary.Equals("N", StringComparison.OrdinalIgnoreCase) ? SavedClass.NoGlossary : answeredGlossary;
+        }
+
         if (camera is null && current?.Camera is not null) clear.Add("camera");
         return new ClassChoices
         {
@@ -244,9 +255,16 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
             Resolution = inPerson && camera is not null ? size : null,
             Output = folder is not null && !clear.Contains("output") ? folder : null,
             Transcribe = transcribe,
+            Keyterms = keyterms,
             Clear = clear
         };
     }
+
+    /// <summary>A class's glossary as the question's Enter names it: the file as written, none, or the setting's.</summary>
+    private static string GlossaryWords(string? glossary) =>
+        glossary is null ? "ElevenLabs:KeytermsFile's"
+        : SavedClass.MeansNoGlossary(glossary) ? "none"
+        : $"\"{glossary}\"";
 
     /// <summary>
     /// What the class records: A an app, from the apps with sound now or typed; D an output device, from those connected or
@@ -398,8 +416,9 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
     /// <param name="CameraResolution">The camera's picture size; null for the setting.</param>
     /// <param name="OutputFolder">The recordings folder; null for the settings'.</param>
     /// <param name="Transcribe">True or false; null for a value that is neither, which Enter keeps as the file holds it.</param>
+    /// <param name="KeytermsFile">The class's own glossary as written, or none; null for ElevenLabs:KeytermsFile.</param>
     private sealed record Kept(string Course, RecordingMode Mode, SourceGiven? Source, string? Microphone, string? Follows, string? Camera, string? CameraResolution,
-        string? OutputFolder, bool? Transcribe)
+        string? OutputFolder, bool? Transcribe, string? KeytermsFile)
     {
         /// <summary>The Enter answers of a usable class: its own values.</summary>
         public static Kept FromClass(SavedClass saved) => new(saved.Course, saved.Mode,
@@ -410,7 +429,7 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
                 ClassSource.Device device => new SourceGiven(SourceOption.Device, device.NamePart),
                 _ => new SourceGiven(SourceOption.Device, "auto")
             },
-            saved.Microphone, saved.Follows?.Word, saved.Camera, saved.CameraResolution, saved.OutputFolder, saved.Transcribe);
+            saved.Microphone, saved.Follows?.Word, saved.Camera, saved.CameraResolution, saved.OutputFolder, saved.Transcribe, saved.KeytermsFile);
 
         /// <summary>
         /// The Enter answers of the class <paramref name="name"/> that cannot be used, from its <paramref name="fields"/> as the
@@ -437,7 +456,7 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
                 : new SourceGiven(SourceOption.Device, device ?? "auto");
             bool? transcribe = Field(ClassFields.Transcribe) is not { } text ? true : bool.TryParse(text, out var yes) ? yes : null;
             return new Kept(Field(ClassFields.Course) ?? name, mode, source, microphone, follows, Field(ClassFields.Camera), Field(ClassFields.CameraResolution),
-                Field(ClassFields.OutputFolder), transcribe);
+                Field(ClassFields.OutputFolder), transcribe, Field(ClassFields.KeytermsFile));
         }
     }
 }

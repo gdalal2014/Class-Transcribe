@@ -25,7 +25,10 @@ public static class TranscriptionServices
             })
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { ConnectCallback = ConnectWithKeepAliveAsync });
         services.AddTransient<ITranscriptionClient, ElevenLabsClient>();
-        services.AddSingleton<KeytermLoader>();
+
+        // The glossary's files for the process; which glossary a run or a transcript takes, with the settings of its scope.
+        services.AddSingleton<IGlossaryFiles, GlossaryFiles>();
+        services.AddScoped<GlossaryChoice>();
         services.AddSingleton<TranscriptFormatter>();
         services.AddTransient<TranscriptionWorkflow>();
         services.AddScoped<TranscriptionProgress>();

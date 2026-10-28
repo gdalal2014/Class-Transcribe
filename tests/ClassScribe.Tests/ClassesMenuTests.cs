@@ -114,6 +114,7 @@ public class ClassesMenuTests
         _ui.Type('\r');
         _ui.TypeLine("");
         _ui.Type('\r');
+        _ui.TypeLine("");
 
         Assert.That(await RunAsync(), Is.EqualTo(0));
 
@@ -139,6 +140,7 @@ public class ClassesMenuTests
         _ui.TypeLine("zoom");
         _ui.TypeLine("");
         _ui.Type('n');
+        _ui.TypeLine("\"mantiq.txt\"");
 
         Assert.That(await RunAsync(new()), Is.EqualTo(0));
 
@@ -146,7 +148,9 @@ public class ClassesMenuTests
         Assert.That(add.Name, Is.EqualTo("Kalam (Zoom app)"));
         Assert.That((add.Choices.Course, add.Choices.Source, add.Choices.Mic, add.Choices.MicName, add.Choices.Follows, add.Choices.Transcribe, add.Choices.Output),
             Is.EqualTo(("Kalam", new SourceGiven(SourceOption.App, "zoom"), true, LaptopMicrophones.Array.Name, "zoom", (bool?)false, (string?)null)));
+        Assert.That(add.Choices.Keyterms, Is.EqualTo("mantiq.txt"), "the glossary typed, its quotes taken off");
         Assert.That(_ui.Screen, Does.Contain("None yet."));
+        Assert.That(_ui.Screen, Does.Contain("Glossary, one term per line (Enter keeps ElevenLabs:KeytermsFile's; a file's path; N for none; - for ElevenLabs:KeytermsFile): "));
     }
 
     /// <summary>A name taken already, or one that cannot be a folder's name, is said, and nothing is saved.</summary>
@@ -175,14 +179,49 @@ public class ClassesMenuTests
         _ui.TypeLine("");
         _ui.TypeLine("");
         _ui.Type('\r');
+        _ui.TypeLine("");
 
         Assert.That(await RunAsync(), Is.EqualTo(0));
 
         var set = (ClassRequest.Set)_changed.Single();
         Assert.That(set.Name, Is.EqualTo("Mantiq"));
+        Assert.That(set.Choices.Keyterms, Is.Null, "Enter keeps the glossary as it was");
         Assert.That((set.Choices.Course, set.Choices.Source, set.Choices.Mic, set.Choices.MicName, set.Choices.Transcribe, set.Choices.Output),
             Is.EqualTo(("Mantiq", new SourceGiven(SourceOption.App, "chrome"), true, "Microphone Array", (bool?)false, @"D:\Classes")));
         Assert.That(set.Choices.Clear, Is.Empty, "Enter keeps the folder, written again as it was");
+    }
+
+    /// <summary>
+    /// The glossary question, last: Enter names the class's own glossary when it has one; N gives it none; - takes it away,
+    /// so that the class takes ElevenLabs:KeytermsFile again.
+    /// </summary>
+    [Test]
+    public async Task The_glossary_question_takes_N_for_none_and_a_dash_for_the_setting()
+    {
+        var classes = new Dictionary<string, string?>(Saved) { ["Classes:Mantiq:KeytermsFile"] = @"%APPDATA%\ClassScribe\mantiq.txt" };
+        _ui.Type('e', '2');
+        _ui.TypeLine("");
+        _ui.Type('\r', '\r', '\r');
+        _ui.TypeLine("");
+        _ui.TypeLine("");
+        _ui.Type('\r');
+        _ui.TypeLine("n");
+        await RunAsync(classes);
+        _ui.Type('e', '2');
+        _ui.TypeLine("");
+        _ui.Type('\r', '\r', '\r');
+        _ui.TypeLine("");
+        _ui.TypeLine("");
+        _ui.Type('\r');
+        _ui.TypeLine("-");
+        await RunAsync(classes);
+
+        Assert.That(_ui.Screen, Does.Contain("Glossary, one term per line (Enter keeps \"%APPDATA%\\ClassScribe\\mantiq.txt\";"));
+        Assert.That(_ui.Screen, Does.Contain("  2  Mantiq  chrome, with your microphone (Microphone Array, following chrome), glossary mantiq.txt, recorded only"));
+        var none = (ClassRequest.Set)_changed[0];
+        var setting = (ClassRequest.Set)_changed[1];
+        Assert.That((none.Choices.Keyterms, none.Choices.Clear.Contains("keyterms")), Is.EqualTo(("none", false)));
+        Assert.That((setting.Choices.Keyterms, setting.Choices.Clear.Contains("keyterms")), Is.EqualTo(((string?)null, true)));
     }
 
     /// <summary>
@@ -198,6 +237,7 @@ public class ClassesMenuTests
         _ui.TypeLine("");
         _ui.TypeLine("Classes\\Mantiq");
         _ui.Type('\r');
+        _ui.TypeLine("");
 
         await RunAsync();
 
@@ -225,6 +265,7 @@ public class ClassesMenuTests
         _ui.Type('\r', '\r', 'n');
         _ui.TypeLine("");
         _ui.Type('\r');
+        _ui.TypeLine("");
 
         await RunAsync(fields.ToDictionary(field => $"Classes:Kalam (in person):{field.Key}", field => field.Value), new FakeCameraProvider());
 
@@ -255,7 +296,8 @@ public class ClassesMenuTests
             [ClassFields.MicrophoneFollows] = "zoom",
             [ClassFields.OutputFolder] = @"D:\Classes",
             [ClassFields.Transcribe] = "false",
-            [ClassFields.CameraResolution] = "720p"
+            [ClassFields.CameraResolution] = "720p",
+            [ClassFields.KeytermsFile] = "aqidah.txt"
         };
         _ui.Type('e', '1');
         _ui.TypeLine("");
@@ -263,6 +305,7 @@ public class ClassesMenuTests
         _ui.TypeLine("");
         _ui.TypeLine("");
         _ui.Type('\r');
+        _ui.TypeLine("");
 
         Assert.That(await RunAsync(fields.ToDictionary(field => $"Classes:Sughra (Zoom app):{field.Key}", field => field.Value)), Is.EqualTo(0));
 
@@ -287,6 +330,7 @@ public class ClassesMenuTests
         _ui.Type('\r', 'w', '\r');
         _ui.TypeLine("");
         _ui.Type('\r');
+        _ui.TypeLine("");
 
         await RunAsync();
 

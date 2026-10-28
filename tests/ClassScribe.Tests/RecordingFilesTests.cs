@@ -59,6 +59,8 @@ public class RecordingFilesTests
     [TestCase("Kalam_2026-10-15_20-55-27Z.unread.json")]
     [TestCase("Kalam_2026-10-15_20-55-27Z (3).unread.json")]
     [TestCase("Kalam_2026-10-15_20-55-27Z.source.json")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.glossary.json")]
+    [TestCase("Kalam_2026-10-15_20-55-27Z.GLOSSARY.JSON")]
     public void Any_file_of_a_recording_is_recognised_as_its_recording(string fileName) =>
         Assert.That(RecordingFiles.TryParse(Path.Combine(@"C:\Classes\Kalam", fileName)), Is.EqualTo(new RecordingFiles(@"C:\Classes\Kalam", "Kalam_2026-10-15_20-55-27Z")));
 
@@ -76,6 +78,8 @@ public class RecordingFilesTests
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z_part2.md")]
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z (2).wav")]
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.mic.json")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z (2).glossary.json")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.glossary.json.0123abcd.tmp")]
     [TestCase(@"C:\Classes\mic-check\mic-check_2026-10-17_19-00-12.log")]
     public void Other_files_do_not_pass_for_a_recordings(string path) =>
         Assert.That(RecordingFiles.TryParse(path), Is.Null);
@@ -260,6 +264,24 @@ public class RecordingFilesTests
         File.WriteAllText(files.Source, "{}");
 
         Assert.That(Path.GetFileName(files.Source), Is.EqualTo("Risala_2026-10-15_20-55-27Z.source.json"));
+        Assert.That(files.FindKeptAnswers(), Is.Empty);
+        Assert.That(files.HasTranscript, Is.False);
+        Assert.That(TranscriptCopies.NewestAnswer(files), Is.Null);
+        Assert.That(TranscriptCopies.Transcripts(files), Is.Empty);
+    }
+
+    /// <summary>
+    /// The recording's glossary record (architecture 8.2) is named after it, &lt;base&gt;.glossary.json, and is never taken for
+    /// an answer kept without a transcript, nor for a copy of the transcript's answer, nor for a transcript.
+    /// </summary>
+    [Test]
+    public void The_glossary_record_is_never_an_answer_or_a_transcript()
+    {
+        using var folder = new TempFolder();
+        var files = RecordingFiles.ForNew(folder.Path, "Kalam", Started);
+        File.WriteAllText(files.Glossary, "{}");
+
+        Assert.That(files.Glossary, Is.EqualTo(Path.Combine(folder.Path, "Kalam_2026-10-15_20-55-27Z.glossary.json")));
         Assert.That(files.FindKeptAnswers(), Is.Empty);
         Assert.That(files.HasTranscript, Is.False);
         Assert.That(TranscriptCopies.NewestAnswer(files), Is.Null);

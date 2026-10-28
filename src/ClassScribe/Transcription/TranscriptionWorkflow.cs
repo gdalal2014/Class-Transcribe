@@ -28,11 +28,10 @@ public sealed class RecordingTooLongException(string message) : Exception(messag
 public sealed class TranscriptionWorkflow(
     IAudioPreparer preparer,
     ITranscriptionClient client,
-    KeytermLoader keytermLoader,
+    GlossaryChoice glossaries,
     TranscriptFormatter formatter,
     ClassFolders folders,
     ClassMarks marks,
-    IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     IOptionsSnapshot<RecordingOptions> recording,
     TranscriptionProgress progress,
     UsageReport usage,
@@ -64,11 +63,32 @@ public sealed class TranscriptionWorkflow(
     /// .mic.wav files, and they are sent on their own, as in person. A recording transcribed before keeps its earlier
     /// transcript and gets the next copy. A recording longer than <see cref="LongestRecording"/> is refused before
     /// anything is prepared. The upload copy is removed when the run ends, after a failure or a cancel as well, unless
-    /// Recording:KeepUploadFile keeps it.
+    /// Recording:KeepUploadFile keeps it. The glossary is the one decided when the recording started (see
+    /// <see cref="GlossaryChoice"/>).
     /// </summary>
     /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
     /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
-    public async Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, CancellationToken cancellationToken)
+    public Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, CancellationToken cancellationToken) =>
+        TranscribeRecordingAsync(files, keyterms: null, cancellationToken);
+
+    /// <summary>
+    /// Transcribes a recording as <see cref="TranscribeRecordingAsync(RecordingFiles, CancellationToken)"/> does, with
+    /// <paramref name="keyterms"/>, when it is not null, as the glossary given to the command (transcribe --keyterms, a file
+    /// or none), over the one decided when the recording started.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
+    /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
+    public Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, string? keyterms, CancellationToken cancellationToken) =>
+        TranscribeRecordingAsync(files, keyterms, run: null, cancellationToken);
+
+    /// <summary>
+    /// Transcribes a recording as <see cref="TranscribeRecordingAsync(RecordingFiles, string, CancellationToken)"/> does, for
+    /// the run that recorded it: <paramref name="run"/> is the glossary its start decided (see <see cref="GlossaryChoice.AtStart"/>),
+    /// which is sent when the recording's record gives none, as the start line named it (see <see cref="GlossaryChoice.ForTranscript"/>).
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The recording has no audio on disk, of either track.</exception>
+    /// <exception cref="RecordingTooLongException">The recording is longer than <see cref="LongestRecording"/>.</exception>
+    public async Task<TranscriptFiles> TranscribeRecordingAsync(RecordingFiles files, string? keyterms, GlossaryPick? run, CancellationToken cancellationToken)
     {
         string? upload = null;
         var saved = false;
@@ -108,7 +128,7 @@ public sealed class TranscriptionWorkflow(
 
             upload = files.Upload;
 
-            var transcript = await UploadAndSaveAsync(upload, files, files.Name, files.StartedUtc, marks.Read(files), VideoOf(files), cancellationToken);
+            var transcript = await UploadAndSaveAsync(upload, files, files.Name, files.StartedUtc, marks.Read(files), VideoOf(files), keyterms, run, cancellationToken);
             saved = true;
             return transcript;
         }
@@ -128,7 +148,14 @@ public sealed class TranscriptionWorkflow(
     /// folder given for this run (transcribe --output), or under Recording:OutputFolder when that is null; the file itself
     /// stays where it is. A WAV file is first reduced to 16 kHz mono; anything else is uploaded as it is.
     /// </summary>
-    public async Task<TranscriptFiles> TranscribeFileAsync(string path, string? outputRoot, CancellationToken cancellationToken)
+    public Task<TranscriptFiles> TranscribeFileAsync(string path, string? outputRoot, CancellationToken cancellationToken) =>
+        TranscribeFileAsync(path, outputRoot, keyterms: null, cancellationToken);
+
+    /// <summary>
+    /// Transcribes one audio or video file as <see cref="TranscribeFileAsync(string, string, CancellationToken)"/> does, with
+    /// <paramref name="keyterms"/>, when it is not null, as the glossary given to the command (a file or none).
+    /// </summary>
+    public async Task<TranscriptFiles> TranscribeFileAsync(string path, string? outputRoot, string? keyterms, CancellationToken cancellationToken)
     {
         string? upload = null;
         var saved = false;
@@ -139,7 +166,7 @@ public sealed class TranscriptionWorkflow(
             logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), files.Folder);
 
             if (TryPrepare(path, files.Upload, cancellationToken)) upload = files.Upload;
-            var transcript = await UploadAndSaveAsync(upload ?? path, files, files.Name, recordedUtc: null, [], video: null, cancellationToken);
+            var transcript = await UploadAndSaveAsync(upload ?? path, files, files.Name, recordedUtc: null, [], video: null, keyterms, run: null, cancellationToken);
             saved = true;
             return transcript;
         }
@@ -281,8 +308,11 @@ public sealed class TranscriptionWorkflow(
     }
 
     /// <summary>
-    /// Uploads the audio, with the glossary that ElevenLabs:KeytermsFile names, and saves ElevenLabs' answer and the
-    /// Markdown transcript, as the next free copy of the recording's transcript. The account's credits are read as the
+    /// Uploads the audio, with the recording's glossary (see <see cref="GlossaryChoice.ForTranscript"/>: the one given to the
+    /// command, <paramref name="keyterms"/>, else the one decided when the recording started, which a recording without a
+    /// record has decided now, or the run's own, <paramref name="run"/>, when the record gives none), and saves ElevenLabs'
+    /// answer and the Markdown transcript, as the next free copy of the
+    /// recording's transcript, then adds the transcript's entry to the recording's glossary record. The account's credits are read as the
     /// upload begins, without holding it up, so that the command can say afterwards what the transcript cost (see
     /// <see cref="UsageReport"/>). An answer that has arrived has been paid for: one that cannot be read is kept for later
     /// rather than lost, and the error is marked as following a charged answer (see <see cref="ChargedAnswer"/>), so that
@@ -291,11 +321,11 @@ public sealed class TranscriptionWorkflow(
     /// </summary>
     private async Task<TranscriptFiles> UploadAndSaveAsync(
         string audioPath, RecordingFiles files, string title, DateTimeOffset? recordedUtc, IReadOnlyList<ClassMark> classMarks, VideoSource? video,
-        CancellationToken cancellationToken)
+        string? keyterms, GlossaryPick? run, CancellationToken cancellationToken)
     {
         // A cancel made while the upload file was prepared must not go on to "Uploading", which would look as if it had been ignored.
         cancellationToken.ThrowIfCancellationRequested();
-        var keyterms = keytermLoader.Load(keytermLoader.ResolvePath(elevenLabs.Value.KeytermsFile));
+        var glossary = glossaries.ForTranscript(files, keyterms, run);
 
         TranscriptionResult result;
         try
@@ -303,7 +333,7 @@ public sealed class TranscriptionWorkflow(
             // The upload begins; the client says how far it gets. The account is read alongside, never waited for here.
             progress.Report(TranscriptionStep.Uploading);
             usage.Begin(cancellationToken);
-            result = await client.TranscribeAsync(audioPath, keyterms, cancellationToken);
+            result = await client.TranscribeAsync(audioPath, glossary.Terms, cancellationToken);
         }
         catch (TranscriptionException ex) when (ex.ResponseBody is { } answer && IsSuccess(ex.StatusCode))
         {
@@ -315,7 +345,9 @@ public sealed class TranscriptionWorkflow(
         if (string.IsNullOrWhiteSpace(result.Text))
             logger.LogWarning("ElevenLabs heard no speech in {File}: the transcript is empty", Path.GetFileName(audioPath));
 
-        return Save(files, result, title, recordedUtc, classMarks, video);
+        var saved = Save(files, result, title, recordedUtc, classMarks, video);
+        glossaries.Sent(files, glossary, saved.TranscriptPath);
+        return saved;
     }
 
     /// <summary>

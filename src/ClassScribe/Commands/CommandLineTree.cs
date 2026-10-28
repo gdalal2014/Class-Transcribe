@@ -64,7 +64,7 @@ public enum CommandKind
 ///     without --output, Recording:OutputFolder, or the saved class's own folder
 /// ClassScribe settings path | list [--json] | get &lt;setting&gt; [--json] | set &lt;setting&gt; &lt;value&gt;... | reset (&lt;setting&gt; | --all) | open | fill
 /// ClassScribe class list [--json] | show "&lt;name&gt;" [--json] | add "&lt;name&gt;" ... | set "&lt;name&gt;" ... | rename "&lt;name&gt;" "&lt;new&gt;" | remove "&lt;name&gt;"
-/// ClassScribe transcribe &lt;path&gt; [--output "&lt;folder&gt;"] [--no-open] [--again]
+/// ClassScribe transcribe &lt;path&gt; [--output "&lt;folder&gt;"] [--no-open] [--again] [--keyterms "&lt;glossary&gt;" | --keyterms none]
 /// ClassScribe rebuild &lt;path&gt; [--no-open]
 /// ClassScribe finish-video &lt;path&gt; [--no-open]       a lesson's video made again, free, from its pieces and its sound
 /// ClassScribe list [--output "&lt;folder&gt;"]
@@ -127,6 +127,9 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>What --app says without a value.</summary>
     private const string AppNeedsValue = "--app needs an app's process name after it, such as chrome";
+
+    /// <summary>What --keyterms says without a value.</summary>
+    private const string KeytermsNeedsValue = "--keyterms needs a glossary file after it, or none, such as --keyterms \"%APPDATA%\\ClassScribe\\mantiq.txt\"";
 
     /// <summary>What --mic-follows says without a value, or with one that names no app, or ClassScribe itself.</summary>
     private const string FollowsNeedsValue = $"--mic-follows needs part of an app's name, such as chrome, or {FollowRule.AnyWord} or {FollowRule.NoneWord}";
@@ -859,9 +862,11 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     }
 
     /// <summary>
-    /// transcribe: a recording, by its folder or one of its files, or any audio or video file, with --output, --no-open and
-    /// --again. --output is passed on as a full path, for the transcript of a file that is not a recording's; a recording's
-    /// transcript stays beside the recording, and the transcribe command says that --output was not used.
+    /// transcribe: a recording, by its folder or one of its files, or any audio or video file, with --output, --no-open,
+    /// --again and --keyterms. --output is passed on as a full path, for the transcript of a file that is not a recording's; a
+    /// recording's transcript stays beside the recording, and the transcribe command says that --output was not used.
+    /// --keyterms, a glossary for this transcript instead of the one decided when the recording started, is passed on as a
+    /// full path, or as none; one that is not there is a mistake, before anything is sent.
     /// </summary>
     private Command TranscribeCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
     {
@@ -873,22 +878,59 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         };
         var noOpen = new Option<bool>("--no-open") { Description = "Open nothing at the end." };
         var again = new Option<bool>("--again") { Description = "Transcribe a recording that already has a transcript. This is billed again; rebuild lays it out again for free." };
+        var keyterms = new Option<string>("--keyterms")
+        {
+            HelpName = "file",
+            Description = $"Send this glossary, one term per line, instead of the one decided when the recording started, or {Settings.SavedClass.NoGlossary} for no glossary; this transcript only, and its entry in the recording's .glossary.json says so."
+        };
 
-        var command = new Command("transcribe", "Transcribe a recording, named by its folder or one of its files, or any audio or video file.") { path, outputFolder, noOpen, again };
+        var command = new Command("transcribe", "Transcribe a recording, named by its folder or one of its files, or any audio or video file.") { path, outputFolder, noOpen, again, keyterms };
         command.Validators.Add(result =>
         {
             if (string.IsNullOrWhiteSpace(TokenOf(result.GetResult(path))))
                 result.AddError("transcribe needs a path: a recording's folder, one of its files, or any audio or video file, such as ClassScribe transcribe \"D:\\Classes\\Kalam\"");
             if (result.GetResult(outputFolder) is { } given && FolderProblem(outputFolder.Name, TokenOf(given), optionNames) is { } problem) result.AddError(problem);
+            if (result.GetResult(keyterms) is { } glossary && GlossaryGivenProblem(TokenOf(glossary), optionNames) is { } glossaryProblem) result.AddError(glossaryProblem);
         });
         command.SetAction(parsed => commands.TranscribeAsync(new TranscribeRequest(
             parsed.GetValue(path)!,
             parsed.GetValue(outputFolder) is { } folder ? Path.GetFullPath(folder) : null,
             Open: !parsed.GetValue(noOpen),
             Again: parsed.GetValue(again),
-            FromCommandLine: true)));
+            FromCommandLine: true,
+            Keyterms: parsed.GetValue(keyterms) is { } given ? GlossaryGiven(given) : null)));
         examples[command] = TranscribeExamples;
         return command;
+    }
+
+    /// <summary>
+    /// The glossary --keyterms of transcribe names, as passed on: none, in any case, as none; a file as a full path, with
+    /// environment variables expanded and a relative one taken from where the command was typed.
+    /// </summary>
+    private static string GlossaryGiven(string value)
+    {
+        var given = value.Trim().Trim('"').Trim();
+        return Settings.SavedClass.MeansNoGlossary(given) ? Settings.SavedClass.NoGlossary : Path.GetFullPath(Environment.ExpandEnvironmentVariables(given));
+    }
+
+    /// <summary>
+    /// What is wrong with <paramref name="value"/> as the glossary of transcribe --keyterms: no value, a character Windows
+    /// does not allow in a path, a folder, or nothing there, since a transcript is paid for and a mistyped glossary would send
+    /// none. Null for none, and for a file that is there.
+    /// </summary>
+    private static string? GlossaryGivenProblem(string? value, HashSet<string> optionNames)
+    {
+        if (ValueProblem(value, KeytermsNeedsValue, optionNames) is { } missing) return missing;
+
+        var given = value!.Trim().Trim('"').Trim();
+        if (Settings.SavedClass.MeansNoGlossary(given)) return null;
+        if (given.IndexOfAny(NotInPaths) >= 0 || given.Any(char.IsControl))
+            return $"--keyterms takes a file; \"{given}\" has a character Windows does not allow in a path: < > \" | ? *";
+
+        var file = GlossaryGiven(given);
+        return Directory.Exists(file) ? $"--keyterms names a folder, not a glossary file: {file}"
+            : !File.Exists(file) ? $"--keyterms names no file: nothing found at {file}"
+            : null;
     }
 
     /// <summary>rebuild: a recording, by its folder or one of its files, or a saved answer, with --no-open.</summary>
@@ -897,11 +939,16 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         var path = new Argument<string>("path") { Description = "A recording's folder, one of its files, or an answer from ElevenLabs saved as .json." };
         var noOpen = new Option<bool>("--no-open") { Description = "Open nothing at the end." };
 
-        var command = new Command("rebuild", "Make a recording's transcript again, for free, from ElevenLabs' saved answer, with the marks and Transcript settings as they are now.") { path, noOpen };
+        // Not one of rebuild's options: it is there to say why rebuild takes no glossary, rather than that the word is unknown.
+        var keyterms = new Option<string>("--keyterms") { Hidden = true, Arity = ArgumentArity.ZeroOrOne };
+
+        var command = new Command("rebuild", "Make a recording's transcript again, for free, from ElevenLabs' saved answer, with the marks and Transcript settings as they are now.") { path, noOpen, keyterms };
         command.Validators.Add(result =>
         {
             if (string.IsNullOrWhiteSpace(TokenOf(result.GetResult(path))))
                 result.AddError("rebuild needs a path: a recording's folder, one of its files, or an answer from ElevenLabs saved as .json, such as ClassScribe rebuild \"D:\\Classes\\Kalam\"");
+            if (result.GetResult(keyterms) is not null)
+                result.AddError("rebuild sends nothing to ElevenLabs and uses no glossary; --keyterms goes with transcribe, which is charged");
         });
         command.SetAction(parsed => commands.RebuildAsync(parsed.GetValue(path)!, open: !parsed.GetValue(noOpen)));
         examples[command] = RebuildExamples;

@@ -155,10 +155,18 @@ public enum StartOrigin
 /// "Mantiq (saved class)"; null for a run started from its own options. Last, with a default, and written only when set, as
 /// <paramref name="Video"/> is, so that a run without one writes its files as before and an older window passes it over.
 /// </param>
+/// <param name="Glossary">
+/// The glossary the window decided for the run (architecture 8.2, item 7): the run's class, a saved class of its course, or
+/// ElevenLabs:KeytermsFile, resolved to a full path, its <see cref="Transcription.GlossaryPick.Path"/> empty for none. The
+/// recorder's settings hold no saved classes, so the window decides and the recorder writes the recording's record from it.
+/// Null for the recorder's own ElevenLabs:KeytermsFile, as a request of an older window reads. Last, with a default, and
+/// written only when set, as <paramref name="ClassName"/> is.
+/// </param>
 public sealed record RecordRequest(string RunId, string Name, bool Transcribe, SourcePlan Source, string OutputRoot,
     ContinueChoice Continue, string? ContinueBaseName, double? Minutes, bool Open,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VideoRequest? Video = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassName = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Transcription.GlossaryPick? Glossary = null)
 {
     /// <summary>
     /// Fields of the request this build does not know, as a later build wrote them, kept so that a run file this build writes

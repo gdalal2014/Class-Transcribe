@@ -47,6 +47,25 @@ public class DefaultChangesTests
         Assert.That(DefaultChanges.HeldIn(new Dictionary<string, string?> { ["Recording:FlushSeconds"] = "5" }, rows), Is.Empty);
     }
 
+    /// <summary>
+    /// The glossary's row (architecture 8.2, item 2): ElevenLabs:KeytermsFile went from keyterms.txt, shipped beside the
+    /// program, to empty, no glossary, as none is shipped. A file holding keyterms.txt, in any case, holds the older default,
+    /// and the newer one is shown as ""; a glossary of one's own, or none, holds no older default.
+    /// </summary>
+    [Test]
+    public void The_glossarys_row_points_out_keyterms_txt()
+    {
+        Assert.That(DefaultChanges.Rows, Has.Member(new DefaultChange("ElevenLabs:KeytermsFile", "keyterms.txt", "", "")));
+        Assert.That(new ElevenLabsOptions().KeytermsFile, Is.Empty, "the code's default is the row's new one");
+
+        var held = DefaultChanges.HeldIn(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ElevenLabs:KeytermsFile"] = " Keyterms.txt " });
+
+        Assert.That(held.Single().Key, Is.EqualTo("ElevenLabs:KeytermsFile"));
+        Assert.That(DefaultChanges.Describe(held[0]), Is.EqualTo("newer default: \"\""));
+        Assert.That(DefaultChanges.HeldIn(new Dictionary<string, string?> { ["ElevenLabs:KeytermsFile"] = @"%APPDATA%\ClassScribe\keyterms-islamic-sciences.txt" }), Is.Empty);
+        Assert.That(DefaultChanges.HeldIn(new Dictionary<string, string?> { ["ElevenLabs:KeytermsFile"] = "" }), Is.Empty);
+    }
+
     /// <summary>A row without a version, as on a feature branch, is described without one; the menu's line counts one or several.</summary>
     [Test]
     public void The_words_name_the_newer_default_and_count_them()

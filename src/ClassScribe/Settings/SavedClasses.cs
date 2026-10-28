@@ -45,11 +45,18 @@ public static class ClassFields
     /// <summary>The camera's picture size, only with Camera: 480p, 720p, 1080p or a width and a height.</summary>
     public const string CameraResolution = "CameraResolution";
 
+    /// <summary>
+    /// The class's own glossary (architecture 8.2, item 4): a file, environment variables expanded and a relative one taken
+    /// from the settings folder, or none for no glossary; ElevenLabs:KeytermsFile when empty. A glossary never makes a class
+    /// unusable: one that is not there is said in the menu's header and at the run's start.
+    /// </summary>
+    public const string KeytermsFile = "KeytermsFile";
+
     /// <summary>The word a camera field holds for any camera: a USB camera when one is plugged in, else the built-in front camera.</summary>
     public const string AnyCamera = "auto";
 
     /// <summary>Every field this build knows, in the order the file writes them.</summary>
-    public static IReadOnlyList<string> All { get; } = [Course, Mode, App, Device, Microphone, MicrophoneFollows, OutputFolder, Transcribe, Camera, CameraResolution];
+    public static IReadOnlyList<string> All { get; } = [Course, Mode, App, Device, Microphone, MicrophoneFollows, OutputFolder, Transcribe, Camera, CameraResolution, KeytermsFile];
 }
 
 /// <summary>A saved class that can be used, as its fields say (see <see cref="SavedClasses"/>).</summary>
@@ -63,9 +70,26 @@ public static class ClassFields
 /// <param name="Transcribe">False to record only when started from menu C.</param>
 /// <param name="Camera">The camera, in person: part of its name, or <see cref="ClassFields.AnyCamera"/>; null for none.</param>
 /// <param name="CameraResolution">The picture's size as <see cref="CameraSize.Text"/> writes it; null for the session's pick or the setting.</param>
+/// <param name="KeytermsFile">
+/// The class's own glossary as the file writes it, trimmed: a file, or none for no glossary; null for ElevenLabs:KeytermsFile.
+/// </param>
 public sealed record SavedClass(string Name, string Course, RecordingMode Mode, ClassSource? Source, string? Microphone, FollowRule? Follows, string? OutputFolder,
-    bool Transcribe, string? Camera, string? CameraResolution)
+    bool Transcribe, string? Camera, string? CameraResolution, string? KeytermsFile = null)
 {
+    /// <summary>The word a glossary's value holds for no glossary, in any case: a saved class's KeytermsFile, ElevenLabs:KeytermsFile and transcribe --keyterms alike.</summary>
+    public const string NoGlossary = "none";
+
+    /// <summary>True when <paramref name="value"/>, a glossary's value as written, means no glossary: empty, or <see cref="NoGlossary"/> in any case.</summary>
+    public static bool MeansNoGlossary(string? value) => value is null || value.Trim().Length == 0 || value.Trim().Equals(NoGlossary, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A glossary's file as words name it: the file's name, or the value as written when it ends in no file's name.</summary>
+    public static string GlossaryName(string file)
+    {
+        var name = file.Trim().Trim('"').Trim();
+        var last = name.LastIndexOfAny(['\\', '/']);
+        return last >= 0 && last < name.Length - 1 ? name[(last + 1)..] : name;
+    }
+
     /// <summary>What it records, as a run's source plan: the camera's name part null for any camera, its size kept for the start to resolve.</summary>
     public SourcePlan Plan => Mode switch
     {
@@ -78,7 +102,8 @@ public sealed record SavedClass(string Name, string Course, RecordingMode Mode, 
     /// <summary>
     /// What it records, in words for the menu and the run's first line: "chrome, with your microphone (Microphone Array,
     /// following chrome)", "the device the class plays on", "in person, your microphone (OBSBOT), with the camera "OBSBOT"
-    /// (720p)", and ", recorded only" for a class that is not transcribed when started from menu C.
+    /// (720p)"; its own glossary, ", glossary mantiq.txt" by the file's name or ", no glossary"; and ", recorded only" for a
+    /// class that is not transcribed when started from menu C.
     /// </summary>
     public string Describe()
     {
@@ -90,6 +115,12 @@ public sealed record SavedClass(string Name, string Course, RecordingMode Mode, 
                 : $", with the camera \"{Camera}\" ({CameraResolution ?? "the size set"})"),
             RecordingMode.ClassAndMicrophone => $"{SourceWords(Source)}, with your microphone ({microphone}{FollowWords()})",
             _ => SourceWords(Source)
+        };
+        words += KeytermsFile switch
+        {
+            null => "",
+            var none when MeansNoGlossary(none) => ", no glossary",
+            var file => $", glossary {GlossaryName(file)}"
         };
         return Transcribe ? words : $"{words}, recorded only";
     }
@@ -209,7 +240,8 @@ public sealed class SavedClasses(IConfiguration configuration, SettingsFile? fil
     /// required; the mode one of three; App and Device not both, and neither in person; the microphone and the app it follows
     /// only with a microphone, the app never ClassScribe and never in person; the folder a path; Transcribe true or false;
     /// the camera only in person, 1 to 200 characters; its size by <see cref="CameraSize.TryParse"/>, only with a camera.
-    /// Fields this build does not know pass.
+    /// The glossary is read as it is written and never makes the class unusable, since a glossary must never stop a
+    /// recording. Fields this build does not know pass.
     /// </summary>
     public static SavedClassEntry Check(string name, IReadOnlyDictionary<string, string?> fields)
     {
@@ -275,7 +307,8 @@ public sealed class SavedClasses(IConfiguration configuration, SettingsFile? fil
             : app is not null ? new ClassSource.App(app.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? app[..^4] : app)
             : device is not null && !device.Equals("auto", StringComparison.OrdinalIgnoreCase) ? new ClassSource.Device(device)
             : new ClassSource.Automatic();
-        return new SavedClassEntry(name, new SavedClass(name, course!, mode, source, mode == RecordingMode.Class ? null : microphone, follows, output, transcribe, camera, size), []);
+        return new SavedClassEntry(name, new SavedClass(name, course!, mode, source, mode == RecordingMode.Class ? null : microphone, follows, output, transcribe, camera, size,
+            Field(ClassFields.KeytermsFile)), []);
     }
 
     /// <summary>The fields of one class's section, by name, ignoring case; a field holding a list or an object is passed over.</summary>

@@ -26,8 +26,8 @@ public sealed record SourceGiven(SourceOption Option, string? Value);
 /// (--app, --device or --in-person) replaces the class's whole source, its mode and the app its microphone follows; --mic
 /// replaces its microphone, and on a class without one adds it; --mic-follows replaces what it follows, without --mic when
 /// the class records the microphone beside the class; --camera and --resolution replace the camera and its size, in person
-/// only; --output, --course, --record-only and --transcribe set their fields; --clear empties a field without an empty
-/// string, which Windows PowerShell 5.1 would drop.
+/// only; --output, --course, --record-only, --transcribe and --keyterms set their fields; --clear empties a field without an
+/// empty string, which Windows PowerShell 5.1 would drop.
 /// </summary>
 public sealed record ClassChoices
 {
@@ -38,7 +38,8 @@ public sealed record ClassChoices
         ["microphone"] = ClassFields.Microphone,
         ["follows"] = ClassFields.MicrophoneFollows,
         ["camera"] = ClassFields.Camera,
-        ["resolution"] = ClassFields.CameraResolution
+        ["resolution"] = ClassFields.CameraResolution,
+        ["keyterms"] = ClassFields.KeytermsFile
     };
 
     /// <summary>The recording's name, --course, or the name given with record --class; null to keep the class's.</summary>
@@ -76,6 +77,12 @@ public sealed record ClassChoices
 
     /// <summary>False for --record-only, true for --transcribe; null to keep the class's.</summary>
     public bool? Transcribe { get; init; }
+
+    /// <summary>
+    /// The class's own glossary --keyterms gave, as written: a file, or none for no glossary; null to keep the class's
+    /// (--clear keyterms empties it, so that the class takes ElevenLabs:KeytermsFile).
+    /// </summary>
+    public string? Keyterms { get; init; }
 
     /// <summary>The fields --clear empties, by their words (see <see cref="ClearWords"/>).</summary>
     public IReadOnlyList<string> Clear { get; init; } = [];
@@ -156,6 +163,7 @@ public sealed record ClassChoices
 
         if (Output is not null) fields[ClassFields.OutputFolder] = Output;
         if (Transcribe is { } transcribe) fields[ClassFields.Transcribe] = transcribe ? "true" : "false";
+        if (Keyterms is not null) fields[ClassFields.KeytermsFile] = Keyterms;
         return null;
     }
 

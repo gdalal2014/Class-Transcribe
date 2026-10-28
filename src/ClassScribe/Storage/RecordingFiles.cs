@@ -12,7 +12,8 @@ namespace ClassScribe.Storage;
 /// .md of that name, with (2), (3) and so on for later transcripts of the same recording, and ElevenLabs'
 /// answer the .json beside it. An answer that was paid for but did not become a transcript is the
 /// .unread.json of that name, or a .json left without its .md (see <see cref="FindKeptAnswers"/>). The
-/// marks, the log and the upload copy complete the set, with a YouTube video's source file for a video's recording.
+/// marks, the log, the glossary record and the upload copy complete the set, with a YouTube video's source file for a
+/// video's recording.
 /// </summary>
 /// <remarks>
 /// A lesson recorded with the camera also has the camera's pieces (see <see cref="CameraPiece"/>): fragmented, video-only
@@ -77,6 +78,13 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     public string Source => Path.Combine(Folder, $"{BaseName}.source.json");
 
     /// <summary>
+    /// The recording's glossary record (architecture 8.2): the glossary decided when the recording started, which every later
+    /// transcription of it reuses, and what each transcript sent (see <see cref="Transcription.GlossaryRecord"/>). Written as
+    /// the recording starts; it is never an answer or a transcript.
+    /// </summary>
+    public string Glossary => Path.Combine(Folder, $"{BaseName}.glossary.json");
+
+    /// <summary>
     /// True when the recording has been transcribed at least once: any copy of its transcript is there, not only
     /// the first, which may have been deleted while a later one was kept.
     /// </summary>
@@ -97,8 +105,8 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
 
     /// <summary>
     /// The recording any of its files belongs to, by the file's name: a segment of either track, the marks, the log, the
-    /// upload copy, a video's source file, any copy of its transcript or of ElevenLabs' answer, an answer kept as unread
-    /// included, a camera's piece, or the lesson's video, finished or being made. Null for
+    /// upload copy, a video's source file, the glossary record, any copy of its transcript or of ElevenLabs' answer, an
+    /// answer kept as unread included, a camera's piece, or the lesson's video, finished or being made. Null for
     /// any other file, such as one without a time stamp in its name. Whether the recording's audio is still there is for
     /// the caller to look at (see <see cref="FindSegments"/>).
     /// </summary>
@@ -255,11 +263,11 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     /// <summary>
     /// The name of any file of a recording: the base name with its time stamp, then a segment of either track (.wav,
     /// _partN.wav, .mic.wav, _partN.mic.wav), the upload copy (.upload.wav), the marks (.marks.txt), the log (.log), a
-    /// video's source file (.source.json), a copy of the transcript or of the answer (.md, .json, .unread.json, each with
-    /// " (N)" before it from the second copy), a camera's piece (.cam.mp4, .cam@hh-mm-ss.fff.mp4), or the lesson's video
-    /// (.mp4, and .mp4.partial while it is being made).
+    /// video's source file (.source.json), the glossary record (.glossary.json), a copy of the transcript or of the answer
+    /// (.md, .json, .unread.json, each with " (N)" before it from the second copy), a camera's piece (.cam.mp4,
+    /// .cam@hh-mm-ss.fff.mp4), or the lesson's video (.mp4, and .mp4.partial while it is being made).
     /// </summary>
-    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|\.source\.json|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json)|\.cam(?:@[0-9]{2}-[0-5][0-9]-[0-5][0-9]\.[0-9]{3})?\.mp4|\.mp4(?:\.partial)?)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<base>.+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?:(?:_part[0-9]{1,9})?(?:\.mic)?\.wav|\.upload\.wav|\.marks\.txt|\.log|\.source\.json|\.glossary\.json|(?: \([0-9]{1,9}\))?(?:\.md|(?:\.unread)?\.json)|\.cam(?:@[0-9]{2}-[0-5][0-9]-[0-5][0-9]\.[0-9]{3})?\.mp4|\.mp4(?:\.partial)?)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FileOfARecording();
 
     /// <summary>The time stamp at the end of a base name.</summary>

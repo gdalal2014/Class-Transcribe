@@ -10,7 +10,8 @@ clock, written by a camera process of its own, and joined after the stop with th
 `<base>.mp4`, by another camera process's finish job. The recording runs in a separate recorder process
 (`ClassScribe.exe --recorder <run id>`), which the window shows through a named pipe, so closing
 the window does not end a class. When stopped, it sends the recording to ElevenLabs Scribe v2 with
-a glossary of Arabic terms and saves a Markdown transcript and ElevenLabs' JSON answer beside the
+the glossary decided as the recording started (none is shipped: the settings or a saved class name
+one; Gulzar's is his own file in `%APPDATA%\ClassScribe`) and saves a Markdown transcript and ElevenLabs' JSON answer beside the
 recording, in a course > date folder (`<root>\Mantiq\2026-10-17\Mantiq_2026-10-17_14-04-42Z.*`;
 the old flat `<root>\<name>\` folders are still read). It signs in to the user's own Google Drive
 (OAuth for a desktop app, `drive.file` only), uploads each class there by itself once its transcript
@@ -242,7 +243,7 @@ advice after a format error (10 A).
   `ShutdownBlockReasonCreate`, `Destroy` and `Query` run only on the window's own thread.
 - Settings in code: singletons read `IOptionsMonitor<T>.CurrentValue` each time they use it
   (`ClassFolders`, `TranscriptFormatter`, `SourceChoice`, the Refit client's `ConfigureHttpClient`);
-  per-run services, scoped or transient (the commands, `TranscriptionWorkflow`, `ElevenLabsClient`,
+  per-run services, scoped or transient (the commands, `TranscriptionWorkflow`, `GlossaryChoice`, `ElevenLabsClient`,
   `RecordingSession`, `TrackSetFactory`, `MicrophoneAdvice`, `MicrophoneMenu`, `RecordingMonitor`,
   `ElevenLabsAccount`, and for YouTube `YouTubeCommand`, `YouTubeMenu`, `YouTubeBatch`, `DownloadBatch`,
   `VideoBatch`, `DownloadedAudio` and `RecordingUpload`), take `IOptionsSnapshot<T>`, read once in the
@@ -488,7 +489,7 @@ advice after a format error (10 A).
 - Balanced answers: not terse, not padded. No em dashes.
 - When questions are needed, ask them all at once, as multiple choice where possible.
 - Cite sources for research and other non-code answers.
-- Arabic terms in IJMES transliteration (this governs `src/ClassScribe/keyterms.txt`).
+- Arabic terms in IJMES transliteration (this governs your glossary in `%APPDATA%\ClassScribe` and the example in `examples/glossary`).
 
 ## Git flow, worktrees and dry runs
 
@@ -578,6 +579,7 @@ dotnet run --project src/ClassScribe -- mic-check --seconds 600        # watch w
 dotnet run --project src/ClassScribe -- camera-check "OBSBOT"                   # the cameras and the set-up; opens the camera for 5 s, shared, only after a typed Y (the user's word only)
 dotnet run --project src/ClassScribe -- transcribe "C:\path\to\folder-or-file"   # --no-open opens nothing; --output for a file
 dotnet run --project src/ClassScribe -- transcribe "<path>" --again    # one with a transcript; billed again
+dotnet run --project src/ClassScribe -- transcribe "<path>" --keyterms "<file>"   # another glossary for this transcript, or --keyterms none
 dotnet run --project src/ClassScribe -- rebuild "C:\path\to\folder-or-file"      # free, from the saved .json; --no-open
 dotnet run --project src/ClassScribe -- finish-video "C:\path\to\lesson"         # a lesson's video made again, free, from its pieces; --no-open
 dotnet run --project src/ClassScribe -- list                           # the recordings, newest first; --output
@@ -673,6 +675,50 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   again) instead. Every caller refuses a recording that is still being written
   (`ClassFolders.IsBeingWritten`), and `rebuild` refuses one without a saved answer. `--no-open`
   works with both commands; options go before or after the path, in any case (`App`).
+  `transcribe --keyterms "<file>"` (passed on as a full path, `%APPDATA%` expanded, a relative one from
+  the current folder; a file that is not there or a folder is exit 2) or `--keyterms none` sends that
+  glossary with this transcript only (`TranscribeRequest.Keyterms`); `rebuild --keyterms` is refused
+  with why (a hidden option whose only use is that message).
+- The glossary (architecture 8.2; Gulzar's answers 11 A and 12 A): ClassScribe ships none and sends
+  none by default (`ElevenLabs:KeytermsFile` `""`, with its `DefaultChanges` row from `keyterms.txt`);
+  his glossary lives in `%APPDATA%\ClassScribe\keyterms-islamic-sciences.txt`, and the repository keeps
+  `examples/glossary/keyterms-islamic-sciences.txt`, outside `src`, never built or published, which
+  only the test project links (`RepositoryLayoutTests` checks that no glossary sits under `src` and no
+  project there copies one). A relative glossary is taken from the folder of the settings in force and
+  from nowhere else (`SettingsPlaces.ResolveFile`): never beside the exe, where a 0.4 build's
+  `keyterms.txt` may be left over. `GlossaryChoice` (scoped) is the one resolver, for every run, every
+  later transcription and the YouTube plans (`TermsFor`): `transcribe --keyterms`, then the
+  recording's own `<base>.glossary.json` (`GlossaryRecord`: `decided` once, at the start, and one `sent`
+  entry per transcript; read leniently and written whole through `GlossaryFiles`, behind
+  `IGlossaryFiles`, with `GlossaryJson`), then the run's saved class (`RecordRequest.ClassName`), a
+  saved class whose course is the recording's name (two that disagree give the setting's, with a
+  warning), `ElevenLabs:KeytermsFile`, none. The window decides steps 3 to 6 in `RecordStarter`, where
+  the saved classes are, and the request carries it (`RecordRequest.Glossary`, a `GlossaryPick`: the
+  value, the full path, where it came from; written only when set, so null means the recorder's own
+  setting, as an older window's request reads, and a pick with a field missing is passed over with a
+  warning and decided where the run is); `RecordCommand` calls `GlossaryChoice.AtStart` after the
+  start lines, in either home, inside a catch-all (`StartTheGlossary`: nothing about the glossary may
+  end a class), which writes the record before any transcript (a continued recording keeps its own;
+  when its decided file is gone, the run's glossary is written in its place) and returns the run's
+  glossary; the run hands that to `TranscriptionWorkflow.TranscribeRecordingAsync(files, keyterms, run,
+  ct)`, and `ForTranscript` sends it whenever the record gives none (unreadable, never written, or
+  naming a file that is gone), since a recorder's settings hold no saved classes to decide again by;
+  without a run (a later transcription), steps 4 to 6 decide. The workflow calls `ForTranscript`
+  before each upload and `Sent` after the transcript is saved. Each says one line: `Glossary: <name>
+  (<from>), N terms`, `No glossary: <from> is empty|says none`, or the reuse line `Glossary: <name>, as
+  decided when this recording started (N terms then, M now)` / `; changed since: ...`; a decided file
+  that is gone is decided again with a warning. The advice for a class's or the setting's glossary
+  that is not there says that `class set` and `settings set` count from the next recording, and that
+  this recording takes the file put there, or another through `transcribe --again --keyterms`. A
+  glossary that is not there or cannot be read, and a record that cannot be read (left as it is) or
+  written, never stop a recording or cost a transcript. The term
+  rules are `KeytermRules` (pure: `Read`, `Validate`, `Words`), with `KeytermLimits.ElevenLabs` (1000
+  terms, under 50 characters, 5 words) until slice 2 makes them settings. A saved class may name its
+  own (`Classes:<name>:KeytermsFile`, a file or `none`; never makes the class unusable; `class
+  add|set --keyterms`, `--clear keyterms`, menu C's last question, `class show --json`'s `glossary`,
+  the menu's header for one that is not there). The `.glossary.json` is a file of the recording
+  (`RecordingFiles.Glossary`; `TryParse` takes it, so Drive sends it), never an answer or a
+  transcript, and like a log no sign of a class (`IsClass`, rebuild's folder listing).
 - The `WindowsAudio` and `WindowsPower` tests run in the normal `dotnet test` too; the filters above
   run them alone. `WindowsAudio` only reads Windows' device list, level meters and audio sessions:
   `DeviceCheckResourceTests` (1,000 device listings and 300 app listings in a no-GC region, allowed
@@ -760,10 +806,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   writer and its full copy, `settings` and `class`, `record --class`, `--output` optional, the
   recording that drops refused settings, menus C and S, the folder warnings), and 4,245 at its head
   (the review's fixes and the soak's check by its stamps). Merged into `develop` on 22 October, with
-  `Recording:CameraOffsets` made a map of the catalog, the count is 4,538, all passing. From there the lesson's video
+  `Recording:CameraOffsets` made a map of the catalog, the count is 4,538, all passing (4,542 at
+  `af7be41`). From there the lesson's video
   (step 13, slice 8) grew on `feature/lesson-video` to 4,651, all passing, in about four minutes, and its review's fixes
   (free-space and a video still to be made, a remade video as a revision, the rename guard, pieces in no video kept, the
-  wording once a transcript is saved, the camera's restart race) to 4,667, all passing. The uploads by
+  wording once a transcript is saved, the camera's restart race) to 4,667, all passing. From `af7be41` the glossary out of
+  the app (architecture slice 1) grew on `feature/glossary-out` to 4,610, all passing, with 4 Explicit `DryRunKit` tests
+  (one a whole dry run with a named glossary), and on with its review's repairs; rebased on `develop` with the lesson's
+  video, the count is 4,751, all passing, in about four minutes. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -799,11 +849,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
-  three minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
+  four minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
   2 min 17 s for 3,395 later that day, 3 min 55 s for YouTube's 3,875 on 18 October, 3 min 7 s for
   3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, 3 min 4 s for 4,180
   with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, 3 min 32 s for 4,538 with
-  settings and saved classes, plus the build).
+  settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
+  app on 28 October, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -992,7 +1043,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   failed or cancelled included, unless `Recording:KeepUploadFile`) and `.unread.json` (an answer
   ElevenLabs charged for that did not become a transcript; a `.json` left without its `.md` counts as
   one too, see `RecordingFiles.FindKeptAnswers`; menu choice 3 shows `answer kept` and asks before a
-  charged retry), and for a lesson with the camera its pieces, `<base>.cam.mp4` and `<base>.cam@hh-mm-ss.fff.mp4`
+  charged retry), `.glossary.json` (the glossary decided as the recording started and what each
+  transcript sent, `RecordingFiles.Glossary`; see the glossary bullet), and for a lesson with the camera its pieces, `<base>.cam.mp4` and `<base>.cam@hh-mm-ss.fff.mp4`
   (`RecordingFiles.CameraPiece(start)`, `FindCameraPieces()` in their order on the clock, `IsCameraPiece`; a sign of a
   class for the date folders; held while written for `IsBeingWritten`, the newest piece open for writing with reading
   allowed; never sent to Drive, `RecordingUpload.FilesToUpload` and `UploadManifests.OnDisk` leave them out; a lesson with
@@ -1087,7 +1139,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with exit 1 while the user's file is missing). A changed default
   needs a row in `DefaultChanges.Rows` (old, new, version), which `settings list` and the menu's header
   show for a file holding the old one (`Recording:MicrophoneFollows`, `chrome` to `auto`, is the
-  first). Saved classes are `Classes:<name>:<field>` in the same file (`SavedClasses`, a singleton
+  first; `ElevenLabs:KeytermsFile`, `keyterms.txt` to `""`, the second, shown as `newer default: ""`). Saved classes are `Classes:<name>:<field>` in the same file (`SavedClasses`, a singleton
   reading `IConfiguration` at each use; `ClassFields.All` in order; unknown fields kept; each class
   checked on its own, so an unusable one never holds up the rest or the file); `ClassChoices` applies
   the command line's or the menu's answers in groups. Menu C's E takes its Enter answers from the
@@ -1892,7 +1944,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ProcessLoopback.cs` and `CaptureGapWatch.cs` as before.
 - `src/ClassScribe/Transcription`: ElevenLabs client (a Refit interface plus `ElevenLabsClient`
   around it), the shared answer parser (`ElevenLabsAnswer`), the upload's time limit
-  (`UploadTimeLimit`), glossary loader, transcript formatter, workflow (rebuild included),
+  (`UploadTimeLimit`), the glossary (`KeytermRules` and `KeytermLimits`, `IGlossaryFiles` and
+  `GlossaryFiles` with `GlossaryJson`, `GlossaryRecord`, and `GlossaryChoice` with `GlossaryPick` and
+  `GlossaryUse`), transcript formatter, workflow (rebuild included),
   `TranscriptionProgress` (scoped: the workflow and the client report preparing, uploading at a
   percent and waiting; `RecordCommand` shows it as UPLOADING 40% and writes it into the run file's
   heartbeat, which the menu header and `list` read), and what a transcript cost: `TranscriptionCost`
@@ -2053,5 +2107,17 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `VideoBatchTests`, `VideoContinuationTests`, the partials `RecordCommandTests.Video.cs`,
   `RecordStarterTests.Video.cs` and `RecorderHostTests.Video.cs`, and additions to `StopSignalTests`,
   `StartupReportTests`, `ContinueQuestionTests`, `RecordingFilesTests`, `RegistryValuesTests`,
-  `ServiceRegistrationTests` and `EndToEndTests`. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
+  `ServiceRegistrationTests` and `EndToEndTests`. The glossary's tests: `KeytermRulesTests`,
+  `GlossaryFilesTests` (the example glossary, which the test project links into its output as
+  `Examples\keyterms-islamic-sciences.txt`), `GlossaryChoiceTests`, `GlossaryRecordTests` (with
+  `GlossaryRecordTests.Reuse.cs`, and `GlossaryRecordTests.Recorder.cs` for a recorder's resolver,
+  which has no saved classes) and `Architecture/RepositoryLayoutTests`, with additions to
+  `RecordingFilesTests`, `SavedClassesTests`, `ClassCommandTests`, `ClassCommandLineTests`,
+  `ClassesMenuTests`, `CommandLineTreeTests`, `RequestsTests`, `RecordStarterTests`,
+  `RecordCommandTests`, `RecorderHostTests`, `TranscriptionWorkflowTests`, `DefaultChangesTests`,
+  `MenuSettingsTests`, `DownloadBatchTests`, `VideoBatchTests` and `YouTubeMenuTests` (the plans' prices
+  with a course's glossary), `TranscribeCommandTests` (`--keyterms` reaching the upload),
+  `RebuildCommandTests`, `DryRunScriptTests` and `DryRunWholeTests`;
+  `TestGlossaries.Choice` builds the resolver for tests that build the workflow by hand (over
+  `FailingGlossaryFiles` for an error nobody expects), and `TestGlossaries.Classes` the saved classes. `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
   guard. The test project sees ClassScribe's internals (`InternalsVisibleTo` in `CoreAudioInterop.cs`).

@@ -31,7 +31,11 @@ namespace ClassScribe.Commands;
 /// that would be billed again then needs <paramref name="Again"/>. Menu choices 3 and 4 ask before they send such a
 /// recording, so their requests pass.
 /// </param>
-public sealed record TranscribeRequest(string Path, string? OutputRoot = null, bool Open = true, bool Again = false, bool FromCommandLine = false);
+/// <param name="Keyterms">
+/// The glossary given with --keyterms, for this transcript instead of the one decided when the recording started: a file as
+/// a full path, or none; null to take the recording's own (see <see cref="GlossaryChoice"/>).
+/// </param>
+public sealed record TranscribeRequest(string Path, string? OutputRoot = null, bool Open = true, bool Again = false, bool FromCommandLine = false, string? Keyterms = null);
 
 /// <summary>
 /// Transcribes audio that already exists: a recording, named by its folder or by one of its files, or any other audio or
@@ -131,7 +135,7 @@ public sealed class TranscribeCommand(
             logger.LogInformation("--output is not used for a recording: its transcript goes beside it, in {Folder}", files.Folder);
         logger.LogInformation("Transcribing the recording {Recording}", files.BaseName);
         TranscriptFiles saved;
-        using (KeepAwake()) saved = await workflow.TranscribeRecordingAsync(files, signals.Cancellation);
+        using (KeepAwake()) saved = await workflow.TranscribeRecordingAsync(files, request.Keyterms, signals.Cancellation);
         await DoneAsync(saved, request);
         return 0;
     }
@@ -145,7 +149,7 @@ public sealed class TranscribeCommand(
         if (!HasKey()) return 1;
 
         TranscriptFiles saved;
-        using (KeepAwake()) saved = await workflow.TranscribeFileAsync(path, request.OutputRoot, signals.Cancellation);
+        using (KeepAwake()) saved = await workflow.TranscribeFileAsync(path, request.OutputRoot, request.Keyterms, signals.Cancellation);
         await DoneAsync(saved, request);
         return 0;
     }

@@ -569,4 +569,131 @@ public class DryRunScriptTests
         Assert.That(lines[1], Does.StartWith("stray ").And.Contain("POST /v1/text-to-speech/x"));
         Assert.That(lines[2], Is.EqualTo("none 0 0 0"));
     }
+
+    /// <summary>
+    /// The kit copies into its own settings folder each glossary the seeded settings name by a relative path, from the user's
+    /// settings folder, as a class takes it (architecture 8.7): ElevenLabs:KeytermsFile and each saved class's, a -Setting
+    /// override among them; one named with %APPDATA% or a full path is read where it is, none is nothing to copy, and one
+    /// that is not in the user's folder is said. Only temporary folders are touched.
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_kit_copies_the_glossaries_the_settings_name_by_a_relative_path()
+    {
+        var user = Path.Combine(_folder.Path, "AppData");
+        var kit = Path.Combine(_folder.Path, "kit settings");
+        Directory.CreateDirectory(Path.Combine(user, "glossaries"));
+        Directory.CreateDirectory(kit);
+        File.WriteAllText(Path.Combine(user, "keyterms-islamic-sciences.txt"), "kalam");
+        File.WriteAllText(Path.Combine(user, "glossaries", "mantiq.txt"), "mantiq");
+        File.WriteAllText(Path.Combine(kit, "appsettings.json"), """
+            {
+              "ElevenLabs": { "KeytermsFile": "keyterms-islamic-sciences.txt" },
+              "Classes": {
+                "Mantiq (Chrome)": { "Course": "Mantiq", "App": "chrome", "KeytermsFile": "glossaries\\mantiq.txt" },
+                "Fiqh": { "Course": "Fiqh", "App": "chrome", "KeytermsFile": "%APPDATA%\\ClassScribe\\fiqh.txt" },
+                "Kalam": { "Course": "Kalam", "App": "chrome", "KeytermsFile": "none" },
+                "Aqidah": { "Course": "Aqidah", "App": "chrome" }
+              }
+            }
+            """);
+
+        var lines = await PowerShellAsync($$"""
+            $glossaries = @(Get-GlossarySettings -SettingsFile {{Quoted(Path.Combine(kit, "appsettings.json"))}} -Overrides @('Recording:FlushSeconds=5', 'classes:kalam:keytermsfile=gone.txt'))
+            $glossaries | ForEach-Object { "setting $($_.Key)=$($_.Value) [$($_.Course)]" }
+            Copy-RelativeGlossaries -Glossaries $glossaries -From {{Quoted(user)}} -To {{Quoted(kit)}} | ForEach-Object { "$($_.Copied) $($_.Line)" }
+            "named $(@($glossaries | Where-Object { -not (Test-NoGlossary $_.Value) }).Count)"
+            "none $(@(Get-GlossarySettings -SettingsFile {{Quoted(Path.Combine(_folder.Path, "no settings.json"))}}).Count)"
+            """);
+
+        Assert.That(lines, Is.EqualTo(new[]
+        {
+            "setting ElevenLabs:KeytermsFile=keyterms-islamic-sciences.txt []",
+            "setting Classes:Mantiq (Chrome):KeytermsFile=glossaries\\mantiq.txt [Mantiq]",
+            "setting Classes:Fiqh:KeytermsFile=%APPDATA%\\ClassScribe\\fiqh.txt [Fiqh]",
+            "setting Classes:Kalam:KeytermsFile=gone.txt [Kalam]",
+            $"True Copied keyterms-islamic-sciences.txt, which ElevenLabs:KeytermsFile names, from {user} into the dry run's settings folder.",
+            $"True Copied glossaries\\mantiq.txt, which Classes:Mantiq (Chrome):KeytermsFile names, from {user} into the dry run's settings folder.",
+            "False Classes:Fiqh:KeytermsFile names %APPDATA%\\ClassScribe\\fiqh.txt, which the dry run reads where it is.",
+            $"False Classes:Kalam:KeytermsFile names gone.txt, which is not in {user}, so the dry run has no such glossary either.",
+            "named 4",
+            "none 0"
+        }));
+        Assert.That(File.ReadAllText(Path.Combine(kit, "glossaries", "mantiq.txt")), Is.EqualTo("mantiq"));
+        Assert.That(File.ReadAllText(Path.Combine(kit, "keyterms-islamic-sciences.txt")), Is.EqualTo("kalam"));
+    }
+
+    /// <summary>
+    /// The kit counts a glossary's terms as ClassScribe counts those of a glossary whose terms are all valid: comments and
+    /// blank lines passed over, a term repeated in any case or spelling composed differently counted once; no file is none.
+    /// The lines of a recording's log that say which glossary the run took are found, as the recorder's own log writes them.
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_kit_counts_a_glossarys_terms_and_finds_the_runs_glossary_lines()
+    {
+        var glossary = _folder.File("terms.txt");
+        File.WriteAllText(glossary, "# terms\r\n\r\nkal\u0101m\r\n  Kal\u0101m  \r\nkala\u0304m\r\nmanti\u1E6Dq\r\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        var log = _folder.File("Dry run.log");
+        File.WriteAllText(log, string.Join(Environment.NewLine,
+            RecorderLogProvider.Text(LogLevel.Information, "Recording \"Dry run\" to D:\\x"),
+            RecorderLogProvider.Text(LogLevel.Information, "Glossary: keyterms-islamic-sciences.txt (ElevenLabs:KeytermsFile), 94 terms"),
+            RecorderLogProvider.Text(LogLevel.Information, "Glossary: keyterms-islamic-sciences.txt, as decided when this recording started (94 terms then, 94 now)"),
+            RecorderLogProvider.Text(LogLevel.Information, "Transcript saved to D:\\x.md")) + Environment.NewLine, new UTF8Encoding(false));
+
+        var lines = await PowerShellAsync($$"""
+            "terms $(Get-GlossaryTermCount -Path {{Quoted(glossary)}})"
+            "missing $(if ($null -eq (Get-GlossaryTermCount -Path {{Quoted(_folder.File("gone.txt"))}})) { 'null' } else { 'a number' })"
+            Get-GlossaryLines -Path {{Quoted(log)}} | ForEach-Object { "line $($_.Substring($_.IndexOf('Glossary')))" }
+            """);
+
+        Assert.That(lines, Is.EqualTo(new[]
+        {
+            "terms 2",
+            "missing null",
+            "line Glossary: keyterms-islamic-sciences.txt (ElevenLabs:KeytermsFile), 94 terms",
+            "line Glossary: keyterms-islamic-sciences.txt, as decided when this recording started (94 terms then, 94 now)"
+        }));
+    }
+
+    /// <summary>
+    /// The kit expects keyterms only when the seeded settings name a glossary (architecture 8.7): with none named, keyterms:
+    /// none is a note, not a problem; with one named, the stand-in's count must equal the recording's .glossary.json entry and
+    /// the glossary's own terms, and a run that decided no glossary, as a class that says none, is a note; a build that writes
+    /// no record is checked as before, by the stand-in's count alone.
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_kit_expects_keyterms_only_when_the_settings_name_a_glossary()
+    {
+        var lines = await PowerShellAsync("""
+            function Show($label, $findings) { "$label problems: $(@($findings.Problems) -join ' | ')"; "$label notes: $(@($findings.Notes) -join ' | ')" }
+            function Record($path, $terms) { [pscustomobject]@{ decided = [pscustomobject]@{ setting = 'x.txt'; path = $path; from = 'ElevenLabs:KeytermsFile'; terms = $terms }; sent = @([pscustomobject]@{ copy = 1; path = $path; terms = $terms }) } }
+            Show 'none named' (Get-GlossaryFindings -Named $false -StandInTerms @(0) -Record $null -FileTerms $null)
+            Show 'old build' (Get-GlossaryFindings -Named $false -StandInTerms @(94) -Record $null -FileTerms $null)
+            Show 'good' (Get-GlossaryFindings -Named $true -StandInTerms @(94) -Record (Record 'C:\g.txt' 94) -FileTerms 94)
+            Show 'short' (Get-GlossaryFindings -Named $true -StandInTerms @(90) -Record (Record 'C:\g.txt' 94) -FileTerms 97)
+            Show 'class none' (Get-GlossaryFindings -Named $true -StandInTerms @(0) -Record (Record '' 0) -FileTerms $null)
+            Show 'no record' (Get-GlossaryFindings -Named $true -StandInTerms @(0) -Record $null -FileTerms $null)
+            Show 'no transcript' (Get-GlossaryFindings -Named $true -StandInTerms @() -Record $null -FileTerms $null)
+            """);
+
+        Assert.That(lines, Is.EqualTo(new[]
+        {
+            "none named problems: ",
+            "none named notes: keyterms: none, as the seeded settings name no glossary",
+            "old build problems: ",
+            "old build notes: The stand-in counted 94 keyterms though the seeded settings name no glossary (a build that ships one)",
+            "good problems: ",
+            "good notes: ",
+            "short problems: The stand-in counted 90 keyterms, but the recording's .glossary.json says 94 went up. | C:\\g.txt holds 97 terms, but 94 went up.",
+            "short notes: ",
+            "class none problems: ",
+            "class none notes: The run took no glossary: ElevenLabs:KeytermsFile says none",
+            "no record problems: No keyterms went up with the transcript, though the seeded settings name a glossary.",
+            "no record notes: This build writes no .glossary.json beside the recording",
+            "no transcript problems: ",
+            "no transcript notes: "
+        }));
+    }
 }

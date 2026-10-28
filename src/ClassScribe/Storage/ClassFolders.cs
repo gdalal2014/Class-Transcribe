@@ -640,8 +640,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// True when <paramref name="file"/> shows that a class was recorded: a file of a recording (see
     /// <see cref="RecordingFiles.TryParse"/>) that is its audio on either track, a transcript or an answer from ElevenLabs,
     /// a camera's piece or a lesson's finished video, or a log or marks of a recording whose audio is on Google Drive alone
-    /// (see <see cref="IAudioOnDrive"/>). A log and marks alone, as a start that recorded nothing leaves, an upload copy, a
-    /// lesson video's .partial, and a YouTube video's source file, which a video whose fetching failed leaves, show no class.
+    /// (see <see cref="IAudioOnDrive"/>). A log, marks and a glossary record alone, as a start that recorded nothing leaves,
+    /// an upload copy, a lesson video's .partial, and a YouTube video's source file, which a video whose fetching failed
+    /// leaves, show no class.
     /// </summary>
     private bool IsClass(string file)
     {
@@ -650,6 +651,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
         var kind = Path.GetFileName(file)[files.BaseName.Length..];
         var trace = kind.Equals(".log", StringComparison.OrdinalIgnoreCase)
             || kind.Equals(".marks.txt", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals(".glossary.json", StringComparison.OrdinalIgnoreCase)
             || kind.Equals(".upload.wav", StringComparison.OrdinalIgnoreCase)
             || kind.Equals(".mp4.partial", StringComparison.OrdinalIgnoreCase)
             || kind.Equals(".source.json", StringComparison.OrdinalIgnoreCase);

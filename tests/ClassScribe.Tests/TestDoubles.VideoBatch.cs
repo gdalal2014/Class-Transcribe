@@ -133,6 +133,9 @@ public sealed class VideoWorld : IDisposable
     /// <summary>The YouTube settings.</summary>
     public TestOptions<YouTubeOptions> YouTube { get; } = TestOptions.Create(new YouTubeOptions());
 
+    /// <summary>The saved classes, by setting name, such as Classes:Risala:KeytermsFile; none unless a test adds them.</summary>
+    public Dictionary<string, string?> Classes { get; } = [];
+
     /// <summary>The class folders, on the test's clock.</summary>
     public ClassFolders ClassFolders { get; }
 
@@ -169,7 +172,8 @@ public sealed class VideoWorld : IDisposable
         var titles = new OEmbedTitles(RestService.ForGenerated<IYouTubeOEmbedApi>(http, YouTubeJson.Default, OEmbedTitles.RefitSettings()), Runtime.Time, Log<OEmbedTitles>());
         var browsers = new BrowserLocator(new FakeRegistryValues(), Files, YouTube, Log<BrowserLocator>()) { ProgramFiles = @"C:\Program Files", ProgramFilesX86 = @"C:\Program Files (x86)", LocalAppData = @"C:\Users\gdala\AppData\Local" };
         var windows = new VideoWindow(Starter, Browsers.Windows, Folders, Runtime.Time, Log<VideoWindow>());
-        return new VideoBatch(batch, new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), browsers, titles, windows, Commands.Object, Runtime.Journal, ClassFolders, new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance), Signals, Ui,
+        return new VideoBatch(batch, new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), browsers, titles, windows, Commands.Object, Runtime.Journal, ClassFolders,
+            TestGlossaries.Choice(ElevenLabs, classes: TestGlossaries.Classes(Classes)), Signals, Ui,
             YouTube, Recording, ElevenLabs, Time, Log<VideoBatch>());
     }
 

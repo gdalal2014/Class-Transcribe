@@ -56,9 +56,11 @@ public class TranscribeCommandTests
 
     /// <summary>
     /// Builds the command with the real workflow around the mocks, with its recordings folder inside the temporary folder
-    /// and local time four hours behind UTC, as US Eastern time is in October.
+    /// and local time four hours behind UTC, as US Eastern time is in October. ElevenLabs:KeytermsFile is
+    /// <paramref name="keytermsFile"/>, or a file that is not there.
     /// </summary>
-    private TranscribeCommand CreateCommand(bool openWhenDone = false, string apiKey = "dummy-key-for-a-local-test", KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery)
+    private TranscribeCommand CreateCommand(bool openWhenDone = false, string apiKey = "dummy-key-for-a-local-test", KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
+        string? keytermsFile = null)
     {
         var recording = TestOptions.Create(new RecordingOptions
         {
@@ -67,17 +69,16 @@ public class TranscribeCommandTests
             OpenTranscriptWhenDone = openWhenDone,
             KeepScreenOn = keepScreenOn
         });
-        var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = _folder.File("no-glossary.txt") });
+        var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") });
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance);
         var usage = new UsageReport(_account, ZonedTimeProvider.EasternSummer, _usageLog);
         var workflow = new TranscriptionWorkflow(
             _preparer.Object,
             _client.Object,
-            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
+            TestGlossaries.Choice(elevenLabs),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
-            elevenLabs,
             recording,
             new TranscriptionProgress(),
             usage,
@@ -180,6 +181,72 @@ public class TranscribeCommandTests
         Assert.That(await CreateCommand(apiKey: "").RunAsync(new TranscribeRequest(recording.Segment(1), Again: true, FromCommandLine: true)), Is.EqualTo(1));
 
         Assert.That(_drive.Calls, Is.Empty);
+    }
+
+    /// <summary>
+    /// transcribe --keyterms reaches the upload of a recording, a paid path: the glossary given is sent instead of the one the
+    /// recording's record decided, ElevenLabs:KeytermsFile's here, and none sends no terms; each transcript's entry in the
+    /// record names what it sent and that the command gave it, and what was decided stays.
+    /// </summary>
+    [Test]
+    public async Task Keyterms_given_to_the_command_are_sent_for_a_recording_and_recorded()
+    {
+        var setting = Glossary("setting.txt", "kalām");
+        var given = Glossary("given.txt", "tawḥīd", "fiqh");
+        var recording = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        var sent = TermsSent();
+
+        var withFile = await CreateCommand(keytermsFile: setting).RunAsync(new TranscribeRequest(recording.Segment(1), Keyterms: given));
+        var withNone = await CreateCommand(keytermsFile: setting).RunAsync(new TranscribeRequest(recording.Segment(1), Again: true, FromCommandLine: true, Keyterms: SavedClass.NoGlossary));
+
+        Assert.That((withFile, withNone), Is.EqualTo((0, 0)));
+        Assert.That(sent, Is.EqualTo(new[] { new[] { "tawḥīd", "fiqh" }, Array.Empty<string>() }));
+        var record = new GlossaryFiles(new SettingsPlaces(_folder.Path, userFolder: null)).ReadRecord(recording)!;
+        Assert.That(record.Decided.Path, Is.EqualTo(setting), "what was decided stays");
+        Assert.That(record.Sent.Select(entry => (entry.Copy, entry.Path, entry.Terms, entry.From)), Is.EqualTo(new[]
+        {
+            (1, given, 2, "transcribe --keyterms"), (2, "", 0, "transcribe --keyterms")
+        }));
+    }
+
+    /// <summary>
+    /// transcribe --keyterms reaches the upload of a file that is not a recording's, too: the glossary given is sent instead of
+    /// ElevenLabs:KeytermsFile's, none sends no terms, and the record beside its transcript names what was sent.
+    /// </summary>
+    [Test]
+    public async Task Keyterms_given_to_the_command_are_sent_for_a_file_on_its_own_and_recorded()
+    {
+        var setting = Glossary("setting.txt", "kalām");
+        var given = Glossary("given.txt", "tawḥīd", "fiqh");
+        var video = _folder.File("Lecture 5.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+        var sent = TermsSent();
+
+        Assert.That(await CreateCommand(keytermsFile: setting).RunAsync(new TranscribeRequest(video, Keyterms: given)), Is.EqualTo(0));
+        Assert.That(await CreateCommand(keytermsFile: setting).RunAsync(new TranscribeRequest(video, Keyterms: SavedClass.NoGlossary)), Is.EqualTo(0));
+
+        Assert.That(sent, Is.EqualTo(new[] { new[] { "tawḥīd", "fiqh" }, Array.Empty<string>() }));
+        var records = _drive.Recordings.Select(files => new GlossaryFiles(new SettingsPlaces(_folder.Path, userFolder: null)).ReadRecord(files)!).ToList();
+        Assert.That(records.Select(record => record.Sent.Single()).Select(entry => (entry.Path, entry.Terms, entry.From)), Is.EqualTo(new[]
+        {
+            (given, 2, "transcribe --keyterms"), ("", 0, "transcribe --keyterms")
+        }));
+    }
+
+    /// <summary>Writes a glossary of <paramref name="terms"/> named <paramref name="name"/> into the temporary folder and returns its full path.</summary>
+    private string Glossary(string name, params string[] terms)
+    {
+        var path = _folder.File(name);
+        File.WriteAllLines(path, terms, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        return path;
+    }
+
+    /// <summary>The terms each upload sent, in order, as the mocked service received them.</summary>
+    private List<IReadOnlyList<string>> TermsSent()
+    {
+        var sent = new List<IReadOnlyList<string>>();
+        _client.Setup(Calls.AnyTranscription).Callback((string _, IReadOnlyList<string> terms, CancellationToken _) => sent.Add(terms)).ReturnsAsync(Mocks.Transcript);
+        return sent;
     }
 
     /// <summary>

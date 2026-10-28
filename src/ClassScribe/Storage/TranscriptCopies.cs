@@ -108,6 +108,17 @@ public static class TranscriptCopies
     public static string? NewestAnswer(RecordingFiles files) => Copies(files, ".json").LastOrDefault();
 
     /// <summary>
+    /// Which copy of the recording's transcript <paramref name="transcriptPath"/> is: 1 for &lt;base&gt;.md, 2 for
+    /// &lt;base&gt; (2).md and so on; null for a file that is no copy of this recording's transcript.
+    /// </summary>
+    public static int? CopyOf(RecordingFiles files, string transcriptPath)
+    {
+        var copy = new Regex($"^{Regex.Escape(files.BaseName)}(?: \\((?<copy>[0-9]{{1,9}})\\))?\\.md$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            .Match(Path.GetFileName(transcriptPath));
+        return !copy.Success ? null : copy.Groups["copy"].Success ? int.Parse(copy.Groups["copy"].Value, CultureInfo.InvariantCulture) : 1;
+    }
+
+    /// <summary>
     /// The recording's transcripts on disk: the .md of every copy that has one, in the order of their numbers, made when
     /// the recording was transcribed or rebuilt later. Empty when its folder holds none, or is not there.
     /// </summary>

@@ -82,21 +82,21 @@ public class TranscriptionWorkflowTests
         string? keytermsFile = null,
         IAudioPreparer? preparer = null,
         ILogger<TranscriptionWorkflow>? logger = null,
-        ILogger<KeytermLoader>? glossaryLogger = null,
+        ILogger<GlossaryChoice>? glossaryLogger = null,
         string apiKey = "dummy-key-for-a-local-test",
         TestOptions<TranscriptOptions>? transcript = null,
         TranscriptionProgress? progress = null,
         SettingsPlaces? places = null)
     {
         var recording = TestOptions.Create(new RecordingOptions { KeepUploadFile = keepUploadFile, OutputFolder = _recordings });
+        var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") });
         return new(
             preparer ?? _preparer.Object,
             _client.Object,
-            new KeytermLoader(places ?? new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), glossaryLogger ?? NullLogger<KeytermLoader>.Instance),
+            TestGlossaries.Choice(elevenLabs, places, glossaryLogger),
             new TranscriptFormatter(transcript ?? TestOptions.Create(new TranscriptOptions())),
             new ClassFolders(recording, ZonedClock.Eastern(new ManualTimeProvider(Started)), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
-            TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") }),
             recording,
             progress ?? new TranscriptionProgress(),
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
@@ -535,13 +535,13 @@ public class TranscriptionWorkflowTests
     [Test]
     public async Task An_empty_glossary_setting_sends_no_terms_and_warns_of_nothing()
     {
-        var glossaryLog = new RecordingLogger<KeytermLoader>();
+        var glossaryLog = new RecordingLogger<GlossaryChoice>();
 
         await CreateWorkflow(keytermsFile: "", glossaryLogger: glossaryLog).TranscribeRecordingAsync(_files, CancellationToken.None);
 
         _client.Verify(c => c.TranscribeAsync(It.IsAny<string>(), It.Is<IReadOnlyList<string>>(terms => terms.Count == 0), It.IsAny<CancellationToken>()), Times.Once);
         Assert.That(glossaryLog.Problems, Is.Empty);
-        Assert.That(glossaryLog.Messages, Has.Some.StartsWith("No glossary is set"));
+        Assert.That(glossaryLog.Messages, Has.Member("No glossary: ElevenLabs:KeytermsFile is empty"));
     }
 
     /// <summary>Environment variables in ElevenLabs:KeytermsFile, such as %USERPROFILE%, are expanded, so the glossary they point to is sent.</summary>
@@ -549,7 +549,7 @@ public class TranscriptionWorkflowTests
     public async Task Environment_variables_in_the_glossary_setting_are_expanded()
     {
         const string variable = "CLASSSCRIBE_TEST_WORKFLOW_GLOSSARY";
-        var glossaryLog = new RecordingLogger<KeytermLoader>();
+        var glossaryLog = new RecordingLogger<GlossaryChoice>();
         File.WriteAllLines(_folder.File("terms.txt"), ["kalām", "Ashʿarī"]);
         using (new TemporaryVariable(variable, _folder.Path))
         {
@@ -562,11 +562,12 @@ public class TranscriptionWorkflowTests
     }
 
     /// <summary>
-    /// A relative ElevenLabs:KeytermsFile, keyterms.txt as shipped, is taken from the folder the settings were read from
-    /// first, the user's own glossary, and from the program's folder second, the shipped one.
+    /// A relative ElevenLabs:KeytermsFile is taken from the folder the settings are read from, the user's own, and never from
+    /// the program's folder, where an older build's keyterms.txt may be left over: until the user's own glossary is there,
+    /// nothing is sent.
     /// </summary>
     [Test]
-    public async Task A_relative_glossary_name_is_taken_from_the_users_folder_first_then_beside_the_program()
+    public async Task A_relative_glossary_name_is_taken_from_the_users_folder_alone()
     {
         using var program = new TempFolder();
         using var user = new TempFolder();
@@ -580,7 +581,54 @@ public class TranscriptionWorkflowTests
         File.WriteAllLines(user.File("keyterms.txt"), ["kalām"]);
         await CreateWorkflow(keytermsFile: "keyterms.txt", places: places).TranscribeRecordingAsync(_files, CancellationToken.None);
 
-        Assert.That(sent, Is.EqualTo(new[] { new[] { "shipped" }, new[] { "kalām" } }));
+        Assert.That(sent, Is.EqualTo(new[] { Array.Empty<string>(), new[] { "kalām" } }));
+    }
+
+    /// <summary>
+    /// Each transcript's entry goes into the recording's glossary record once the transcript is saved, by its copy; a later
+    /// transcription, the setting changed meanwhile, sends what the first one sent (architecture 8.2, question 11).
+    /// </summary>
+    [Test]
+    public async Task A_later_transcription_sends_what_the_first_sent_and_each_is_recorded()
+    {
+        var first = _folder.File("first.txt");
+        var second = _folder.File("second.txt");
+        File.WriteAllLines(first, ["kalām"]);
+        File.WriteAllLines(second, ["tawḥīd"]);
+        var sent = new List<IReadOnlyList<string>>();
+        _client.Setup(Calls.AnyTranscription).Callback((string _, IReadOnlyList<string> terms, CancellationToken _) => sent.Add(terms)).ReturnsAsync(Mocks.Transcript);
+
+        await CreateWorkflow(keytermsFile: first).TranscribeRecordingAsync(_files, CancellationToken.None);
+        await CreateWorkflow(keytermsFile: second).TranscribeRecordingAsync(_files, CancellationToken.None);
+
+        Assert.That(sent, Is.EqualTo(new[] { new[] { "kalām" }, new[] { "kalām" } }));
+        var record = new GlossaryFiles(new SettingsPlaces(_folder.Path, userFolder: null)).ReadRecord(_files)!;
+        Assert.That(record.Decided.Path, Is.EqualTo(first));
+        Assert.That(record.Sent.Select(entry => (entry.Copy, entry.Path, entry.Terms)), Is.EqualTo(new[] { (1, first, 1), (2, first, 1) }));
+    }
+
+    /// <summary>
+    /// A glossary given to the command (transcribe --keyterms) goes up instead of the decided one, and its entry says so; none
+    /// sends no terms, for a file transcribed on its own too.
+    /// </summary>
+    [Test]
+    public async Task A_glossary_given_to_the_command_goes_up_instead()
+    {
+        var decided = _folder.File("decided.txt");
+        var given = _folder.File("given.txt");
+        File.WriteAllLines(decided, ["kalām"]);
+        File.WriteAllLines(given, ["tawḥīd", "fiqh"]);
+        var sent = new List<IReadOnlyList<string>>();
+        _client.Setup(Calls.AnyTranscription).Callback((string _, IReadOnlyList<string> terms, CancellationToken _) => sent.Add(terms)).ReturnsAsync(Mocks.Transcript);
+        var video = _folder.File("class.mp4");
+        File.WriteAllBytes(video, [1, 2, 3]);
+
+        await CreateWorkflow(keytermsFile: decided).TranscribeRecordingAsync(_files, given, CancellationToken.None);
+        await CreateWorkflow(keytermsFile: decided).TranscribeFileAsync(video, outputRoot: null, "none", CancellationToken.None);
+
+        Assert.That(sent, Is.EqualTo(new[] { new[] { "tawḥīd", "fiqh" }, Array.Empty<string>() }));
+        var record = new GlossaryFiles(new SettingsPlaces(_folder.Path, userFolder: null)).ReadRecord(_files)!;
+        Assert.That((record.Decided.Path, record.Sent.Single().Path, record.Sent.Single().From), Is.EqualTo((decided, given, "transcribe --keyterms")));
     }
 
     /// <summary>
@@ -1010,7 +1058,10 @@ public class TranscriptionWorkflowTests
         Assert.That(File.ReadAllText(Path.Combine(_files.Folder, "Kalam_2026-10-15_20-55-27Z (2).unread.json")), Is.EqualTo("""{"second":2}"""));
     }
 
-    /// <summary>A refusal is no answer to keep: nothing is saved anywhere when ElevenLabs turns the request down.</summary>
+    /// <summary>
+    /// A refusal is no answer to keep: no answer is saved anywhere when ElevenLabs turns the request down. The recording's
+    /// glossary record, decided before the upload, is all there is, so that a new try sends the same glossary.
+    /// </summary>
     [Test]
     public void A_refusal_is_not_kept()
     {
@@ -1019,7 +1070,7 @@ public class TranscriptionWorkflowTests
 
         Assert.ThrowsAsync<TranscriptionException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
-        Assert.That(Directory.GetFiles(_recordings, "*.json", SearchOption.AllDirectories), Is.Empty);
+        Assert.That(Directory.GetFiles(_recordings, "*.json", SearchOption.AllDirectories), Is.EqualTo(new[] { _files.Glossary }));
     }
 
     /// <summary>

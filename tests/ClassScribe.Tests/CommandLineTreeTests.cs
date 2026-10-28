@@ -369,6 +369,52 @@ public class CommandLineTreeTests
             "--output <folder> The folder for the transcript of a file that is not a recording's, such as \"D:\\Classes\": it gets a folder of its name inside it. A recording's transcript goes beside the recording, and this is not used."));
     }
 
+    /// <summary>
+    /// transcribe --keyterms chooses another glossary for this transcript (architecture 8.2, item 5): a file, given as typed
+    /// with an environment variable or relative to where the command was typed, is passed on as a full path; none, in any
+    /// case, is passed on as none.
+    /// </summary>
+    [Test]
+    public async Task Transcribe_takes_keyterms_as_a_full_path_or_none()
+    {
+        var glossary = _folder.File("mantiq.txt");
+        File.WriteAllText(glossary, "kalām");
+        using var variable = new TemporaryVariable("CLASSSCRIBE_TEST_KEYTERMS", _folder.Path);
+
+        Assert.That(await RunAsync("transcribe", @"C:\Classes\Kalam", "--keyterms", @"%CLASSSCRIBE_TEST_KEYTERMS%\mantiq.txt", "--again"), Is.EqualTo(0));
+        Assert.That(await RunAsync("transcribe", "--KEYTERMS", "NONE", @"C:\Classes\Kalam"), Is.EqualTo(0));
+
+        var withGlossary = FromCommandLine(@"C:\Classes\Kalam", again: true) with { Keyterms = glossary };
+        var withNone = FromCommandLine(@"C:\Classes\Kalam") with { Keyterms = "none" };
+        _commands.Verify(c => c.TranscribeAsync(withGlossary), Times.Once);
+        _commands.Verify(c => c.TranscribeAsync(withNone), Times.Once);
+        _commands.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// A glossary given to transcribe that is not there, a folder in its place, or --keyterms without a value is a mistake of
+    /// the command line, exit 2, before anything is sent: a transcript is paid for, and a mistyped glossary would send none.
+    /// rebuild sends nothing and uses no glossary, so --keyterms is refused there with why.
+    /// </summary>
+    [Test]
+    public async Task A_glossary_given_that_is_not_there_is_a_mistake_and_rebuild_takes_none()
+    {
+        AssertRefused(await RunAsync("transcribe", @"C:\Classes\Kalam", "--keyterms", _folder.File("gone.txt")));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--keyterms names no file: nothing found at {_folder.File("gone.txt")}" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("transcribe", @"C:\Classes\Kalam", "--keyterms", _folder.Path));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--keyterms names a folder, not a glossary file: {_folder.Path}" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("transcribe", @"C:\Classes\Kalam", "--keyterms"));
+        Assert.That(_line.Mistakes, Has.Member("--keyterms needs a glossary file after it, or none, such as --keyterms \"%APPDATA%\\ClassScribe\\mantiq.txt\""));
+
+        CreateLine();
+        AssertRefused(await RunAsync("rebuild", @"C:\Classes\Kalam", "--keyterms", "none"));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { "rebuild sends nothing to ElevenLabs and uses no glossary; --keyterms goes with transcribe, which is charged" }));
+    }
+
     /// <summary>rebuild takes a path, and opens the new transcript at the end unless --no-open says otherwise.</summary>
     [TestCase(new[] { "rebuild", @"C:\Classes\Kalam" }, true)]
     [TestCase(new[] { "rebuild", "--no-open", @"C:\Classes\Kalam" }, false)]

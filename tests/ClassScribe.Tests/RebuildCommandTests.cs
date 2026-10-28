@@ -67,11 +67,10 @@ public class RebuildCommandTests
         var workflow = new TranscriptionWorkflow(
             _preparer.Object,
             _client.Object,
-            new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance),
+            TestGlossaries.Choice(TestOptions.Create(new ElevenLabsOptions { ApiKey = "" })),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
-            TestOptions.Create(new ElevenLabsOptions { ApiKey = "" }),
             recording,
             new TranscriptionProgress(),
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
@@ -170,6 +169,51 @@ public class RebuildCommandTests
         Assert.That(File.ReadAllText(newer.Transcript()), Is.EqualTo("# Kalam"), "the earlier transcript stays as it was");
         Assert.That(File.Exists(older.Transcript(2)), Is.False);
         Assert.That(_log.Messages, Has.Member($"Transcript saved to {newer.Transcript(2)}"));
+    }
+
+    /// <summary>
+    /// A recording named by its glossary record (&lt;base&gt;.glossary.json) is that recording, rebuilt from its newest saved
+    /// answer, never the record taken for an answer of its own; a rebuild sends nothing and uses no glossary, so the record
+    /// is left as it was.
+    /// </summary>
+    [Test]
+    public async Task A_recording_named_by_its_glossary_record_is_rebuilt_from_its_answer()
+    {
+        var recording = WriteRecording(new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        SaveAnswer(recording, "The answer.");
+        File.WriteAllText(recording.Glossary, "{\"version\":1}");
+
+        Assert.That(await CreateCommand().RunAsync(recording.Glossary, open: false), Is.EqualTo(0));
+
+        Assert.That(File.ReadAllText(recording.Transcript(2)), Does.Contain("The answer."));
+        Assert.That(File.ReadAllText(recording.Glossary), Is.EqualTo("{\"version\":1}"));
+    }
+
+    /// <summary>
+    /// A start that recorded nothing leaves only its log and its glossary record, which name a recording but are no sign of
+    /// one in a folder: the folder is rebuilt from its older recording without a word about the newer, and a folder that holds
+    /// nothing else has no recording to rebuild.
+    /// </summary>
+    [Test]
+    public async Task A_start_that_left_only_its_log_and_glossary_record_is_no_recording_in_a_folder()
+    {
+        var answered = WriteRecording(new DateTimeOffset(2026, 10, 7, 19, 30, 0, TimeSpan.Zero));
+        SaveAnswer(answered, "Answered.");
+        var nothing = RecordingFiles.ForNew(_class, "Kalam", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        File.WriteAllText(nothing.Log, "Recording \"Kalam\"");
+        File.WriteAllText(nothing.Glossary, "{\"version\":1}");
+        var alone = _folder.File("Fiqh");
+        var trace = RecordingFiles.ForNew(alone, "Fiqh", new DateTimeOffset(2026, 10, 14, 19, 30, 0, TimeSpan.Zero));
+        Directory.CreateDirectory(alone);
+        File.WriteAllText(trace.Log, "Recording \"Fiqh\"");
+        File.WriteAllText(trace.Glossary, "{\"version\":1}");
+
+        Assert.That(await CreateCommand().RunAsync(_class, open: false), Is.EqualTo(0));
+        Assert.That(await CreateCommand().RunAsync(alone, open: false), Is.EqualTo(1));
+
+        Assert.That(File.ReadAllText(answered.Transcript(2)), Does.Contain("Answered."));
+        Assert.That(_log.Messages.Where(message => message.Contains(nothing.BaseName, StringComparison.Ordinal)), Is.Empty, "the newer start is not named");
+        Assert.That(_log.Problems, Is.EqualTo(new[] { $"There is no ClassScribe recording in {alone}" }));
     }
 
     /// <summary>

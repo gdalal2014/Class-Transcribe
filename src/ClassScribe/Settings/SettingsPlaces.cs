@@ -171,18 +171,23 @@ public sealed class SettingsPlaces
     }
 
     /// <summary>
-    /// Where a file a setting names is, such as the glossary of ElevenLabs:KeytermsFile: environment variables such as
-    /// %USERPROFILE% expanded, quotes around the path ignored, and a relative path taken from the user's folder when the
-    /// user's settings are read and the file is there, else from the program's folder: the user's own glossary first, the
-    /// shipped one second. An empty setting gives an empty path, which means no file was wanted.
+    /// Where a file a setting names is, such as the glossary of ElevenLabs:KeytermsFile or of a saved class: environment
+    /// variables such as %APPDATA% expanded, quotes around the path ignored, and a relative path taken from the folder of the
+    /// settings in force (<see cref="Folder"/>) and from nowhere else (architecture 8.2, item 3): the user's folder once the
+    /// user's file is read, the program's while none has been made or while it is missing. Never beside the program otherwise,
+    /// where an older build's keyterms.txt may be left over. An empty setting gives an empty path, which means no file was wanted.
     /// </summary>
-    public string ResolveFile(string configured)
+    public string ResolveFile(string configured) => ResolveFile(configured, Folder);
+
+    /// <summary>
+    /// Where a file a setting names is, as <see cref="ResolveFile(string)"/> says, with a relative path taken from
+    /// <paramref name="folder"/>: the user's folder for a value the settings writer is about to write there, at its first
+    /// change too, before the user's file is read.
+    /// </summary>
+    public static string ResolveFile(string configured, string folder)
     {
         var path = Environment.ExpandEnvironmentVariables(configured).Trim().Trim('"').Trim();
-        if (path.Length == 0) return "";
-
-        var inSettingsFolder = Path.GetFullPath(path, Folder);
-        return Origin == SettingsOrigin.UserFolder && !File.Exists(inSettingsFolder) ? Path.GetFullPath(path, ProgramFolder) : inSettingsFolder;
+        return path.Length == 0 ? "" : Path.GetFullPath(path, folder);
     }
 
     /// <summary>

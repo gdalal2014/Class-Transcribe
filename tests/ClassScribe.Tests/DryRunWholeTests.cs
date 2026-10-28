@@ -20,8 +20,9 @@ public class DryRunWholeTests
     private const string FakeProgram = """
         // A stand-in ClassScribe.exe for DryRunWholeTests: it plays a dry run's window and recorder as the run files show
         // them, without recording anything. DRY_RUN_FAKE_DATA is its %LOCALAPPDATA%\ClassScribe, DRY_RUN_FAKE_USER its
-        // %USERPROFILE%\ClassScribe. DRY_RUN_FAKE_MODE: good; or inwindow, which records "in the window" and leaves a stray
-        // file in the user's folder.
+        // %USERPROFILE%\ClassScribe. DRY_RUN_FAKE_MODE: good; inwindow, which records "in the window" and leaves a stray
+        // file in the user's folder; or glossary, which says in its log and its .glossary.json that it sent the glossary the
+        // dry run's settings folder holds, two terms.
         using System.Diagnostics;
         using System.Text;
         using System.Text.Json;
@@ -85,7 +86,18 @@ public class DryRunWholeTests
         using var account = await http.GetAsync("v1/user/subscription");
         facts.AppendLine($"answer {(int)answer.StatusCode} account {(int)account.StatusCode}");
         File.WriteAllText(Path.Combine(folder, baseName + ".wav"), "");
-        File.WriteAllText(Path.Combine(folder, baseName + ".log"), "00:00:01  Recording started\r\n00:00:02  WARNING  A warning to read\r\n");
+        File.WriteAllText(Path.Combine(folder, baseName + ".log"), "00:00:01  Recording started\r\n00:00:02  WARNING  A warning to read\r\n"
+            + (mode == "glossary" ? "00:00:03  Glossary: keyterms-islamic-sciences.txt (ElevenLabs:KeytermsFile), 2 terms\r\n" : ""));
+        if (mode == "glossary")
+        {
+            var glossary = Path.Combine(Environment.GetEnvironmentVariable("CLASSSCRIBE_SETTINGS_FOLDER")!, "keyterms-islamic-sciences.txt");
+            File.WriteAllText(Path.Combine(folder, baseName + ".glossary.json"), JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["version"] = 1,
+                ["decided"] = new Dictionary<string, object?> { ["setting"] = "keyterms-islamic-sciences.txt", ["path"] = glossary, ["from"] = "ElevenLabs:KeytermsFile", ["terms"] = 2 },
+                ["sent"] = new[] { new Dictionary<string, object?> { ["copy"] = 1, ["path"] = glossary, ["terms"] = 2, ["from"] = "as decided when this recording started" } }
+            }));
+        }
         File.WriteAllText(Path.Combine(folder, baseName + ".facts.txt"), facts.ToString());
         File.WriteAllText(Path.Combine(folder, baseName + ".md"), transcript);
         File.AppendAllText(Path.Combine(data, "recorder.log"), "00:00:00  The stand-in recorder ran\r\n");
@@ -253,5 +265,26 @@ public class DryRunWholeTests
         Assert.That(output, Does.Contain("The dry run failed").And.Contain("The recorder ran in the window").And.Contain("New stray.txt   (not expected)"));
         var record = File.ReadAllLines(Path.Combine(Root("DryRuns"), "runs.log")).Single();
         Assert.That(record, Does.Contain("  FAIL  ").And.Contain("The recorder ran in the window"));
+    }
+
+    /// <summary>
+    /// A build whose settings name a glossary by a relative path passes when it sent that glossary (architecture 8.7): the kit
+    /// copies the glossary from the user's settings folder into its own, shows the run's glossary line among its findings,
+    /// and finds the stand-in's count, the recording's .glossary.json and the glossary's file agree. The user's settings
+    /// folder is only read.
+    /// </summary>
+    [Test]
+    public async Task A_build_that_sends_the_glossary_the_settings_name_passes()
+    {
+        File.WriteAllText(Path.Combine(Root("AppData"), "appsettings.json"), """{ "ElevenLabs": { "KeytermsFile": "keyterms-islamic-sciences.txt" } }""");
+        File.WriteAllText(Path.Combine(Root("AppData"), "keyterms-islamic-sciences.txt"), "# terms\r\nkalam\r\ntawhid\r\n");
+
+        var (code, output) = await DryRunAsync("glossary");
+
+        Assert.That(code, Is.EqualTo(0), output);
+        Assert.That(output, Does.Contain($"Copied keyterms-islamic-sciences.txt, which ElevenLabs:KeytermsFile names, from {Root("AppData")} into the dry run's settings folder."));
+        Assert.That(output, Does.Contain("The run's glossary: 00:00:03  Glossary: keyterms-islamic-sciences.txt (ElevenLabs:KeytermsFile), 2 terms"));
+        Assert.That(output, Does.Contain("The dry run passed."));
+        Assert.That(File.ReadAllText(Path.Combine(DryRunFolder(), "settings", "keyterms-islamic-sciences.txt")), Does.Contain("tawhid"));
     }
 }

@@ -30,10 +30,34 @@ public class YouTubeMenuTests
     [TearDown]
     public void TearDown() => _world.Dispose();
 
-    /// <summary>The menu over the world's batch.</summary>
+    /// <summary>The menu over the world's batch, with the world's saved classes.</summary>
     private YouTubeMenu Menu() =>
         new(new YouTubeCommand(_world.Batch(), null!, new FakeUserSignals(), _world.Ui, _world.YouTube, _world.Log<YouTubeCommand>()), _world.Ui, _world.ClassFolders,
-            _memory, new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance), _world.ElevenLabs);
+            _memory, TestGlossaries.Choice(_world.ElevenLabs, classes: TestGlossaries.Classes(_world.Classes)), _world.ElevenLabs);
+
+    /// <summary>
+    /// The question T or O gives the price of an hour with the glossary a recording of the course typed would be sent with, as
+    /// the one resolver decides it (architecture 8.3): here a saved class of the course Risala names its own; Esc then goes back.
+    /// </summary>
+    [Test]
+    public async Task The_price_asked_counts_the_glossary_of_the_course()
+    {
+        var glossary = _world.Recordings.File("risala.txt");
+        File.WriteAllLines(glossary, ["tawḥīd", "ʿaqīda", "kalām"]);
+        _world.Classes["Classes:Risala:Course"] = "Risala";
+        _world.Classes["Classes:Risala:App"] = "chrome";
+        _world.Classes["Classes:Risala:KeytermsFile"] = glossary;
+        _world.Ui.TypeLine("https://youtu.be/abcdefghijk");
+        _world.Ui.TypeLine("");
+        _world.Ui.TypeLine("Risala");
+        _world.Ui.Type('d');
+        _world.Ui.Type('\u001b');
+
+        Assert.That(await Menu().RunAsync().WaitAsync(TimeSpan.FromMinutes(1)), Is.EqualTo(0));
+
+        Assert.That(_world.Screen, Has.Some.StartsWith("Then transcribe each one? T transcribes (about $0.27 an hour of audio with the glossary)"));
+        Assert.That(_world.Tools.Downloads, Is.Empty);
+    }
 
     /// <summary>
     /// Links pasted, a line without one named and left out, the course typed, T: the batch plans, asks YES, downloads into
@@ -138,7 +162,7 @@ public class YouTubeMenuRecordTests
     private async Task<int> RunMenuAsync()
     {
         var command = new YouTubeCommand(null!, null!, _world.Signals, _world.Ui, _world.YouTube, _world.Log<YouTubeCommand>(), _world.Batch());
-        var running = new YouTubeMenu(command, _world.Ui, _world.ClassFolders, new YouTubeMenuMemory(), new KeytermLoader(new SettingsPlaces(AppContext.BaseDirectory, userFolder: null), NullLogger<KeytermLoader>.Instance), _world.ElevenLabs).RunAsync();
+        var running = new YouTubeMenu(command, _world.Ui, _world.ClassFolders, new YouTubeMenuMemory(), TestGlossaries.Choice(_world.ElevenLabs), _world.ElevenLabs).RunAsync();
         await _world.Runtime.Time.AdvanceUntilAsync(() => running.IsCompleted, TimeSpan.FromMilliseconds(500), timeoutSeconds: 60);
         return await running;
     }

@@ -67,6 +67,26 @@ public class VideoBatchTests
         Assert.That(_world.Started, Is.Empty);
     }
 
+    /// <summary>
+    /// The plan's price counts the glossary a recording of the course would be sent with, as the one resolver decides it
+    /// (architecture 8.3): here a saved class of the course Risala names its own, of three terms, so each hour costs the
+    /// glossary's price too.
+    /// </summary>
+    [Test]
+    public async Task The_plans_price_counts_the_glossary_of_the_course()
+    {
+        var glossary = _world.Recordings.File("risala.txt");
+        File.WriteAllLines(glossary, ["tawḥīd", "ʿaqīda", "kalām"]);
+        _world.Classes["Classes:Risala:Course"] = "Risala";
+        _world.Classes["Classes:Risala:App"] = "chrome";
+        _world.Classes["Classes:Risala:KeytermsFile"] = glossary;
+
+        Assert.That(await _world.RunAsync(_world.Request([First, Second], BatchConfirmation.PlanOnly)), Is.Zero);
+
+        Assert.That(_world.Screen, Has.Some.EqualTo(
+            "Each is recorded for as long as it plays, at most 4 hours (YouTube:LongestVideoHours), ads included, so at most 8 hours for these 2: they cost at most $2.16 to transcribe, most likely much less ($0.27 for each hour recorded). The transcripts follow the recordings."));
+    }
+
     /// <summary>A video YouTube gives no title for keeps its ID as its title, and is tried all the same; without transcripts nothing is sent to ElevenLabs.</summary>
     [Test]
     public async Task A_video_without_a_title_keeps_its_ID_and_is_tried_all_the_same()

@@ -12,7 +12,7 @@ public sealed partial class CommandLineTree
 {
     /// <summary>
     /// class: list and show, each with --json; add and set with record's source and microphone options, --camera and
-    /// --resolution, --course, --output, --record-only or --transcribe, and for set --clear; rename with the new name;
+    /// --resolution, --course, --output, --record-only or --transcribe, --keyterms, and for set --clear; rename with the new name;
     /// remove. class alone is a mistake that names them all. The mixes record refuses are refused here too, before anything
     /// runs; what depends on the class is said as the command runs, exit 2 with the help.
     /// </summary>
@@ -81,6 +81,11 @@ public sealed partial class CommandLineTree
             new Option<string>("--output") { HelpName = "folder", Description = "The class's own recordings folder; without it, Recording:OutputFolder." },
             new Option<bool>("--record-only") { Description = "When started from menu C, record only; transcribe it later." },
             new Option<bool>("--transcribe") { Description = "When started from menu C, record and transcribe (the default)." },
+            new Option<string>("--keyterms")
+            {
+                HelpName = "file",
+                Description = $"The class's own glossary, one term per line, such as \"%APPDATA%\\ClassScribe\\mantiq.txt\" (a relative path is taken from your settings folder), or {SavedClass.NoGlossary} for no glossary. Without it, ElevenLabs:KeytermsFile."
+            },
             withClear
                 ? new Option<string[]>("--clear") { HelpName = "field", Arity = ArgumentArity.OneOrMore, AllowMultipleArgumentsPerToken = false, Description = $"Empty a field: {SettingsCatalog.Listed([.. ClassChoices.ClearWords.Keys])}; give --clear once for each." }
                 : null);
@@ -88,7 +93,7 @@ public sealed partial class CommandLineTree
         var command = new Command(word, description)
         {
             symbols.Name, symbols.Course, symbols.App, symbols.Device, symbols.InPerson, symbols.Mic, symbols.MicFollows, symbols.Camera, symbols.Resolution, symbols.Output,
-            symbols.RecordOnly, symbols.Transcribe
+            symbols.RecordOnly, symbols.Transcribe, symbols.Keyterms
         };
         if (symbols.Clear is { } clear) command.Add(clear);
         command.Validators.Add(result =>
@@ -130,11 +135,16 @@ public sealed partial class CommandLineTree
         if (result.GetResult(symbols.Resolution) is { } resolution && ResolutionProblem(TokenOf(resolution), optionNames) is { } resolutionProblem) yield return resolutionProblem;
         if (result.GetResult(symbols.Output) is { } output && FolderProblem(symbols.Output.Name, TokenOf(output), optionNames) is { } outputProblem) yield return outputProblem;
         if (result.GetValue(symbols.RecordOnly) && result.GetValue(symbols.Transcribe)) yield return "--record-only and --transcribe cannot go together";
+        if (result.GetResult(symbols.Keyterms) is { } keyterms && ClassGlossaryProblem(TokenOf(keyterms), optionNames) is { } keytermsProblem) yield return keytermsProblem;
 
         var clears = symbols.Clear is { } clear ? result.GetValue(clear) ?? [] : [];
         foreach (var unknown in clears.Where(given => !ClassChoices.ClearWords.ContainsKey(given)))
             yield return $"--clear takes {SettingsCatalog.Listed([.. ClassChoices.ClearWords.Keys])}, not \"{unknown}\"";
-        foreach (var (cleared, option) in new[] { ("output", symbols.Output), ("microphone", symbols.Mic), ("follows", symbols.MicFollows), ("camera", symbols.Camera), ("resolution", symbols.Resolution) })
+        foreach (var (cleared, option) in new[]
+                 {
+                     ("output", symbols.Output), ("microphone", symbols.Mic), ("follows", symbols.MicFollows), ("camera", symbols.Camera), ("resolution", symbols.Resolution),
+                     ("keyterms", symbols.Keyterms)
+                 })
         {
             if (clears.Contains(cleared, StringComparer.OrdinalIgnoreCase) && result.GetResult(option) is not null)
                 yield return $"--clear {cleared} and {option.Name} cannot go together";
@@ -160,8 +170,24 @@ public sealed partial class CommandLineTree
         Resolution = ResolutionOf(parsed.GetValue(symbols.Resolution)),
         Output = parsed.GetValue(symbols.Output) is { } output ? Path.GetFullPath(output) : null,
         Transcribe = parsed.GetValue(symbols.RecordOnly) ? false : parsed.GetValue(symbols.Transcribe) ? true : null,
+        Keyterms = parsed.GetValue(symbols.Keyterms) is { } keyterms ? keyterms.Trim().Trim('"').Trim() : null,
         Clear = symbols.Clear is { } clear ? parsed.GetValue(clear) ?? [] : []
     };
+
+    /// <summary>
+    /// What is wrong with <paramref name="value"/> as a saved class's glossary, --keyterms of class add and class set: no value,
+    /// or a character Windows does not allow in a path. Null for none, and for a file, which is saved as written, whether or
+    /// not it is there yet: the class command says when it is not.
+    /// </summary>
+    private static string? ClassGlossaryProblem(string? value, HashSet<string> optionNames)
+    {
+        if (ValueProblem(value, KeytermsNeedsValue, optionNames) is { } missing) return missing;
+
+        var file = value!.Trim().Trim('"').Trim();
+        return file.IndexOfAny(NotInPaths) >= 0 || file.Any(char.IsControl)
+            ? $"--keyterms takes a file; \"{file}\" has a character Windows does not allow in a path: < > \" | ? *"
+            : null;
+    }
 
     /// <summary>Runs <paramref name="request"/> through the runner; a mistake it finds, exit 2, is followed by the command's help.</summary>
     private async Task<int> RunClassAsync(ParseResult parsed, ClassRequest request)
@@ -184,10 +210,11 @@ public sealed partial class CommandLineTree
     /// <param name="Output">--output: the class's own recordings folder.</param>
     /// <param name="RecordOnly">--record-only: menu C records only.</param>
     /// <param name="Transcribe">--transcribe: menu C records and transcribes.</param>
+    /// <param name="Keyterms">--keyterms: the class's own glossary, or none.</param>
     /// <param name="Clear">--clear: fields to empty; null for class add, which has none.</param>
     private sealed record ClassSymbols(Argument<string> Name, Option<string> Course, Option<string> App, Option<string> Device, Option<string> InPerson, Option<string> Mic,
         Option<string> MicFollows, Option<string> Camera, Option<string> Resolution, Option<string> Output, Option<bool> RecordOnly, Option<bool> Transcribe,
-        Option<string[]>? Clear);
+        Option<string> Keyterms, Option<string[]>? Clear);
 
     /// <summary>The examples and notes under the help of class and its commands.</summary>
     private const string ClassExamples = """
@@ -198,7 +225,8 @@ public sealed partial class CommandLineTree
           ClassScribe class add "Kalam (in person)" --course "Kalam" --in-person "Microphone Array" --record-only
           ClassScribe class add "Lesson" --in-person --camera "OBSBOT" --resolution 720p
           ClassScribe class set "Mantiq" --output "D:\Classes"
-          ClassScribe class set "Mantiq" --clear output --clear follows
+          ClassScribe class set "Mantiq" --keyterms "%APPDATA%\ClassScribe\mantiq.txt"
+          ClassScribe class set "Mantiq" --clear output --clear follows --clear keyterms
           ClassScribe class rename "Mantiq" "Mantiq (Chrome)"
           ClassScribe class remove "Mantiq"
           ClassScribe record --class "Mantiq"
