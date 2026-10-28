@@ -120,7 +120,7 @@ public sealed partial class DriveJson : JsonSerializerContext;
 /// The ids of the folders under it, by their path under it, as "Mantiq" and "Mantiq/2026-10-17"; null or empty until one is
 /// known. They belong to the folder <paramref name="RootId"/> names, and are forgotten when that changes.
 /// </param>
-public sealed record RememberedFolders(string? RootId, IReadOnlyDictionary<string, string>? Folders = null);
+internal sealed record RememberedFolders(string? RootId, IReadOnlyDictionary<string, string>? Folders = null);
 
 /// <summary>
 /// JSON for ClassScribe's own files about Drive: the client and sign-in (encrypted before it is written; see
@@ -129,4 +129,4 @@ public sealed record RememberedFolders(string? RootId, IReadOnlyDictionary<strin
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, WriteIndented = true)]
 [JsonSerializable(typeof(GoogleCredentials))]
 [JsonSerializable(typeof(RememberedFolders))]
-public sealed partial class DriveStoreJson : JsonSerializerContext;
+internal sealed partial class DriveStoreJson : JsonSerializerContext;

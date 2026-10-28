@@ -3,7 +3,7 @@ using System.Text;
 namespace ClassScribe.YouTube;
 
 /// <summary>Writes a command line Windows programs read back as the arguments given (the rules of CommandLineToArgvW and the C runtime).</summary>
-public static class WindowsCommandLine
+internal static class WindowsCommandLine
 {
     /// <summary>The program, quoted, then each argument, quoted where it needs it, separated by spaces.</summary>
     public static string Of(string program, IEnumerable<string> arguments) => string.Join(' ', [$"\"{program}\"", .. arguments.Select(Quote)]);

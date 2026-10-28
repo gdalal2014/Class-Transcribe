@@ -11,7 +11,7 @@ namespace ClassScribe.YouTube;
 /// <param name="Deno">deno.exe.</param>
 /// <param name="Ffmpeg">ffmpeg.exe, from a folder that holds ffprobe.exe too.</param>
 /// <param name="Ffprobe">ffprobe.exe, beside ffmpeg.exe.</param>
-public sealed record ToolSearch(string? YtDlp, string? Deno, string? Ffmpeg, string? Ffprobe)
+internal sealed record ToolSearch(string? YtDlp, string? Deno, string? Ffmpeg, string? Ffprobe)
 {
     /// <summary>The winget command that installs yt-dlp, which brings Deno and FFmpeg with it.</summary>
     public const string InstallYtDlp = "winget install --source winget --id yt-dlp.yt-dlp";
@@ -53,7 +53,7 @@ public sealed class ToolLocator(IRegistryValues registry, IFileProbe files, IOpt
     public string LinksFolder => Path.Combine(LocalAppData, "Microsoft", "WinGet", "Links");
 
     /// <summary>Looks for the four tools, as the class summary says, and says what it found.</summary>
-    public ToolSearch Find()
+    internal ToolSearch Find()
     {
         List<string> elsewhere = [LinksFolder, .. PathFolders()];
         var setting = YouTubeOptions.Expanded(options.CurrentValue.YtDlpPath);

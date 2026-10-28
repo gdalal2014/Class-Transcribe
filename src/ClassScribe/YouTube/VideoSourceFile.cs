@@ -13,7 +13,7 @@ namespace ClassScribe.YouTube;
 [JsonSerializable(typeof(VideoSource))]
 [JsonSerializable(typeof(ConversionNote))]
 [JsonSerializable(typeof(OEmbedAnswer))]
-public sealed partial class YouTubeJson : JsonSerializerContext
+internal sealed partial class YouTubeJson : JsonSerializerContext
 {
     /// <summary>The context with the options the source file is written with.</summary>
     public static YouTubeJson Files { get; } = new(new JsonSerializerOptions(JsonSerializerDefaults.Web)

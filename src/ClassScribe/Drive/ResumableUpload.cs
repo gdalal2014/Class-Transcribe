@@ -14,7 +14,7 @@ namespace ClassScribe.Drive;
 /// </summary>
 /// <param name="UploadId">The session's upload id.</param>
 /// <param name="FileId">The id of the file a new revision is of; null for a new file.</param>
-public sealed partial record UploadAddress(string UploadId, string? FileId)
+internal sealed partial record UploadAddress(string UploadId, string? FileId)
 {
     /// <summary>
     /// The session at <paramref name="address"/>, when it is Drive's own: the scheme, host and port of
