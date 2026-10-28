@@ -29,13 +29,23 @@ public static class YouTubeTestRuns
             Position: 1, Count: 1, BatchId);
 }
 
-/// <summary>Files a test says are there, and their versions; any other path is not. Paths compare without regard to case, as Windows compares them.</summary>
+/// <summary>
+/// Files and folders a test says are there, with their versions, last write times and lengths; any other path is not.
+/// Paths compare without regard to case, as Windows compares them. A full path is worked out as the file system would.
+/// </summary>
 public sealed class FakeFileProbe : IFileProbe
 {
     private readonly HashSet<string> _files = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _folders = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The product version of each program's file that carries one, by path.</summary>
     public Dictionary<string, string> Versions { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>When each file was last written, by path; a file not named here was last written at the file system's earliest time.</summary>
+    public Dictionary<string, DateTime> LastWrites { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How long each file is, by path; a file not named here is empty.</summary>
+    public Dictionary<string, long> Lengths { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Says that files are at <paramref name="paths"/>.</summary>
     public void Add(params string[] paths)
@@ -43,11 +53,29 @@ public sealed class FakeFileProbe : IFileProbe
         foreach (var path in paths) _files.Add(path);
     }
 
+    /// <summary>Says that folders are at <paramref name="paths"/>.</summary>
+    public void AddFolder(params string[] paths)
+    {
+        foreach (var path in paths) _folders.Add(path);
+    }
+
     /// <inheritdoc />
     public string? VersionOf(string path) => Versions.TryGetValue(path, out var version) ? version : null;
 
     /// <inheritdoc />
     public bool FileExists(string path) => _files.Contains(path);
+
+    /// <inheritdoc />
+    public bool DirectoryExists(string path) => _folders.Contains(path);
+
+    /// <inheritdoc />
+    public DateTime LastWriteUtc(string path) => LastWrites.TryGetValue(path, out var written) ? written : DateTime.FromFileTimeUtc(0);
+
+    /// <inheritdoc />
+    public long Length(string path) => _files.Contains(path) ? Lengths.GetValueOrDefault(path) : throw new FileNotFoundException("The fake has no such file.", path);
+
+    /// <inheritdoc />
+    public string FullPath(string path) => Path.GetFullPath(path);
 }
 
 /// <summary>How a played yt-dlp answers for one video: its information, the audio it downloads, and the failures it plays.</summary>
