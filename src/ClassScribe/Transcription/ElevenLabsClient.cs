@@ -106,7 +106,7 @@ public sealed class ElevenLabsClient(
         }
     }
 
-    /// <summary>The most seconds an answer's audio_duration_secs is believed: a hundred days, far beyond the 10 hours ElevenLabs takes in one file.</summary>
+    /// <summary>The most seconds an answer's audio_duration_secs is believed: a hundred days, far beyond the most one file may hold (ElevenLabs:LongestFileHours, at most a day).</summary>
     private const double LongestCountedSeconds = 100 * 24 * 3600;
 
     /// <summary>
