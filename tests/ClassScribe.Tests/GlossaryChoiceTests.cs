@@ -38,11 +38,42 @@ public class GlossaryChoiceTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>The resolver over the settings folder, with <paramref name="keytermsFile"/> as ElevenLabs:KeytermsFile and the saved classes given, by setting name.</summary>
-    private GlossaryChoice Choice(string keytermsFile = "", Dictionary<string, string?>? classes = null) =>
-        new(new GlossaryFiles(new SettingsPlaces(_settings, userFolder: null)),
+    /// <summary>
+    /// The resolver over the settings folder, with <paramref name="keytermsFile"/> as ElevenLabs:KeytermsFile and the saved
+    /// classes given, by setting name; the glossary's limits are ElevenLabs' own unless <paramref name="limits"/> gives others.
+    /// </summary>
+    private GlossaryChoice Choice(string keytermsFile = "", Dictionary<string, string?>? classes = null, KeytermLimits? limits = null)
+    {
+        var settings = limits ?? KeytermLimits.ElevenLabs;
+        return new(new GlossaryFiles(new SettingsPlaces(_settings, userFolder: null)),
             new SavedClasses(new ConfigurationBuilder().AddInMemoryCollection(classes ?? []).Build()),
-            TestOptions.Create(new ElevenLabsOptions { KeytermsFile = keytermsFile }), new ManualTimeProvider(Started), _log);
+            TestOptions.Create(new ElevenLabsOptions
+            {
+                KeytermsFile = keytermsFile, MaxKeyterms = settings.MaxTerms, KeytermCharacterLimit = settings.CharacterLimit, MaxKeytermWords = settings.MaxWords
+            }),
+            new ManualTimeProvider(Started), _log);
+    }
+
+    /// <summary>
+    /// The glossary's limits are the settings' (architecture 7.2): with ElevenLabs:MaxKeyterms at 2, KeytermCharacterLimit at 8
+    /// and MaxKeytermWords at 1, a term of 8 characters and one of two words are left out, each with the setting's limit in its
+    /// words, and of the three terms left only two are sent, with the warning that names 2.
+    /// </summary>
+    [Test]
+    public void The_glossarys_limits_are_the_settings()
+    {
+        Glossary("keyterms.txt", "kalām", "taṣawwuf", "al-dīn", "fiqh", "uṣūl");
+
+        var use = Choice("keyterms.txt", limits: new KeytermLimits(MaxTerms: 2, CharacterLimit: 8, MaxWords: 1)).ForTranscript(_files, given: null);
+
+        Assert.That(use.Terms, Is.EqualTo(new[] { "kalām", "fiqh" }));
+        Assert.That(_log.Messages, Is.SupersetOf(new[]
+        {
+            "Skipping keyterm on line 2 (taṣawwuf): it must be shorter than 8 characters",
+            "Skipping keyterm on line 3 (al-dīn): it has more than 1 words (al | dīn); a hyphen, dash, slash or other mark between letters starts a new word",
+            "The keyterms file has more than 2 terms; the rest are ignored"
+        }));
+    }
 
     /// <summary>Writes a glossary of <paramref name="terms"/> named <paramref name="name"/> into the settings folder and returns its full path.</summary>
     private string Glossary(string name, params string[] terms)

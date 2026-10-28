@@ -96,6 +96,24 @@ public class KeytermRulesTests
         Assert.That(KeytermRules.Validate(new string('a', length), Limits) is null, Is.EqualTo(valid));
     }
 
+    /// <summary>
+    /// With limits the settings give (architecture 7.2), the rules follow them, never ElevenLabs' own: a term of 55 characters
+    /// and six words passes limits of 60 characters and 6 words, and one of 30 characters fails a limit of 30, its words saying so.
+    /// </summary>
+    [Test]
+    public void The_rules_follow_the_limits_the_settings_give()
+    {
+        var raised = new KeytermLimits(MaxTerms: 1000, CharacterLimit: 60, MaxWords: 6);
+        var lowered = new KeytermLimits(MaxTerms: 1000, CharacterLimit: 30, MaxWords: 5);
+        var longTerm = string.Join(' ', Enumerable.Repeat("abcdefgh", 6)) + "ab";
+
+        Assert.That(longTerm, Has.Length.EqualTo(55));
+        Assert.That(KeytermRules.Validate(longTerm, raised), Is.Null);
+        Assert.That(KeytermRules.Validate(longTerm, Limits), Is.Not.Null);
+        Assert.That(KeytermRules.Validate(new string('a', 30), lowered), Is.EqualTo("it must be shorter than 30 characters"));
+        Assert.That(KeytermRules.Validate(new string('a', 29), lowered), Is.Null);
+    }
+
     /// <summary>Terms with a character ElevenLabs forbids, or with more than five words, are invalid.</summary>
     [TestCase("angle <bracket>")]
     [TestCase("curly {brace}")]

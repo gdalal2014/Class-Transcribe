@@ -65,6 +65,25 @@ public class GoogleSignInTests
         Assert.That(sent["access_type"], Is.EqualTo("offline"));
     }
 
+    /// <summary>
+    /// The browser goes to the sign-in page Drive:AuthorizationUrl names (architecture 7.2), a local stub's in a dry run, with
+    /// every parameter after it; a page whose address has a query of its own keeps it, and the parameters follow it.
+    /// </summary>
+    [TestCase("http://127.0.0.1:5007/o/oauth2/v2/auth", null)]
+    [TestCase("http://127.0.0.1:5007/o/oauth2/v2/auth?hl=ar", "ar")]
+    public async Task The_browser_goes_to_the_sign_in_page_the_settings_name(string page, string? language)
+    {
+        _world.Options.Set(new DriveOptions { AuthorizationUrl = page });
+        _world.Google.AuthorizationPage = "http://127.0.0.1:5007/o/oauth2/v2/auth";
+
+        await SignInAsync();
+
+        var address = _world.Browser.Opened.Single();
+        var sent = HttpUtility.ParseQueryString(address.Query);
+        Assert.That(address.GetLeftPart(UriPartial.Path), Is.EqualTo("http://127.0.0.1:5007/o/oauth2/v2/auth"));
+        Assert.That((sent["hl"], sent["client_id"], sent["scope"]), Is.EqualTo((language, FakeGoogle.ClientId, "https://www.googleapis.com/auth/drive.file")));
+    }
+
     /// <summary>The exchange sends the code, the client, the verifier and the redirect address exactly as the browser was sent it.</summary>
     [Test]
     public async Task The_exchange_sends_the_verifier_and_the_same_redirect_address()
