@@ -133,14 +133,14 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     private static string Unread(string failure) => $"  Could not be read now: {failure}";
 
     /// <summary>A device as the lists show it: its name, and whether it is the default one or playing now.</summary>
-    internal static string Describe(OutputDevice device)
+    public static string Describe(OutputDevice device)
     {
         var notes = string.Join(", ", new[] { device.IsDefault ? "default" : null, device.Level >= CaptureChooser.SoundLevel ? "playing" : null }.OfType<string>());
         return notes.Length > 0 ? $"{device.Name}  ({notes})" : device.Name;
     }
 
     /// <summary>An app as the lists show it: its name, the device it plays through, and whether it is playing now.</summary>
-    internal static string Describe(PlayingApp app) =>
+    public static string Describe(PlayingApp app) =>
         app.Level >= CaptureChooser.SoundLevel ? $"{app.Name}  (app on {app.DeviceName}, playing)" : $"{app.Name}  (app on {app.DeviceName})";
 
     /// <summary>
@@ -151,7 +151,7 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     /// Windows' list of sessions has it, whether Windows mutes it and which apps hold it now, the ones taking sound as
     /// listening. Windows' own sounds and ClassScribe's own processes are left out.
     /// </summary>
-    internal static string Describe(Microphone microphone, MicrophoneSessionListing? listing)
+    public static string Describe(Microphone microphone, MicrophoneSessionListing? listing)
     {
         var notes = string.Join(", ", new[]
         {
@@ -174,7 +174,7 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     /// A camera as the list shows it: its name, then where it is (built in at the front or the back, USB, virtual), and the
     /// microphone that belongs to it, <paramref name="microphone"/>, when it is a webcam's.
     /// </summary>
-    internal static string Describe(CameraDevice camera, Microphone? microphone)
+    public static string Describe(CameraDevice camera, Microphone? microphone)
     {
         var clauses = new List<string>();
         if (camera.Note.Length > 0) clauses.Add(camera.Note);
@@ -186,7 +186,7 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     /// The apps with sound, one per name at its loudest, since a browser can have several processes with sound open, in
     /// the order of their names; ClassScribe's own processes, this one and any other ClassScribe, are left out.
     /// </summary>
-    internal static IReadOnlyList<PlayingApp> AppsByName(IEnumerable<PlayingApp> apps) =>
+    public static IReadOnlyList<PlayingApp> AppsByName(IEnumerable<PlayingApp> apps) =>
     [
         .. apps
             .Where(app => !IsOwn(app.ProcessId, app.Name))

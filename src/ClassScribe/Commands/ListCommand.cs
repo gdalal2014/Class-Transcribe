@@ -73,7 +73,7 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
     /// first named by the video's title and how its audio was obtained ("The creed, part 1" (YouTube, downloaded)), so that
     /// a batch's videos in one date folder are told apart.
     /// </summary>
-    internal static IEnumerable<string> NotesOf(RecordedClass recorded)
+    public static IEnumerable<string> NotesOf(RecordedClass recorded)
     {
         if (recorded.Video is { } video) yield return $"\"{video.Title}\" (YouTube, {video.Obtained})";
         if (FolderNames.LaterClassOfItsDay(recorded.Files.Folder) is { } dateFolder) yield return $"in {dateFolder}";

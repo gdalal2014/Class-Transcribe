@@ -62,7 +62,7 @@ public interface IProcessStarter
 }
 
 /// <summary>How a start that Windows refuses is reported, so that the starter and the tests' stand-in for it say the same.</summary>
-internal static class StartRefusal
+public static class StartRefusal
 {
     /// <summary>What the recorder is called in the message.</summary>
     public const string Recorder = "the recorder";

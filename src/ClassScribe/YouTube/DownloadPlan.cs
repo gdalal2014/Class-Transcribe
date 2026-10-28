@@ -307,5 +307,5 @@ public static class DownloadPlan
     private static string Cut(string text, int width) => text.Length <= width ? text : text[..(width - 3)] + "...";
 
     /// <summary>A number with its noun, singular for one: "1 video", "9 videos".</summary>
-    internal static string Count(long number, string noun) => string.Create(CultureInfo.InvariantCulture, $"{number} {noun}{(number == 1 ? "" : "s")}");
+    public static string Count(long number, string noun) => string.Create(CultureInfo.InvariantCulture, $"{number} {noun}{(number == 1 ? "" : "s")}");
 }

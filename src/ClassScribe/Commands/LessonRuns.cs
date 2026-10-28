@@ -9,7 +9,7 @@ namespace ClassScribe.Commands;
 /// left to make (record-only, or its transcript saved already) was having its video made, not its transcript; and its
 /// video's state comes from the files alone.
 /// </summary>
-internal static class LessonRuns
+public static class LessonRuns
 {
     /// <summary>True for a run of a lesson with the camera.</summary>
     public static bool IsLesson(RunRecord run) => run.Request.Source.Camera is not null;

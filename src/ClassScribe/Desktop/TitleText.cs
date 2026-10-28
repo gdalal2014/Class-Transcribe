@@ -111,7 +111,7 @@ public static class TitleText
     /// <paramref name="text"/> fit for a title: each control character, which could ring (a BEL) or start a sequence (an
     /// escape), becomes a space, runs of spaces become one, and none is left at either end.
     /// </summary>
-    internal static string Clean(string? text)
+    public static string Clean(string? text)
     {
         if (string.IsNullOrEmpty(text)) return "";
 
@@ -137,7 +137,7 @@ public static class TitleText
     /// What needs attention in <paramref name="state"/>; nothing when the state carries no attention at all, as a state
     /// read from JSON without one does (System.Text.Json leaves a missing member null, whatever its type says).
     /// </summary>
-    internal static Attention AttentionOf(RecorderState state) => state.Attention ?? Attention.None;
+    public static Attention AttentionOf(RecorderState state) => state.Attention ?? Attention.None;
 
     /// <summary>True for the phases a run ends in.</summary>
     private static bool HasEnded(RecorderPhase phase) => phase is RecorderPhase.Done or RecorderPhase.Failed or RecorderPhase.Cancelled;

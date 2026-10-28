@@ -228,11 +228,11 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
     }
 
     /// <summary>A run as the words name it: "Kalam" in quotes, or the YouTube video "The creed, part 1" for a video's.</summary>
-    internal static string Named(RunRecord run) =>
+    public static string Named(RunRecord run) =>
         run.Request.Video is { } video ? $"the YouTube video \"{video.Title}\"" : $"\"{run.Request.Name}\"";
 
     /// <summary>A run as the words name it at the start of a sentence: "Kalam" in quotes, or The YouTube video "The creed, part 1".</summary>
-    internal static string NamedFirst(RunRecord run) => Named(run) is var named && named.StartsWith("the ", StringComparison.Ordinal) ? "T" + named[1..] : named;
+    public static string NamedFirst(RunRecord run) => Named(run) is var named && named.StartsWith("the ", StringComparison.Ordinal) ? "T" + named[1..] : named;
 
     /// <summary>
     /// Asks <paramref name="video"/>, a YouTube video's run that records, to give way to <paramref name="request"/>'s class

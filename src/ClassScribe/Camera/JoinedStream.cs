@@ -9,7 +9,7 @@ namespace ClassScribe.Camera;
 /// </summary>
 /// <param name="reader">Where it reads from.</param>
 /// <param name="writer">Where it writes to.</param>
-internal sealed class JoinedStream(Stream reader, Stream writer) : Stream
+public sealed class JoinedStream(Stream reader, Stream writer) : Stream
 {
     /// <inheritdoc />
     public override bool CanRead => true;
