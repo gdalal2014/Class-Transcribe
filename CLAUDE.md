@@ -828,7 +828,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   the app (architecture slice 1) grew on `feature/glossary-out` to 4,610, all passing, with 4 Explicit `DryRunKit` tests
   (one a whole dry run with a named glossary), and on with its review's repairs; rebased on `develop` with the lesson's
   video, the count is 4,751, all passing, in about four minutes. The vendors' values in the settings
-  (architecture slice 2, `feature/vendor-settings`) bring it to 4,849, all passing. The uploads by
+  (architecture slice 2, `feature/vendor-settings`) bring it to 4,849, and the review's repairs to them
+  (a recording the held safety stop ended still sent, the file limit's wiring proved, the sign-in page
+  without a query, a kept upload's version named) to 4,880, all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -869,7 +871,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, 3 min 4 s for 4,180
   with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, 3 min 32 s for 4,538 with
   settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
-  app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, plus the build).
+  app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 5 min 38 s for 4,880
+  with the review's repairs to them, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
