@@ -145,14 +145,15 @@ public partial class RecordCommandTests
     /// <paramref name="glossaryFiles"/> when given, else the real files. The safety stop comes after
     /// <paramref name="stopAfterHours"/> (Recording:StopAfterHours), and one file to ElevenLabs holds
     /// <paramref name="longestFileHours"/> (ElevenLabs:LongestFileHours), for the monitor and the workflow alike, as the app
-    /// hands both the run's settings; the settings' defaults unless given.
+    /// hands both the run's settings; the settings' defaults unless given. The upload copy is made by the real preparer, or by
+    /// <paramref name="preparer"/> when given, for a recording of hours whose 16 kHz copy would take a gigabyte.
     /// </summary>
     private RecordCommand CreateCommand(
         string apiKey = "test-key", TimeProvider? time = null, bool openWhenDone = false, string? outputFolder = null, KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
         bool blockShutdown = true, IRecordingFactory? recordings = null, RuntimeFolder? runtimeFolder = null, ILogger<RecordCommand>? logger = null,
         IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown, YouTube.VideoPlayback? video = null,
         IVideoYield? yield = null, Camera.LessonVideoMaker? lessonVideos = null, Drive.LessonVideoDrive? lessonDrive = null,
-        IGlossaryFiles? glossaryFiles = null, double? stopAfterHours = null, double? longestFileHours = null)
+        IGlossaryFiles? glossaryFiles = null, double? stopAfterHours = null, double? longestFileHours = null, IAudioPreparer? preparer = null)
     {
         time ??= TimeProvider.System;
         var recording = TestOptions.Create(new RecordingOptions
@@ -176,7 +177,7 @@ public partial class RecordCommandTests
         var usage = new UsageReport(_account, time, _usageLog);
         var glossaries = TestGlossaries.Choice(elevenLabs, logger: _glossaryLog, time: time, files: glossaryFiles);
         var workflow = new TranscriptionWorkflow(
-            new AudioPreparer(NullLogger<AudioPreparer>.Instance),
+            preparer ?? new AudioPreparer(NullLogger<AudioPreparer>.Instance),
             _client.Object,
             glossaries,
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
@@ -1735,8 +1736,9 @@ public partial class RecordCommandTests
     /// audio goes on arriving until the capture closes. Held by what one file to ElevenLabs holds (architecture 7.2, question
     /// 10), the stop comes exactly at the longest recording sent: Recording:StopAfterHours 12 with ElevenLabs' own 10 hours
     /// stops at 9 hours 30 minutes, and the default 9 hours with ElevenLabs:LongestFileHours 5 at 4 hours 30 minutes. The
-    /// real loop and monitor stop the real recording, here a second and a half past the stop, and the real workflow sends it.
-    /// Its audio is captured at 10 Hz, so that its file stays small.
+    /// real loop and monitor stop the real recording, here a second and a half past the stop, and the real workflow measures
+    /// it and sends it. Its audio is captured at 10 Hz, so that its file stays small, and its upload copy is a stand-in's,
+    /// since the real 16 kHz copy of hours would take a gigabyte.
     /// </summary>
     [TestCase(10, 12)]
     [TestCase(5, 9)]
@@ -1746,7 +1748,8 @@ public partial class RecordCommandTests
         var time = new ManualTimeProvider(TestRuns.Start);
         _provider = new FakeCaptureProvider();
         _capture = _provider.Enqueue(new FakeAudioCapture(new AudioFormat(10, 1, 16, false)));
-        var run = CreateCommand(time: time, stopAfterHours: stopAfterHours, longestFileHours: longestFileHours).RunAsync("Kalam", transcribe: true);
+        var run = CreateCommand(time: time, stopAfterHours: stopAfterHours, longestFileHours: longestFileHours, preparer: Mocks.AudioPreparer().Object)
+            .RunAsync("Kalam", transcribe: true);
         await Wait.UntilAsync(() => _capture.Started);
         _capture.Deliver(TestAudio.Shorts([.. Enumerable.Repeat((short)1000, (int)Math.Round((stop + TimeSpan.FromSeconds(1.5)).TotalSeconds * 10))]));
 
