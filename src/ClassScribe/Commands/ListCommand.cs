@@ -17,7 +17,7 @@ namespace ClassScribe.Commands;
 /// </code>
 /// It only reads: nothing is recorded, uploaded or changed, and no run file is marked seen.
 /// </summary>
-public sealed class ListCommand(IClassFolders folders, ITranscriptCopies copies, RunJournal journal, IConsoleUi ui, TimeProvider time)
+public sealed class ListCommand(IClassFolders folders, ITranscriptCopies copies, IRunJournal journal, IConsoleUi ui, TimeProvider time)
 {
     /// <summary>How the start of a recording is written in the list, in local time: 15 Oct 19:00.</summary>
     private const string StartFormat = "d MMM HH:mm";

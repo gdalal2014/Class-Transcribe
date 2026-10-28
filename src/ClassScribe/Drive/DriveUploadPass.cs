@@ -41,7 +41,7 @@ public sealed class DriveUploadPass(
     UploadManifests manifests,
     DriveUploadLock uploadLock,
     IGoogleCredentialStore store,
-    RunJournal journal,
+    IRunJournal journal,
     IPowerRequests power,
     IPowerSource powerSource,
     IOptionsSnapshot<RecordingOptions> recording,

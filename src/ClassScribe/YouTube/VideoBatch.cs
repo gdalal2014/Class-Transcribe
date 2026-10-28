@@ -166,7 +166,7 @@ public sealed class VideoBatch(
     OEmbedTitles titles,
     VideoWindow windows,
     ICommandRunner commands,
-    RunJournal journal,
+    IRunJournal journal,
     IClassFolders classFolders,
     IRecordingFolder recordings,
     GlossaryChoice glossaries,

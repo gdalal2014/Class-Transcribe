@@ -24,7 +24,7 @@ public sealed record RunContext(string RunId, RunHome Home, string? PipeName)
     /// The run file the recorder's host began, as starting, for the run to keep up to date: one run has one handle, which
     /// the host lets go of. Null in this window, where the run begins its own run file.
     /// </summary>
-    public RunHandle? Run { get; init; }
+    public IRunHandle? Run { get; init; }
 }
 
 /// <summary>
@@ -97,7 +97,7 @@ public interface ICrashWarnings
 /// </remarks>
 public sealed class RunBookkeeping(
     IRecordingLock recordingLock,
-    RunJournal journal,
+    IRunJournal journal,
     RecorderLog log,
     IPowerRequests power,
     IPowerSource battery,
@@ -122,10 +122,10 @@ public sealed class RunBookkeeping(
     private readonly Lock _gate = new();
 
     /// <summary>The run file the run keeps up to date: its own, or its host's; null before <see cref="Begin"/> and when it could not be written.</summary>
-    private RunHandle? _run;
+    private IRunHandle? _run;
 
     /// <summary>The run file this bookkeeping began itself, which it lets go of when the run's scope ends.</summary>
-    private RunHandle? _own;
+    private IRunHandle? _own;
 
     /// <summary>The recording's log, once named; null before.</summary>
     private string? _logFile;
@@ -167,7 +167,7 @@ public sealed class RunBookkeeping(
     public RunHome Home => context.Value?.Home ?? RunHome.InWindow;
 
     /// <summary>The run file the run keeps up to date, or null when there is none: before <see cref="Begin"/>, or when it could not be written.</summary>
-    public RunHandle? Run
+    public IRunHandle? Run
     {
         get
         {
@@ -222,13 +222,13 @@ public sealed class RunBookkeeping(
     /// run begins its own, and run files with nothing left to report are pruned. A run file that cannot be written is said
     /// with a warning, and the run records without it. Returns the run file, or null without one.
     /// </summary>
-    public RunHandle? Begin(RecordRequest request, RecordingFiles files)
+    public IRunHandle? Begin(RecordRequest request, RecordingFiles files)
     {
         var current = context.Value;
         if (current is not null && current.RunId != request.RunId)
             throw new ArgumentException($"The run's context is run {current.RunId}'s, and the request run {request.RunId}'s.", nameof(request));
 
-        RunHandle? run;
+        IRunHandle? run;
         if (current?.Run is { } begun)
         {
             begun.Recording(files);
@@ -349,7 +349,7 @@ public sealed class RunBookkeeping(
     public void Dispose()
     {
         Once? hooked, awake;
-        RunHandle? own;
+        IRunHandle? own;
         string? logFile;
         bool ended;
         lock (_gate)
@@ -475,14 +475,14 @@ public sealed class RunBookkeeping(
     /// left to report, as the run is the one that writes run files in this window. Null, with a warning, when it cannot be
     /// written: the run records without it.
     /// </summary>
-    private RunHandle? BeginOwn(RecordRequest request, RecordingFiles files, RunContext? current)
+    private IRunHandle? BeginOwn(RecordRequest request, RecordingFiles files, RunContext? current)
     {
         var now = time.GetUtcNow();
         var (processId, processStartedUtc) = ThisProcess();
         var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, processId, processStartedUtc, Environment.ProcessPath ?? AppContext.BaseDirectory,
             BuildInfo.Build, LinkVersion.Current, current?.PipeName, current?.Home ?? RunHome.InWindow, request, files.BaseName, files.Folder,
             RunState.Recording, now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
-        RunHandle run;
+        IRunHandle run;
         try
         {
             run = journal.Begin(record);
@@ -499,7 +499,7 @@ public sealed class RunBookkeeping(
 
         try
         {
-            journal.Prune(RunJournal.KeepSeenRunsFor);
+            journal.Prune(RunTimings.KeepSeenRunsFor);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

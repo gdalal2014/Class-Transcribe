@@ -34,6 +34,7 @@ public static class StorageServices
         services.AddSingleton<RecordingLock>();
         services.AddSingleton<IRecordingLock>(provider => provider.GetRequiredService<RecordingLock>());
         services.AddSingleton<RunJournal>();
+        services.AddSingleton<IRunJournal>(provider => provider.GetRequiredService<RunJournal>());
 
         // %APPDATA%\ClassScribe: the Google Drive sign-in, made only when one is stored.
         services.AddSingleton(_ => new RoamingFolder());

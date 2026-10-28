@@ -37,7 +37,7 @@ namespace ClassScribe.Commands;
 /// <param name="window">The window's title, taskbar button and flash, for a run reported from its file.</param>
 /// <param name="time">The clock for the times written, and for the minutes a continued recording has left.</param>
 /// <param name="logger">Where the command notes what it found and did; what Gulzar needs to read, it writes to the window itself.</param>
-public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, ICommandRunner commands, IRecordingFolder recordings, IConsoleUi ui, IWindowSignals window, TimeProvider time, ILogger<AttachCommand> logger)
+public sealed class AttachCommand(IRunJournal journal, IRunViewer viewer, ICommandRunner commands, IRecordingFolder recordings, IConsoleUi ui, IWindowSignals window, TimeProvider time, ILogger<AttachCommand> logger)
 {
     /// <summary>The exit code when there is nothing to show, the run ended without a saved result, or the recorder could not be reached.</summary>
     private const int Failed = 1;

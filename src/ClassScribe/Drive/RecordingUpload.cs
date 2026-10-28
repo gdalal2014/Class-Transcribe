@@ -73,7 +73,7 @@ public sealed partial class RecordingUpload(
     ResumableUpload upload,
     DriveRetry retry,
     UploadManifests manifests,
-    RunJournal journal,
+    IRunJournal journal,
     IClassFolders classFolders,
     RecorderLog log,
     IOptionsSnapshot<DriveOptions> options,

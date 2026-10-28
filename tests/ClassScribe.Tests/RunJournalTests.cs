@@ -915,7 +915,7 @@ public class RunJournalTests
         File.WriteAllText(_runtime.Folder.Runs, "a file where the runs folder should be");
 
         var listed = Journal.List();
-        Journal.Prune(RunJournal.KeepSeenRunsFor);
+        Journal.Prune(RunTimings.KeepSeenRunsFor);
 
         Assert.That(listed, Is.Empty);
         Assert.That(Journal.Find(RunId), Is.Null);
@@ -960,7 +960,7 @@ public class RunJournalTests
     {
         Assert.That(Journal.List(), Is.Empty);
         Assert.That(Journal.Find(RunId), Is.Null);
-        Assert.DoesNotThrow(() => Journal.Prune(RunJournal.KeepSeenRunsFor));
+        Assert.DoesNotThrow(() => Journal.Prune(RunTimings.KeepSeenRunsFor));
         Assert.That(Directory.Exists(_runtime.Folder.Runs), Is.False);
     }
 
@@ -984,9 +984,9 @@ public class RunJournalTests
         _runtime.Time.Advance(TimeSpan.FromDays(31));
         var seenRecent = Ended(8, Transcribed, seen: true);
 
-        Journal.Prune(RunJournal.KeepSeenRunsFor);
+        Journal.Prune(RunTimings.KeepSeenRunsFor);
 
-        Assert.That(RunJournal.KeepSeenRunsFor, Is.EqualTo(TimeSpan.FromDays(30)));
+        Assert.That(RunTimings.KeepSeenRunsFor, Is.EqualTo(TimeSpan.FromDays(30)));
         Assert.That(Journal.List().Select(run => run.Record.RunId), Is.EquivalentTo(new[] { unseenOld, endedUnexpectedlyOld, interruptedOld, aliveOld, seenRecent }));
         Assert.That(_runtime.FilesInRuns(), Does.Not.Contain($"{seenOld}.json").And.Not.Contain($"{refusedOld}.json").And.Not.Contain($"{diedStarting}.json"));
     }
@@ -1022,7 +1022,7 @@ public class RunJournalTests
         var foreignRequest = Leftover("notes.request.json", request, old);
         var foreign = Leftover("notes.json", "{}", old);
 
-        Journal.Prune(RunJournal.KeepSeenRunsFor);
+        Journal.Prune(RunTimings.KeepSeenRunsFor);
 
         Assert.That(_runtime.FilesInRuns(), Is.EquivalentTo(new[] { recentRequest, recentWrite, recentUnreadable, laterBuilds, foreignRequest, foreign }));
     }
@@ -1042,9 +1042,9 @@ public class RunJournalTests
         var path = journal.RunFile(seenOld);
 
         using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            Assert.DoesNotThrow(() => journal.Prune(RunJournal.KeepSeenRunsFor));
+            Assert.DoesNotThrow(() => journal.Prune(RunTimings.KeepSeenRunsFor));
         var keptWhileHeld = File.Exists(path);
-        journal.Prune(RunJournal.KeepSeenRunsFor);
+        journal.Prune(RunTimings.KeepSeenRunsFor);
 
         Assert.That(keptWhileHeld, Is.True);
         Assert.That(pauses, Is.EqualTo(3));

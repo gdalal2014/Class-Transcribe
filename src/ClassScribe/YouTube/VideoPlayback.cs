@@ -14,7 +14,7 @@ namespace ClassScribe.YouTube;
 /// Chrome leaves out, so that a class never records a video window left open. It never reads anything in the window's page,
 /// nor its profile.
 /// </summary>
-public sealed class VideoPlayback(IProcessLiveness liveness, IVideoWindows windows, IProcessFamily family, RunJournal journal, TimeProvider time, ILogger<VideoPlayback> logger)
+public sealed class VideoPlayback(IProcessLiveness liveness, IVideoWindows windows, IProcessFamily family, IRunJournal journal, TimeProvider time, ILogger<VideoPlayback> logger)
 {
     /// <summary>How long the video windows of other runs, which a class leaves out, are taken from the run files before they are read again.</summary>
     public static readonly TimeSpan OtherWindowsReadEvery = TimeSpan.FromSeconds(10);

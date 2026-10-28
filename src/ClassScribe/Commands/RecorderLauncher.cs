@@ -57,7 +57,7 @@ public abstract record LaunchResult
 /// job where the job allows it and inside it again only where the recorder outlives the window there too, then the wait
 /// until the recorder's run file says it records. Closing this window is said to be safe only where it is.
 /// </summary>
-public sealed class RecorderLauncher(IProcessStarter starter, IJobInspector jobs, IRuntimeFolder folder, RunJournal journal,
+public sealed class RecorderLauncher(IProcessStarter starter, IJobInspector jobs, IRuntimeFolder folder, IRunJournal journal,
     IOptionsMonitor<RecordingOptions> options, TimeProvider time, ILogger<RecorderLauncher> logger)
 {
     /// <summary>How long a recorder has to answer, by its run file, before the start counts as failed: 20 seconds, as for a window connecting to it.</summary>

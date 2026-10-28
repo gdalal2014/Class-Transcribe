@@ -59,7 +59,7 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, IClassMar
     private IRecording _recording = null!;
     private RecordingFiles _files = null!;
     private RecordRequest _request = null!;
-    private RunHandle? _run;
+    private IRunHandle? _run;
     private MonitorContext _context = null!;
 
     /// <summary>True for a run recording in this window rather than in the background: closing the window ends it.</summary>
@@ -100,7 +100,7 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, IClassMar
     /// recording; null for a run without one, which records in the window. --minutes and the safety stop count from now.
     /// </summary>
     /// <exception cref="InvalidOperationException">The loop has run already: each run has a loop of its own.</exception>
-    public async Task<RecorderState> RunAsync(IRecording recording, RecordingFiles files, RecordRequest request, RunHandle? run, TimeSpan offset)
+    public async Task<RecorderState> RunAsync(IRecording recording, RecordingFiles files, RecordRequest request, IRunHandle? run, TimeSpan offset)
     {
         if (Interlocked.Exchange(ref _ran, 1) == 1)
             throw new InvalidOperationException("A recording loop runs one run; each run has a loop of its own.");

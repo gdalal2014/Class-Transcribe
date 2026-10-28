@@ -32,7 +32,7 @@ namespace ClassScribe.Commands;
 /// settings have passed the check, as a menu choice does; O and F itself. The choice returned only says what was done; the
 /// caller does not carry it out again.
 /// </remarks>
-public sealed class StartupReport(RunJournal journal, IClassFolders folders, IRecordingFolder recordings, ICommandRunner commands, RunGate gate, IConsoleUi ui, IDesktop desktop,
+public sealed class StartupReport(IRunJournal journal, IClassFolders folders, IRecordingFolder recordings, ICommandRunner commands, RunGate gate, IConsoleUi ui, IDesktop desktop,
     IProcessLiveness liveness, DriveQueueReport drive, IOptionsMonitor<RecordingOptions> recording, TimeProvider time, ILogger<StartupReport> logger) : IStartupReport
 {
     /// <summary>Where the second offer on a line of offers begins, as in "  C  continue it now as its next part     T  transcribe what was recorded".</summary>

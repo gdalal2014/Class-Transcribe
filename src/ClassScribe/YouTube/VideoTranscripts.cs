@@ -128,7 +128,7 @@ public sealed record TranscriptOutcome(VideoToTranscribe Video, TranscriptStep S
 /// in another window or by another command, one with an answer from ElevenLabs kept for it, one still being written, and one
 /// a live run records or transcribes, is not sent again, so that nothing is billed twice.
 /// </summary>
-public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wait, IClassFolders folders, IRecordingFolder recordings, ITranscriptCopies copies, RunJournal journal, ILogger<BatchTranscripts> logger)
+public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wait, IClassFolders folders, IRecordingFolder recordings, ITranscriptCopies copies, IRunJournal journal, ILogger<BatchTranscripts> logger)
 {
     /// <summary>The statuses at which ElevenLabs would refuse every transcript left.</summary>
     private static readonly HashSet<HttpStatusCode> StopsAll = [HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.PaymentRequired, HttpStatusCode.TooManyRequests];

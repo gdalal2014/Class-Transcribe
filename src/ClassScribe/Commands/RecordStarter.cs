@@ -56,7 +56,7 @@ namespace ClassScribe.Commands;
 /// Decides the run's glossary before it starts, for the request to carry (see <see cref="RecordRequest.Glossary"/>); null where
 /// none is registered, and the run then decides it by the settings it has.
 /// </param>
-public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher, IRunViewer viewer, ContinueQuestion question, SettingsReloader settings, IRecordingFolder recordings,
+public sealed class RecordStarter(IRunJournal journal, RecorderLauncher launcher, IRunViewer viewer, ContinueQuestion question, SettingsReloader settings, IRecordingFolder recordings,
     IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null, CameraStart? camera = null,
     GlossaryChoice? glossary = null) : IRecordStarter
 {

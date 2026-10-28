@@ -22,7 +22,7 @@ public sealed record ContinueAnswer(bool GoBack, RecordingFiles? Continue, strin
 /// none and starts a new one; --new starts a new one without a word; neither starts a new one, with a line on how to
 /// continue the other one instead. Only a recording that may be continued is ever offered (see <see cref="Find"/>).
 /// </summary>
-public sealed class ContinueQuestion(IClassFolders folders, IRecordingFolder recordings, RunJournal journal, IConsoleUi ui, IOptionsSnapshot<RecordingOptions> recording,
+public sealed class ContinueQuestion(IClassFolders folders, IRecordingFolder recordings, IRunJournal journal, IConsoleUi ui, IOptionsSnapshot<RecordingOptions> recording,
     TimeProvider time, ILogger<ContinueQuestion> logger)
 {
     /// <summary>
@@ -101,7 +101,7 @@ public sealed class ContinueQuestion(IClassFolders folders, IRecordingFolder rec
     /// the camera is continued with it even when it holds no piece, the new part writing the first; when no run file of the
     /// recording is left, the camera's pieces decide.
     /// </summary>
-    internal static ContinueCandidate? FindContinuable(IClassFolders folders, IRecordingFolder recordings, RunJournal journal, string name, RecordingMode mode, TimeSpan within, string root,
+    internal static ContinueCandidate? FindContinuable(IClassFolders folders, IRecordingFolder recordings, IRunJournal journal, string name, RecordingMode mode, TimeSpan within, string root,
         ILogger logger, string ifUnreadable, bool camera = false)
     {
         ContinueCandidate? candidate;

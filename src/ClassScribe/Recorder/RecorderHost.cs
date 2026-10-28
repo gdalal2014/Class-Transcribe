@@ -355,7 +355,7 @@ public sealed class RecorderHost
     {
         try
         {
-            journal.Prune(RunJournal.KeepSeenRunsFor);
+            journal.Prune(RunTimings.KeepSeenRunsFor);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
