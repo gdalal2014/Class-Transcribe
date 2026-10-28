@@ -5,32 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Storage;
 
-/// <summary>A moment marked with M while recording, or a note ClassScribe made at a moment of the recording.</summary>
-/// <param name="Number">The mark's number, counting from 1 in the order the marks were set; 0 for a note, which has none.</param>
-/// <param name="Position">Where the mark or note falls in the recording, and so in the transcript.</param>
-/// <param name="Label">For a mark, text typed after the time in marks.txt by hand, if any; for a note, its words.</param>
-/// <param name="IsNote">
-/// True for a note, such as "Resumed at 23:51 UTC, about 4 minutes not recorded": the transcript shows it as a heading in
-/// its own words, without a number, and it does not count as a mark.
-/// </param>
-public sealed partial record ClassMark(int Number, TimeSpan Position, string? Label, bool IsNote = false)
-{
-    /// <summary>
-    /// True for the note that marks where the recording was taken up again as its next part, in the words
-    /// <see cref="ClassMarks.AddResume"/> writes; each one makes the recording one part more. A note typed by hand in
-    /// other words is no resume, even one that starts the same way, such as "Resumed after the break".
-    /// </summary>
-    public bool IsResume => IsNote && Label is { } words && ResumeWords().IsMatch(words);
-
-    /// <summary>
-    /// The words of a resume note exactly as <see cref="ClassMarks.AddResume"/> writes them: "Resumed at 23:51 UTC, about
-    /// 4 minutes not recorded", with "on 16 October at" for "at" on a later day, and "less than a minute", "about 1 hour 5
-    /// minutes" or "about 2 hours" for other gaps.
-    /// </summary>
-    [GeneratedRegex(@"^Resumed (?:at|on [0-9]{1,2} [A-Z][a-z]+ at) [0-9]{2}:[0-9]{2} UTC, (?:less than a minute|about [0-9]+ (?:minutes?|hours?(?: [0-9]+ minutes?)?)) not recorded$", RegexOptions.CultureInvariant)]
-    private static partial Regex ResumeWords();
-}
-
 /// <summary>
 /// The marks of a recording, one per line in its marks file (see <see cref="RecordingFiles.Marks"/>): a position in the
 /// recording (hh:mm:ss.fff), optionally followed by a label typed in by hand. The same file holds the notes ClassScribe
