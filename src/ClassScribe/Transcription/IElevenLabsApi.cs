@@ -5,28 +5,32 @@ namespace ClassScribe.Transcription;
 /// <summary>
 /// The ElevenLabs endpoints this app calls, declared for Refit: speech to text, for which Refit builds the multipart
 /// request (one part per field, one <c>keyterms</c> part per glossary term, and the audio streamed from disk), and the
-/// account's subscription, read for the credits a transcript cost.
+/// account's subscription, read for the credits a transcript cost. Each takes the version of the API as the first part of
+/// its path, from ElevenLabs:ApiVersion (architecture 7.3), such as v1 in /v1/speech-to-text.
 /// </summary>
 public interface IElevenLabsApi
 {
     /// <summary>
-    /// Reads the account's subscription (GET /v1/user/subscription): the credits used and allowed in the current period,
-    /// when the period resets, and any usage-based overage. It needs the key's User permission, which a key restricted to
-    /// Speech to Text lacks, so the response comes back whatever its status: a refusal is read, never thrown.
+    /// Reads the account's subscription (GET /{apiVersion}/user/subscription, as /v1/user/subscription): the credits used and
+    /// allowed in the current period, when the period resets, and any usage-based overage. It needs the key's User
+    /// permission, which a key restricted to Speech to Text lacks, so the response comes back whatever its status: a refusal
+    /// is read, never thrown.
     /// </summary>
-    [Get("/v1/user/subscription")]
-    Task<HttpResponseMessage> GetSubscriptionAsync([Header("xi-api-key")] string apiKey, CancellationToken cancellationToken);
+    [Get("/{apiVersion}/user/subscription")]
+    Task<HttpResponseMessage> GetSubscriptionAsync([Header("xi-api-key")] string apiKey, string apiVersion, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Uploads audio for transcription. The response comes back whatever its status, so the caller can
-    /// keep the JSON exactly as it arrived and turn a failure into a message that says what to check.
-    /// Optional fields passed as null are left out of the request.
+    /// Uploads audio for transcription (POST /{apiVersion}/speech-to-text, as /v1/speech-to-text). The response comes back
+    /// whatever its status, so the caller can keep the JSON exactly as it arrived and turn a failure into a message that says
+    /// what to check. Optional fields passed as null are left out of the request; <paramref name="apiVersion"/> fills the
+    /// path, never a part.
     /// </summary>
     // Refit needs the boundary as a constant. This one is long and random enough never to occur in audio.
     [Multipart("ClassScribe-5f0c6a2e9d1b4c7e8a3f2b6d0e9c4a1f")]
-    [Post("/v1/speech-to-text")]
+    [Post("/{apiVersion}/speech-to-text")]
     Task<HttpResponseMessage> TranscribeAsync(
         [Header("xi-api-key")] string apiKey,
+        string apiVersion,
         [AliasAs("model_id")] string modelId,
         [AliasAs("tag_audio_events")] string tagAudioEvents,
         [AliasAs("timestamps_granularity")] string timestampsGranularity,

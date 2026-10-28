@@ -130,7 +130,7 @@ public class DryRunStandInTests
         var handler = new WireTap();
         var api = RestService.ForGenerated<IElevenLabsApi>(new HttpClient(handler) { BaseAddress = new Uri("http://127.0.0.1:9/") }, ElevenLabsJson.Default, ElevenLabsApiSettings.Create());
 
-        using var response = await api.TranscribeAsync("dry-run-key", "scribe_v2", "false", "word", null, "ar", ["kalām", "wājib al-wujūd", "tawḥīd"],
+        using var response = await api.TranscribeAsync("dry-run-key", ElevenLabsApi.WrittenFor, "scribe_v2", "false", "word", null, "ar", ["kalām", "wājib al-wujūd", "tawḥīd"],
             new StreamPart(new MemoryStream(wav), "audio.wav", "application/octet-stream"), CancellationToken.None);
         var upload = StandInUpload.Read(handler.ContentType!, handler.Body!);
 

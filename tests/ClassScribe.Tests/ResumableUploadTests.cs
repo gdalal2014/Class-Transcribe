@@ -78,7 +78,7 @@ public class ResumableUploadTests
     {
         var drive = _world.Drive();
         var address = UploadAddress.TryParse(await drive.StartUploadAsync(new DriveFileMetadata("a.wav", "audio/wav", [_folder.Id], null), "audio/wav", 1_000_000, CancellationToken.None),
-            "https://www.googleapis.com/", revisionOf: null)!;
+            "https://www.googleapis.com/", DriveApi.WrittenFor, revisionOf: null)!;
         using var content = new MemoryStream(Bytes(1_000_000));
 
         Assert.That(async () => await drive.SendPieceAsync(address, () => new PieceContent(content, 0, 300_000, content.Length), DriveClient.CallLimit, CancellationToken.None),
@@ -354,7 +354,37 @@ public class ResumableUploadTests
     [TestCase("not an address", null, false)]
     public void Only_Drives_own_upload_address_passes(string address, string? revisionOf, bool passes)
     {
-        Assert.That(UploadAddress.TryParse(address, "https://www.googleapis.com/", revisionOf) is not null, Is.EqualTo(passes));
+        Assert.That(UploadAddress.TryParse(address, "https://www.googleapis.com/", "v3", revisionOf) is not null, Is.EqualTo(passes));
+    }
+
+    /// <summary>
+    /// The path an upload session's address must have names the version of the Drive API the settings give (architecture 7.3):
+    /// with Drive:ApiVersion at v4, a session under /upload/drive/v4/files passes, a new file's and a revision's alike, and
+    /// one under v3, the version this build was written for, does not; with v3, the other way round.
+    /// </summary>
+    [TestCase("https://www.googleapis.com/upload/drive/v4/files?uploadType=resumable&upload_id=AB", "v4", null, true)]
+    [TestCase("https://www.googleapis.com/upload/drive/v4/files/file-1?uploadType=resumable&upload_id=AB", "v4", "file-1", true)]
+    [TestCase("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=AB", "v4", null, false)]
+    [TestCase("https://www.googleapis.com/upload/drive/v4/files?uploadType=resumable&upload_id=AB", "v3", null, false)]
+    public void An_upload_address_must_name_the_version_the_settings_give(string address, string version, string? revisionOf, bool passes)
+    {
+        Assert.That(UploadAddress.TryParse(address, "https://www.googleapis.com/", version, revisionOf) is not null, Is.EqualTo(passes));
+    }
+
+    /// <summary>
+    /// The upload checks the session's address against the version its settings give: with Drive:ApiVersion at v4, a session
+    /// Drive starts under v3 is not at Drive's own address, so nothing is sent there and the upload is refused in words.
+    /// </summary>
+    [Test]
+    public void The_upload_checks_the_session_address_against_the_version_the_settings_give()
+    {
+        var upload = new ResumableUpload(_world.Drive(), _world.Retry(), TestOptions.Create(new DriveOptions { ApiVersion = "v4" }), _world.Time, _world.Log<ResumableUpload>())
+            { PieceSize = GoogleWorld.PieceSize };
+
+        var failure = Assert.ThrowsAsync<GoogleDriveException>(async () => await upload.SendAsync(Source(Bytes(1000)), NewFile, null, _watch, CancellationToken.None))!;
+
+        Assert.That(failure.Message, Does.Contain("that is not its own"));
+        Assert.That(_world.Google.Pieces, Is.Empty, "nothing was sent to an address the settings do not name");
     }
 
     /// <summary>An upload address as text never shows its upload id.</summary>

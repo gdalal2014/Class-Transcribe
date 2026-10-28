@@ -124,6 +124,7 @@ public sealed class ElevenLabsClient(
         {
             using var response = await api.TranscribeAsync(
                 settings.ApiKey.Trim(),
+                settings.ApiVersion,
                 settings.ModelId,
                 settings.TagAudioEvents ? "true" : "false",
                 "word",

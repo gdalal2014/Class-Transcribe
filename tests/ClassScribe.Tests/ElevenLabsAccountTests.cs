@@ -62,6 +62,21 @@ public class ElevenLabsAccountTests
     }
 
     /// <summary>
+    /// The account is read at the version of ElevenLabs' API the settings give (architecture 7.3): with ElevenLabs:ApiVersion
+    /// at v2, the request goes to /v2/user/subscription, and its answer is read as before.
+    /// </summary>
+    [Test]
+    public async Task The_account_is_read_at_the_version_the_settings_give()
+    {
+        _handler.EnqueueFor("/v2/user/subscription", HttpStatusCode.OK, Subscription);
+
+        var reading = await Create(new ElevenLabsOptions { ApiKey = Key, ApiVersion = "v2" }).ReadAsync(CancellationToken.None);
+
+        Assert.That(_handler.Requests.Single().Uri!.AbsoluteUri, Is.EqualTo("https://api.elevenlabs.io/v2/user/subscription"));
+        Assert.That(reading.Kind, Is.EqualTo(AccountReadingKind.Read));
+    }
+
+    /// <summary>
     /// A 401 or a 403 is a refusal, read and not thrown, with ElevenLabs' reason kept: the detail's status (the older field),
     /// its code (the current one), or the detail itself when it is plain words; nothing when the body says nothing readable.
     /// </summary>

@@ -560,7 +560,7 @@ public class SettingsReloadTests
         handler.Enqueue(System.Net.HttpStatusCode.OK, "{}");
         using var scope = app.Services.CreateScope();
         var api = scope.ServiceProvider.GetRequiredService<IElevenLabsApi>();
-        using var response = await api.TranscribeAsync(Key, "scribe_v2", "false", "word", null, null, [], new StreamPart(new MemoryStream([1, 2, 3]), "audio.wav"), CancellationToken.None);
+        using var response = await api.TranscribeAsync(Key, ElevenLabsApi.WrittenFor, "scribe_v2", "false", "word", null, null, [], new StreamPart(new MemoryStream([1, 2, 3]), "audio.wav"), CancellationToken.None);
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using System.Net;
 using ClassScribe.Drive;
+using Refit;
 
 namespace ClassScribe.Tests;
 
@@ -178,7 +179,7 @@ public class DriveClientTests
         const int size = FakeGoogle.PieceMultiple + 2;
         var drive = _world.Drive();
         var address = UploadAddress.TryParse(await drive.StartUploadAsync(new DriveFileMetadata("a.md", "text/markdown", ["folder-1"], null), "text/markdown", size, CancellationToken.None),
-            "https://www.googleapis.com/", revisionOf: null)!;
+            "https://www.googleapis.com/", DriveApi.WrittenFor, revisionOf: null)!;
         var bytes = Enumerable.Range(0, size).Select(i => (byte)(i % 251)).ToArray();
         using var content = new MemoryStream(bytes);
 
@@ -195,6 +196,47 @@ public class DriveClientTests
         _world.Google.FailWhen(request => request.IsPiece, HttpStatusCode.Gone, "");
         var goneToo = await drive.SendPieceAsync(address, () => PieceContent.StatusQuery(size), DriveClient.CallLimit, CancellationToken.None);
         Assert.That((gone.Outcome, goneToo.Outcome), Is.EqualTo((PieceOutcome.Gone, PieceOutcome.Gone)));
+    }
+
+    /// <summary>
+    /// Every call goes to the version of the Drive API the settings give, in the middle of its path (architecture 7.3): about,
+    /// a search, a file, a new folder, the start of an upload and of a revision, and a piece of each, under the base address as
+    /// it is; v3 by default, v4 when Drive:ApiVersion says so. Here over a stub transport, which answers whatever the path.
+    /// </summary>
+    [TestCase("v3")]
+    [TestCase("v4")]
+    public async Task Every_call_goes_to_the_version_the_settings_give(string version)
+    {
+        var stub = new StubHttpHandler();
+        stub.Enqueue(HttpStatusCode.OK, "{}");
+        stub.Enqueue(HttpStatusCode.OK, """{"files":[]}""");
+        stub.Enqueue(HttpStatusCode.OK, """{"id":"file-1"}""");
+        stub.Enqueue(HttpStatusCode.OK, """{"id":"folder-1","name":"Kalam"}""");
+        foreach (var session in new[] { $"upload/drive/{version}/files", $"upload/drive/{version}/files/file-1" })
+            stub.Enqueue(() => new HttpResponseMessage(HttpStatusCode.OK) { Headers = { Location = new Uri($"https://www.googleapis.com/{session}?uploadType=resumable&upload_id=AB") } });
+        stub.Enqueue(HttpStatusCode.OK, """{"id":"file-2"}""");
+        stub.Enqueue(HttpStatusCode.OK, """{"id":"file-1"}""");
+        var api = RestService.ForGenerated<IDriveApi>(new HttpClient(stub) { BaseAddress = new Uri("https://www.googleapis.com/") }, DriveJson.Default, DriveApiSettings.Create());
+        var tokens = _world.Tokens();
+        tokens.Seed("access-token", TimeSpan.FromHours(1));
+        var drive = new DriveClient(api, tokens, TestOptions.Create(new DriveOptions { ApiVersion = version }), _world.Time, _world.Log<DriveClient>());
+        using var content = new MemoryStream([1, 2]);
+
+        await drive.GetAboutAsync(CancellationToken.None);
+        await drive.ListAsync("trashed = false", CancellationToken.None);
+        await drive.GetFileAsync("file-1", CancellationToken.None);
+        await drive.CreateFolderAsync(new DriveFileMetadata("Kalam", "application/vnd.google-apps.folder", null, null), CancellationToken.None);
+        var upload = UploadAddress.TryParse(await drive.StartUploadAsync(new DriveFileMetadata("a.md", "text/markdown", ["folder-1"], null), "text/markdown", 2, CancellationToken.None),
+            "https://www.googleapis.com/", version, revisionOf: null)!;
+        var revision = UploadAddress.TryParse(await drive.StartRevisionAsync("file-1", "text/markdown", 2, CancellationToken.None), "https://www.googleapis.com/", version, "file-1")!;
+        await drive.SendPieceAsync(upload, () => new PieceContent(content, 0, 2, 2), DriveClient.CallLimit, CancellationToken.None);
+        await drive.SendPieceAsync(revision, () => new PieceContent(content, 0, 2, 2), DriveClient.CallLimit, CancellationToken.None);
+
+        Assert.That(stub.Requests.Select(request => $"{request.Method} {request.Uri!.AbsolutePath}"), Is.EqualTo(new[]
+        {
+            $"GET /drive/{version}/about", $"GET /drive/{version}/files", $"GET /drive/{version}/files/file-1", $"POST /drive/{version}/files",
+            $"POST /upload/drive/{version}/files", $"PATCH /upload/drive/{version}/files/file-1", $"PUT /upload/drive/{version}/files", $"PUT /upload/drive/{version}/files/file-1"
+        }));
     }
 
     /// <summary>A Range Drive confirms is read as bytes=0-N, N + 1 bytes; none, or one in another shape, confirms nothing.</summary>
@@ -217,7 +259,7 @@ public class DriveClientTests
     {
         var drive = _world.Drive();
         var address = UploadAddress.TryParse(await drive.StartUploadAsync(new DriveFileMetadata("a.wav", "audio/wav", ["folder-1"], null), "audio/wav", 8 * 1024 * 1024, CancellationToken.None),
-            "https://www.googleapis.com/", revisionOf: null)!;
+            "https://www.googleapis.com/", DriveApi.WrittenFor, revisionOf: null)!;
         _world.Google.Hold("/upload/drive/v3/files", Task.Delay(Timeout.Infinite));
         using var content = new MemoryStream(new byte[8 * 1024 * 1024]);
         var limit = ResumableUpload.PieceLimit(content.Length);

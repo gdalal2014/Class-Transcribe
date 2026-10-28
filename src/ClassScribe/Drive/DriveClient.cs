@@ -3,6 +3,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Drive;
 
@@ -33,12 +34,16 @@ public sealed record PieceAnswer(PieceOutcome Outcome, long Confirmed, DriveFile
 /// limit), <see cref="DriveProblem.Full"/> for a Drive that takes nothing more for now, the Drive API left disabled in the
 /// Google Cloud project, and any other refusal with Google's own words; Google out of reach is one of
 /// <see cref="DriveProblem.Unreachable"/>; the caller's own cancel is rethrown. Neither the token nor the address of an upload
-/// session is ever logged. One per run, as the Refit client is.
+/// session is ever logged. Each call goes to the version of the API the run's Drive:ApiVersion gives (architecture 7.3). One
+/// per run, as the Refit client is.
 /// </summary>
-public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, TimeProvider time, ILogger<DriveClient> logger)
+public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, IOptionsSnapshot<DriveOptions> options, TimeProvider time, ILogger<DriveClient> logger)
 {
     /// <summary>How long one call may take, the answer included.</summary>
     public static readonly TimeSpan CallLimit = TimeSpan.FromSeconds(60);
+
+    /// <summary>The version of the Drive API the calls go to, from the run's settings.</summary>
+    private string Version => options.Value.ApiVersion;
 
     /// <summary>What is said when the Drive API is not enabled in the Google Cloud project.</summary>
     public const string ApiDisabled =
@@ -63,14 +68,14 @@ public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, TimeProvider
     /// <summary>The account and its storage (about.get).</summary>
     public async Task<DriveAbout> GetAboutAsync(CancellationToken cancellationToken)
     {
-        using var response = await CallAsync((authorization, token) => api.GetAboutAsync(authorization, token), "show the account", CallLimit, cancellationToken);
+        using var response = await CallAsync((authorization, token) => api.GetAboutAsync(authorization, Version, token), "show the account", CallLimit, cancellationToken);
         return await ReadAsync(response, DriveJson.Default.DriveAbout, "show the account", cancellationToken);
     }
 
     /// <summary>The file or folder <paramref name="fileId"/>, with its size and MD5 and whether it is in the trash; null when Drive does not have it (HTTP 404).</summary>
     public async Task<DriveFile?> GetFileAsync(string fileId, CancellationToken cancellationToken)
     {
-        using var response = await CallAsync((authorization, token) => api.GetAsync(authorization, fileId, token), "show a file", CallLimit, cancellationToken,
+        using var response = await CallAsync((authorization, token) => api.GetAsync(authorization, Version, fileId, token), "show a file", CallLimit, cancellationToken,
             HttpStatusCode.NotFound);
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
 
@@ -85,7 +90,7 @@ public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, TimeProvider
         do
         {
             var next = page;
-            using var response = await CallAsync((authorization, token) => api.ListAsync(authorization, query, next, token), "search ClassScribe's files", CallLimit,
+            using var response = await CallAsync((authorization, token) => api.ListAsync(authorization, Version, query, next, token), "search ClassScribe's files", CallLimit,
                 cancellationToken);
             var list = await ReadAsync(response, DriveJson.Default.DriveFileList, "search ClassScribe's files", cancellationToken);
             found.AddRange(list.Files ?? []);
@@ -99,7 +104,7 @@ public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, TimeProvider
     /// <summary>Makes the folder <paramref name="folder"/> describes, and returns it as Drive made it.</summary>
     public async Task<DriveFile> CreateFolderAsync(DriveFileMetadata folder, CancellationToken cancellationToken)
     {
-        using var response = await CallAsync((authorization, token) => api.CreateFolderAsync(authorization, folder, token), "make a folder", CallLimit, cancellationToken);
+        using var response = await CallAsync((authorization, token) => api.CreateFolderAsync(authorization, Version, folder, token), "make a folder", CallLimit, cancellationToken);
         return await ReadAsync(response, DriveJson.Default.DriveFile, "make a folder", cancellationToken);
     }
 
@@ -110,7 +115,7 @@ public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, TimeProvider
     /// </summary>
     public async Task<string> StartUploadAsync(DriveFileMetadata metadata, string contentType, long length, CancellationToken cancellationToken)
     {
-        using var response = await CallAsync((authorization, token) => api.StartUploadAsync(authorization, contentType, length, metadata, token), "start an upload",
+        using var response = await CallAsync((authorization, token) => api.StartUploadAsync(authorization, Version, contentType, length, metadata, token), "start an upload",
             CallLimit, cancellationToken);
         return SessionAddress(response, "start an upload");
     }
@@ -123,7 +128,7 @@ public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, TimeProvider
     public async Task<string> StartRevisionAsync(string fileId, string contentType, long length, CancellationToken cancellationToken)
     {
         var unchanged = new DriveFileMetadata(Name: null, MimeType: null, Parents: null, AppProperties: null);
-        using var response = await CallAsync((authorization, token) => api.StartRevisionAsync(authorization, fileId, contentType, length, unchanged, token),
+        using var response = await CallAsync((authorization, token) => api.StartRevisionAsync(authorization, Version, fileId, contentType, length, unchanged, token),
             "start a new revision of a file", CallLimit, cancellationToken);
         return SessionAddress(response, "start a new revision of a file");
     }
@@ -138,8 +143,8 @@ public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, TimeProvider
     {
         const string what = "take a piece of an upload";
         using var response = await CallAsync((authorization, token) => session.FileId is { } fileId
-                ? api.SendRevisionAsync(authorization, fileId, session.UploadId, piece(), token)
-                : api.SendAsync(authorization, session.UploadId, piece(), token),
+                ? api.SendRevisionAsync(authorization, Version, fileId, session.UploadId, piece(), token)
+                : api.SendAsync(authorization, Version, session.UploadId, piece(), token),
             what, limit, cancellationToken, ResumeIncomplete, HttpStatusCode.NotFound, HttpStatusCode.Gone);
 
         return response.StatusCode switch

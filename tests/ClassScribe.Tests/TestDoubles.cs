@@ -1128,14 +1128,17 @@ public sealed record CapturedRequest(HttpMethod Method, Uri? Uri, string? ApiKey
 
 /// <summary>
 /// An HTTP handler that answers from a queue and records each request, body included. Answers queued for a path
-/// (<see cref="EnqueueFor"/>) go to the requests of that path alone, and a request to the account's subscription, which the
-/// app makes beside an upload, never takes an answer queued for the upload: with none queued for it, it fails, which the app
-/// reports as the account being unavailable. Requests may arrive from several threads at once.
+/// (<see cref="EnqueueFor"/>) go to the requests of that path alone, and a request to the account's subscription, at any
+/// version of the API, which the app makes beside an upload, never takes an answer queued for the upload: with none queued for
+/// it, it fails, which the app reports as the account being unavailable. Requests may arrive from several threads at once.
 /// </summary>
 public sealed class StubHttpHandler : HttpMessageHandler
 {
-    /// <summary>The path of ElevenLabs' subscription endpoint, whose requests take only the answers queued for it.</summary>
+    /// <summary>The path of ElevenLabs' subscription endpoint at the API's default version, whose requests take only the answers queued for it.</summary>
     public const string SubscriptionPath = "/v1/user/subscription";
+
+    /// <summary>How the subscription's path ends at any version of the API, as /v2/user/subscription does.</summary>
+    private const string SubscriptionAtAnyVersion = "/user/subscription";
 
     private readonly Lock _gate = new();
     private readonly Queue<Func<HttpResponseMessage>> _answers = new();
@@ -1150,6 +1153,9 @@ public sealed class StubHttpHandler : HttpMessageHandler
     /// <summary>Queues a response.</summary>
     public void Enqueue(HttpStatusCode status, string body) =>
         _answers.Enqueue(() => new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+
+    /// <summary>Queues the response <paramref name="answer"/> makes when the request arrives, for one with headers of its own, such as a Location.</summary>
+    public void Enqueue(Func<HttpResponseMessage> answer) => _answers.Enqueue(answer);
 
     /// <summary>Queues a response whose headers arrive but whose body never does: reading it waits until the read is cancelled.</summary>
     public void EnqueueStalledBody(HttpStatusCode status) =>
@@ -1202,7 +1208,7 @@ public sealed class StubHttpHandler : HttpMessageHandler
             var routed = _routed.FirstOrDefault(route => path.EndsWith(route.Key, StringComparison.Ordinal)).Value;
             if (routed is { Count: > 0 })
                 answer = routed.Dequeue();
-            else if (path.EndsWith(SubscriptionPath, StringComparison.Ordinal))
+            else if (path.EndsWith(SubscriptionAtAnyVersion, StringComparison.Ordinal))
                 throw new InvalidOperationException($"No answer is queued for {request.Method} {path}.");
             else
                 answer = _answers.Dequeue();

@@ -1222,7 +1222,7 @@ public sealed class GoogleWorld : IDisposable
     public GoogleTokens Tokens() => new(Cache, OAuth, Store, Time, Log<GoogleTokens>());
 
     /// <summary>Drive, through the fake Google.</summary>
-    public DriveClient Drive() => new(Api, Tokens(), Time, Log<DriveClient>());
+    public DriveClient Drive() => new(Api, Tokens(), Options, Time, Log<DriveClient>());
 
     /// <summary>ClassScribe's folder on Drive, remembered in the temporary ClassScribe folder.</summary>
     public DriveFolders Folders() => new(Drive(), Options, Runtime.Folder, Log<DriveFolders>());

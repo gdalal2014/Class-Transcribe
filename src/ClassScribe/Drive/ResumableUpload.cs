@@ -16,23 +16,20 @@ namespace ClassScribe.Drive;
 /// <param name="FileId">The id of the file a new revision is of; null for a new file.</param>
 public sealed partial record UploadAddress(string UploadId, string? FileId)
 {
-    /// <summary>The path of Drive's upload endpoint under its base address.</summary>
-    private const string UploadPath = "upload/drive/v3/files";
-
     /// <summary>
     /// The session at <paramref name="address"/>, when it is Drive's own: the scheme, host and port of
-    /// <paramref name="apiBaseUrl"/> (Drive:ApiBaseUrl), the path of the upload endpoint, for a new file, or of the file
-    /// <paramref name="revisionOf"/>, for a new revision of it, and an upload id of letters, digits, dashes and underscores.
-    /// Null for anything else.
+    /// <paramref name="apiBaseUrl"/> (Drive:ApiBaseUrl), the path of the upload endpoint at <paramref name="apiVersion"/>
+    /// (Drive:ApiVersion), upload/drive/v3/files, for a new file, or of the file <paramref name="revisionOf"/>, for a new
+    /// revision of it, and an upload id of letters, digits, dashes and underscores. Null for anything else.
     /// </summary>
-    public static UploadAddress? TryParse(string? address, string apiBaseUrl, string? revisionOf)
+    public static UploadAddress? TryParse(string? address, string apiBaseUrl, string apiVersion, string? revisionOf)
     {
         if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || !Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var api)) return null;
         if (!string.Equals(uri.Scheme, api.Scheme, StringComparison.OrdinalIgnoreCase) || !string.Equals(uri.Host, api.Host, StringComparison.OrdinalIgnoreCase)
             || uri.Port != api.Port)
             return null;
 
-        var expected = api.AbsolutePath.TrimEnd('/') + "/" + UploadPath + (revisionOf is null ? "" : "/" + revisionOf);
+        var expected = $"{api.AbsolutePath.TrimEnd('/')}/upload/drive/{apiVersion}/files{(revisionOf is null ? "" : "/" + revisionOf)}";
         if (!string.Equals(uri.AbsolutePath.TrimEnd('/'), expected, StringComparison.Ordinal)) return null;
 
         var uploadId = HttpUtility.ParseQueryString(uri.Query)["upload_id"];
@@ -198,7 +195,7 @@ public sealed class ResumableUpload(DriveClient drive, DriveRetry retry, IOption
                 : drive.StartUploadAsync(new DriveFileMetadata(target.Name, source.ContentType, target.FolderId is { } folder ? [folder] : null, AppProperties: null),
                     source.ContentType, source.Length, token),
             "start an upload", cancellationToken);
-        if (UploadAddress.TryParse(given, apiBase, target.RevisionOf) is not { } address)
+        if (UploadAddress.TryParse(given, apiBase, options.Value.ApiVersion, target.RevisionOf) is not { } address)
         {
             logger.LogDebug("Google Drive gave an upload address for {Name} that is not Drive's own; nothing was sent there", target.Name);
             throw new GoogleDriveException(DriveProblem.Refused, $"Google Drive answered with an upload address for {target.Name} that is not its own, so nothing was sent there.");
@@ -237,7 +234,7 @@ public sealed class ResumableUpload(DriveClient drive, DriveRetry retry, IOption
             return (null, null);
         }
 
-        if (UploadAddress.TryParse(kept.Address, apiBase, target.RevisionOf) is not { } address)
+        if (UploadAddress.TryParse(kept.Address, apiBase, options.Value.ApiVersion, target.RevisionOf) is not { } address)
         {
             logger.LogWarning("The upload of {Name} begun earlier names an address that is not Google Drive's own, so it is not used; the upload starts again", target.Name);
             return (null, null);
