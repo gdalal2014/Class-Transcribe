@@ -3,12 +3,6 @@ using Microsoft.Extensions.Logging;
 namespace ClassScribe.Settings;
 
 /// <summary>
-/// The bytes of appsettings.json as read at one moment, where the file is, and which file it was (see
-/// <see cref="SettingsOrigin"/>). <see cref="Bytes"/> is null when there is no file.
-/// </summary>
-public sealed record SettingsText(string Path, byte[]? Bytes, SettingsOrigin Origin = SettingsOrigin.BesideTheProgram);
-
-/// <summary>
 /// The one appsettings.json ClassScribe reads its settings from: the user's own, in the user's folder, when it is there,
 /// else the file next to the exe, decided at each read (see <see cref="SettingsPlaces"/>). Under dotnet run the latter is
 /// the copy a build puts in bin\Debug\net10.0-windows10.0.19041.0, so it also says when the project's own file has changed
