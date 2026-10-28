@@ -8,9 +8,6 @@ using NAudio.Wave;
 
 namespace ClassScribe.YouTube;
 
-/// <summary>A downloaded video's audio is not as long as the video: the download is incomplete, and nothing of it became a recording.</summary>
-public sealed class IncompleteAudioException(string message) : Exception(message);
-
 /// <summary>The note of a conversion in progress, &lt;RuntimeFolder&gt;\youtube\converting.json: the recording whose files it is writing.</summary>
 /// <param name="VideoId">The video's ID.</param>
 /// <param name="Title">The video's title, for the line the clean-up writes.</param>
