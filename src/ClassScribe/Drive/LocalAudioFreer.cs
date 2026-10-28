@@ -28,7 +28,7 @@ public sealed record FreedAudio(RecordingFiles Files, IReadOnlyList<string> Dele
 /// than its video, keeps everything while its sound is here: making the video needs both (see <see cref="VideoStillToMake"/>).
 /// One per run.
 /// </summary>
-public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, IClassFolders folders, TimeProvider time, ILogger<LocalAudioFreer> logger)
+public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, IClassFolders folders, IRecordingFolder recordings, TimeProvider time, ILogger<LocalAudioFreer> logger)
 {
     /// <summary>ERROR_SHARING_VIOLATION as an HRESULT: another program holds the file in a way that does not allow this open.</summary>
     private const int SharingViolation = unchecked((int)0x80070020);
@@ -36,11 +36,11 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     /// <summary>
     /// Why nothing of the lesson <paramref name="files"/> is freed while its video is still to be made (a camera's piece
     /// without a video, or newer than it, see <see cref="IClassFolders.LessonVideoStateOf"/>): making it needs both its sound and
-    /// its pieces. Names the command that makes it, free.
+    /// its pieces. Names the command that makes it, free, by a file read through <paramref name="recordings"/>.
     /// </summary>
-    public static string VideoStillToMake(RecordingFiles files) =>
+    public static string VideoStillToMake(RecordingFiles files, IRecordingFolder recordings) =>
         $"The lesson video of {files.BaseName} is still to be made, so none of its audio or camera pieces were deleted: making it needs them. Make it first, free: " +
-        CommandLine.FinishVideo(files.FindSegments().FirstOrDefault() ?? files.FindSegments(Track.Microphone).FirstOrDefault() ?? files.Folder);
+        CommandLine.FinishVideo(recordings.FindSegments(files).FirstOrDefault() ?? recordings.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder);
 
     /// <summary>
     /// Deletes the audio of <paramref name="files"/> from this laptop once every file of it is checked against its copy on
@@ -52,8 +52,8 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     {
         if (uploads.Busy(files) is { } busy) return Refuse(files, $"{files.BaseName} {busy}, so none of its audio was deleted.");
         if (UploadCopyInUse(files)) return Refuse(files, $"{files.BaseName} is being transcribed now, so none of its audio was deleted.");
-        if (folders.LessonVideoStateOf(files) == LessonVideoState.NotMade && (files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0))
-            return Refuse(files, VideoStillToMake(files));
+        if (folders.LessonVideoStateOf(files) == LessonVideoState.NotMade && (recordings.FindSegments(files).Count > 0 || recordings.FindSegments(files, Track.Microphone).Count > 0))
+            return Refuse(files, VideoStillToMake(files, recordings));
 
         var manifest = manifests.Read(files);
         var freed = await FreeAudioAsync(files, manifest, cancellationToken);
@@ -63,7 +63,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     /// <summary>The audio's part of <see cref="FreeAsync"/>: its .wav files deleted once each is checked against its copy on Drive.</summary>
     private async Task<FreedAudio> FreeAudioAsync(RecordingFiles files, UploadManifest? manifest, CancellationToken cancellationToken)
     {
-        var audio = files.FindSegments().Concat(files.FindSegments(Track.Microphone)).ToList();
+        var audio = recordings.FindSegments(files).Concat(recordings.FindSegments(files, Track.Microphone)).ToList();
         if (audio.Count == 0)
         {
             logger.LogInformation("{Recording} has no audio on this laptop to delete{Where}", files.BaseName,
@@ -146,7 +146,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     /// </summary>
     private async Task<FreedAudio> FreePiecesAsync(RecordingFiles files, FreedAudio freed, CancellationToken cancellationToken)
     {
-        var all = files.FindCameraPieces().Select(piece => piece.Path).ToList();
+        var all = recordings.FindCameraPieces(files).Select(piece => piece.Path).ToList();
         if (all.Count == 0) return freed;
 
         var video = Path.GetFileName(files.LessonVideo);

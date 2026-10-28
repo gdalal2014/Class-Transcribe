@@ -72,13 +72,16 @@ public class RebuildCommandTests
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
+            new TranscriptCopies(),
+            new RecordingFolder(),
+            new FileProbe(),
             recording,
             TestOptions.Create(new ElevenLabsOptions()),
             new TranscriptionProgress(),
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new RebuildCommand(workflow, folders, new FileProbe(), _desktop.Object, _drive, recording, _log);
+        return new RebuildCommand(workflow, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), _desktop.Object, _drive, recording, _log);
     }
 
     /// <summary>Where a transcription's last line says what it cost, a rebuild's says that nothing was sent and nothing charged; the account is never read.</summary>
@@ -398,7 +401,7 @@ public class RebuildCommandTests
 
         Assert.That(File.ReadAllText(recording.Transcript()),
             Does.Contain("Recorded 14 October 2026, 19:30 UTC.").And.Contain("] Mark 1").And.Contain("Kept answer."));
-        Assert.That(recording.HasTranscript, Is.True, "the recording counts as transcribed");
+        Assert.That(OnDisk.HasTranscript(recording), Is.True, "the recording counts as transcribed");
         Assert.That(Directory.GetFiles(_folder.Path, "*.md"), Is.Empty, "nothing is written beside the kept answer");
         Assert.That(_log.Messages, Has.Member($"Transcript saved to {recording.Transcript()}"));
     }

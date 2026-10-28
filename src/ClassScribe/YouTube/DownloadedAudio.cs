@@ -28,6 +28,9 @@ internal sealed record ConversionNote(string VideoId, string Title, string Folde
 /// </summary>
 public sealed class DownloadedAudio(YouTubeFolders folders, IOptionsSnapshot<RecordingOptions> recording, TimeProvider time, ILogger<DownloadedAudio> logger)
 {
+    /// <summary>A recording's files on disk, by the names its record gives.</summary>
+    private static readonly RecordingFolder Recordings = new();
+
     /// <summary>How an unfinished part's name ends, after its segment's name.</summary>
     public const string PartialEnding = ".partial";
 
@@ -59,7 +62,7 @@ public sealed class DownloadedAudio(YouTubeFolders folders, IOptionsSnapshot<Rec
             for (var part = 1; part <= partials.Count; part++) File.Move(partials[part - 1], target.Segment(part), overwrite: false);
             partials.Clear();
             RemoveNote();
-            logger.LogDebug("Wrote {Parts} part(s) of {Recording}, {Length}, from {Staged}", target.FindSegments().Count, target.BaseName, Durations.Format(length), staged);
+            logger.LogDebug("Wrote {Parts} part(s) of {Recording}, {Length}, from {Staged}", Recordings.FindSegments(target).Count, target.BaseName, Durations.Format(length), staged);
             return length;
         }
         catch (Exception ex)
@@ -85,7 +88,7 @@ public sealed class DownloadedAudio(YouTubeFolders folders, IOptionsSnapshot<Rec
         if (ReadNote() is { } note)
         {
             var files = new RecordingFiles(note.Folder, note.BaseName);
-            List<string> deleted = [.. files.FindSegments(), .. Partials(files)];
+            List<string> deleted = [.. Recordings.FindSegments(files), .. Partials(files)];
             try
             {
                 foreach (var file in deleted) File.Delete(file);

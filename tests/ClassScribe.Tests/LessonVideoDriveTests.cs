@@ -181,7 +181,7 @@ public sealed class LessonVideoDriveTests
         var freed = await _world.Freer().FreeAsync(_lesson, CancellationToken.None);
 
         Assert.That(freed.Problem, Is.Null);
-        Assert.That(_lesson.FindCameraPieces(), Is.Empty);
+        Assert.That(OnDisk.FindCameraPieces(_lesson), Is.Empty);
     }
 
     /// <summary>A lesson whose video is being made, its .partial held open, waits to go up.</summary>
@@ -250,7 +250,7 @@ public sealed class LessonVideoDriveTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(freed.Problem, Is.Null);
-            Assert.That(_lesson.FindCameraPieces(), Is.Empty);
+            Assert.That(OnDisk.FindCameraPieces(_lesson), Is.Empty);
             Assert.That(File.Exists(_lesson.LessonVideo), Is.True, "the finished video is never freed");
             Assert.That(File.Exists(_lesson.Segment(1)), Is.False);
             Assert.That(freed.Deleted, Is.EquivalentTo(new[]
@@ -271,7 +271,7 @@ public sealed class LessonVideoDriveTests
         var freed = await _world.Freer().FreeAsync(_lesson, CancellationToken.None);
 
         Assert.That(freed.Problem, Is.Null);
-        Assert.That(_lesson.FindCameraPieces(), Has.Count.EqualTo(2));
+        Assert.That(OnDisk.FindCameraPieces(_lesson), Has.Count.EqualTo(2));
         Assert.That(File.Exists(_lesson.Segment(1)), Is.False, "the audio is freed as before");
     }
 
@@ -296,9 +296,9 @@ public sealed class LessonVideoDriveTests
         {
             Assert.That(freed.Deleted, Is.Empty);
             Assert.That(freed.Bytes, Is.Zero);
-            Assert.That(_lesson.FindCameraPieces(), Has.Count.EqualTo(3));
+            Assert.That(OnDisk.FindCameraPieces(_lesson), Has.Count.EqualTo(3));
             Assert.That(File.Exists(_lesson.Segment(1)), Is.True, "the sound stays to make the video with");
-            Assert.That(freed.Problem, Is.EqualTo(LocalAudioFreer.VideoStillToMake(_lesson)));
+            Assert.That(freed.Problem, Is.EqualTo(LocalAudioFreer.VideoStillToMake(_lesson, new RecordingFolder())));
             Assert.That(freed.Problem, Does.Contain(CommandLine.FinishVideo(_lesson.Segment(1))));
         }
     }
@@ -337,7 +337,7 @@ public sealed class LessonVideoDriveTests
 
         var freed = await _world.Freer().FreeAsync(_lesson, CancellationToken.None);
 
-        Assert.That(_lesson.FindCameraPieces(), Has.Count.EqualTo(2));
+        Assert.That(OnDisk.FindCameraPieces(_lesson), Has.Count.EqualTo(2));
         Assert.That(freed.Problem, Does.StartWith($"The camera's pieces of {_lesson.BaseName} stay: {_lesson.BaseName}.mp4 differs from its copy on Google Drive"));
     }
 

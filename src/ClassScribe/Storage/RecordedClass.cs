@@ -9,7 +9,7 @@ namespace ClassScribe.Storage;
 /// <param name="HasTranscript">True when it has been transcribed at least once.</param>
 /// <param name="KeptAnswer">
 /// The newest answer ElevenLabs was paid for that did not become a transcript (see
-/// <see cref="RecordingFiles.FindKeptAnswers"/>), kept beside the recording or in the recordings folder; null when there is none.
+/// <c>IRecordingFolder.FindKeptAnswers</c>), kept beside the recording or in the recordings folder; null when there is none.
 /// </param>
 /// <param name="BeingWritten">
 /// True while it is being recorded, in this window or another: a recorder still writes the newest segment of one of its
@@ -17,7 +17,7 @@ namespace ClassScribe.Storage;
 /// </param>
 /// <param name="Parts">
 /// How many parts it was made in: one, and one more for each time it was taken up again after it stopped, as its resume
-/// notes say (see <see cref="ClassMarks.PartsOf"/>).
+/// notes say (see <c>IClassMarks.PartsOf</c>).
 /// </param>
 /// <param name="HasMicrophone">True when your microphone was recorded with the class, on a track of its own: the .mic.wav files.</param>
 /// <param name="OnDrive">
@@ -58,5 +58,5 @@ public enum LessonVideoState
 /// <param name="Files">The recording's files, which the run that continues it writes into.</param>
 /// <param name="Length">Its length on disk (see <c>IClassFolders.LengthOnDisk</c>): where the run that continues it starts.</param>
 /// <param name="StoppedUtc">When its audio was last written, on either track.</param>
-/// <param name="Parts">How many parts it was made in so far (see <see cref="ClassMarks.PartsOf"/>).</param>
+/// <param name="Parts">How many parts it was made in so far (see <c>IClassMarks.PartsOf</c>).</param>
 public sealed record ContinueCandidate(RecordingFiles Files, TimeSpan Length, DateTimeOffset StoppedUtc, int Parts);

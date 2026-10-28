@@ -32,7 +32,7 @@ namespace ClassScribe.Commands;
 /// settings have passed the check, as a menu choice does; O and F itself. The choice returned only says what was done; the
 /// caller does not carry it out again.
 /// </remarks>
-public sealed class StartupReport(RunJournal journal, IClassFolders folders, ICommandRunner commands, RunGate gate, IConsoleUi ui, IDesktop desktop,
+public sealed class StartupReport(RunJournal journal, IClassFolders folders, IRecordingFolder recordings, ICommandRunner commands, RunGate gate, IConsoleUi ui, IDesktop desktop,
     IProcessLiveness liveness, DriveQueueReport drive, IOptionsMonitor<RecordingOptions> recording, TimeProvider time, ILogger<StartupReport> logger) : IStartupReport
 {
     /// <summary>Where the second offer on a line of offers begins, as in "  C  continue it now as its next part     T  transcribe what was recorded".</summary>
@@ -210,7 +210,7 @@ public sealed class StartupReport(RunJournal journal, IClassFolders folders, ICo
         ui.WriteLine($"The lesson video of {RecordStarter.Named(run.Record)} was not made; its sound and its camera pieces are kept.");
         if (!interactive)
         {
-            ui.WriteLine($"To make it, free: {LessonRuns.FinishVideoCommand(run.Record)}");
+            ui.WriteLine($"To make it, free: {LessonRuns.FinishVideoCommand(run.Record, recordings)}");
             return null;
         }
 
@@ -227,7 +227,7 @@ public sealed class StartupReport(RunJournal journal, IClassFolders folders, ICo
 
     /// <summary>Makes <paramref name="run"/>'s lesson video through the runner, as finish-video does, by one of the lesson's files.</summary>
     private Task<int> MakeTheVideoAsync(RunRecord run) =>
-        commands.FinishVideoAsync(new FinishVideoRequest(LessonRuns.FilesOf(run) is { } files ? files.FindSegments().FirstOrDefault() ?? files.Folder : run.Folder!));
+        commands.FinishVideoAsync(new FinishVideoRequest(LessonRuns.FilesOf(run) is { } files ? recordings.FindSegments(files).FirstOrDefault() ?? files.Folder : run.Folder!));
 
     /// <summary>
     /// What to report about <paramref name="run"/>, which ended unexpectedly or whose transcription was interrupted; null
@@ -255,22 +255,22 @@ public sealed class StartupReport(RunJournal journal, IClassFolders folders, ICo
             var dealtWith =
                 runs.Any(other => other.Record.RunId != record.RunId && other.Record.StartedUtc >= record.StartedUtc && ContinueQuestion.Records(other.Record, files))
                     ? "a later run continued it"
-                    : files.HasTranscript && !videoNotMade
+                    : recordings.HasTranscript(files) && !videoNotMade
                         ? lesson ? "it has a transcript and its lesson video" : "it has a transcript"
                         : lesson && run.TranscriptionInterrupted && !record.Request.Transcribe && !videoNotMade
                             ? "its lesson video is made"
-                            : files.FindSegments().Count == 0 && files.FindSegments(Track.Microphone).Count == 0
+                            : recordings.FindSegments(files).Count == 0 && recordings.FindSegments(files, Track.Microphone).Count == 0
                                 ? "its audio is gone"
                                 : null;
             if (dealtWith is not null) return DealtWith(record, dealtWith);
 
             // A lesson's T only while it was to be transcribed and has none; its V while its video is still to be made.
-            var canTranscribe = !lesson || (record.Request.Transcribe && !files.HasTranscript);
+            var canTranscribe = !lesson || (record.Request.Transcribe && !recordings.HasTranscript(files));
             if (run.TranscriptionInterrupted)
             {
                 return new RunReport(record, files,
                 [
-                    LessonRuns.OnlyItsVideoLeft(record)
+                    LessonRuns.OnlyItsVideoLeft(record, recordings)
                         ? $"The lesson video of {RecordStarter.Named(record)} ({record.BaseName}) was not finished; its sound and its camera pieces are kept."
                         : $"The transcript of {RecordStarter.Named(record)} ({record.BaseName}) was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again."
                 ], CanContinue: false, canTranscribe, videoNotMade);
@@ -326,7 +326,7 @@ public sealed class StartupReport(RunJournal journal, IClassFolders folders, ICo
         if (run.Request.Video is not null || runs.Any(other => other.IsRecordingNow)) return false;
 
         var within = TimeSpan.FromMinutes(Math.Max(0, recording.CurrentValue.ContinueWithinMinutes));
-        return ContinueQuestion.FindContinuable(folders, journal, run.Request.Name, run.Request.Source.Mode, within, run.Request.OutputRoot, logger,
+        return ContinueQuestion.FindContinuable(folders, recordings, journal, run.Request.Name, run.Request.Source.Mode, within, run.Request.OutputRoot, logger,
                    ifUnreadable: "it is not offered to be continued this time", camera: run.Request.Source.Camera is not null) is { } candidate
                && ContinueQuestion.Records(run, candidate.Files);
     }
@@ -335,9 +335,9 @@ public sealed class StartupReport(RunJournal journal, IClassFolders folders, ICo
     /// When the recording ended, at about: the later of the run's last heartbeat and the last audio written to any segment
     /// of either track.
     /// </summary>
-    private static DateTimeOffset EndedAt(RunRecord run, RecordingFiles files)
+    private DateTimeOffset EndedAt(RunRecord run, RecordingFiles files)
     {
-        var lastAudio = files.FindSegments().Concat(files.FindSegments(Track.Microphone))
+        var lastAudio = recordings.FindSegments(files).Concat(recordings.FindSegments(files, Track.Microphone))
             .Select(segment => new DateTimeOffset(File.GetLastWriteTimeUtc(segment), TimeSpan.Zero))
             .DefaultIfEmpty(DateTimeOffset.MinValue)
             .Max();
@@ -453,7 +453,7 @@ public sealed class StartupReport(RunJournal journal, IClassFolders folders, ICo
                 : $"To transcribe what was recorded: {CommandLine.Transcribe(report.Files.Segment(1))}");
         }
 
-        if (report.CanMakeVideo) ui.WriteLine($"To make its lesson video, free: {LessonRuns.FinishVideoCommand(report.Run)}");
+        if (report.CanMakeVideo) ui.WriteLine($"To make its lesson video, free: {LessonRuns.FinishVideoCommand(report.Run, recordings)}");
         ui.WriteLine(ForgetInTheMenu);
     }
 

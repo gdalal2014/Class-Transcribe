@@ -301,7 +301,7 @@ public class ClassMarksTests
         _marks.AddResume(_files, TimeSpan.FromMinutes(3), resumed, TimeSpan.FromMinutes(4));
         _marks.AddResume(_files, TimeSpan.FromMinutes(5), resumed.AddMinutes(30), TimeSpan.FromMinutes(1));
         Assert.That(ClassMarks.PartsOf(_files), Is.EqualTo(3));
-        Assert.That(ClassMarks.PartsIn(_marks.Read(_files)), Is.EqualTo(3));
+        Assert.That(ClassMark.PartsIn(_marks.Read(_files)), Is.EqualTo(3));
     }
 
     /// <summary>

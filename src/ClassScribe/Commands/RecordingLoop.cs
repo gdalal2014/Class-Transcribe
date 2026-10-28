@@ -29,7 +29,7 @@ namespace ClassScribe.Commands;
 /// stops nor hurries anything. The capture runs on threads of its own and never waits for the loop, so a second's work
 /// that fails is logged and the next second tries again: the class goes on recording, and the keys and the stop still work.
 /// </remarks>
-public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, ClassMarks marks, RecordingMonitor monitor, IRecorderStatusSink status,
+public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, IClassMarks marks, RecordingMonitor monitor, IRecorderStatusSink status,
     TimeProvider time, ILogger<RecordingLoop> logger)
 {
     /// <summary>

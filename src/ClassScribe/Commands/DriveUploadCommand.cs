@@ -18,7 +18,7 @@ namespace ClassScribe.Commands;
 /// asked for is done; 1 when something failed, or waits, or there was nothing to take; a cancel (Esc, Ctrl+C) is let through,
 /// for App to turn into 130, with everything left waiting. Nothing records here, so a first Ctrl+C cancels. One per run.
 /// </summary>
-public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer freer, IClassFolders folders, IFileProbe probe, IUserSignals signals, ILogger<DriveUploadCommand> logger)
+public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer freer, IClassFolders folders, IRecordingFolder recordings, IFileProbe probe, IUserSignals signals, ILogger<DriveUploadCommand> logger)
 {
     /// <summary>
     /// Uploads the recordings <paramref name="path"/> names, then the rest of the queue whose next try is due; with no path,
@@ -129,7 +129,7 @@ public sealed class DriveUploadCommand(DriveUploadPass pass, LocalAudioFreer fre
             .ToList();
         var one = names.Count == 1;
         var what = $"{string.Join(", ", names)} {(one ? "lies" : "lie")} in {folder} itself, not in a recording's folder, so {(one ? "it does" : "they do")} not go up";
-        if (files.FindKeptAnswers() is [var answer, ..])
+        if (recordings.FindKeptAnswers(files) is [var answer, ..])
             logger.LogInformation("{What}; to lay it out beside its recording, rebuild it: {Command}", what, CommandLine.Rebuild(answer));
         else
             logger.LogInformation("{What}; {Move}", what, one ? "move it into the folder of its class to upload it" : "move them into the folder of their class to upload them");

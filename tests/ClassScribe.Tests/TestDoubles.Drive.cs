@@ -1327,13 +1327,13 @@ public sealed class GoogleWorld : IDisposable
     public DriveQueueReport QueueReport() => new(Store, Manifests(), Runtime.Journal, ClassFolders(), Options, ZonedClock.Eastern(Time));
 
     /// <summary>The freeing of room on the laptop.</summary>
-    public LocalAudioFreer Freer() => new(Drive(), Retry(), Manifests(), RecordingUpload(), ClassFolders(), Time, Log<LocalAudioFreer>());
+    public LocalAudioFreer Freer() => new(Drive(), Retry(), Manifests(), RecordingUpload(), ClassFolders(), new RecordingFolder(), Time, Log<LocalAudioFreer>());
 
     /// <summary>The drive upload and free-space command, with Ctrl+C played by <paramref name="signals"/>.</summary>
-    public DriveUploadCommand UploadCommand(FakeUserSignals? signals = null) => new(Pass(), Freer(), ClassFolders(), new FileProbe(), signals ?? new FakeUserSignals(), Log<DriveUploadCommand>());
+    public DriveUploadCommand UploadCommand(FakeUserSignals? signals = null) => new(Pass(), Freer(), ClassFolders(), new RecordingFolder(), new FileProbe(), signals ?? new FakeUserSignals(), Log<DriveUploadCommand>());
 
     /// <summary>The class folders under <see cref="Recordings"/>, which know of the audio kept on Drive alone.</summary>
-    public ClassFolders ClassFolders() => new(Recording, Time, Log<ClassFolders>(), new DriveCopies(Manifests()));
+    public ClassFolders ClassFolders() => new(Recording, Time, Log<ClassFolders>(), new DriveCopies(Manifests(), new RecordingFolder()));
 
     /// <summary>The lines logged by every part, in order, as text.</summary>
     public IReadOnlyList<string> Lines => Logs.Messages;

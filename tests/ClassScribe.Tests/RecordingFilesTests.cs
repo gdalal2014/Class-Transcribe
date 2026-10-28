@@ -122,9 +122,9 @@ public class RecordingFilesTests
         foreach (var path in new[] { micThird, files.Segment(2), micFirst, files.Segment(1), files.Upload })
             File.WriteAllBytes(path, [0]);
 
-        Assert.That(files.FindSegments(), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
-        Assert.That(files.FindSegments(Track.Main), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
-        Assert.That(files.FindSegments(Track.Microphone), Is.EqualTo(new[] { micFirst, micThird }));
+        Assert.That(OnDisk.FindSegments(files), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
+        Assert.That(OnDisk.FindSegments(files, Track.Main), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
+        Assert.That(OnDisk.FindSegments(files, Track.Microphone), Is.EqualTo(new[] { micFirst, micThird }));
     }
 
     /// <summary>A recording without a time stamp in its name, such as one named by hand, has no start time.</summary>
@@ -146,8 +146,8 @@ public class RecordingFilesTests
         foreach (var name in new[] { files.Segment(3), files.Segment(1), files.Segment(2), files.Upload, folder.File("Kalam_2026-10-15_20-55-27Z.marks.txt"), folder.File("Kalam_2026-10-15_21-00-00Z.wav") })
             File.WriteAllBytes(name, [0]);
 
-        Assert.That(files.FindSegments(), Is.EqualTo(new[] { files.Segment(1), files.Segment(2), files.Segment(3) }));
-        Assert.That(files.HasTranscript, Is.False);
+        Assert.That(OnDisk.FindSegments(files), Is.EqualTo(new[] { files.Segment(1), files.Segment(2), files.Segment(3) }));
+        Assert.That(OnDisk.HasTranscript(files), Is.False);
     }
 
     /// <summary>
@@ -169,13 +169,13 @@ public class RecordingFilesTests
     {
         using var folder = new TempFolder();
         var files = RecordingFiles.ForNew(folder.Path, "Kalam", Started);
-        Assert.That(files.NextFreeUnreadAnswer(), Is.EqualTo(files.UnreadAnswer(1)));
+        Assert.That(OnDisk.NextFreeUnreadAnswer(files), Is.EqualTo(files.UnreadAnswer(1)));
 
         File.WriteAllText(files.UnreadAnswer(1), "{}");
-        Assert.That(files.NextFreeUnreadAnswer(), Is.EqualTo(files.UnreadAnswer(2)));
+        Assert.That(OnDisk.NextFreeUnreadAnswer(files), Is.EqualTo(files.UnreadAnswer(2)));
 
         File.WriteAllText(files.UnreadAnswer(2), "{}");
-        Assert.That(files.NextFreeUnreadAnswer(), Is.EqualTo(files.UnreadAnswer(3)));
+        Assert.That(OnDisk.NextFreeUnreadAnswer(files), Is.EqualTo(files.UnreadAnswer(3)));
     }
 
     /// <summary>
@@ -189,7 +189,7 @@ public class RecordingFilesTests
         var files = RecordingFiles.ForNew(folder.Path, "Kalam", Started);
         File.WriteAllText(files.Transcript(2), "# Kalam");
 
-        Assert.That(files.HasTranscript, Is.True);
+        Assert.That(OnDisk.HasTranscript(files), Is.True);
     }
 
     /// <summary>
@@ -205,7 +205,7 @@ public class RecordingFilesTests
         foreach (var path in new[] { files.Segment(1), files.Json(), files.Json(2), files.UnreadAnswer(), later.Transcript(), folder.File("Kalam_2026-10-15_20-55-27Z notes.md") })
             File.WriteAllText(path, "");
 
-        Assert.That(files.HasTranscript, Is.False);
+        Assert.That(OnDisk.HasTranscript(files), Is.False);
     }
 
     /// <summary>A recording whose folder is not there has no transcript, and asking does not fail.</summary>
@@ -215,7 +215,7 @@ public class RecordingFilesTests
         using var folder = new TempFolder();
         var files = RecordingFiles.ForNew(folder.File("gone"), "Kalam", Started);
 
-        Assert.That(files.HasTranscript, Is.False);
+        Assert.That(OnDisk.HasTranscript(files), Is.False);
     }
 
     /// <summary>
@@ -230,7 +230,7 @@ public class RecordingFilesTests
         foreach (var path in new[] { files.UnreadAnswer(), files.UnreadAnswer(2), files.Json(2) })
             File.WriteAllText(path, "{}");
 
-        Assert.That(files.FindKeptAnswers(), Is.EquivalentTo(new[] { files.UnreadAnswer(), files.UnreadAnswer(2), files.Json(2) }));
+        Assert.That(OnDisk.FindKeptAnswers(files), Is.EquivalentTo(new[] { files.UnreadAnswer(), files.UnreadAnswer(2), files.Json(2) }));
     }
 
     /// <summary>
@@ -248,8 +248,8 @@ public class RecordingFilesTests
         foreach (var path in new[] { files.Segment(1), longerName.UnreadAnswer(), longerName.Json(), folder.File("Kalam_2026-10-15_20-55-27Z notes.json") })
             File.WriteAllText(path, "");
 
-        Assert.That(files.FindKeptAnswers(), Is.Empty);
-        Assert.That(RecordingFiles.ForNew(folder.File("gone"), "Kalam", Started).FindKeptAnswers(), Is.Empty);
+        Assert.That(OnDisk.FindKeptAnswers(files), Is.Empty);
+        Assert.That(OnDisk.FindKeptAnswers(RecordingFiles.ForNew(folder.File("gone"), "Kalam", Started)), Is.Empty);
     }
 
     /// <summary>
@@ -264,10 +264,10 @@ public class RecordingFilesTests
         File.WriteAllText(files.Source, "{}");
 
         Assert.That(Path.GetFileName(files.Source), Is.EqualTo("Risala_2026-10-15_20-55-27Z.source.json"));
-        Assert.That(files.FindKeptAnswers(), Is.Empty);
-        Assert.That(files.HasTranscript, Is.False);
-        Assert.That(TranscriptCopies.NewestAnswer(files), Is.Null);
-        Assert.That(TranscriptCopies.Transcripts(files), Is.Empty);
+        Assert.That(OnDisk.FindKeptAnswers(files), Is.Empty);
+        Assert.That(OnDisk.HasTranscript(files), Is.False);
+        Assert.That(new TranscriptCopies().NewestAnswer(files), Is.Null);
+        Assert.That(new TranscriptCopies().Transcripts(files), Is.Empty);
     }
 
     /// <summary>
@@ -282,9 +282,9 @@ public class RecordingFilesTests
         File.WriteAllText(files.Glossary, "{}");
 
         Assert.That(files.Glossary, Is.EqualTo(Path.Combine(folder.Path, "Kalam_2026-10-15_20-55-27Z.glossary.json")));
-        Assert.That(files.FindKeptAnswers(), Is.Empty);
-        Assert.That(files.HasTranscript, Is.False);
-        Assert.That(TranscriptCopies.NewestAnswer(files), Is.Null);
-        Assert.That(TranscriptCopies.Transcripts(files), Is.Empty);
+        Assert.That(OnDisk.FindKeptAnswers(files), Is.Empty);
+        Assert.That(OnDisk.HasTranscript(files), Is.False);
+        Assert.That(new TranscriptCopies().NewestAnswer(files), Is.Null);
+        Assert.That(new TranscriptCopies().Transcripts(files), Is.Empty);
     }
 }

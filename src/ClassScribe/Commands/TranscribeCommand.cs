@@ -49,6 +49,8 @@ public sealed class TranscribeCommand(
     UsageReport usage,
     IClassFolders folders,
     IFileProbe probe,
+    IRecordingFolder recordings,
+    ITranscriptCopies copies,
     IUserSignals signals,
     IDesktop desktop,
     IPowerRequests power,
@@ -76,7 +78,7 @@ public sealed class TranscribeCommand(
         {
             // A recording with audio of either track: the class's .wav files, or your microphone's .mic.wav files alone when the class could not be recorded.
             var recorded = RecordingFiles.TryParse(fullPath);
-            if (recorded is not null && (recorded.FindSegments().Count > 0 || recorded.FindSegments(Track.Microphone).Count > 0))
+            if (recorded is not null && (recordings.FindSegments(recorded).Count > 0 || recordings.FindSegments(recorded, Track.Microphone).Count > 0))
                 return await TranscribeRecordingAsync(recorded, request);
 
             // A file of a recording whose audio is on Google Drive alone, such as its transcript, is no audio to send.
@@ -192,10 +194,10 @@ public sealed class TranscribeCommand(
         if (!request.FromCommandLine || request.Again) return false;
 
         var firstSegment = FirstSegment(files);
-        if (TranscriptCopies.Transcripts(files) is [.., var transcript])
+        if (copies.Transcripts(files) is [.., var transcript])
         {
             logger.LogError("{Recording} already has a transcript ({Transcript}). Transcribing it again is billed again, so nothing was sent", files.BaseName, Path.GetFileName(transcript));
-            if (TranscriptCopies.NewestAnswer(files) is not null)
+            if (copies.NewestAnswer(files) is not null)
                 logger.LogInformation("To lay it out again for free, from ElevenLabs' saved answer, run: {Command}", CommandLine.Rebuild(firstSegment));
             else if (folders.KeptAnswerOf(files) is { } keptAnswer)
                 logger.LogInformation("To make a new transcript for free from ElevenLabs' answer kept in {Answer}, run: {Command}", keptAnswer, CommandLine.Rebuild(keptAnswer));
@@ -222,7 +224,7 @@ public sealed class TranscribeCommand(
     {
         logger.LogError("{Which} of {Recording} is on Google Drive, not on this laptop: {Location}{Link}. To transcribe it again, download its .wav files from there into {Folder} first",
             onDrive.AllOfIt ? "The audio" : "Part of the audio", files.BaseName, onDrive.Location, onDrive.Link is { } link ? $" ({link})" : "", files.Folder);
-        if (TranscriptCopies.NewestAnswer(files) is { } answer)
+        if (copies.NewestAnswer(files) is { } answer)
             logger.LogInformation("To lay its transcript out again for free, from ElevenLabs' saved answer, run: {Command}", CommandLine.Rebuild(answer));
     }
 
@@ -280,5 +282,5 @@ public sealed class TranscribeCommand(
     /// The recording's first segment on disk, which the commands printed for it name; the bare first segment's name when
     /// none is left, as when its audio was deleted since it was listed.
     /// </summary>
-    private static string FirstSegment(RecordingFiles files) => files.FindSegments() is [var first, ..] ? first : files.Segment(1);
+    private string FirstSegment(RecordingFiles files) => recordings.FindSegments(files) is [var first, ..] ? first : files.Segment(1);
 }

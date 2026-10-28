@@ -153,7 +153,7 @@ public sealed class GlossaryChoice(IGlossaryFiles files, SavedClasses classes, I
         if (!readable) return;
 
         record ??= new GlossaryRecord(GlossaryRecord.CurrentVersion, decided, []);
-        var copy = TranscriptCopies.CopyOf(files, transcriptPath) ?? record.Sent.Count + 1;
+        var copy = files.TranscriptCopyOf(transcriptPath) ?? record.Sent.Count + 1;
         var sent = new GlossarySent(copy, use.Path, use.Terms.Count, use.Sha256, time.GetUtcNow(), use.From);
         WriteRecord(files, record with { Sent = [.. record.Sent, sent] }, "the transcript is not affected");
     }

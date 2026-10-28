@@ -13,6 +13,9 @@ namespace ClassScribe.Tests;
 [TestFixture]
 public class TranscriptCopiesTests
 {
+    /// <summary>The adapter under test.</summary>
+    private static readonly TranscriptCopies Copies = new();
+
     private static readonly DateTimeOffset Started = new(2026, 10, 15, 20, 55, 27, TimeSpan.Zero);
 
     private TempFolder _folder = null!;
@@ -32,7 +35,7 @@ public class TranscriptCopiesTests
     public void TearDown() => _folder.Dispose();
 
     /// <summary>Saves a transcript of <paramref name="markdown"/> with the answer <paramref name="json"/>, as the workflow does.</summary>
-    private TranscriptFiles Save(string json, string markdown) => TranscriptCopies.Save(_files, json, () => markdown, NullLogger.Instance);
+    private TranscriptFiles Save(string json, string markdown) => Copies.Save(_files, json, () => markdown, NullLogger.Instance);
 
     /// <summary>The bytes of <paramref name="text"/> in UTF-8, without a byte order mark.</summary>
     private static byte[] Utf8(string text) => Encoding.UTF8.GetBytes(text);
@@ -93,7 +96,7 @@ public class TranscriptCopiesTests
     {
         var made = 0;
 
-        var saved = TranscriptCopies.Save(_files, """{"ours":1}""", () =>
+        var saved = Copies.Save(_files, """{"ours":1}""", () =>
         {
             made++;
             File.WriteAllText(_files.Transcript(1), "theirs");   // another ClassScribe, just now
@@ -116,9 +119,9 @@ public class TranscriptCopiesTests
     public void When_the_transcript_cannot_be_made_the_answer_is_saved_and_the_error_names_it()
     {
         var error = Assert.Throws<OverflowException>(() =>
-            TranscriptCopies.Save(_files, """{"text":"Hello"}""", () => throw new OverflowException("A word's time is out of range."), NullLogger.Instance));
+            Copies.Save(_files, """{"text":"Hello"}""", () => throw new OverflowException("A word's time is out of range."), NullLogger.Instance));
 
-        Assert.That(error!.Data[TranscriptCopies.SavedAnswerKey], Is.EqualTo(_files.Json(1)));
+        Assert.That(error!.Data[ITranscriptCopies.SavedAnswerKey], Is.EqualTo(_files.Json(1)));
         Assert.That(File.ReadAllText(_files.Json(1)), Is.EqualTo("""{"text":"Hello"}"""));
         Assert.That(File.Exists(_files.Transcript(1)), Is.False);
     }
@@ -131,7 +134,7 @@ public class TranscriptCopiesTests
 
         var error = Assert.Throws<UnauthorizedAccessException>(() => Save("""{"text":"Hello"}""", "Hello"));
 
-        Assert.That(error!.Data[TranscriptCopies.SavedAnswerKey], Is.EqualTo(_files.Json(1)));
+        Assert.That(error!.Data[ITranscriptCopies.SavedAnswerKey], Is.EqualTo(_files.Json(1)));
         Assert.That(File.ReadAllText(_files.Json(1)), Is.EqualTo("""{"text":"Hello"}"""));
     }
 
@@ -142,13 +145,13 @@ public class TranscriptCopiesTests
         Directory.CreateDirectory(_files.Json(1));
         var made = false;
 
-        var error = Assert.Throws<UnauthorizedAccessException>(() => TranscriptCopies.Save(_files, "{}", () =>
+        var error = Assert.Throws<UnauthorizedAccessException>(() => Copies.Save(_files, "{}", () =>
         {
             made = true;
             return "Hello";
         }, NullLogger.Instance));
 
-        Assert.That(error!.Data.Contains(TranscriptCopies.SavedAnswerKey), Is.False);
+        Assert.That(error!.Data.Contains(ITranscriptCopies.SavedAnswerKey), Is.False);
         Assert.That(made, Is.False);
         Assert.That(File.Exists(_files.Transcript(1)), Is.False);
     }
@@ -183,14 +186,14 @@ public class TranscriptCopiesTests
         var full = DiskFull();
         var made = false;
 
-        var error = Assert.Throws<IOException>(() => TranscriptCopies.Save(_files, """{"text":"Hello world."}""", () =>
+        var error = Assert.Throws<IOException>(() => Copies.Save(_files, """{"text":"Hello world."}""", () =>
         {
             made = true;
             return "Hello world.";
         }, NullLogger.Instance, FailingHalfWayIn(".json", full)));
 
         Assert.That(error, Is.SameAs(full));
-        Assert.That(error!.Data.Contains(TranscriptCopies.SavedAnswerKey), Is.False);
+        Assert.That(error!.Data.Contains(ITranscriptCopies.SavedAnswerKey), Is.False);
         Assert.That(File.Exists(_files.Json(1)), Is.False, "the half-written answer is removed");
         Assert.That(made, Is.False);
         Assert.That(File.Exists(_files.Transcript(1)), Is.False);
@@ -206,10 +209,10 @@ public class TranscriptCopiesTests
         var full = DiskFull();
 
         var error = Assert.Throws<IOException>(() =>
-            TranscriptCopies.Save(_files, """{"text":"Hello world."}""", () => "# Kalam\n\nHello world.\n", NullLogger.Instance, FailingHalfWayIn(".md", full)));
+            Copies.Save(_files, """{"text":"Hello world."}""", () => "# Kalam\n\nHello world.\n", NullLogger.Instance, FailingHalfWayIn(".md", full)));
 
         Assert.That(error, Is.SameAs(full));
-        Assert.That(error!.Data[TranscriptCopies.SavedAnswerKey], Is.EqualTo(_files.Json(1)));
+        Assert.That(error!.Data[ITranscriptCopies.SavedAnswerKey], Is.EqualTo(_files.Json(1)));
         Assert.That(File.Exists(_files.Transcript(1)), Is.False, "the half-written transcript is removed");
         Assert.That(File.ReadAllText(_files.Json(1)), Is.EqualTo("""{"text":"Hello world."}"""));
     }
@@ -220,7 +223,7 @@ public class TranscriptCopiesTests
     {
         var full = DiskFull();
 
-        var error = Assert.Throws<IOException>(() => TranscriptCopies.SaveRebuilt(_files, "# Kalam\n\nHello world.\n", NullLogger.Instance, FailingHalfWayIn(".md", full)));
+        var error = Assert.Throws<IOException>(() => Copies.SaveRebuilt(_files, "# Kalam\n\nHello world.\n", NullLogger.Instance, FailingHalfWayIn(".md", full)));
 
         Assert.That(error, Is.SameAs(full));
         Assert.That(File.Exists(_files.Transcript(1)), Is.False, "the half-written transcript is removed");
@@ -238,7 +241,7 @@ public class TranscriptCopiesTests
         FileStream? holder = null;
         try
         {
-            var error = Assert.Throws<IOException>(() => TranscriptCopies.SaveRebuilt(_files, "# Kalam\n\nHello world.\n", log, (file, bytes) =>
+            var error = Assert.Throws<IOException>(() => Copies.SaveRebuilt(_files, "# Kalam\n\nHello world.\n", log, (file, bytes) =>
             {
                 holder = new FileStream(file.Name, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);   // open, and not willing to let it be deleted
                 file.Write(bytes, 0, bytes.Length / 2);
@@ -266,7 +269,7 @@ public class TranscriptCopiesTests
         var there = extension == ".json" ? _files.Json(2) : _files.Transcript(2);
         File.WriteAllText(there, "kept");
 
-        var rebuilt = TranscriptCopies.SaveRebuilt(_files, "rebuilt", NullLogger.Instance);
+        var rebuilt = Copies.SaveRebuilt(_files, "rebuilt", NullLogger.Instance);
 
         Assert.That(rebuilt, Is.EqualTo(_files.Transcript(3)));
         Assert.That(File.ReadAllBytes(rebuilt), Is.EqualTo(Utf8("rebuilt")));
@@ -296,12 +299,12 @@ public class TranscriptCopiesTests
                 var id = $"{writer}-{i}";
                 if (writer % 3 == 2)
                 {
-                    rebuilt.Add((TranscriptCopies.SaveRebuilt(_files, $"rebuilt {id}", NullLogger.Instance), $"rebuilt {id}"));
+                    rebuilt.Add((Copies.SaveRebuilt(_files, $"rebuilt {id}", NullLogger.Instance), $"rebuilt {id}"));
                 }
                 else
                 {
                     var json = $$"""{"id":"{{id}}"}""";
-                    saved.Add((TranscriptCopies.Save(_files, json, () => $"transcript {id}", NullLogger.Instance), json, $"transcript {id}"));
+                    saved.Add((Copies.Save(_files, json, () => $"transcript {id}", NullLogger.Instance), json, $"transcript {id}"));
                 }
             }
         }, TaskCreationOptions.LongRunning)).ToArray();
@@ -332,7 +335,7 @@ public class TranscriptCopiesTests
         foreach (var path in new[] { _files.Json(1), _files.Json(9), _files.Json(10), _files.Transcript(11), _files.UnreadAnswer(1), _files.UnreadAnswer(12) })
             File.WriteAllText(path, "{}");
 
-        Assert.That(TranscriptCopies.NewestAnswer(_files), Is.EqualTo(_files.Json(10)));
+        Assert.That(Copies.NewestAnswer(_files), Is.EqualTo(_files.Json(10)));
     }
 
     /// <summary>An answer kept as unread is never taken as the newest answer, even when it is the only one.</summary>
@@ -341,18 +344,18 @@ public class TranscriptCopiesTests
     {
         File.WriteAllText(_files.UnreadAnswer(1), "{}");
 
-        Assert.That(TranscriptCopies.NewestAnswer(_files), Is.Null);
+        Assert.That(Copies.NewestAnswer(_files), Is.Null);
     }
 
     /// <summary>A recording without a saved answer has none, whether its folder is empty or gone.</summary>
     [Test]
     public void A_recording_without_a_saved_answer_has_none()
     {
-        Assert.That(TranscriptCopies.NewestAnswer(_files), Is.Null);
+        Assert.That(Copies.NewestAnswer(_files), Is.Null);
 
         Directory.Delete(_files.Folder);
 
-        Assert.That(TranscriptCopies.NewestAnswer(_files), Is.Null);
+        Assert.That(Copies.NewestAnswer(_files), Is.Null);
     }
 
     /// <summary>The answers of other recordings in the same folder, and other files whose names start the same way, are not the recording's.</summary>
@@ -364,7 +367,7 @@ public class TranscriptCopiesTests
         File.WriteAllText(later.Json(3), "{}");
         File.WriteAllText(Path.Combine(_files.Folder, $"{_files.BaseName} notes.json"), "{}");
 
-        Assert.That(TranscriptCopies.NewestAnswer(_files), Is.EqualTo(_files.Json(1)));
+        Assert.That(Copies.NewestAnswer(_files), Is.EqualTo(_files.Json(1)));
     }
 
     /// <summary>
@@ -379,17 +382,17 @@ public class TranscriptCopiesTests
         foreach (var path in new[] { _files.Transcript(10), _files.Transcript(1), _files.Transcript(9), _files.Json(2), later.Transcript(1), Path.Combine(_files.Folder, $"{_files.BaseName} notes.md") })
             File.WriteAllText(path, "");
 
-        Assert.That(TranscriptCopies.Transcripts(_files), Is.EqualTo(new[] { _files.Transcript(1), _files.Transcript(9), _files.Transcript(10) }));
+        Assert.That(Copies.Transcripts(_files), Is.EqualTo(new[] { _files.Transcript(1), _files.Transcript(9), _files.Transcript(10) }));
     }
 
     /// <summary>A recording that was never transcribed has no transcripts, whether its folder is empty or gone.</summary>
     [Test]
     public void A_recording_that_was_never_transcribed_has_no_transcripts()
     {
-        Assert.That(TranscriptCopies.Transcripts(_files), Is.Empty);
+        Assert.That(Copies.Transcripts(_files), Is.Empty);
 
         Directory.Delete(_files.Folder);
 
-        Assert.That(TranscriptCopies.Transcripts(_files), Is.Empty);
+        Assert.That(Copies.Transcripts(_files), Is.Empty);
     }
 }

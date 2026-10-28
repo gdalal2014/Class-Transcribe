@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Net;
 using System.Text;
 using ClassScribe.Audio;
+using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -98,6 +99,9 @@ public class TranscriptionWorkflowTests
             new TranscriptFormatter(transcript ?? TestOptions.Create(new TranscriptOptions())),
             new ClassFolders(recording, ZonedClock.Eastern(new ManualTimeProvider(Started)), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
+            new TranscriptCopies(),
+            new RecordingFolder(),
+            new FileProbe(),
             recording,
             elevenLabs,
             progress ?? new TranscriptionProgress(),
@@ -1086,7 +1090,7 @@ public class TranscriptionWorkflowTests
         var saved = await workflow.TranscribeRecordingAsync(_files, CancellationToken.None);
 
         Assert.That(saved, Is.EqualTo(new TranscriptFiles(_files.Transcript(), _files.Json())));
-        Assert.That(_files.HasTranscript, Is.True);
+        Assert.That(OnDisk.HasTranscript(_files), Is.True);
     }
 
     /// <summary>A second answer that could not be read is kept beside the first, which is never overwritten.</summary>
@@ -1139,7 +1143,7 @@ public class TranscriptionWorkflowTests
         Assert.That(File.ReadAllBytes(_files.UnreadAnswer()), Is.EqualTo(Utf8(Mocks.Transcript.RawJson)));
         Assert.That(log.Problems, Has.Some.Contains(_files.UnreadAnswer()));
         Assert.That(File.Exists(_files.Upload), Is.False, "the upload copy is removed");
-        Assert.That(_files.HasTranscript, Is.False);
+        Assert.That(OnDisk.HasTranscript(_files), Is.False);
         Assert.That(ChargedAnswer.Of(error!), Is.EqualTo(new ChargedAnswer(_files.UnreadAnswer(), Mocks.Transcript.TranscriptionId)));
     }
 

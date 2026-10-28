@@ -395,7 +395,7 @@ public sealed class YouTubeWorld : IDisposable
     public ILogger<T> Log<T>() => new Logger<T>(Logs);
 
     /// <summary>The batch's transcripts over the played transcriber.</summary>
-    public BatchTranscripts Transcripts() => new(Transcriber, Wait(), ClassFolders, Runtime.Journal, Log<BatchTranscripts>());
+    public BatchTranscripts Transcripts() => new(Transcriber, Wait(), ClassFolders, new RecordingFolder(), new TranscriptCopies(), Runtime.Journal, Log<BatchTranscripts>());
 
     /// <summary>The wait while a class records, over the test's run files.</summary>
     public ClassWait Wait() => new(Runtime.Journal, Runtime.Time, Log<ClassWait>());

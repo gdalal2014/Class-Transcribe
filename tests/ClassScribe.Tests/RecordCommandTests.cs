@@ -184,6 +184,9 @@ public partial class RecordCommandTests
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             marks,
+            new TranscriptCopies(),
+            new RecordingFolder(),
+            new FileProbe(),
             recording,
             elevenLabs,
             _progress,
@@ -214,7 +217,7 @@ public partial class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance, video),
-            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new FileProbe(), _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
+            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new RecordingFolder(), new FileProbe(), _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
     }
 
     /// <summary>
@@ -1120,7 +1123,7 @@ public partial class RecordCommandTests
         _signals.RequestStop();
 
         Assert.That(await second, Is.EqualTo(0));
-        Assert.That(files.FindSegments(), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
+        Assert.That(OnDisk.FindSegments(files), Is.EqualTo(new[] { files.Segment(1), files.Segment(2) }));
         Assert.That(TestAudio.ReadWav(files.Segment(2)).Samples, Has.Length.EqualTo(16000));
         Assert.That(File.ReadAllLines(files.Marks), Is.EqualTo(new[] { "00:00:02.000 ~ Resumed at 23:04 UTC, about 4 minutes not recorded", "00:00:03.000" }));
         Assert.That(_journal.Find(request.RunId)!.Record.BaseName, Is.EqualTo(files.BaseName));
@@ -1212,7 +1215,7 @@ public partial class RecordCommandTests
         _signals.RequestStop();
 
         Assert.That(await run, Is.EqualTo(0));
-        Assert.That(earlier.FindSegments(), Is.EqualTo(new[] { earlier.Segment(1), earlier.Segment(2) }));
+        Assert.That(OnDisk.FindSegments(earlier), Is.EqualTo(new[] { earlier.Segment(1), earlier.Segment(2) }));
         Assert.That(Directory.GetDirectories(KalamCourse()), Is.EqualTo(dateFolder is null ? Array.Empty<string>() : new[] { earlier.Folder }), "no date folder of today");
         Assert.That(_log.Messages, Has.Some.EqualTo($"Continuing \"Kalam\" as its next part ({earlier.BaseName}, 00:00:01 recorded so far), in {earlier.Folder}"));
     }
@@ -1243,7 +1246,7 @@ public partial class RecordCommandTests
         Assert.That(Directory.GetDirectories(KalamCourse()), Is.EqualTo(new[] { startFolder }));
         var files = RecordingFiles.TryParse(Directory.GetFiles(startFolder, "*.wav").First())!;
         Assert.That(files.BaseName, Is.EqualTo("Kalam_2026-10-18_03-59-30Z"));
-        Assert.That(files.FindSegments(), Has.Count.GreaterThanOrEqualTo(2).And.All.StartsWith(startFolder));
+        Assert.That(OnDisk.FindSegments(files), Has.Count.GreaterThanOrEqualTo(2).And.All.StartsWith(startFolder));
         Assert.That(File.Exists(files.Marks), Is.True);
     }
 

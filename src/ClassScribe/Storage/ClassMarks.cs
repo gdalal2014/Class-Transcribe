@@ -10,9 +10,10 @@ namespace ClassScribe.Storage;
 /// recording (hh:mm:ss.fff), optionally followed by a label typed in by hand. The same file holds the notes ClassScribe
 /// adds itself, such as where the recording was taken up again: the position, a tilde, a space and the note's words,
 /// which an older ClassScribe reads as a mark with a label, without harm. Blank lines and lines starting with # are
-/// ignored.
+/// ignored. It is the adapter of <see cref="IClassMarks"/>; its one static, the count of a recording's parts, is the port's
+/// member too, implemented over it for the use cases, and called directly by Infrastructure.
 /// </summary>
-public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
+public sealed partial class ClassMarks(ILogger<ClassMarks> logger) : IClassMarks
 {
     /// <summary>What comes between a note's position and its words, telling a note from a mark's label.</summary>
     private const string NoteSign = "~";
@@ -71,10 +72,10 @@ public sealed partial class ClassMarks(ILogger<ClassMarks> logger)
     /// notes say (see <see cref="AddResume"/>). Its marks file is read without a word about lines that are no marks,
     /// which reading it for the transcript reports; a recording without one was made in one part.
     /// </summary>
-    public static int PartsOf(RecordingFiles files) => PartsIn(Parse(files.Marks, logger: null));
+    public static int PartsOf(RecordingFiles files) => ClassMark.PartsIn(Parse(files.Marks, logger: null));
 
-    /// <summary>How many parts a recording with these marks and notes was made in: one, and one more for each resume note.</summary>
-    public static int PartsIn(IReadOnlyList<ClassMark> marks) => 1 + marks.Count(mark => mark.IsResume);
+    /// <inheritdoc />
+    int IClassMarks.PartsOf(RecordingFiles files) => PartsOf(files);
 
     /// <summary>
     /// A position as the marks file writes it, hh:mm:ss.fff with as many hours as there are. A position before the start,

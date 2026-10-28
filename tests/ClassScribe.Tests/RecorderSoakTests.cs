@@ -510,8 +510,8 @@ public sealed class RecorderSoakTests
             _recording.Dispose();
             _classParts.AddRange(summary.MainSegments);
             _microphoneParts.AddRange(summary.MicrophoneSegments);
-            var classLength = LengthOf(fixture._files.FindSegments(Track.Main));
-            var microphoneLength = LengthOf(fixture._files.FindSegments(Track.Microphone));
+            var classLength = LengthOf(OnDisk.FindSegments(fixture._files, Track.Main));
+            var microphoneLength = LengthOf(OnDisk.FindSegments(fixture._files, Track.Microphone));
             var offset = classLength > microphoneLength ? classLength : microphoneLength;
             _microphoneOffset = microphoneLength;
             _continues.Add(offset);

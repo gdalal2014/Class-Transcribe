@@ -16,9 +16,11 @@ public static class LessonRuns
 
     /// <summary>
     /// True for a lesson's run whose only work left after the stop is its video: record-only, or to be transcribed with its
-    /// transcript saved already, as the run waits for the video before it writes its outcome.
+    /// transcript saved already, as the run waits for the video before it writes its outcome; its files are read through
+    /// <paramref name="recordings"/>.
     /// </summary>
-    public static bool OnlyItsVideoLeft(RunRecord run) => IsLesson(run) && (!run.Request.Transcribe || FilesOf(run) is { HasTranscript: true });
+    public static bool OnlyItsVideoLeft(RunRecord run, IRecordingFolder recordings) =>
+        IsLesson(run) && (!run.Request.Transcribe || FilesOf(run) is { } files && recordings.HasTranscript(files));
 
     /// <summary>The run's recording, once its files are known; null before.</summary>
     public static RecordingFiles? FilesOf(RunRecord run) =>
@@ -32,11 +34,11 @@ public static class LessonRuns
     public static bool VideoNotMade(RunRecord run, IClassFolders folders) =>
         IsLesson(run) && FilesOf(run) is { } files && folders.LessonVideoStateOf(files) == LessonVideoState.NotMade && !folders.IsLessonVideoBeingMade(files);
 
-    /// <summary>The command that makes <paramref name="run"/>'s lesson video, free, by one of its files.</summary>
-    public static string FinishVideoCommand(RunRecord run) =>
-        CommandLine.FinishVideo(FilesOf(run) is { } files ? files.FindSegments().FirstOrDefault() ?? files.Folder : run.Folder ?? run.Request.OutputRoot);
+    /// <summary>The command that makes <paramref name="run"/>'s lesson video, free, by one of its files, read through <paramref name="recordings"/>.</summary>
+    public static string FinishVideoCommand(RunRecord run, IRecordingFolder recordings) =>
+        CommandLine.FinishVideo(FilesOf(run) is { } files ? recordings.FindSegments(files).FirstOrDefault() ?? files.Folder : run.Folder ?? run.Request.OutputRoot);
 
     /// <summary>The words of a lesson whose video's making was cut off (see <see cref="OnlyItsVideoLeft"/>): its sound and pieces are kept, and how to make it.</summary>
-    public static string VideoNotFinished(RunRecord run) =>
-        $"The lesson video of \"{run.Request.Name}\" was not finished; its sound and its camera pieces are kept. To make it, free, run: {FinishVideoCommand(run)}";
+    public static string VideoNotFinished(RunRecord run, IRecordingFolder recordings) =>
+        $"The lesson video of \"{run.Request.Name}\" was not finished; its sound and its camera pieces are kept. To make it, free, run: {FinishVideoCommand(run, recordings)}";
 }

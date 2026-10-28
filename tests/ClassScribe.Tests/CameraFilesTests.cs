@@ -99,7 +99,7 @@ public sealed class CameraFilesTests
         File.WriteAllText(Path.Combine(files.Folder, $"{files.BaseName}.cam.mp4.partial"), "");
         WritePiece(RecordingFiles.ForNew(files.Folder, "Tajwid", Now.AddHours(-3)), TimeSpan.Zero);
 
-        var pieces = files.FindCameraPieces();
+        var pieces = OnDisk.FindCameraPieces(files);
 
         Assert.That(pieces, Is.EqualTo(new[]
         {

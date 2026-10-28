@@ -98,9 +98,9 @@ public partial class RecordStarterTests
     {
         var clock = ZonedClock.Eastern(_runtime.Time);
         var launcher = new RecorderLauncher(_starter, _jobs, folder ?? _runtime.Folder, _runtime.Journal, _options, clock, new RecordingLogger<RecorderLauncher>());
-        var question = new ContinueQuestion(new ClassFolders(_options, clock, new RecordingLogger<ClassFolders>()), _runtime.Journal, _ui, _options, clock,
+        var question = new ContinueQuestion(new ClassFolders(_options, clock, new RecordingLogger<ClassFolders>()), new RecordingFolder(), _runtime.Journal, _ui, _options, clock,
             new RecordingLogger<ContinueQuestion>());
-        return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Reloader, _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log,
+        return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Reloader, new RecordingFolder(), _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log,
             _videoYield, _camera, _glossary);
     }
 

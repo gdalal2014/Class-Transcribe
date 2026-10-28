@@ -32,6 +32,9 @@ namespace ClassScribe.Storage;
 public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> options, TimeProvider time, ILogger<ClassFolders> logger, IAudioOnDrive? audioOnDrive = null,
     IOptionsMonitor<ElevenLabsOptions>? elevenLabs = null) : IClassFolders
 {
+    /// <summary>A recording's files on disk, by the names its record gives.</summary>
+    private static readonly RecordingFolder Recordings = new();
+
     /// <summary>What is known of recordings' audio kept on Google Drive alone.</summary>
     private readonly IAudioOnDrive _onDrive = audioOnDrive ?? NoAudioOnDrive.Instance;
 
@@ -219,16 +222,16 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
             .FirstOrDefault(files => string.Equals(files.Name, safe, StringComparison.OrdinalIgnoreCase) && !IsVideo(files));
         if (newest is null) return null;
 
-        var main = newest.FindSegments();
-        var microphone = newest.FindSegments(Track.Microphone);
-        var pieces = newest.FindCameraPieces().Select(piece => piece.Path).ToList();
+        var main = Recordings.FindSegments(newest);
+        var microphone = Recordings.FindSegments(newest, Track.Microphone);
+        var pieces = Recordings.FindCameraPieces(newest).Select(piece => piece.Path).ToList();
         var stopped = LastWritten(main.Concat(microphone));
         var length = LongestTrack(main, microphone);
 
         // The workflow keeps an answer the recording's own folder would not take in the root, whichever recordings folder
         // the run used; one in the run's own recordings folder counts as well.
         var kept = KeptAnswerOf(newest, Root) ?? KeptAnswerOf(newest, RootOf(root));
-        var unfit = newest.HasTranscript ? "it has a transcript"
+        var unfit = Recordings.HasTranscript(newest) ? "it has a transcript"
             : kept is not null ? $"ElevenLabs' answer to it, which has been paid for, is kept in {kept}"
             : microphone.Count > 0 != (mode == RecordingMode.ClassAndMicrophone) ? "its tracks are not those of this run"
             : pieces.Count > 0 && !camera ? "it was recorded with the camera, and this run records no camera"
@@ -251,11 +254,11 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// files as the preparer reads them, so that it is exact even after a crash left a header behind. A run that
     /// continues the recording starts there.
     /// </summary>
-    public TimeSpan LengthOnDisk(RecordingFiles files) => LongestTrack(files.FindSegments(), files.FindSegments(Track.Microphone));
+    public TimeSpan LengthOnDisk(RecordingFiles files) => LongestTrack(Recordings.FindSegments(files), Recordings.FindSegments(files, Track.Microphone));
 
     /// <inheritdoc />
     public TimeSpan TrackLength(RecordingFiles files, Track track) =>
-        files.FindSegments(track).Aggregate(TimeSpan.Zero, (length, segment) => length + MeasureSegment(segment));
+        Recordings.FindSegments(files, track).Aggregate(TimeSpan.Zero, (length, segment) => length + MeasureSegment(segment));
 
     /// <inheritdoc />
     public IReadOnlyList<string> FilesIn(string folder) => [.. Directory.EnumerateFiles(folder)];
@@ -425,7 +428,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
     /// <summary>
     /// The newest answer ElevenLabs was paid for that did not become a transcript of the recording (see
-    /// <see cref="RecordingFiles.FindKeptAnswers"/>), kept beside it or, when its own folder would not take it, in the
+    /// <see cref="IRecordingFolder.FindKeptAnswers"/>), kept beside it or, when its own folder would not take it, in the
     /// recordings folder; null when there is none.
     /// </summary>
     public string? KeptAnswerOf(RecordingFiles files) => KeptAnswerOf(files, Root);
@@ -439,8 +442,8 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// the real reason.
     /// </summary>
     public static bool IsBeingWritten(RecordingFiles files) =>
-        IsNewestHeldForWriting(files.FindSegments()) || IsNewestHeldForWriting(files.FindSegments(Track.Microphone))
-        || IsNewestHeldForWriting([.. files.FindCameraPieces().Select(piece => piece.Path)]) || IsLessonVideoBeingMade(files);
+        IsNewestHeldForWriting(Recordings.FindSegments(files)) || IsNewestHeldForWriting(Recordings.FindSegments(files, Track.Microphone))
+        || IsNewestHeldForWriting([.. Recordings.FindCameraPieces(files).Select(piece => piece.Path)]) || IsLessonVideoBeingMade(files);
 
     /// <summary>
     /// True while a camera process makes the lesson's video: it holds the video's <see cref="RecordingFiles.LessonVideoPartial"/>
@@ -457,7 +460,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// </summary>
     public static LessonVideoState LessonVideoStateOf(RecordingFiles files)
     {
-        var pieces = files.FindCameraPieces().Select(piece => piece.Path).ToList();
+        var pieces = Recordings.FindCameraPieces(files).Select(piece => piece.Path).ToList();
         if (IsNewestHeldForWriting(pieces)) pieces.RemoveAt(pieces.Count - 1);
 
         var video = new FileInfo(files.LessonVideo);
@@ -632,7 +635,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     }
 
     /// <summary>True when any audio of the recording is in its folder, on either track.</summary>
-    private static bool HasAudio(RecordingFiles files) => files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0;
+    private static bool HasAudio(RecordingFiles files) => Recordings.FindSegments(files).Count > 0 || Recordings.FindSegments(files, Track.Microphone).Count > 0;
 
     /// <summary>
     /// The recordings folder for one run or listing: <paramref name="root"/>, the folder given for it, read as
@@ -714,8 +717,8 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// folder <paramref name="root"/>; null when there is none (see <see cref="KeptAnswerOf(RecordingFiles)"/>).
     /// </summary>
     private static string? KeptAnswerOf(RecordingFiles files, string root) =>
-        files.FindKeptAnswers()
-            .Concat((files with { Folder = root }).FindKeptAnswers())
+        Recordings.FindKeptAnswers(files)
+            .Concat(Recordings.FindKeptAnswers(files with { Folder = root }))
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
 
@@ -805,17 +808,17 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// </summary>
     private RecordedClass Describe(RecordingFiles files, string root)
     {
-        var main = files.FindSegments();
-        var microphone = files.FindSegments(Track.Microphone);
+        var main = Recordings.FindSegments(files);
+        var microphone = Recordings.FindSegments(files, Track.Microphone);
         var lessonVideo = LessonVideoStateOf(files);
         if (main.Count == 0 && microphone.Count == 0 && _onDrive.Find(files) is { AllOfIt: true } onDrive)
         {
             var ended = (files.StartedUtc ?? DateTimeOffset.UnixEpoch) + onDrive.Length;
-            return new RecordedClass(files, ended.UtcDateTime, onDrive.Length, files.HasTranscript, KeptAnswerOf(files, root), BeingWritten: false,
+            return new RecordedClass(files, ended.UtcDateTime, onDrive.Length, Recordings.HasTranscript(files), KeptAnswerOf(files, root), BeingWritten: false,
                 ClassMarks.PartsOf(files), onDrive.HasMicrophone, onDrive, VideoOf(files), lessonVideo);
         }
 
-        return new RecordedClass(files, LastWritten(main.Concat(microphone)).UtcDateTime, LongestTrack(main, microphone), files.HasTranscript,
+        return new RecordedClass(files, LastWritten(main.Concat(microphone)).UtcDateTime, LongestTrack(main, microphone), Recordings.HasTranscript(files),
             KeptAnswerOf(files, root), IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone), ClassMarks.PartsOf(files), microphone.Count > 0,
             Video: VideoOf(files), LessonVideo: lessonVideo);
     }

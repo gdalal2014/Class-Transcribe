@@ -32,6 +32,8 @@ public sealed class MenuCommand(
     SettingsFile settings,
     IOptionsMonitor<ElevenLabsOptions> elevenLabs,
     IClassFolders folders,
+    IRecordingFolder recordings,
+    ITranscriptCopies copies,
     ILoopbackCaptureProvider devices,
     SourceChoice choice,
     RecordingNamePrompt prompt,
@@ -71,8 +73,9 @@ public sealed class MenuCommand(
     /// finds a recording in progress (see <see cref="NoStartupReport"/>). The container uses the other constructor.
     /// </summary>
     internal MenuCommand(ICommandRunner commands, IConsoleUi ui, RunGate gate, SettingsFile settings, IOptionsMonitor<ElevenLabsOptions> elevenLabs, IClassFolders folders,
-        ILoopbackCaptureProvider devices, SourceChoice choice, RecordingNamePrompt prompt, IDesktop desktop, TimeProvider time, ILogger<MenuCommand> logger)
-        : this(commands, new NoStartupReport(), ui, gate, settings, elevenLabs, folders, devices, choice, prompt, desktop, time, logger)
+        IRecordingFolder recordings, ITranscriptCopies copies, ILoopbackCaptureProvider devices, SourceChoice choice, RecordingNamePrompt prompt, IDesktop desktop,
+        TimeProvider time, ILogger<MenuCommand> logger)
+        : this(commands, new NoStartupReport(), ui, gate, settings, elevenLabs, folders, recordings, copies, devices, choice, prompt, desktop, time, logger)
     {
     }
 
@@ -302,7 +305,7 @@ public sealed class MenuCommand(
 
         if (inProgress.Home == RunHome.InWindow)
         {
-            ui.WriteLine($"{CommandRunner.InAnotherWindow(inProgress)}.");
+            ui.WriteLine($"{CommandRunner.InAnotherWindow(inProgress, recordings)}.");
             return;
         }
 
@@ -315,7 +318,7 @@ public sealed class MenuCommand(
     /// </summary>
     private string OneRecordingAtATime(RunRecord inProgress) =>
         inProgress.Home == RunHome.InWindow
-            ? $"Only one recording at a time: {CommandRunner.InAnotherWindow(inProgress)}."
+            ? $"Only one recording at a time: {CommandRunner.InAnotherWindow(inProgress, recordings)}."
             : $"Only one recording at a time: \"{inProgress.Request.Name}\" has been recording since {TimeZoneInfo.ConvertTime(inProgress.StartedUtc, time.LocalTimeZone).ToString("HH:mm", CultureInfo.InvariantCulture)}. {ShowKey} shows it.";
 
     /// <summary>
@@ -545,7 +548,7 @@ public sealed class MenuCommand(
             return;
         }
 
-        await commands.FinishVideoAsync(new FinishVideoRequest(recorded.Files.FindSegments().FirstOrDefault() ?? recorded.Files.FindSegments(Track.Microphone).FirstOrDefault() ?? recorded.Files.Folder));
+        await commands.FinishVideoAsync(new FinishVideoRequest(recordings.FindSegments(recorded.Files).FirstOrDefault() ?? recordings.FindSegments(recorded.Files, Track.Microphone).FirstOrDefault() ?? recorded.Files.Folder));
     }
 
     /// <summary>
@@ -596,7 +599,7 @@ public sealed class MenuCommand(
     /// </summary>
     private async Task OfferRebuildOfAudioOnDriveAsync(RecordedClass recorded, AudioOnDrive onDrive)
     {
-        var rebuildFrom = TranscriptCopies.NewestAnswer(recorded.Files) ?? recorded.KeptAnswer;
+        var rebuildFrom = copies.NewestAnswer(recorded.Files) ?? recorded.KeptAnswer;
         var audio = $"The audio of {recorded.Files.BaseName} is on Google Drive, not on this laptop ({onDrive.Location}). To transcribe it again, download its .wav files from there into {recorded.Files.Folder} first.";
         if (rebuildFrom is null)
         {
@@ -622,7 +625,7 @@ public sealed class MenuCommand(
     /// and when there is neither, nothing, so only Y is offered. For a recording without a transcript whose answer to an
     /// earlier try was paid for and kept, it is that answer. Null when the recording has neither a transcript nor a kept answer.
     /// </summary>
-    private static BilledAgain? WhyBilledAgain(RecordedClass recorded)
+    private BilledAgain? WhyBilledAgain(RecordedClass recorded)
     {
         if (!recorded.HasTranscript)
         {
@@ -632,7 +635,7 @@ public sealed class MenuCommand(
                 : null;
         }
 
-        if (TranscriptCopies.NewestAnswer(recorded.Files) is not null)
+        if (copies.NewestAnswer(recorded.Files) is not null)
         {
             return new("This recording has a transcript. R rebuilds it from ElevenLabs' saved answer, with the current marks and Transcript settings (free, nothing is uploaded). Y transcribes it again (billed again). Any other key goes back.",
                 recorded.Files.Segment(1));
@@ -718,7 +721,7 @@ public sealed class MenuCommand(
             return folders.NewestWithAudioOnDriveIn(fullPath) is { } onDrive && (newest is null || onDrive.Files.StartedUtc > newest.StartedUtc) ? onDrive.Files : newest;
         }
 
-        return RecordingFiles.TryParse(fullPath) is { } files && files.FindSegments().Count > 0 ? files : null;
+        return RecordingFiles.TryParse(fullPath) is { } files && recordings.FindSegments(files).Count > 0 ? files : null;
     }
 
     /// <summary>Choice 5: opens the recordings folder, creating it when it is not there yet.</summary>

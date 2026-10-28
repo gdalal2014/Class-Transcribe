@@ -168,6 +168,7 @@ public sealed class VideoBatch(
     ICommandRunner commands,
     RunJournal journal,
     IClassFolders classFolders,
+    IRecordingFolder recordings,
     GlossaryChoice glossaries,
     IUserSignals signals,
     IConsoleUi ui,
@@ -424,7 +425,7 @@ public sealed class VideoBatch(
         {
             logger.LogInformation("\"{Title}\" records on in the background to its end; no more videos open, and the same command transcribes it later", video.Title);
         }
-        else if (video.Outcome is null && video.Recording is { } kept && kept.FindSegments().Count > 0)
+        else if (video.Outcome is null && video.Recording is { } kept && recordings.FindSegments(kept).Count > 0)
         {
             // Its recorder was lost while it recorded: a video is never continued, so the audio so far is kept, transcribed as
             // a recording that may be cut short, which its source file says, and the same command records it again.

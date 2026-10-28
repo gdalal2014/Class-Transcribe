@@ -29,6 +29,7 @@ public sealed record FinishVideoRequest(string Path, bool Open = true);
 public sealed class FinishVideoCommand(
     IClassFolders folders,
     IFileProbe probe,
+    IRecordingFolder recordings,
     LessonVideoMaker maker,
     LessonVideoDrive lessonDrive,
     IDriveAutoUpload drive,
@@ -85,7 +86,7 @@ public sealed class FinishVideoCommand(
         if (!probe.DirectoryExists(path)) return null;
 
         return folders.RecordingsByAnyFileIn(path)
-            .FirstOrDefault(files => files.FindCameraPieces().Count > 0 || probe.FileExists(files.LessonVideo));
+            .FirstOrDefault(files => recordings.FindCameraPieces(files).Count > 0 || probe.FileExists(files.LessonVideo));
     }
 
     /// <summary>Why the video of <paramref name="files"/> cannot be made now, in words; null when it can.</summary>
@@ -93,14 +94,14 @@ public sealed class FinishVideoCommand(
     {
         if (folders.IsLessonVideoBeingMade(files)) return $"The video of {files.BaseName} is being made now; it appears in {files.Folder} once it has passed its check.";
         if (folders.IsBeingWritten(files)) return $"{files.BaseName} is being recorded now; make its video once it has stopped.";
-        if (files.FindCameraPieces().Count == 0)
+        if (recordings.FindCameraPieces(files).Count == 0)
         {
             return probe.FileExists(files.LessonVideo)
                 ? $"{files.BaseName} has its video, {Path.GetFileName(files.LessonVideo)}, and no camera pieces left to make it again from."
                 : $"{files.BaseName} has no camera pieces, so it has no picture to make a video of.";
         }
 
-        if (files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0) return null;
+        if (recordings.FindSegments(files).Count > 0 || recordings.FindSegments(files, Track.Microphone).Count > 0) return null;
 
         return folders.AudioOnDriveOf(files) is not null ? SoundOnDriveOnly : $"The sound of {files.BaseName} is not on this laptop, so its video cannot be made here.";
     }

@@ -74,11 +74,11 @@ public sealed class LessonVideoMediaTests
     }
 
     /// <summary>The lesson's sound, mixed as the upload is, at 48 kHz.</summary>
-    private MixedSound Mix() => new AudioPreparer(NullLogger<AudioPreparer>.Instance).OpenMix(new UploadTracks(_files.FindSegments(), []), 48_000, CancellationToken.None);
+    private MixedSound Mix() => new AudioPreparer(NullLogger<AudioPreparer>.Instance).OpenMix(new UploadTracks(OnDisk.FindSegments(_files), []), 48_000, CancellationToken.None);
 
     /// <summary>The plan of the lesson's pieces, described by the real reader, with the sound <paramref name="seconds"/> long.</summary>
     private LessonVideoPlan Plan(double seconds, string? older = null) =>
-        LessonVideoPlan.Make([.. _files.FindCameraPieces().Select(piece => new LessonVideoSource(piece.Path, piece.Start, _media.Describe(piece.Path)))],
+        LessonVideoPlan.Make([.. OnDisk.FindCameraPieces(_files).Select(piece => new LessonVideoSource(piece.Path, piece.Start, _media.Describe(piece.Path)))],
             older is null ? null : new LessonVideoSource(older, TimeSpan.Zero, _media.Describe(older)), TimeSpan.FromSeconds(seconds));
 
     /// <summary>Makes the video of <paramref name="plan"/> into the lesson's .partial, then checks it as the finish job does, and returns the check's answer.</summary>
@@ -177,7 +177,7 @@ public sealed class LessonVideoMediaTests
         Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode), string.Join(" | ", seen.Of<CameraFailed>().Select(failed => failed.Why)));
         Assert.That(File.Exists(_files.LessonVideo), Is.True);
         Assert.That(File.Exists(_files.LessonVideoPartial), Is.False);
-        Assert.That(_files.FindCameraPieces(), Is.Empty);
+        Assert.That(OnDisk.FindCameraPieces(_files), Is.Empty);
         Assert.That(seen.Of<CameraMade>().Single().LengthSeconds, Is.EqualTo(2).Within(0.01));
         Assert.That(ClassFolders.LessonVideoStateOf(_files), Is.EqualTo(LessonVideoState.Made));
     }

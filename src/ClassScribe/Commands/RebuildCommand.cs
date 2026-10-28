@@ -20,6 +20,8 @@ public sealed partial class RebuildCommand(
     TranscriptionWorkflow workflow,
     IClassFolders folders,
     IFileProbe probe,
+    IRecordingFolder recordings,
+    ITranscriptCopies copies,
     IDesktop desktop,
     IDriveAutoUpload drive,
     IOptionsSnapshot<RecordingOptions> recording,
@@ -63,7 +65,7 @@ public sealed partial class RebuildCommand(
             return 1;
         }
 
-        answer ??= TranscriptCopies.NewestAnswer(files);
+        answer ??= copies.NewestAnswer(files);
         if (answer is null)
         {
             SayThereIsNoAnswer(files);
@@ -134,7 +136,7 @@ public sealed partial class RebuildCommand(
             logger.LogWarning("{Newer} has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try, which has been paid for, is kept in {Answer}. {Rebuilt}, the newest recording here with a saved answer, is rebuilt instead", newer.BaseName, kept, rebuilt.BaseName);
             logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", CommandLine.Rebuild(kept));
         }
-        else if (newer.HasTranscript)
+        else if (recordings.HasTranscript(newer))
         {
             logger.LogInformation("{Newer} has a transcript, but its saved answer from ElevenLabs is no longer there, so {Rebuilt}, the newest recording here that still has one, is rebuilt", newer.BaseName, rebuilt.BaseName);
         }
@@ -185,7 +187,7 @@ public sealed partial class RebuildCommand(
 
     /// <summary>True when the recording's audio, marks or a transcript of it are in its <see cref="RecordingFiles.Folder"/>.</summary>
     private bool IsThere(RecordingFiles files) =>
-        files.FindSegments().Count > 0 || probe.FileExists(files.Marks) || TranscriptCopies.Transcripts(files).Count > 0;
+        recordings.FindSegments(files).Count > 0 || probe.FileExists(files.Marks) || copies.Transcripts(files).Count > 0;
 
     /// <summary>
     /// Says that the recording has no saved answer to rebuild from. When an answer from an earlier try that was paid for
@@ -199,7 +201,7 @@ public sealed partial class RebuildCommand(
             logger.LogError("{Recording} has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try, which has been paid for, is kept in {Answer}", files.BaseName, kept);
             logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", CommandLine.Rebuild(kept));
         }
-        else if (files.HasTranscript)
+        else if (recordings.HasTranscript(files))
         {
             logger.LogError("{Recording} has a transcript, but its saved answer from ElevenLabs is no longer there, so it cannot be rebuilt for free", files.BaseName);
         }

@@ -14,6 +14,9 @@ namespace ClassScribe.Tests;
 [TestFixture]
 public class MicCheckLogTests
 {
+    /// <summary>The adapter under test.</summary>
+    private static readonly MicCheckLog Logs = new();
+
     /// <summary>When the check started, in local time, four hours behind UTC.</summary>
     private static readonly DateTimeOffset Started = new(2026, 10, 17, 19, 0, 12, TimeSpan.FromHours(-4));
 
@@ -37,7 +40,7 @@ public class MicCheckLogTests
     [Test]
     public void The_log_is_named_after_the_local_start_time_and_is_no_recording()
     {
-        using var log = MicCheckLog.Create(MicCheckFolder, Started);
+        using var log = Logs.Create(MicCheckFolder, Started);
 
         Assert.That(log.Path, Is.EqualTo(Path.Combine(MicCheckFolder, "mic-check_2026-10-17_19-00-12.log")));
         Assert.That(File.Exists(log.Path), Is.True);
@@ -53,9 +56,9 @@ public class MicCheckLogTests
     [Test]
     public void A_second_log_in_the_same_second_takes_the_next_name()
     {
-        using var first = MicCheckLog.Create(MicCheckFolder, Started);
-        using var second = MicCheckLog.Create(MicCheckFolder, Started);
-        using var third = MicCheckLog.Create(MicCheckFolder, Started);
+        using var first = Logs.Create(MicCheckFolder, Started);
+        using var second = Logs.Create(MicCheckFolder, Started);
+        using var third = Logs.Create(MicCheckFolder, Started);
 
         Assert.That(second.Path, Is.EqualTo(Path.Combine(MicCheckFolder, "mic-check_2026-10-17_19-00-12_2.log")));
         Assert.That(third.Path, Is.EqualTo(Path.Combine(MicCheckFolder, "mic-check_2026-10-17_19-00-12_3.log")));
@@ -69,7 +72,7 @@ public class MicCheckLogTests
     [Test]
     public void Each_line_reaches_the_file_as_it_is_written()
     {
-        using var log = MicCheckLog.Create(MicCheckFolder, Started);
+        using var log = Logs.Create(MicCheckFolder, Started);
         var at = Started.AddMilliseconds(177);
 
         var written = log.Write(new MicCheckLine(at, "MIC", "Microphone Array: at start"));
@@ -90,7 +93,7 @@ public class MicCheckLogTests
     [Test]
     public void The_file_is_utf8_without_a_byte_order_mark()
     {
-        using var log = MicCheckLog.Create(MicCheckFolder, Started);
+        using var log = Logs.Create(MicCheckFolder, Started);
         log.Plain("Intel® Smart Sound");
 
         var bytes = ReadBytesWhileOpen(log.Path);
@@ -108,8 +111,8 @@ public class MicCheckLogTests
     {
         var path = Path.Combine(MicCheckFolder, "mic-check_2026-10-17_19-00-12.log");
 
-        var lines = MicCheckLog.HeaderLines(Started, 1234, path, TimeSpan.FromMilliseconds(250), stopAfter: null);
-        var timed = MicCheckLog.HeaderLines(Started, 1234, path, TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(60));
+        var lines = Logs.HeaderLines(Started, 1234, path, TimeSpan.FromMilliseconds(250), stopAfter: null);
+        var timed = Logs.HeaderLines(Started, 1234, path, TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(60));
 
         Assert.That(lines[0], Is.EqualTo($"ClassScribe microphone check (build {BuildInfo.Build}): watches what the apps on this computer do with the microphone."));
         Assert.That(lines[1], Is.EqualTo($"Started 2026-10-17 19:00:12 local time (UTC-04:00), Windows {Environment.OSVersion.Version}, ClassScribe's own process id 1234."));
@@ -126,7 +129,7 @@ public class MicCheckLogTests
     [Test]
     public void The_cost_line_reports_the_process()
     {
-        var line = MicCheckLog.CostLine();
+        var line = Logs.CostLine();
 
         Assert.That(line, Does.Match(@"^The check's own cost: \d+ ms of processor time; peak working set \d+\.\d MB; \d+ handles open now; managed heap \d+\.\d MB after \d+ gen 0, \d+ gen 1 and \d+ gen 2 garbage collections\.$"));
     }
@@ -137,7 +140,7 @@ public class MicCheckLogTests
     {
         File.WriteAllText(MicCheckFolder, "");
 
-        Assert.That(() => MicCheckLog.Create(MicCheckFolder, Started), Throws.InstanceOf<IOException>());
+        Assert.That(() => Logs.Create(MicCheckFolder, Started), Throws.InstanceOf<IOException>());
     }
 
     /// <summary>The lines of the file while the log holds it open for writing, as another program would read them.</summary>

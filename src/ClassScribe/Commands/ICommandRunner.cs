@@ -349,9 +349,9 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     /// How a window names a run that another ClassScribe window records, or transcribes, in itself: there is no link to show
     /// it by, and closing that window ends it. Without a full stop, for the caller to end the sentence.
     /// </summary>
-    internal static string InAnotherWindow(RunRecord run) =>
+    internal static string InAnotherWindow(RunRecord run, IRecordingFolder recordings) =>
         run.State == RunState.Transcribing
-            ? LessonRuns.OnlyItsVideoLeft(run)
+            ? LessonRuns.OnlyItsVideoLeft(run, recordings)
                 ? $"\"{run.Request.Name}\" is having its lesson video made in another ClassScribe window (process {run.ProcessId}), which shows it"
                 : $"\"{run.Request.Name}\" is being transcribed in another ClassScribe window (process {run.ProcessId}), which shows it"
             : $"\"{run.Request.Name}\" is being recorded in another ClassScribe window (process {run.ProcessId}), which shows it; closing that window ends the recording";

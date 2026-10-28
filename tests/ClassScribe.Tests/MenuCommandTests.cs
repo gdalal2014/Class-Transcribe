@@ -89,7 +89,7 @@ public class MenuCommandTests
     /// </summary>
     private Task<int> RunMenuAsync(string? recordings = null, ILoopbackCaptureProvider? devices = null, TimeProvider? time = null)
     {
-        var menu = new MenuCommand(_commands.Object, _report.Object, _ui, _settings.Gate(_gateLog), _settings.File, _elevenLabs, Folders(recordings), devices ?? _devices, _choice,
+        var menu = new MenuCommand(_commands.Object, _report.Object, _ui, _settings.Gate(_gateLog), _settings.File, _elevenLabs, Folders(recordings), new RecordingFolder(), new TranscriptCopies(), devices ?? _devices, _choice,
             new RecordingNamePrompt(_ui), _desktop.Object, time ?? TimeProvider.System, _log);
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
@@ -973,7 +973,7 @@ public class MenuCommandTests
         Assert.That(Lines().Count(line => line.StartsWith("This recording has a transcript.", StringComparison.Ordinal)), Is.EqualTo(2));
         _commands.Verify(c => c.TranscribeAsync(FromMenu(_folder.File("Mantiq"))), Times.Once);
         _commands.VerifyNoOtherCalls();
-        Assert.That(flat.HasTranscript, Is.False);
+        Assert.That(OnDisk.HasTranscript(flat), Is.False);
     }
 
     /// <summary>For a recording dragged into choice 4 whose paid answer is kept without a transcript, R lays that answer out for free, as in choice 3.</summary>
@@ -1535,9 +1535,9 @@ public class CommandRunnerTests
         {
             services.AddScoped<IRecordStarter>(provider => Noted(provider, new FakeRecordStarter(_played, provider)));
             services.AddScoped<IRunViewer>(provider => Noted(provider, new PlayedRunViewer(_played, provider)));
-            services.AddScoped(provider => new AttachCommand(_runtime.Journal, provider.GetRequiredService<IRunViewer>(), _runner!, _ui, new FakeWindowSignals(), _runtime.Time,
+            services.AddScoped(provider => new AttachCommand(_runtime.Journal, provider.GetRequiredService<IRunViewer>(), _runner!, new RecordingFolder(), _ui, new FakeWindowSignals(), _runtime.Time,
                 NullLogger<AttachCommand>.Instance) { TurnOnCtrlC = () => 0 });
-            services.AddScoped(provider => Noted(provider, new ListCommand(Folders(), _runtime.Journal, _ui, ZonedTimeProvider.EasternSummer)));
+            services.AddScoped(provider => Noted(provider, new ListCommand(Folders(), new TranscriptCopies(), _runtime.Journal, _ui, ZonedTimeProvider.EasternSummer)));
             services.AddScoped(provider => Noted(provider, new DevicesCommand(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => new FakeMicrophoneProvider()), new Lazy<IMicrophoneSessions>(() => new FakeMicrophoneSessions()),
                 new Lazy<Camera.ICameraProvider>(() => new FakeCameraProvider()), _ui, NullLogger<DevicesCommand>.Instance)));
             services.AddScoped(provider => Noted(provider, CreateTranscribeCommand()));
@@ -1560,7 +1560,7 @@ public class CommandRunnerTests
         var store = new FakeCredentialStore();
         var manifests = new UploadManifests(_runtime.Folder, _runtime.Time, NullLogger<UploadManifests>.Instance);
         var queue = new DriveQueueReport(store, manifests, _runtime.Journal, Folders(), TestOptions.Create(new DriveOptions()), _runtime.Time);
-        return new DriveMenu(_runner!, store, Folders(), manifests, queue, _ui, _runtime.Time);
+        return new DriveMenu(_runner!, store, Folders(), new RecordingFolder(), manifests, queue, _ui, _runtime.Time);
     }
 
     /// <summary>Notes that a command was made in the scope of <paramref name="provider"/>, and hands it on.</summary>
@@ -1585,9 +1585,9 @@ public class CommandRunnerTests
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance);
         var usage = new UsageReport(new FakeElevenLabsAccount(), TimeProvider.System, NullLogger<UsageReport>.Instance);
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, TestGlossaries.Choice(elevenLabs),
-            new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), folders, new ClassMarks(NullLogger<ClassMarks>.Instance), recording, elevenLabs,
+            new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), folders, new ClassMarks(NullLogger<ClassMarks>.Instance), new TranscriptCopies(), new RecordingFolder(), new FileProbe(), recording, elevenLabs,
             new TranscriptionProgress(), usage, NullLogger<TranscriptionWorkflow>.Instance);
-        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), recording, elevenLabs,
+        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), recording, elevenLabs,
             ZonedTimeProvider.EasternSummer, _transcribeLog);
     }
 
@@ -1675,7 +1675,7 @@ public class CommandRunnerTests
                 scope => scope.GetRequiredService<IOptionsSnapshot<RecordingOptions>>().Value.OutputFolder))));
         var monitor = _container!.GetRequiredService<IOptionsMonitor<RecordingOptions>>();
         var menu = new MenuCommand(runner, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions { ApiKey = "test-key" }),
-            new ClassFolders(monitor, TimeProvider.System, NullLogger<ClassFolders>.Instance), _devices, new SourceChoice(monitor), new RecordingNamePrompt(_ui),
+            new ClassFolders(monitor, TimeProvider.System, NullLogger<ClassFolders>.Instance), new RecordingFolder(), new TranscriptCopies(), _devices, new SourceChoice(monitor), new RecordingNamePrompt(_ui),
             _desktop.Object, TimeProvider.System, NullLogger<MenuCommand>.Instance);
         _ui.TypeLine("Kalam");
         _ui.TypeLine("Fiqh");

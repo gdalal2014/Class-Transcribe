@@ -40,7 +40,8 @@ public sealed class RecordCommand(
     UsageReport usage,
     IUserSignals signals,
     IClassFolders folders,
-    ClassMarks marks,
+    IClassMarks marks,
+    IRecordingFolder recordingFolder,
     IFileProbe probe,
     RunBookkeeping bookkeeping,
     IResultShower results,
@@ -294,7 +295,7 @@ public sealed class RecordCommand(
     {
         if (request.Source.Camera is null || lessonVideos is null) return;
 
-        if (files.FindCameraPieces().Count == 0)
+        if (recordingFolder.FindCameraPieces(files).Count == 0)
         {
             logger.LogWarning("The camera wrote no picture in this lesson, so it has no video to make; the sound is kept");
             return;
@@ -698,7 +699,7 @@ public sealed class RecordCommand(
 
     /// <summary>When audio was last written to the recording, on either track, in UTC.</summary>
     private DateTimeOffset LastWritten(RecordingFiles files) =>
-        files.FindSegments().Concat(files.FindSegments(Track.Microphone))
+        recordingFolder.FindSegments(files).Concat(recordingFolder.FindSegments(files, Track.Microphone))
             .Select(segment => new DateTimeOffset(probe.LastWriteUtc(segment), TimeSpan.Zero))
             .DefaultIfEmpty(DateTimeOffset.MinValue)
             .Max();

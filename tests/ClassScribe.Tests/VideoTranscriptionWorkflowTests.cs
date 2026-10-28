@@ -1,3 +1,4 @@
+using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -51,6 +52,9 @@ public class VideoTranscriptionWorkflowTests
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions { IncludeTimestamps = false })),
             new ClassFolders(recording, ZonedClock.Eastern(new ManualTimeProvider(Downloaded)), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
+            new TranscriptCopies(),
+            new RecordingFolder(),
+            new FileProbe(),
             recording,
             TestOptions.Create(new ElevenLabsOptions()),
             new TranscriptionProgress(),
