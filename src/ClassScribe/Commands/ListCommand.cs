@@ -17,7 +17,7 @@ namespace ClassScribe.Commands;
 /// </code>
 /// It only reads: nothing is recorded, uploaded or changed, and no run file is marked seen.
 /// </summary>
-public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConsoleUi ui, TimeProvider time)
+public sealed class ListCommand(IClassFolders folders, ITranscriptCopies copies, RunJournal journal, IConsoleUi ui, TimeProvider time)
 {
     /// <summary>How the start of a recording is written in the list, in local time: 15 Oct 19:00.</summary>
     private const string StartFormat = "d MMM HH:mm";
@@ -29,7 +29,7 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
     /// </summary>
     public int Run(string? root)
     {
-        var listed = string.IsNullOrWhiteSpace(root) ? folders.Root : ClassFolders.RootFor(root);
+        var listed = string.IsNullOrWhiteSpace(root) ? folders.Root : folders.RootFor(root);
         var recordings = folders.ListAll(root);
         var runs = journal.List();
 
@@ -68,7 +68,7 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
     /// date folder of a later class of its day ("in 2026-10-17 (2)"), which tells it from the day's first class and says
     /// where to find it; the parts it was made in when there were more than one ("2 parts"); "class + microphone" when
     /// your microphone was recorded with the class; "lesson video", or "lesson video not made yet" while a lesson's camera
-    /// pieces wait to be joined with its sound (see <see cref="ClassFolders.LessonVideoStateOf"/>); and "audio on Drive"
+    /// pieces wait to be joined with its sound (see <see cref="IClassFolders.LessonVideoStateOf"/>); and "audio on Drive"
     /// when its audio is on Google Drive alone, freed from this laptop once checked there. A YouTube video's recording is
     /// first named by the video's title and how its audio was obtained ("The creed, part 1" (YouTube, downloaded)), so that
     /// a batch's videos in one date folder are told apart.
@@ -100,7 +100,7 @@ public sealed class ListCommand(ClassFolders folders, RunJournal journal, IConso
     /// Its transcripts: "transcript" for one, "transcript (2)" and so on for more, made again or rebuilt; otherwise "answer
     /// kept" when an answer ElevenLabs was paid for is kept without a transcript, or "no transcript yet".
     /// </summary>
-    private static string TranscriptOf(RecordedClass recorded) => TranscriptCopies.Transcripts(recorded.Files).Count switch
+    private string TranscriptOf(RecordedClass recorded) => copies.Transcripts(recorded.Files).Count switch
     {
         0 => recorded.KeptAnswer is not null ? "answer kept" : "no transcript yet",
         1 => "transcript",

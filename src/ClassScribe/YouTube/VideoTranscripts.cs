@@ -128,7 +128,7 @@ public sealed record TranscriptOutcome(VideoToTranscribe Video, TranscriptStep S
 /// in another window or by another command, one with an answer from ElevenLabs kept for it, one still being written, and one
 /// a live run records or transcribes, is not sent again, so that nothing is billed twice.
 /// </summary>
-public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wait, ClassFolders folders, RunJournal journal, ILogger<BatchTranscripts> logger)
+public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wait, IClassFolders folders, IRecordingFolder recordings, ITranscriptCopies copies, RunJournal journal, ILogger<BatchTranscripts> logger)
 {
     /// <summary>The statuses at which ElevenLabs would refuse every transcript left.</summary>
     private static readonly HashSet<HttpStatusCode> StopsAll = [HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.PaymentRequired, HttpStatusCode.TooManyRequests];
@@ -195,9 +195,9 @@ public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wa
     private TranscriptOutcome? Meanwhile(VideoToTranscribe video)
     {
         var files = video.Files;
-        if (files.HasTranscript)
+        if (recordings.HasTranscript(files))
         {
-            var transcript = TranscriptCopies.Transcripts(files).LastOrDefault() ?? files.Transcript();
+            var transcript = copies.Transcripts(files).LastOrDefault() ?? files.Transcript();
             logger.LogInformation("\"{Title}\" was transcribed meanwhile ({Transcript}); it is not sent again", video.Video.Title, transcript);
             return new TranscriptOutcome(video, TranscriptStep.Transcribed, transcript, null);
         }
@@ -205,7 +205,7 @@ public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wa
         string? why = null;
         if (folders.KeptAnswerOf(files) is { } kept)
             why = $"ElevenLabs' answer, paid for, was kept for it meanwhile in {kept}; it is not sent again. To lay it out for free: {CommandLine.Rebuild(kept)}";
-        else if (ClassFolders.IsBeingWritten(files) || journal.List().Any(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files)))
+        else if (folders.IsBeingWritten(files) || journal.List().Any(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files)))
             why = "it is being recorded or transcribed elsewhere now, so it is not sent from here";
         if (why is null) return null;
 

@@ -40,6 +40,7 @@ namespace ClassScribe.Audio;
 /// The session owns its source, and disposes it.</para>
 /// </remarks>
 /// <param name="source">Where the audio comes from: what can be recorded, and how to open a capture of it.</param>
+/// <param name="writers">Opens the track's segment files, and makes the folder, measures a segment and deletes an empty one.</param>
 /// <param name="spec">Which track is written and how its packets are placed.</param>
 /// <param name="clock">The recording clock, for a track placed on it; not needed for a contiguous track.</param>
 /// <param name="options">The run's recording settings.</param>
@@ -47,6 +48,7 @@ namespace ClassScribe.Audio;
 /// <param name="logger">The log.</param>
 public sealed class RecordingSession(
     ICaptureSource source,
+    ITrackWriterFactory writers,
     TrackSpec spec,
     RecordingClock? clock,
     IOptionsSnapshot<RecordingOptions> options,
@@ -56,10 +58,11 @@ public sealed class RecordingSession(
     /// <summary>A session that records the class alone on its main track, appending packets as they come, as ClassScribe has always recorded.</summary>
     public RecordingSession(
         ICaptureSource source,
+        ITrackWriterFactory writers,
         IOptionsSnapshot<RecordingOptions> options,
         TimeProvider time,
         ILogger<RecordingSession> logger)
-        : this(source, new TrackSpec(Track.Main, TrackPlacement.Contiguous), null, options, time, logger)
+        : this(source, writers, new TrackSpec(Track.Main, TrackPlacement.Contiguous), null, options, time, logger)
     {
     }
 
@@ -71,10 +74,11 @@ public sealed class RecordingSession(
     public RecordingSession(
         ILoopbackCaptureProvider provider,
         CaptureChooser chooser,
+        ITrackWriterFactory writers,
         IOptionsSnapshot<RecordingOptions> options,
         TimeProvider time,
         ILogger<RecordingSession> logger)
-        : this(new LoopbackSource(provider, chooser), options, time, logger)
+        : this(new LoopbackSource(provider, chooser), writers, options, time, logger)
     {
     }
 
@@ -145,7 +149,7 @@ public sealed class RecordingSession(
     private ITimer? _deviceCheck;
     private ITimer? _padding;
     private bool _captureEnded;
-    private WavSegmentWriter? _writer;
+    private ITrackWriter? _writer;
     private RecordingResult? _result;
     private byte[] _convertBuffer = [];
     private byte[] _zeros = [];
@@ -271,7 +275,7 @@ public sealed class RecordingSession(
 
             _files = files;
             _folder = files.Folder;
-            Directory.CreateDirectory(files.Folder);
+            writers.CreateFolder(files.Folder);
             _lastSound = time.GetTimestamp();
             bool enabled;
             lock (_gate)
@@ -1440,18 +1444,13 @@ public sealed class RecordingSession(
         }
     }
 
-    /// <summary>Creates the next segment file of the track. Call with <see cref="_gate"/> held.</summary>
-    private WavSegmentWriter OpenSegmentLocked(int sampleRate)
+    /// <summary>Creates the next segment file of the track, the next free part after those made so far. Call with <see cref="_gate"/> held.</summary>
+    private ITrackWriter OpenSegmentLocked(int sampleRate)
     {
-        // The next number is normally free. A file that is already there is never overwritten, so its number is skipped.
-        var number = _segments.Count + 1;
-        string path;
-        while (File.Exists(path = _files!.Segment(number, spec.Track))) number++;
-
-        var writer = new WavSegmentWriter(path, sampleRate);
+        var writer = writers.Open(_files!, spec.Track, _segments.Count + 1, sampleRate);
         _writer = writer;
         _partFrames = 0;
-        _segments.Add(path);
+        _segments.Add(writer.Path);
         _lastFlush = time.GetTimestamp();
         return writer;
     }
@@ -1513,7 +1512,7 @@ public sealed class RecordingSession(
         _segments.Remove(writer.Path);
         try
         {
-            File.Delete(writer.Path);
+            writers.Delete(writer.Path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -1530,7 +1529,7 @@ public sealed class RecordingSession(
     {
         try
         {
-            var audio = Math.Max(0, new FileInfo(path).Length - WavHeader.Size);
+            var audio = Math.Max(0, writers.LengthOf(path) - WavHeader.Size);
             return audio - audio % 2;
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)

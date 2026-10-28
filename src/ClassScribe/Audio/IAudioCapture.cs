@@ -1,3 +1,5 @@
+using ClassScribe.Audio.Microphones;
+
 namespace ClassScribe.Audio;
 
 /// <summary>A running capture of one audio device, of one app's sound, or of a microphone.</summary>
@@ -19,6 +21,13 @@ public interface IAudioCapture : IDisposable
     /// is no fault in itself.
     /// </summary>
     bool DeliversContinuously { get; }
+
+    /// <summary>
+    /// For a microphone, how Windows processes its audio before handing it over: what was asked for, or
+    /// <see cref="MicrophoneProcessing.Default"/> when unprocessed audio was not available. Null for a device or an app, and
+    /// for a capture that reports nothing of it.
+    /// </summary>
+    MicrophoneProcessing? Processing { get; }
 
     /// <summary>Raised on the capture thread whenever audio arrives.</summary>
     event EventHandler<AudioDataEventArgs>? DataAvailable;

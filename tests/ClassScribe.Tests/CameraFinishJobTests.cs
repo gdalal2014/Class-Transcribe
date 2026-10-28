@@ -100,7 +100,7 @@ public sealed class CameraFinishJobTests
             Assert.That(File.Exists(_files.LessonVideo), Is.True);
             Assert.That(File.Exists(_files.LessonVideoPartial), Is.False);
             Assert.That(seen.Of<CameraMade>().Single(), Is.EqualTo(new CameraMade(_files.LessonVideo, 2, new FileInfo(_files.LessonVideo).Length)));
-            Assert.That(_files.FindCameraPieces(), Is.Empty);
+            Assert.That(OnDisk.FindCameraPieces(_files), Is.Empty);
             Assert.That(seen.Logs, Has.Member($"Deleted the camera's 2 pieces of {BaseName}: the lesson's video passed its check, and lesson videos do not go to Google Drive (Drive:LessonVideos), so the video is the one copy of the picture kept"));
             Assert.That(seen.Logs, Has.Member($"Making {BaseName}.mp4 from the camera's 2 pieces and the lesson's sound (00:00:02), 1280x720, the picture passed through as it is"));
             Assert.That(seen.Of<CameraProgress>().Select(progress => progress.Percent), Does.Contain(0).And.Contain(99));
@@ -120,7 +120,7 @@ public sealed class CameraFinishJobTests
         var (exit, seen) = await RunAsync(Finish(keepPieces: true));
 
         Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
-        Assert.That(_files.FindCameraPieces(), Has.Count.EqualTo(1));
+        Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
         Assert.That(seen.Logs, Has.Member($"The camera's 1 piece of {BaseName} stay on this laptop until free-space finds the video safe on Google Drive (Drive:LessonVideos)"));
     }
 
@@ -158,7 +158,7 @@ public sealed class CameraFinishJobTests
             Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
             Assert.That(File.Exists(_files.LessonVideoPartial), Is.False);
             Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("the older video"), "the older video is replaced only by one that passed");
-            Assert.That(_files.FindCameraPieces(), Has.Count.EqualTo(1));
+            Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
             Assert.That(failed, Does.StartWith("The lesson's video did not pass its check (no frame decodes at 00:00:01.250). The camera's pieces are kept. To make it again, free: "));
             Assert.That(failed, Does.Contain($"finish-video \"{_files.Segment(1)}\""));
             Assert.That(seen.Of<CameraMade>(), Is.Empty);
@@ -214,7 +214,7 @@ public sealed class CameraFinishJobTests
             Assert.That(failed, Does.Contain($"finish-video \"{_files.Segment(1)}\""));
             Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("the older video"));
             Assert.That(File.Exists(_files.LessonVideoPartial), Is.True, "the checked video is kept as its .partial");
-            Assert.That(_files.FindCameraPieces(), Has.Count.EqualTo(1));
+            Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
             Assert.That(seen.Of<CameraMade>(), Is.Empty);
             Assert.That(seen.Logs.Count(line => line.Contains("is open in another program; trying again in a second", StringComparison.Ordinal)), Is.EqualTo(CameraFinishJob.RenameTries - 1));
         }
@@ -384,7 +384,7 @@ public sealed class CameraFinishJobTests
         Assert.That(await host, Is.EqualTo(CameraProtocol.CancelledExitCode));
         Assert.That(File.Exists(_files.LessonVideoPartial), Is.False);
         Assert.That(File.Exists(_files.LessonVideo), Is.False);
-        Assert.That(_files.FindCameraPieces(), Has.Count.EqualTo(1));
+        Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
         await Wait.UntilAsync(() => seen.Logs.Contains($"The making of {BaseName}.mp4 was cancelled; the camera's pieces are kept"));
     }
 
@@ -399,7 +399,7 @@ public sealed class CameraFinishJobTests
 
         Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
         Assert.That(File.Exists(_files.LessonVideoPartial), Is.False);
-        Assert.That(_files.FindCameraPieces(), Has.Count.EqualTo(1));
+        Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
         Assert.That(seen.Of<CameraFailed>().Single().Why, Does.StartWith("The lesson's video could not be written (There is not enough space on the disk"));
     }
 

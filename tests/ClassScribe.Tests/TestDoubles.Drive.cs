@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using System.Web;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
@@ -1310,7 +1311,7 @@ public sealed class GoogleWorld : IDisposable
     private RecorderLog? _recorderLog;
 
     /// <summary>The upload of one recording.</summary>
-    public RecordingUpload RecordingUpload() => new(Drive(), Folders(), Resumable(), Retry(), Manifests(), Runtime.Journal, RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
+    public RecordingUpload RecordingUpload() => new(Drive(), Folders(), Resumable(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
 
     /// <summary>The upload lock, in the temporary ClassScribe folder.</summary>
     public DriveUploadLock Lock() => new(Runtime.Folder, Log<DriveUploadLock>());
@@ -1323,16 +1324,16 @@ public sealed class GoogleWorld : IDisposable
         new(Store, Manifests(), new Lazy<DriveUploadPass>(Pass), signals ?? new FakeUserSignals(), Options, Log<DriveAutoUpload>());
 
     /// <summary>What the menu's header and the report at the start say of the queue, with local times in US Eastern time.</summary>
-    public DriveQueueReport QueueReport() => new(Store, Manifests(), Runtime.Journal, Options, ZonedClock.Eastern(Time));
+    public DriveQueueReport QueueReport() => new(Store, Manifests(), Runtime.Journal, ClassFolders(), Options, ZonedClock.Eastern(Time));
 
     /// <summary>The freeing of room on the laptop.</summary>
-    public LocalAudioFreer Freer() => new(Drive(), Retry(), Manifests(), RecordingUpload(), Time, Log<LocalAudioFreer>());
+    public LocalAudioFreer Freer() => new(Drive(), Retry(), Manifests(), RecordingUpload(), ClassFolders(), new RecordingFolder(), Time, Log<LocalAudioFreer>());
 
     /// <summary>The drive upload and free-space command, with Ctrl+C played by <paramref name="signals"/>.</summary>
-    public DriveUploadCommand UploadCommand(FakeUserSignals? signals = null) => new(Pass(), Freer(), signals ?? new FakeUserSignals(), Log<DriveUploadCommand>());
+    public DriveUploadCommand UploadCommand(FakeUserSignals? signals = null) => new(Pass(), Freer(), ClassFolders(), new RecordingFolder(), new FileProbe(), signals ?? new FakeUserSignals(), Log<DriveUploadCommand>());
 
     /// <summary>The class folders under <see cref="Recordings"/>, which know of the audio kept on Drive alone.</summary>
-    public ClassFolders ClassFolders() => new(Recording, Time, Log<ClassFolders>(), new DriveCopies(Manifests()));
+    public ClassFolders ClassFolders() => new(Recording, Time, Log<ClassFolders>(), new DriveCopies(Manifests(), new RecordingFolder()));
 
     /// <summary>The lines logged by every part, in order, as text.</summary>
     public IReadOnlyList<string> Lines => Logs.Messages;

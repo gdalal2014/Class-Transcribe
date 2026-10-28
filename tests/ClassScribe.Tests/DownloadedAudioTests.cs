@@ -82,7 +82,7 @@ public class DownloadedAudioTests
         var length = Audio().Convert(staged, _target, TimeSpan.FromSeconds(3), "The creed, part 1", CancellationToken.None);
 
         Assert.That(length, Is.EqualTo(TimeSpan.FromSeconds(3)));
-        Assert.That(_target.FindSegments(), Is.EqualTo([_target.Segment(1)]));
+        Assert.That(OnDisk.FindSegments(_target), Is.EqualTo([_target.Segment(1)]));
         Assert.That(ClassFolders.MeasureSegment(_target.Segment(1)), Is.EqualTo(TimeSpan.FromSeconds(3)));
         var header = File.ReadAllBytes(_target.Segment(1)).AsSpan(0, WavHeader.Size);
         Assert.That(WavHeader.TryRead(header, out var rate) ? rate : 0, Is.EqualTo(8000), "the source's own rate is kept");
@@ -113,8 +113,8 @@ public class DownloadedAudioTests
 
         var length = Audio().Convert(staged, _target, TimeSpan.FromSeconds(100), "The creed, part 1", CancellationToken.None);
 
-        Assert.That(_target.FindSegments(), Is.EqualTo([_target.Segment(1), _target.Segment(2)]));
-        Assert.That(_target.FindSegments().Sum(segment => ClassFolders.MeasureSegment(segment).TotalSeconds), Is.EqualTo(100).Within(0.001));
+        Assert.That(OnDisk.FindSegments(_target), Is.EqualTo([_target.Segment(1), _target.Segment(2)]));
+        Assert.That(OnDisk.FindSegments(_target).Sum(segment => ClassFolders.MeasureSegment(segment).TotalSeconds), Is.EqualTo(100).Within(0.001));
         Assert.That(length, Is.EqualTo(TimeSpan.FromSeconds(100)));
     }
 

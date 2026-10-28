@@ -20,13 +20,14 @@ namespace ClassScribe.Commands;
 /// <param name="names">Names the processes behind the sessions.</param>
 /// <param name="own">Tells ClassScribe's own processes, such as the recorder of a class recorded beside the check.</param>
 /// <param name="folders">Where the recordings go, under which the mic-check folder is made.</param>
+/// <param name="logs">Opens the check's log file, and gives the header's and the cost line's machine facts.</param>
 /// <param name="ui">The window's keyboard and screen.</param>
 /// <param name="window">The window's title, which shows the check while it runs.</param>
 /// <param name="signals">The Ctrl+C of the check's scope, which stops the check when the runner runs it (<see cref="IMicCheckRun"/>).</param>
 /// <param name="time">The clock: the interval, the time of day on the lines, and the gaps between looks.</param>
 /// <param name="logger">The app's log; what Gulzar reads goes to the window and the check's own file.</param>
 public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsageRecord record, IProcessNames names, IOwnProcesses own,
-    ClassFolders folders, IConsoleUi ui, IWindowSignals window, IUserSignals signals, TimeProvider time, ILogger<MicCheckCommand> logger) : IMicCheckRun
+    IClassFolders folders, IMicCheckLog logs, IConsoleUi ui, IWindowSignals window, IUserSignals signals, TimeProvider time, ILogger<MicCheckCommand> logger) : IMicCheckRun
 {
     /// <summary>The time between two looks: the longest a change can go unseen, as MicWatch had it.</summary>
     public static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(250);
@@ -60,12 +61,12 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
     /// </summary>
     public async Task<int> RunAsync(MicCheckRequest request, CancellationToken cancellationToken)
     {
-        var folder = string.IsNullOrWhiteSpace(request.LogFolder) ? Path.Combine(folders.Root, FolderNames.MicCheck) : ClassFolders.RootFor(request.LogFolder);
+        var folder = string.IsNullOrWhiteSpace(request.LogFolder) ? Path.Combine(folders.Root, FolderNames.MicCheck) : folders.RootFor(request.LogFolder);
         var started = Now();
-        MicCheckLog log;
+        IMicCheckLogFile log;
         try
         {
-            log = MicCheckLog.Create(folder, started);
+            log = logs.Create(folder, started);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
@@ -78,7 +79,7 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
         using (log)
         {
             var watch = new Watch(new MicrophoneChangeTracker(names, own, Environment.ProcessId, time.LocalTimeZone), log, time.GetTimestamp());
-            foreach (var line in MicCheckLog.HeaderLines(started, Environment.ProcessId, log.Path, Interval, request.StopAfter)) Show(log, line);
+            foreach (var line in logs.HeaderLines(started, Environment.ProcessId, log.Path, Interval, request.StopAfter)) Show(log, line);
             logger.LogDebug("The microphone check writes to {Path}", log.Path);
 
             string reason;
@@ -111,7 +112,7 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
             var elapsed = time.GetElapsedTime(watch.StartedAt);
             Show(log, "");
             Show(log, $"{Stamp(Now())}  The microphone check stopped: {reason}. {Looks(watch.Looks)} in {Durations.Format(elapsed)}; {log.TimedLines} timestamped lines.");
-            Show(log, MicCheckLog.CostLine());
+            Show(log, logs.CostLine());
             Show(log, $"The log is saved as: {log.Path}");
         }
 
@@ -259,16 +260,16 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
     }
 
     /// <summary>Writes each of <paramref name="lines"/> to the log and shows it in the window.</summary>
-    private void Show(MicCheckLog log, IReadOnlyList<MicCheckLine> lines)
+    private void Show(IMicCheckLogFile log, IReadOnlyList<MicCheckLine> lines)
     {
         foreach (var line in lines) Show(log, line);
     }
 
     /// <summary>Writes a timestamped line to the log and shows it in the window.</summary>
-    private void Show(MicCheckLog log, MicCheckLine line) => ui.WriteLine(log.Write(line));
+    private void Show(IMicCheckLogFile log, MicCheckLine line) => ui.WriteLine(log.Write(line));
 
     /// <summary>Writes a plain line, of the header or the footer, to the log and shows it in the window.</summary>
-    private void Show(MicCheckLog log, string text)
+    private void Show(IMicCheckLogFile log, string text)
     {
         log.Plain(text);
         ui.WriteLine(text);
@@ -283,7 +284,7 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
     /// <summary>Why the check stopped when --seconds ran out: "the 1 second asked for with --seconds has passed", "the 60 seconds ... have passed".</summary>
     private static string TimeIsUp(TimeSpan limit)
     {
-        var seconds = MicCheckLog.Seconds(limit);
+        var seconds = Durations.Seconds(limit);
         return $"the {seconds} asked for with --seconds {(seconds == "1 second" ? "has" : "have")} passed";
     }
 
@@ -297,7 +298,7 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
     /// <param name="Tracker">The tracker that turns each look into lines.</param>
     /// <param name="Log">The log file.</param>
     /// <param name="StartedAt">When the check started, on the steady clock.</param>
-    private sealed record Watch(MicrophoneChangeTracker Tracker, MicCheckLog Log, long StartedAt)
+    private sealed record Watch(MicrophoneChangeTracker Tracker, IMicCheckLogFile Log, long StartedAt)
     {
         /// <summary>How many looks have been made.</summary>
         public int Looks { get; set; }

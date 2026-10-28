@@ -28,6 +28,10 @@ public static class AudioServices
         services.AddSingleton(provider => new Lazy<ILoopbackCaptureProvider>(provider.GetRequiredService<ILoopbackCaptureProvider>));
 
         services.AddSingleton<IAudioPreparer, AudioPreparer>();
+
+        // The WAV files a recording session writes its tracks into, and what a WAV file ClassScribe wrote says of itself.
+        services.AddSingleton<ITrackWriterFactory, WavTrackWriterFactory>();
+        services.AddSingleton<IAudioFileFacts, AudioFileFacts>();
         return services;
     }
 }

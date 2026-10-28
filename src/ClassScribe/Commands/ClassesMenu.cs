@@ -26,7 +26,7 @@ namespace ClassScribe.Commands;
 /// <param name="ui">The window the questions are asked in.</param>
 /// <param name="time">The clock a new run's id is stamped with.</param>
 /// <param name="cameras">The cameras, for the camera question in person; null asks none.</param>
-public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICommandRunner commands, ClassFolders folders, ILoopbackCaptureProvider devices,
+public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICommandRunner commands, IClassFolders folders, ILoopbackCaptureProvider devices,
     IMicrophoneProvider microphones, IConsoleUi ui, TimeProvider time, ICameraProvider? cameras = null)
 {
     /// <summary>How many entries a list offers, so that one digit picks one.</summary>
@@ -80,7 +80,7 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
             return 0;
         }
 
-        var root = saved.OutputFolder is { } own ? ClassFolders.RootFor(own) : folders.Root;
+        var root = saved.OutputFolder is { } own ? folders.RootFor(own) : folders.Root;
         ui.WriteLine($"Recording {saved.Course} ({(saved.Name == saved.Course ? "saved class" : $"the saved class \"{saved.Name}\"")}): {saved.Describe()}, into {Path.Combine(root, saved.Course)}{(saved.Transcribe ? ", then transcribed" : "")}.");
         var request = new RecordRequest(RunIds.New(time.GetUtcNow()), saved.Course, saved.Transcribe, saved.Plan, root, ContinueChoice.Ask,
             ContinueBaseName: null, Minutes: null, Open: true, ClassName: saved.Name);
@@ -219,7 +219,7 @@ public sealed class ClassesMenu(SavedClasses classes, SettingsPlaces places, ICo
             else
             {
                 // Taken as Recording:OutputFolder takes a path: a relative one from the user's folder, not the window's current one.
-                folder = ClassFolders.RootFor(answeredFolder);
+                folder = folders.RootFor(answeredFolder);
             }
         }
 

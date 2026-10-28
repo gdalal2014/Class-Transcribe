@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using ClassScribe.Commands;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;
@@ -38,7 +39,11 @@ public class ClassCommandTests
     /// <summary>Runs <paramref name="request"/> through the command and returns the exit code.</summary>
     private int Run(ClassRequest request) =>
         new ClassCommand(_files.Writer, _files.Places, _files.SettingsFile, _files.Reloader, TestOptions.Create(new RecordingOptions { OutputFolder = _recordings.Path }),
-            new CommandOutput(_out, _error), NullLogger<ClassCommand>.Instance).RunAsync(request).GetAwaiter().GetResult();
+            Folders(_recordings.Path), new CommandOutput(_out, _error), NullLogger<ClassCommand>.Instance).RunAsync(request).GetAwaiter().GetResult();
+
+    /// <summary>The recordings' library over <paramref name="recordings"/>, the real class folders.</summary>
+    private static ClassFolders Folders(string recordings) =>
+        new(TestOptions.Create(new RecordingOptions { OutputFolder = recordings }), TimeProvider.System, NullLogger<ClassFolders>.Instance);
 
     /// <summary>The lines written to standard output.</summary>
     private string[] Lines => _out.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
@@ -269,7 +274,7 @@ public class ClassCommandTests
         File.Delete(_files.UserFile);
         var places = new SettingsPlaces(_files.Program.Path, _files.User.Path, _files.State.Path);
         var missing = new ClassCommand(_files.Writer, places, new SettingsFile(places, NullLogger<SettingsFile>.Instance), _files.Reloader,
-            TestOptions.Create(new RecordingOptions()), new CommandOutput(_out, _error), NullLogger<ClassCommand>.Instance);
+            TestOptions.Create(new RecordingOptions()), Folders(_recordings.Path), new CommandOutput(_out, _error), NullLogger<ClassCommand>.Instance);
         Assert.That(missing.RunAsync(new ClassRequest.Show("Mantiq", false)).Result, Is.EqualTo(2), "missing, with the marker");
         Assert.That(_error.ToString(), Does.Contain("is missing"));
     }

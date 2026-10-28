@@ -47,7 +47,7 @@ public sealed class MicrophoneSourceTests
 
     /// <summary>A session recording the microphone track on the clock through <paramref name="source"/>.</summary>
     private RecordingSession Session(MicrophoneSource source) =>
-        new(source, new TrackSpec(Track.Microphone, TrackPlacement.ClockAligned), new RecordingClock(_time), TestOptions.Create(new RecordingOptions()), _time, _log);
+        new(source, new WavTrackWriterFactory(), new TrackSpec(Track.Microphone, TrackPlacement.ClockAligned), new RecordingClock(_time), TestOptions.Create(new RecordingOptions()), _time, _log);
 
     /// <summary>The source's words name the microphone, it looks every ten seconds, and it has no level meter to read.</summary>
     [Test]

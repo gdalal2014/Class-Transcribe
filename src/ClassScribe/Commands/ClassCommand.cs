@@ -56,10 +56,11 @@ public abstract record ClassRequest
 /// <param name="file">The settings file, read for list and show.</param>
 /// <param name="reloader">Stages the file's values, for list and show.</param>
 /// <param name="recording">The run's recording settings: the recordings folder a class without its own uses.</param>
+/// <param name="folders">The recordings' library: where a course's folder is under a recordings folder.</param>
 /// <param name="output">Standard output and standard error.</param>
 /// <param name="logger">Where a file that cannot be read is noted.</param>
 public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, SettingsFile file, SettingsReloader reloader, IOptionsSnapshot<RecordingOptions> recording,
-    CommandOutput output, ILogger<ClassCommand> logger)
+    IClassFolders folders, CommandOutput output, ILogger<ClassCommand> logger)
 {
     /// <summary>The exit code of a mistake in what was asked, or a class that cannot be used.</summary>
     private const int Mistake = 2;
@@ -368,7 +369,7 @@ public sealed class ClassCommand(SettingsWriter writer, SettingsPlaces places, S
     private IEnumerable<string> CourseChanged(string name, string oldCourse, string newCourse, string? classFolder)
     {
         yield return $"The next class of {name} goes to a new folder, {FolderNames.SafeName(newCourse)}\\..., with new file names and a new folder on Google Drive; continue will not offer recordings of {oldCourse}.";
-        var old = Path.Combine(ClassFolders.RootFor(classFolder ?? recording.Value.OutputFolder), FolderNames.SafeName(oldCourse));
+        var old = Path.Combine(folders.RootFor(classFolder ?? recording.Value.OutputFolder), FolderNames.SafeName(oldCourse));
         if (Directory.Exists(old)) yield return $"The recordings of {oldCourse} stay where they are, in {old}.";
     }
 

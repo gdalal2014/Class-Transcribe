@@ -2,6 +2,7 @@ using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
+using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
@@ -38,8 +39,10 @@ public sealed class RecordCommand(
     TranscriptionProgress progress,
     UsageReport usage,
     IUserSignals signals,
-    ClassFolders folders,
-    ClassMarks marks,
+    IClassFolders folders,
+    IClassMarks marks,
+    IRecordingFolder recordingFolder,
+    IFileProbe probe,
     RunBookkeeping bookkeeping,
     IResultShower results,
     IRecorderStatusSink status,
@@ -292,7 +295,7 @@ public sealed class RecordCommand(
     {
         if (request.Source.Camera is null || lessonVideos is null) return;
 
-        if (files.FindCameraPieces().Count == 0)
+        if (recordingFolder.FindCameraPieces(files).Count == 0)
         {
             logger.LogWarning("The camera wrote no picture in this lesson, so it has no video to make; the sound is kept");
             return;
@@ -663,11 +666,11 @@ public sealed class RecordCommand(
 
     /// <summary>
     /// The files this run records into: those of the recording it continues, in its own folder in whichever layout it was
-    /// made (see <see cref="ClassFolders.OpenToContinue"/>), when the request names one and it can still be opened, with
+    /// made (see <see cref="IClassFolders.OpenToContinue"/>), when the request names one and it can still be opened, with
     /// the recording's length on disk, where this run starts, and how long ago its audio was last written;
     /// otherwise a new recording's. A recording that cannot be continued does not cost the class: the run says why and
     /// records a new one. A YouTube video's, once its batch has a date folder, is a new recording there (see
-    /// <see cref="ClassFolders.CreateRecordingIn"/>).
+    /// <see cref="IClassFolders.CreateRecordingIn"/>).
     /// </summary>
     private (RecordingFiles Files, TimeSpan Offset, TimeSpan? NotRecorded) OpenFiles(RecordRequest request)
     {
@@ -695,9 +698,9 @@ public sealed class RecordCommand(
     }
 
     /// <summary>When audio was last written to the recording, on either track, in UTC.</summary>
-    private static DateTimeOffset LastWritten(RecordingFiles files) =>
-        files.FindSegments().Concat(files.FindSegments(Track.Microphone))
-            .Select(segment => new DateTimeOffset(File.GetLastWriteTimeUtc(segment), TimeSpan.Zero))
+    private DateTimeOffset LastWritten(RecordingFiles files) =>
+        recordingFolder.FindSegments(files).Concat(recordingFolder.FindSegments(files, Track.Microphone))
+            .Select(segment => new DateTimeOffset(probe.LastWriteUtc(segment), TimeSpan.Zero))
             .DefaultIfEmpty(DateTimeOffset.MinValue)
             .Max();
 
@@ -813,8 +816,8 @@ public sealed class RecordCommand(
     private bool HasKey() => !string.IsNullOrWhiteSpace(elevenLabs.Value.ApiKey);
 
     /// <summary>True when two paths name the same folder, whatever their letter case or a separator at the end.</summary>
-    private static bool SameFolder(string first, string second) =>
-        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)), StringComparison.OrdinalIgnoreCase);
+    private bool SameFolder(string first, string second) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(probe.FullPath(first)), Path.TrimEndingDirectorySeparator(probe.FullPath(second)), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// What the run has recorded so far, for the words of a failure: the files, once known; where it started in them; whether

@@ -62,7 +62,7 @@ public sealed class FinishVideoCommandTests
         var recording = TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path, OpenFolderWhenDone = true });
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance, new OnDrive(this));
         var starter = new FakeCameraProcessStarter { Run = (process, jobId) => new CameraHost { Media = _media }.RunAsync(jobId, process.ProcessStream, process.ProcessStream) };
-        return new FinishVideoCommand(folders, new LessonVideoMaker(starter, TimeProvider.System, _logs),
+        return new FinishVideoCommand(folders, new FileProbe(), new RecordingFolder(), new LessonVideoMaker(starter, new RecordingFolder(), TimeProvider.System, _logs),
             new LessonVideoDrive(new FakeCredentialStore(), TestOptions.Create(new DriveOptions())), _drive, _signals, _power, new FakePowerSource(), _desktop.Object, recording, _log);
     }
 
@@ -178,7 +178,7 @@ public sealed class FinishVideoCommandTests
         _signals.Cancel();
 
         Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(30)), Is.EqualTo(130));
-        Assert.That(_files.FindCameraPieces(), Has.Count.EqualTo(1));
+        Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
         Assert.That(File.Exists(_files.LessonVideo), Is.False);
     }
 }

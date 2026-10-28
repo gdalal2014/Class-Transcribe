@@ -75,10 +75,11 @@ public static class VideoPlan
     /// <summary>
     /// The plan's lines for <paramref name="videos"/> of the course <paramref name="name"/>, recorded into
     /// <paramref name="courseFolder"/>, each for at most <paramref name="longest"/> (as <paramref name="longestSetting"/> sets it);
-    /// the cost as <paramref name="prices"/> say, with the glossary of <paramref name="keyterms"/> terms, when transcribed.
+    /// the cost as <paramref name="prices"/> say, with the glossary of <paramref name="keyterms"/> terms, when transcribed; the
+    /// recordings made before are measured through <paramref name="folders"/>.
     /// </summary>
     public static IReadOnlyList<string> Lines(IReadOnlyList<RecordedVideo> videos, string name, string courseFolder, bool transcribe, int keyterms,
-        ElevenLabsOptions prices, string? accountLine, TimeSpan longest, string longestSetting)
+        ElevenLabsOptions prices, string? accountLine, TimeSpan longest, string longestSetting, IClassFolders folders)
     {
         var toRecord = videos.Where(video => video.ToRecord).ToList();
         List<string> lines = [toRecord.Count > 0
@@ -110,7 +111,7 @@ public static class VideoPlan
         var before = videos.Where(video => video.Past.Kind == PastKind.Whole && video.Past.Recording?.KeptAnswer is null).ToList();
         if (transcribe && before.Count > 0)
         {
-            var length = before.Aggregate(TimeSpan.Zero, (sum, video) => sum + Recorded(video.Past.Recording!.Files));
+            var length = before.Aggregate(TimeSpan.Zero, (sum, video) => sum + folders.TrackLength(video.Past.Recording!.Files, Track.Main));
             lines.Add($"Also transcribed: {DownloadPlan.Count(before.Count, "recording")} made before, {Durations.Hours(length)}{DownloadPlan.CostOf(length, transcribe, keyterms, prices)}");
         }
 
@@ -131,8 +132,6 @@ public static class VideoPlan
         return string.Create(CultureInfo.InvariantCulture, $"they cost at most ${dollars:0.00} to transcribe, most likely much less (${hour:0.00} for each hour recorded).");
     }
 
-    /// <summary>How long the recording of <paramref name="files"/> is, on disk.</summary>
-    private static TimeSpan Recorded(RecordingFiles files) => files.FindSegments().Aggregate(TimeSpan.Zero, (sum, segment) => sum + ClassFolders.MeasureSegment(segment));
 
     /// <summary>A length in whole hours, "4 hours", or in hours and minutes, "1 h 30 min", or in minutes under an hour.</summary>
     internal static string Hours(TimeSpan length) =>
@@ -168,7 +167,8 @@ public sealed class VideoBatch(
     VideoWindow windows,
     ICommandRunner commands,
     RunJournal journal,
-    ClassFolders classFolders,
+    IClassFolders classFolders,
+    IRecordingFolder recordings,
     GlossaryChoice glossaries,
     IUserSignals signals,
     IConsoleUi ui,
@@ -254,9 +254,9 @@ public sealed class VideoBatch(
 
             var accountLine = request.Transcribe ? await batch.AccountLineAsync(stopping.Token) : null;
             var (longest, setting) = Longest();
-            var courseFolder = Path.Combine(ClassFolders.RootFor(request.OutputRoot), FolderNames.SafeName(request.Name));
+            var courseFolder = Path.Combine(classFolders.RootFor(request.OutputRoot), FolderNames.SafeName(request.Name));
             var glossary = glossaries.TermsFor(request.Name);
-            foreach (var line in VideoPlan.Lines(videos, request.Name, courseFolder, request.Transcribe, glossary, elevenLabs.Value, accountLine, longest, setting))
+            foreach (var line in VideoPlan.Lines(videos, request.Name, courseFolder, request.Transcribe, glossary, elevenLabs.Value, accountLine, longest, setting, classFolders))
                 ui.WriteLine(line);
 
             if (request.Confirmation == BatchConfirmation.PlanOnly) return 0;
@@ -425,7 +425,7 @@ public sealed class VideoBatch(
         {
             logger.LogInformation("\"{Title}\" records on in the background to its end; no more videos open, and the same command transcribes it later", video.Title);
         }
-        else if (video.Outcome is null && video.Recording is { } kept && kept.FindSegments().Count > 0)
+        else if (video.Outcome is null && video.Recording is { } kept && recordings.FindSegments(kept).Count > 0)
         {
             // Its recorder was lost while it recorded: a video is never continued, so the audio so far is kept, transcribed as
             // a recording that may be cut short, which its source file says, and the same command records it again.

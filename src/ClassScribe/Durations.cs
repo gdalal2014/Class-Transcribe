@@ -20,4 +20,11 @@ public static class Durations
         length >= TimeSpan.FromHours(1)
             ? string.Create(CultureInfo.InvariantCulture, $"{(int)length.TotalHours} h {length.Minutes} min")
             : string.Create(CultureInfo.InvariantCulture, $"{Math.Max(1, (int)Math.Round(length.TotalMinutes))} min");
+
+    /// <summary>A length in whole seconds, in words: "1 second", "60 seconds".</summary>
+    public static string Seconds(TimeSpan length)
+    {
+        var seconds = (long)Math.Round(length.TotalSeconds);
+        return seconds == 1 ? "1 second" : string.Create(CultureInfo.InvariantCulture, $"{seconds} seconds");
+    }
 }

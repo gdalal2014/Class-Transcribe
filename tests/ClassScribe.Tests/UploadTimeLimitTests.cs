@@ -49,7 +49,7 @@ public class UploadTimeLimitTests
         var upload = _folder.File("Kalam.upload.wav");
         WriteAudio(upload, TimeSpan.FromHours(hours));
 
-        var limit = UploadTimeLimit.For(upload, WavHeader.Size + hours * BytesPerHour, new ElevenLabsOptions());
+        var limit = UploadTimeLimit.For(new AudioFileFacts().AudioLength(upload), WavHeader.Size + hours * BytesPerHour, new ElevenLabsOptions());
 
         Assert.That(limit, Is.EqualTo(TimeSpan.FromMinutes(minutes)));
     }
@@ -63,7 +63,7 @@ public class UploadTimeLimitTests
         var upload = _folder.File("Kalam.upload.wav");
         WriteAudio(upload, TimeSpan.FromHours(2));
 
-        var limit = UploadTimeLimit.For(upload, 2 * BytesPerHour, new ElevenLabsOptions { TimeoutMinutes = timeoutMinutes });
+        var limit = UploadTimeLimit.For(new AudioFileFacts().AudioLength(upload), 2 * BytesPerHour, new ElevenLabsOptions { TimeoutMinutes = timeoutMinutes });
 
         Assert.That(limit, Is.EqualTo(TimeSpan.FromMinutes(minutes)));
     }
@@ -80,7 +80,7 @@ public class UploadTimeLimitTests
         var upload = _folder.File("Kalam.upload.wav");
         WriteAudio(upload, TimeSpan.FromHours(2));
 
-        var limit = UploadTimeLimit.For(upload, 2 * BytesPerHour, new ElevenLabsOptions { TimeoutMinutes = 1, SlowestUploadMbps = megabitsPerSecond });
+        var limit = UploadTimeLimit.For(new AudioFileFacts().AudioLength(upload), 2 * BytesPerHour, new ElevenLabsOptions { TimeoutMinutes = 1, SlowestUploadMbps = megabitsPerSecond });
 
         Assert.That(limit, Is.EqualTo(TimeSpan.FromMinutes(minutes)));
     }
@@ -96,7 +96,7 @@ public class UploadTimeLimitTests
         var audio = _folder.File("lecture.mp3");
         File.WriteAllBytes(audio, [0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0]);
 
-        var limit = UploadTimeLimit.For(audio, 6 * BytesPerHour, new ElevenLabsOptions());
+        var limit = UploadTimeLimit.For(new AudioFileFacts().AudioLength(audio), 6 * BytesPerHour, new ElevenLabsOptions());
 
         Assert.That(limit, Is.EqualTo(TimeSpan.FromMinutes(125)));
     }
@@ -109,7 +109,7 @@ public class UploadTimeLimitTests
         ForeignWav.Write(audio, new WaveFormat(16000, 16, 1), TestAudio.Shorts(1000, -1000));
         ForeignWav.LeaveUnfinished(audio, dataBytes: (uint)(6 * BytesPerHour));
 
-        var limit = UploadTimeLimit.For(audio, 6 * BytesPerHour, new ElevenLabsOptions());
+        var limit = UploadTimeLimit.For(new AudioFileFacts().AudioLength(audio), 6 * BytesPerHour, new ElevenLabsOptions());
 
         Assert.That(limit, Is.EqualTo(TimeSpan.FromMinutes(125)));
     }
@@ -122,7 +122,7 @@ public class UploadTimeLimitTests
         var segment = _folder.File("Kalam.wav");
         TestAudio.WriteWav(segment, sampleRate, TestAudio.Tone(sampleRate, seconds: 0.5, frequency: 440, amplitude: 0.5));
 
-        Assert.That(UploadTimeLimit.AudioLength(segment), Is.EqualTo(TimeSpan.FromSeconds(0.5)));
+        Assert.That(new AudioFileFacts().AudioLength(segment), Is.EqualTo(TimeSpan.FromSeconds(0.5)));
     }
 
     /// <summary>
@@ -139,7 +139,7 @@ public class UploadTimeLimitTests
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(40), 0);
         File.WriteAllBytes(segment, bytes);
 
-        Assert.That(UploadTimeLimit.AudioLength(segment), Is.EqualTo(TimeSpan.FromSeconds(0.5)));
+        Assert.That(new AudioFileFacts().AudioLength(segment), Is.EqualTo(TimeSpan.FromSeconds(0.5)));
     }
 
     /// <summary>A file too short to hold a header, a WAV file another program wrote and a file of another kind have no length known from a header.</summary>
@@ -155,9 +155,9 @@ public class UploadTimeLimitTests
 
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(UploadTimeLimit.AudioLength(tiny), Is.Null);
-            Assert.That(UploadTimeLimit.AudioLength(foreign), Is.Null);
-            Assert.That(UploadTimeLimit.AudioLength(mp3), Is.Null);
+            Assert.That(new AudioFileFacts().AudioLength(tiny), Is.Null);
+            Assert.That(new AudioFileFacts().AudioLength(foreign), Is.Null);
+            Assert.That(new AudioFileFacts().AudioLength(mp3), Is.Null);
         }
     }
 }

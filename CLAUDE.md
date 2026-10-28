@@ -209,7 +209,11 @@ advice after a format error (10 A).
   line, `CommandOutput`, the window's status sink) and last `Commands/WindowServices.cs`, the window's side of a run in
   the background, which replaces the stand-in report. A new registration goes to the class of its type's layer, and the
   order of a service's registrations is kept, since a later Add of the same service wins (the split of slice 3a was
-  checked against a dump of every descriptor).
+  checked against a dump of every descriptor). The ports of slice 3b1 are registered beside their adapters, by
+  Infrastructure's own area: `IClassFolders` and `IClassMarks` as the same singletons as `ClassFolders` and `ClassMarks`,
+  and `IRecordingFolder`, `ITranscriptCopies` and `IMicCheckLog` in `StorageServices`; `ITrackWriterFactory` and
+  `IAudioFileFacts` in `AudioServices`; `ITranscriptAnswers` in `TranscriptionServices`; `IFileProbe` stays in
+  `YouTubeServices`, where it was first registered.
   `AppHost` adds the settings reload (`SettingsServices.AddSettingsReload`: the places, the file, the
   reloader and the one `SettingsWriter`), since it builds the configuration the reload works on;
   `AddSettings` registers `SavedClasses` and `IOutputFolderFacts` beside `SettingsCheck`, `CommandUseCases`
@@ -839,7 +843,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (a recording the held safety stop ended still sent, the file limit's wiring proved, the sign-in page
   without a query, a kept upload's version named) to 4,880, all passing; the cuts of architecture slice 3a
   (`feature/layers-cut`: every file one layer's types, the run's contracts in `Runs`, the constants and helpers moved
-  inward with tests of their new homes) bring it to 4,914. The uploads by
+  inward with tests of their new homes) bring it to 4,914; the ports of the recording's files and storage of slice 3b1
+  (`feature/layers-storage`: `IClassFolders`, `IRecordingFolder`, `ITranscriptCopies`, `IClassMarks`, `IMicCheckLog`,
+  `ITrackWriterFactory`, `IAudioFileFacts`, `ITranscriptAnswers`, `IFileProbe`'s new checks and `IAudioCapture.Processing`,
+  each with its contract test over the real adapter in a temporary folder) bring it to 4,939. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -881,7 +888,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, 3 min 32 s for 4,538 with
   settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
   app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
-  with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, plus the build).
+  with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1061,30 +1068,32 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   time in its stamp) are ignored by every listing, never uploaded, never deleted. Files are named
   `<name>_<yyyy-MM-dd_HH-mm-ss>Z` (UTC start) with `.wav`, `_partN.wav`, `.mic.wav` and
   `_partN.mic.wav` (the microphone's track beside the class, `Track.Microphone`,
-  `RecordingFiles.FindSegments(Track)`; in person the microphone is the main track under the plain
+  `IRecordingFolder.FindSegments(files, Track)`; in person the microphone is the main track under the plain
   names), `.marks.txt` (marks, and notes written as `hh:mm:ss.fff ~ words`, such as the resume note
   `ClassMarks.AddResume` writes, the sleep notes and the gap notes of class-only recordings;
-  `ClassMarks.PartsOf` counts the parts), `.log` (everything the recording's runs logged, in both
+  `IClassMarks.PartsOf` counts the parts), `.log` (everything the recording's runs logged, in both
   homes, `RecorderLog.WriteFileTo`), `.md` (the Markdown transcript), `.json` (ElevenLabs' answer),
   `.upload.wav` (the 16 kHz copy, the two tracks mixed when there are two, removed after every try,
   failed or cancelled included, unless `Recording:KeepUploadFile`) and `.unread.json` (an answer
   ElevenLabs charged for that did not become a transcript; a `.json` left without its `.md` counts as
-  one too, see `RecordingFiles.FindKeptAnswers`; menu choice 3 shows `answer kept` and asks before a
+  one too, see `IRecordingFolder.FindKeptAnswers`; menu choice 3 shows `answer kept` and asks before a
   charged retry), `.glossary.json` (the glossary decided as the recording started and what each
   transcript sent, `RecordingFiles.Glossary`; see the glossary bullet), and for a lesson with the camera its pieces, `<base>.cam.mp4` and `<base>.cam@hh-mm-ss.fff.mp4`
-  (`RecordingFiles.CameraPiece(start)`, `FindCameraPieces()` in their order on the clock, `IsCameraPiece`; a sign of a
+  (`RecordingFiles.CameraPiece(start)`, `IRecordingFolder.FindCameraPieces` in their order on the clock, `IsCameraPiece`; a sign of a
   class for the date folders; held while written for `IsBeingWritten`, the newest piece open for writing with reading
   allowed; never sent to Drive, `RecordingUpload.FilesToUpload` and `UploadManifests.OnDisk` leave them out; a lesson with
   pieces continued only by a run with the camera, `ClassFolders.FindContinuable(..., camera)`; one without pieces is the run
   files' to decide, `ContinueQuestion.FindContinuable`: a run that asked for the camera is continued with it, a piece or
   none, and with no run file left, no piece means no camera). `Track` has no
-  `Camera` value: `FindSegments` stays `.wav`'s. `RecordingFiles` owns the naming and `TranscriptCopies` the copy numbers: a
+  `Camera` value: `FindSegments` stays `.wav`'s. `RecordingFiles` owns the naming (Core, which never reads the disk; its
+  `TryParse` takes the folder from the path as given, which every caller passes in full), `IRecordingFolder`
+  (`RecordingFolder`) what is on disk of a recording, and `ITranscriptCopies` (`TranscriptCopies`) the copy numbers: a
   transcript is never overwritten (`(2).md`, `(3).md`), not even by two processes at once, because
-  each copy's `.json` and `.md` are claimed with `FileMode.CreateNew`. `HasTranscript` counts any
-  copy; `ClassFolders` measures a recording by its longest track, reports `HasMicrophone` (`list`
+  each copy's `.json` and `.md` are claimed with `FileMode.CreateNew`. `IRecordingFolder.HasTranscript` counts any
+  copy; `ClassFolders` (the `IClassFolders` of the use cases) measures a recording by its longest track, reports `HasMicrophone` (`list`
   and menu choice 3 say `class + microphone`), and continues a recording only with the tracks it
   was made with. The microphone check's logs go to `<root>\mic-check\mic-check_<local stamp>.log`
-  (`MicCheckLog`: no `Z`, so `RecordingFiles.TryParse` never takes one for a recording, and the
+  (`IMicCheckLog`, `MicCheckLog`: no `Z`, so `RecordingFiles.TryParse` never takes one for a recording, and the
   folder lists no recordings). A YouTube video's recording adds `<base>.source.json`
   (`RecordingFiles.Source`, `VideoSource`, written atomically by `VideoSourceFile`, unknown fields
   passed over): `TryParse` takes it, so Drive sends it with the recording and the readers see it; it is
@@ -1096,8 +1105,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `CreateRecording`, every later one goes in with `ClassFolders.CreateRecordingIn(folder, name)` (base
   names still unique per course), and `IsFree` counts a folder with a `<segment>.wav.partial` (a
   conversion in progress) as taken, so a class that starts meanwhile takes its own.
-- Transcription: `ElevenLabsAnswer` is the only reader of ElevenLabs' answers, for the client and for
-  rebuild. `UploadTimeLimit` gives each try 10 minutes plus the upload at
+- Transcription: `ElevenLabsAnswer` is the only reader of ElevenLabs' answers, for the client and, as
+  `ITranscriptAnswers`, for rebuild. `UploadTimeLimit` gives each try 10 minutes plus the upload at
   `ElevenLabs:SlowestUploadMbps` plus a quarter of the audio, rounded to the minute, never below
   `ElevenLabs:TimeoutMinutes` (2 h of audio: 71 minutes); `HttpClient.Timeout` is off, as
   `ElevenLabsClient` holds the limit. A recording longer than `ElevenLabs:LongestFileHours` less half an
@@ -1122,7 +1131,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `RecordedLine` takes `Recorded` or `Downloaded`, and `IsRecording` counts a source file.
 - What a transcript cost: right after `Transcript received`, `ElevenLabsClient` logs the estimate
   (`TranscriptionCost`: the answer's `audio_duration_secs`, or else the upload WAV's length from
-  `UploadTimeLimit.AudioLength`, at `ElevenLabs:PricePerHourUsd` plus `ElevenLabs:KeytermsPricePerHourUsd`
+  `IAudioFileFacts.AudioLength`, at `ElevenLabs:PricePerHourUsd` plus `ElevenLabs:KeytermsPricePerHourUsd`
   when keyterms were sent; dollars are never turned into credits), guarded so that it can never fail
   the paid transcript. Then `UsageReport` (scoped, one per run): `TranscriptionWorkflow` calls `Begin`
   as the upload starts (the read runs alongside, never awaited there), and `ReportAsync` is the run's
@@ -1176,7 +1185,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   checked on its own, so an unusable one never holds up the rest or the file); `ClassChoices` applies
   the command line's or the menu's answers in groups. Menu C's E takes its Enter answers from the
   class, or for an unusable one from its raw fields (`ClassesMenu.Kept.FromFields`), so Enter through
-  every question keeps them; a folder typed in menus S and C is resolved by `ClassFolders.RootFor`,
+  every question keeps them; a folder typed in menus S and C is resolved by `IClassFolders.RootFor`,
   a relative one from the user profile, as `Recording:OutputFolder` is. `settings` and `class` run without the gate
   (`CommandKind.Settings`), so a refused file can be fixed with them.
   `RunGate` reads the file again before each menu choice and each command (`SettingsReloader`): a
@@ -1343,7 +1352,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   left behind; the files are `RecordingFiles.TryParse`'s of the same base name but the
   `.upload.wav` (and with `WithoutAudio` the `.wav`s), never a PDF beside them, in the order `.md`
   copies, `.json` answers, `.marks.txt`, main `.wav` parts, `.mic.wav` parts, `.log` last; Drive's
-  folder is `DriveFolders.FindOrCreatePathAsync(ClassFolders.DriveLevelsOf(ClassFolders.AsOnDisk(folder)))`
+  folder is `DriveFolders.FindOrCreatePathAsync(IClassFolders.DriveLevelsOf(IClassFolders.AsOnDisk(folder)))`
   (course > date folder, or an old flat folder's name; each level by remembered id in
   `folders.json` keyed by its path under the root, else by escaped name in its parent, else made;
   levels forgotten when the root changes); each file's MD5 is cached in the manifest by size and
@@ -1886,6 +1895,16 @@ declares, a type of another layer may now have a file of its own beside it, in t
 after its main type. `design\final\layers-cut-map.md` (beside the design, outside the repository) lists every such
 move, the members moved inward (`Sizes`, `FolderNames`, `WavHeader`, `Room`, `RunTimings`, `LinkVersion`,
 `ProgramFiles`, `RunView.IsRunOf`) and the visibility changed; slice 5 rewrites this section for the four projects.
+Slice 3b1 (`feature/layers-storage`) put the recording's files and storage behind ports, interfaces in Application whose
+adapters are the classes that held the code (architecture 4): `IClassFolders` over `ClassFolders` (its disk statics stay
+static for Infrastructure's own callers and are the port's members too, implemented explicitly over them), `IRecordingFolder`
+(`RecordingFolder`: the disk queries that were `RecordingFiles`' members), `ITranscriptCopies`, `IClassMarks`, `IMicCheckLog`
+with `IMicCheckLogFile` (`MicCheckLog`, `MicCheckLogFile`), `ITrackWriterFactory` with `ITrackWriter` (`WavTrackWriterFactory`
+over `WavSegmentWriter`: the one way a recording session reaches the disk), `IAudioFileFacts` (`AudioFileFacts`) and
+`ITranscriptAnswers` (`ElevenLabsAnswer`), with `IFileProbe`'s new checks and `IAudioCapture.Processing`. A use case takes a
+port through its constructor; a static helper of a use case (`LessonRuns`, `DownloadPlan.Lines`, `VideoPlan.Lines`,
+`RecordingUpload.BusyIn`) takes it as a parameter. `design\final\layers-storage-map.md` lists each member's old and new call
+and each constructor that takes a port.
 
 - `src/ClassScribe`: `Program.cs` (the console set to UTF-16, a start-up failure printed plainly,
   the close prompt), `AppHost` (builds the host: the checked settings source and a first checked
@@ -1910,7 +1929,8 @@ move, the members moved inward (`Sizes`, `FolderNames`, `WavHeader`, `Room`, `Ru
   microphone advice), the program behind a process id (`IProcessNames`, a limited query) and
   ClassScribe's own processes (`IOwnProcesses`, by pid and by `ProgramFiles.Name`; `ProgramFiles` names the program, its exe and its dll); for YouTube,
   `IRegistryValues.ReadLocalMachineString` (the machine's PATH, Chrome's App Paths), `IFileProbe` (a
-  file there, a program's version), `ChildEnvironment.WithoutTheKey`, `IProcessStarter.StartBrowser`,
+  file or a folder there, when a file was last written, how long it is, its full path, a program's version: the checks the
+  commands make with `File`, `Directory` and `Path.GetFullPath`), `ChildEnvironment.WithoutTheKey`, `IProcessStarter.StartBrowser`,
   `IVideoWindows` (a process's Chrome windows: titles and `WM_CLOSE`) and `IProcessFamily`
   (`ProcessFamily`, a process's tree by pid and start time over `IProcessTree`);
   `Desktop/Windows` holds the Windows calls, `MicrophoneUsageRecord` (the ConsentStore key: which
@@ -1945,9 +1965,12 @@ move, the members moved inward (`Sizes`, `FolderNames`, `WavHeader`, `Room`, `Ru
   `ClassRecording` (an `IRecording` over one session of the class alone), `TrackSet.cs` (`TrackSet`:
   the class and the microphone on one clock, or the microphone in person; owns the gate and the
   watch; `MicrophoneTrack`, and `MicrophoneProviderTap`, the provider as a recording sees it, noting
-  each capture opened), `TrackSetFactory.cs` (the registered `IRecordingFactory`: the recording per
-  mode, and which app is followed), `SourceChoice` (the picks of menu choices 6 and 7, or the
-  settings, as a `SourcePlan`). `AudioServices.cs` holds `LazyLoopbackCaptureProvider`:
+  each capture opened with the processing it reports through `IAudioCapture.Processing`), `TrackSetFactory.cs` (the
+  registered `IRecordingFactory`: the recording per mode, and which app is followed), `SourceChoice` (the picks of menu
+  choices 6 and 7, or the settings, as a `SourcePlan`), `ITrackWriterFactory.cs` (`ITrackWriterFactory` and `ITrackWriter`:
+  the write path a recording session reaches the disk by, its folder, next part, delete and length) with
+  `WavTrackWriterFactory` over `WavSegmentWriter`, an `ITrackWriter`, and `IAudioFileFacts.cs` with `AudioFileFacts` (a WAV
+  file's length from its header). `AudioServices.cs` holds `LazyLoopbackCaptureProvider`:
   `ILoopbackCaptureProvider` is made on first use, so the app, `transcribe`, `rebuild` and `list`
   never touch Windows audio, and `Lazy<ILoopbackCaptureProvider>` (for `devices`) resolves the
   registered provider.
@@ -2014,8 +2037,8 @@ move, the members moved inward (`Sizes`, `FolderNames`, `WavHeader`, `Room`, `Ru
   capture endpoint, with `IAudioSessionControl2WholeRaw`); `WasapiLoopbackCaptureProvider.cs`,
   `ProcessLoopback.cs` and `CaptureGapWatch.cs` as before.
 - `src/ClassScribe/Transcription`: ElevenLabs client (a Refit interface plus `ElevenLabsClient`
-  around it), the shared answer parser (`ElevenLabsAnswer`), the upload's time limit
-  (`UploadTimeLimit`), what one file holds (`TranscriptionLimits`), the glossary (`KeytermRules` and `KeytermLimits`, `IGlossaryFiles` and
+  around it), the shared answer parser (`ElevenLabsAnswer`, the `ITranscriptAnswers` of the saved answers), the upload's
+  time limit (`UploadTimeLimit`, pure: the audio's length comes from `IAudioFileFacts`), what one file holds (`TranscriptionLimits`), the glossary (`KeytermRules` and `KeytermLimits`, `IGlossaryFiles` and
   `GlossaryFiles` with `GlossaryJson`, `GlossaryRecord`, and `GlossaryChoice` with `GlossaryPick` and
   `GlossaryUse`), transcript formatter, workflow (rebuild included),
   `TranscriptionProgress` (scoped: the workflow and the client report preparing, uploading at a
@@ -2069,9 +2092,9 @@ move, the members moved inward (`Sizes`, `FolderNames`, `WavHeader`, `Room`, `Ru
   `YouTubeHostGuard`), `VideoWindow.cs` (`OpenedWindow`, `WindowOpening`, `VideoTitles`,
   `VideoWindow`), `VideoPlayback`, `VideoEnds.cs` (`VideoEnds`, `VideoWindowClosedException`) and
   `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`).
-- `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`: course and date folders, the old flat layout read too; `CreateRecordingIn` and `IsVideo` for YouTube), recording file names (both
-  tracks, and a lesson's camera pieces, `CameraPieceFile`), numbered transcript copies (`TranscriptCopies`, never overwritten), marks, the
-  microphone check's log file (`MicCheckLog`: the header, the cost line, flushed per line), and
+- `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`, the `IClassFolders` of the use cases: course and date folders, the old flat layout read too; `CreateRecordingIn` and `IsVideo` for YouTube; `TrackLength`, `FilesIn` and `FoldersIn` for the use cases), recording file names (`RecordingFiles`: both
+  tracks, and a lesson's camera pieces, `CameraPieceFile`) with what is on disk of a recording (`IRecordingFolder`, `RecordingFolder`), numbered transcript copies (`ITranscriptCopies`, `TranscriptCopies`, never overwritten), marks (`IClassMarks`, `ClassMarks`; `ClassMark.PartsIn`), the
+  microphone check's log file (`IMicCheckLog` and `IMicCheckLogFile`, `MicCheckLog` and `MicCheckLogFile`: the header, the cost line, flushed per line), and
   `RoamingFolder` (`%APPDATA%\ClassScribe`, where `google-drive.dat` is kept; tests give a temporary one),
   and `IAudioOnDrive.cs` (`AudioOnDrive`, `IAudioOnDrive`, `NoAudioOnDrive`: what the lists and commands
   know of audio kept on Drive alone; `ClassFolders` takes it as an optional last argument).
@@ -2156,8 +2179,12 @@ move, the members moved inward (`Sizes`, `FolderNames`, `WavHeader`, `Room`, `Ru
   `FakeMicrophoneUsageRecord`, `FakeProcessNames`, `FakeOwnProcesses`, `ScriptedLooks`, and the
   COM-level fakes of the capture endpoints), `TestDoubles.MicrophoneRun.cs`
   (`FakeMicrophoneRecording`, `FakeMicrophoneRecordingFactory`), `TestDoubles.TrackSet.cs`
-  (`TestLoggerFactory`), `TestDoubles.Account.cs` (`FakeElevenLabsAccount`) and `TestDoubles.DryRun.cs`
-  (`WindowsPowerShell`, a hidden Windows PowerShell 5.1 for the kit's tests). The cost line's
+  (`TestLoggerFactory`), `TestDoubles.Account.cs` (`FakeElevenLabsAccount`), `TestDoubles.DryRun.cs`
+  (`WindowsPowerShell`, a hidden Windows PowerShell 5.1 for the kit's tests) and `TestDoubles.Storage.cs` (`OnDisk`: a
+  recording's files read through the real `RecordingFolder`, where a test looks at what it wrote). The ports of slice 3b1 are
+  tested against their real adapters over a `TempFolder` in `FileProbeTests`, `ClassFoldersPortTests`, `RecordingFolderTests`,
+  `StoragePortTests` (the marks, the copies and the check's log), `WavTrackWriterFactoryTests` and `AudioPortTests` (the file
+  facts, the saved answers and the capture's processing). The cost line's
   tests are `TranscriptionCostTests`, `ElevenLabsAccountTests` (on `StubHttpHandler`),
   `UsageReportTests`, and the order checks in `TranscriptionWorkflowTests`, `RecordCommandTests`,
   `TranscribeCommandTests` and `EndToEndTests`; the Bluetooth watch's are

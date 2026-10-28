@@ -186,6 +186,6 @@ public class DriveUploadCommandTests
 
         Assert.That(await _world.UploadCommand().FreeSpaceAsync(_mantiq.Folder), Is.EqualTo(0));
 
-        Assert.That(_mantiq.FindSegments().Concat(_mantiq.FindSegments(Track.Microphone)), Is.Empty);
+        Assert.That(OnDisk.FindSegments(_mantiq).Concat(OnDisk.FindSegments(_mantiq, Track.Microphone)), Is.Empty);
     }
 }

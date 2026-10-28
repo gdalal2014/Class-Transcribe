@@ -14,7 +14,7 @@ namespace ClassScribe.Commands;
 /// I to check with Google (the account, the storage and ClassScribe's folder) and O to sign out. Each goes to the runner,
 /// which runs the drive command in a scope of its own. Esc, Q or Ctrl+C goes back to the menu.
 /// </summary>
-public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore store, ClassFolders folders, UploadManifests manifests, DriveQueueReport queue, IConsoleUi ui, TimeProvider time)
+public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore store, IClassFolders folders, IRecordingFolder recordings, UploadManifests manifests, DriveQueueReport queue, IConsoleUi ui, TimeProvider time)
 {
     /// <summary>How the date of a sign-in is written, in local time: 17 Oct 2026.</summary>
     private const string DateFormat = "d MMM yyyy";
@@ -119,7 +119,7 @@ public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore st
         if (await PickRecentAsync("Press a recording's number to free the room its audio takes on this laptop, or Esc to go back.") is not { } picked) return 0;
 
         var files = picked.Files;
-        var audio = files.FindSegments().Concat(files.FindSegments(Track.Microphone)).ToList();
+        var audio = recordings.FindSegments(files).Concat(recordings.FindSegments(files, Track.Microphone)).ToList();
         var manifest = manifests.Read(files);
         if (audio.Count == 0)
         {
@@ -183,8 +183,8 @@ public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore st
         };
 
     /// <summary>A file of the recording that is on this laptop, to name it by: its first audio file, or else any of its files.</summary>
-    private static string FileOf(RecordingFiles files) =>
-        files.FindSegments().Concat(files.FindSegments(Track.Microphone)).FirstOrDefault()
+    private string FileOf(RecordingFiles files) =>
+        recordings.FindSegments(files).Concat(recordings.FindSegments(files, Track.Microphone)).FirstOrDefault()
         ?? Directory.EnumerateFiles(files.Folder, $"{files.BaseName}*").FirstOrDefault(path => RecordingFiles.TryParse(path)?.BaseName == files.BaseName)
         ?? files.Segment(1);
 

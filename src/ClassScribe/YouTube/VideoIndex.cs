@@ -15,6 +15,12 @@ namespace ClassScribe.YouTube;
 /// </summary>
 public sealed class VideoIndex
 {
+    /// <summary>A recording's files on disk, by the names its record gives.</summary>
+    private static readonly RecordingFolder Recordings = new();
+
+    /// <summary>A recording's transcripts on disk.</summary>
+    private static readonly TranscriptCopies Copies = new();
+
     /// <summary>The recordings of each video, by its ID, newest first.</summary>
     private readonly Dictionary<string, List<PastVideo>> _byVideo = new(StringComparer.Ordinal);
 
@@ -28,7 +34,7 @@ public sealed class VideoIndex
     /// them. A folder that cannot be looked into, and a source file that cannot be read, are passed over, the second said at
     /// Debug: that video is then fetched again, which costs time, never a recording.
     /// </summary>
-    public static VideoIndex Read(string root, ClassFolders folders, ILogger logger)
+    public static VideoIndex Read(string root, IClassFolders folders, ILogger logger)
     {
         var index = new VideoIndex();
         if (!Directory.Exists(root)) return index;
@@ -57,7 +63,7 @@ public sealed class VideoIndex
                 {
                     if (VideoSourceFile.Read(path) is not { } source) continue;
 
-                    var past = new PastVideo(files, source, files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0, files.HasTranscript,
+                    var past = new PastVideo(files, source, Recordings.FindSegments(files).Count > 0 || Recordings.FindSegments(files, Track.Microphone).Count > 0, Recordings.HasTranscript(files),
                         folders.KeptAnswerOf(files));
                     if (!index._byVideo.TryGetValue(source.VideoId, out var recordings)) index._byVideo[source.VideoId] = recordings = [];
                     recordings.Add(past);
@@ -93,7 +99,7 @@ public sealed class VideoIndex
         // as its summary said, its transcript staying as it is. The audio need not be there still: Drive may hold it alone.
         if (recordings.FirstOrDefault(past => past.HasTranscript && past.Source.EndConfirmed) is { } transcribed)
         {
-            var transcript = TranscriptCopies.Transcripts(transcribed.Files).LastOrDefault() ?? transcribed.Files.Transcript();
+            var transcript = Copies.Transcripts(transcribed.Files).LastOrDefault() ?? transcribed.Files.Transcript();
             var on = TimeZoneInfo.ConvertTime(new DateTimeOffset(File.GetLastWriteTimeUtc(transcript), TimeSpan.Zero), zone).ToString("d MMM", CultureInfo.InvariantCulture);
             return new(PastKind.Transcribed, transcribed, $"already transcribed on {on}: {Path.GetFileName(transcript)}");
         }

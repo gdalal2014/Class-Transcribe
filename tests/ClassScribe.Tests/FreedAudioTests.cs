@@ -54,14 +54,14 @@ public class FreedAudioTests
     /// <summary>The workflow over the world's class folders, with an upload that must never be made.</summary>
     private TranscriptionWorkflow Workflow(ClassFolders folders) =>
         new(_preparer.Object, _client.Object, TestGlossaries.Choice(TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test" })), new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
-            folders, new ClassMarks(NullLogger<ClassMarks>.Instance), _world.Recording, TestOptions.Create(new ElevenLabsOptions()),
+            folders, new ClassMarks(NullLogger<ClassMarks>.Instance), new TranscriptCopies(), new RecordingFolder(), new FileProbe(), new ElevenLabsAnswer(), new AudioFileFacts(), _world.Recording, TestOptions.Create(new ElevenLabsOptions()),
             new TranscriptionProgress(), new UsageReport(new FakeElevenLabsAccount(), _world.Time, NullLogger<UsageReport>.Instance), NullLogger<TranscriptionWorkflow>.Instance);
 
     /// <summary>The transcribe command over the world's class folders, which know of the audio on Drive.</summary>
     private TranscribeCommand Transcribe()
     {
         var folders = _world.ClassFolders();
-        return new TranscribeCommand(Workflow(folders), new UsageReport(new FakeElevenLabsAccount(), _world.Time, NullLogger<UsageReport>.Instance), folders, new FakeUserSignals(),
+        return new TranscribeCommand(Workflow(folders), new UsageReport(new FakeElevenLabsAccount(), _world.Time, NullLogger<UsageReport>.Instance), folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), new FakeUserSignals(),
             new Mock<IDesktop>().Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), _world.Recording, TestOptions.Create(new ElevenLabsOptions { ApiKey = "dummy-key-for-a-local-test" }),
             ZonedTimeProvider.EasternSummer, _transcribeLog);
     }
@@ -76,7 +76,7 @@ public class FreedAudioTests
     {
         var ui = new FakeConsoleUi();
 
-        new ListCommand(_world.ClassFolders(), _world.Runtime.Journal, ui, ZonedTimeProvider.EasternSummer).Run(null);
+        new ListCommand(_world.ClassFolders(), new TranscriptCopies(), _world.Runtime.Journal, ui, ZonedTimeProvider.EasternSummer).Run(null);
 
         Assert.That(ui.Screen, Does.Contain("  Mantiq  17 Oct 10:04  00:00:49  class + microphone  audio on Drive  transcript"));
     }
@@ -128,7 +128,7 @@ public class FreedAudioTests
     public async Task Rebuilding_a_freed_class_works_from_its_saved_answer()
     {
         var folders = _world.ClassFolders();
-        var rebuild = new RebuildCommand(Workflow(folders), folders, new Mock<IDesktop>().Object, new FakeDriveAutoUpload(), _world.Recording, NullLogger<RebuildCommand>.Instance);
+        var rebuild = new RebuildCommand(Workflow(folders), folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), new Mock<IDesktop>().Object, new FakeDriveAutoUpload(), _world.Recording, NullLogger<RebuildCommand>.Instance);
 
         Assert.That(await rebuild.RunAsync(_mantiq.Folder, open: false), Is.EqualTo(0));
 
@@ -146,7 +146,7 @@ public class FreedAudioTests
         commands.Setup(c => c.RebuildAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
         using var settingsFolder = new TempFolder();
         var settings = new TestSettings(settingsFolder.Path);
-        var menu = new MenuCommand(commands.Object, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions()), _world.ClassFolders(), new FakeCaptureProvider(),
+        var menu = new MenuCommand(commands.Object, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions()), _world.ClassFolders(), new RecordingFolder(), new TranscriptCopies(), new FakeCaptureProvider(),
             new SourceChoice(TestOptions.Create(new RecordingOptions())), new RecordingNamePrompt(_ui), new Mock<IDesktop>().Object, ZonedTimeProvider.EasternSummer,
             NullLogger<MenuCommand>.Instance);
         _ui.Type('3', '1', 'r', 'q');
@@ -172,7 +172,7 @@ public class FreedAudioTests
         commands.Setup(c => c.RebuildAsync(It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(0);
         using var settingsFolder = new TempFolder();
         var settings = new TestSettings(settingsFolder.Path);
-        var menu = new MenuCommand(commands.Object, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions()), _world.ClassFolders(), new FakeCaptureProvider(),
+        var menu = new MenuCommand(commands.Object, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions()), _world.ClassFolders(), new RecordingFolder(), new TranscriptCopies(), new FakeCaptureProvider(),
             new SourceChoice(TestOptions.Create(new RecordingOptions())), new RecordingNamePrompt(_ui), new Mock<IDesktop>().Object, ZonedTimeProvider.EasternSummer,
             NullLogger<MenuCommand>.Instance);
         _ui.TypeLine(Path.Combine(_world.Recordings.Path, "Mantiq"));

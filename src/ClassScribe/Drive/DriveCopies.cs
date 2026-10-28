@@ -9,7 +9,7 @@ namespace ClassScribe.Drive;
 /// whether ClassScribe freed it or it was deleted by hand. The length comes from what was measured when it went up. It asks
 /// Google nothing. One for the process.
 /// </summary>
-public sealed class DriveCopies(UploadManifests manifests) : IAudioOnDrive
+public sealed class DriveCopies(UploadManifests manifests, IRecordingFolder recordings) : IAudioOnDrive
 {
     /// <inheritdoc />
     public AudioOnDrive? Find(RecordingFiles files)
@@ -22,7 +22,7 @@ public sealed class DriveCopies(UploadManifests manifests) : IAudioOnDrive
         var microphone = audio.Where(IsMicrophone).ToList();
         var mainSeconds = audio.Except(microphone).Sum(file => file.Seconds ?? 0);
         var microphoneSeconds = microphone.Sum(file => file.Seconds ?? 0);
-        var allOfIt = files.FindSegments().Count == 0 && files.FindSegments(Track.Microphone).Count == 0;
+        var allOfIt = recordings.FindSegments(files).Count == 0 && recordings.FindSegments(files, Track.Microphone).Count == 0;
         return new AudioOnDrive(TimeSpan.FromSeconds(Math.Max(mainSeconds, microphoneSeconds)), microphone.Count > 0, manifest.DriveLocation, manifest.DriveLink, allOfIt);
     }
 

@@ -137,6 +137,7 @@ public sealed class ClassRecording(RecordingSession session, ILogger<ClassRecord
 /// </summary>
 public sealed class ClassRecordingFactory(
     ILoopbackCaptureProvider provider,
+    ITrackWriterFactory writers,
     IOptionsSnapshot<RecordingOptions> options,
     TimeProvider time,
     ILogger<RecordingSession> sessionLogger,
@@ -165,6 +166,6 @@ public sealed class ClassRecordingFactory(
         }
 
         var chooser = new CaptureChooser(time, source.Class ?? new ClassSource.Automatic(), chooserLogger, video);
-        return new RecordingSession(new LoopbackSource(provider, chooser), options, time, sessionLogger);
+        return new RecordingSession(new LoopbackSource(provider, chooser), writers, options, time, sessionLogger);
     }
 }

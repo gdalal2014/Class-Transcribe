@@ -125,7 +125,8 @@ public sealed class RecorderSoakTests
 
     /// <summary>The track-set factory over the simulated devices and microphones, following chrome, whose mute Windows can see, so the microphone starts on.</summary>
     private TrackSetFactory Factory() =>
-        new(_class, _microphones, _sessions, _record, _names, new FakeOwnProcesses(Laptop.OwnProcess), _freezes,
+        new(_class, _microphones, _sessions, _record, _names, new FakeOwnProcesses(Laptop.OwnProcess),
+            new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), new WavTrackWriterFactory(), _freezes,
             TestOptions.Create(new RecordingOptions { MicrophoneFollows = "chrome", ClassAppMute = ClassAppMute.Visible }),
             TestOptions.Create(new TranscriptOptions()), _time, NullLoggerFactory.Instance);
 
@@ -509,8 +510,8 @@ public sealed class RecorderSoakTests
             _recording.Dispose();
             _classParts.AddRange(summary.MainSegments);
             _microphoneParts.AddRange(summary.MicrophoneSegments);
-            var classLength = LengthOf(fixture._files.FindSegments(Track.Main));
-            var microphoneLength = LengthOf(fixture._files.FindSegments(Track.Microphone));
+            var classLength = LengthOf(OnDisk.FindSegments(fixture._files, Track.Main));
+            var microphoneLength = LengthOf(OnDisk.FindSegments(fixture._files, Track.Microphone));
             var offset = classLength > microphoneLength ? classLength : microphoneLength;
             _microphoneOffset = microphoneLength;
             _continues.Add(offset);

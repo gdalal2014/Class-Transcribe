@@ -105,6 +105,8 @@ public class SettingsReloadTests
             app.Services.GetRequiredService<SettingsFile>(),
             app.Services.GetRequiredService<IOptionsMonitor<ElevenLabsOptions>>(),
             app.Services.GetRequiredService<ClassFolders>(),
+            app.Services.GetRequiredService<IRecordingFolder>(),
+            app.Services.GetRequiredService<ITranscriptCopies>(),
             new FakeCaptureProvider(),
             app.Services.GetRequiredService<SourceChoice>(),
             new RecordingNamePrompt(ui),

@@ -62,7 +62,7 @@ public class MicCheckCommandTests
     /// <summary>The command under test over the fakes, with the recordings folder at the test's root, and <paramref name="window"/> for the window (the fake unless given).</summary>
     private MicCheckCommand CreateCommand(IWindowSignals? window = null) =>
         new(_sessions, _record, _names, new FakeOwnProcesses(Environment.ProcessId),
-            new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _root.Path }), _time, NullLogger<ClassFolders>.Instance),
+            new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _root.Path }), _time, NullLogger<ClassFolders>.Instance), new MicCheckLog(),
             _ui, window ?? _window, _signals, _time, _log);
 
     /// <summary>

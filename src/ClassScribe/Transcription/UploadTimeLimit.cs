@@ -22,32 +22,16 @@ public static class UploadTimeLimit
     private static readonly TimeSpan Base = TimeSpan.FromMinutes(10);
 
     /// <summary>
-    /// The time limit for uploading <paramref name="uploadBytes"/> bytes from <paramref name="audioPath"/> and waiting for
-    /// the transcript. The audio's length is known when the file is a WAV file ClassScribe wrote, as the upload copy
-    /// always is (see <see cref="AudioLength"/>); for any other file, such as an MP3 uploaded as it is, the time its
-    /// upload takes stands in for it.
+    /// The time limit for uploading <paramref name="uploadBytes"/> bytes of audio <paramref name="audioLength"/> long and
+    /// waiting for the transcript. The audio's length is known when the file is a WAV file ClassScribe wrote, as the upload
+    /// copy always is (see <see cref="IAudioFileFacts.AudioLength"/>); for any other file, such as an MP3 uploaded as it
+    /// is, <paramref name="audioLength"/> is null and the time its upload takes stands in for it.
     /// </summary>
-    public static TimeSpan For(string audioPath, long uploadBytes, ElevenLabsOptions settings)
+    public static TimeSpan For(TimeSpan? audioLength, long uploadBytes, ElevenLabsOptions settings)
     {
         var upload = TimeSpan.FromSeconds(uploadBytes * 8 / (Math.Max(SlowestMbps, settings.SlowestUploadMbps) * BitsPerMegabit));
-        var audio = AudioLength(audioPath) ?? upload;
+        var audio = audioLength ?? upload;
         var minutes = Math.Round((Base + upload + audio / 4).TotalMinutes, MidpointRounding.AwayFromZero);
         return TimeSpan.FromMinutes(Math.Max(settings.Timeout.TotalMinutes, minutes));
-    }
-
-    /// <summary>
-    /// The length of the audio in a WAV file ClassScribe wrote, or null for any other file. Its header tells the file
-    /// apart and gives the rate; the audio is read to the end of the file, as the preparer reads it, whatever the sizes
-    /// in the header say after a crash.
-    /// </summary>
-    public static TimeSpan? AudioLength(string path)
-    {
-        Span<byte> header = stackalloc byte[WavHeader.Size];
-        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        if (file.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < header.Length || !WavHeader.TryRead(header, out var sampleRate))
-            return null;
-
-        // Two bytes to a sample: the recorder writes mono 16-bit audio.
-        return TimeSpan.FromSeconds((file.Length - WavHeader.Size) / 2.0 / sampleRate);
     }
 }

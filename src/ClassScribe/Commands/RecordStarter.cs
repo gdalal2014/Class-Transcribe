@@ -41,6 +41,7 @@ namespace ClassScribe.Commands;
 /// <param name="viewer">Shows a run in the background.</param>
 /// <param name="question">Whether to continue a recent recording of the same name.</param>
 /// <param name="settings">The settings, handed to the recorder.</param>
+/// <param name="recordings">A recording's files on disk, for what a lost lesson's run had left to do.</param>
 /// <param name="scopes">Makes a scope for a run in this window.</param>
 /// <param name="ui">The window.</param>
 /// <param name="time">The clock.</param>
@@ -55,7 +56,7 @@ namespace ClassScribe.Commands;
 /// Decides the run's glossary before it starts, for the request to carry (see <see cref="RecordRequest.Glossary"/>); null where
 /// none is registered, and the run then decides it by the settings it has.
 /// </param>
-public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher, IRunViewer viewer, ContinueQuestion question, SettingsReloader settings,
+public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher, IRunViewer viewer, ContinueQuestion question, SettingsReloader settings, IRecordingFolder recordings,
     IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null, CameraStart? camera = null,
     GlossaryChoice? glossary = null) : IRecordStarter
 {
@@ -442,8 +443,8 @@ public sealed class RecordStarter(RunJournal journal, RecorderLauncher launcher,
 
             case RunState.Transcribing:
                 MarkSeen(lost.RunId, origin);
-                ui.WriteLine(LessonRuns.OnlyItsVideoLeft(lost)
-                    ? LessonRuns.VideoNotFinished(lost)
+                ui.WriteLine(LessonRuns.OnlyItsVideoLeft(lost, recordings)
+                    ? LessonRuns.VideoNotFinished(lost, recordings)
                     : $"The transcript of \"{name}\" was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again.{TranscribeCommand(lost)}");
                 return new Step.Done(NotDone);
 

@@ -1,8 +1,8 @@
 using System.Net;
-using System.Text;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.YouTube;
@@ -14,7 +14,7 @@ namespace ClassScribe.Transcription;
 /// <summary>
 /// Takes recorded audio through preparation, upload and saving the transcript, and lays an answer saved earlier out again
 /// for free, with the settings of the run's own scope. Every transcript is saved as a new numbered copy, which never
-/// overwrites another (see <see cref="TranscriptCopies"/>), and the upload copy made for a run is removed when the run
+/// overwrites another (see <see cref="ITranscriptCopies"/>), and the upload copy made for a run is removed when the run
 /// ends, whether it succeeded, failed or was cancelled, unless Recording:KeepUploadFile keeps it.
 /// </summary>
 public sealed class TranscriptionWorkflow(
@@ -22,15 +22,19 @@ public sealed class TranscriptionWorkflow(
     ITranscriptionClient client,
     GlossaryChoice glossaries,
     TranscriptFormatter formatter,
-    ClassFolders folders,
-    ClassMarks marks,
+    IClassFolders folders,
+    IClassMarks marks,
+    ITranscriptCopies copies,
+    IRecordingFolder recordings,
+    IFileProbe probe,
+    ITranscriptAnswers answers,
+    IAudioFileFacts facts,
     IOptionsSnapshot<RecordingOptions> recording,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TranscriptionProgress progress,
     UsageReport usage,
     ILogger<TranscriptionWorkflow> logger)
 {
-    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     /// <summary>
     /// The line <see cref="TranscriptFormatter"/> writes under the title of a recording's transcript, such as "Recorded
@@ -82,8 +86,8 @@ public sealed class TranscriptionWorkflow(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var segments = files.FindSegments();
-            var microphone = files.FindSegments(Track.Microphone);
+            var segments = recordings.FindSegments(files);
+            var microphone = recordings.FindSegments(files, Track.Microphone);
             if (segments.Count == 0 && microphone.Count == 0)
                 throw new FileNotFoundException($"There is no audio of the recording {files.BaseName} in {files.Folder}, so there is nothing to transcribe.", files.Segment(1));
 
@@ -94,7 +98,7 @@ public sealed class TranscriptionWorkflow(
             RefuseIfTooLong(files, microphoneAlone ? microphone : segments, microphoneAlone ? [] : microphone, microphoneAlone);
 
             // An upload copy left by a run that was ended before it could remove it is made afresh.
-            File.Delete(files.Upload);
+            recordings.DeleteUploadCopy(files);
             progress.Report(TranscriptionStep.Preparing);
             if (microphoneAlone)
             {
@@ -126,7 +130,7 @@ public sealed class TranscriptionWorkflow(
         }
         finally
         {
-            if (upload is not null && !recording.Value.KeepUploadFile) RemoveUploadCopy(upload, saved);
+            if (upload is not null && !recording.Value.KeepUploadFile) RemoveUploadCopy(files, saved);
         }
     }
 
@@ -145,14 +149,15 @@ public sealed class TranscriptionWorkflow(
     public async Task<TranscriptFiles> TranscribeFileAsync(string path, string? outputRoot, string? keyterms, CancellationToken cancellationToken)
     {
         string? upload = null;
+        RecordingFiles? files = null;
         var saved = false;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var files = folders.CreateForFile(path, outputRoot);
+            files = folders.CreateForFile(path, outputRoot);
             logger.LogInformation("The transcript of {File} goes to {Folder}", Path.GetFileName(path), files.Folder);
 
-            if (TryPrepare(path, files.Upload, cancellationToken)) upload = files.Upload;
+            if (TryPrepare(path, files, cancellationToken)) upload = files.Upload;
             var transcript = await UploadAndSaveAsync(upload ?? path, files, files.Name, recordedUtc: null, [], video: null, keyterms, run: null, cancellationToken);
             saved = true;
             return transcript;
@@ -164,14 +169,14 @@ public sealed class TranscriptionWorkflow(
         }
         finally
         {
-            if (upload is not null && !recording.Value.KeepUploadFile) RemoveUploadCopy(upload, saved);
+            if (upload is not null && !recording.Value.KeepUploadFile) RemoveUploadCopy(files!, saved);
         }
     }
 
     /// <summary>
     /// Lays an answer of ElevenLabs saved earlier out again as a new transcript, for free: no key is needed and nothing is
     /// sent. The answer is <paramref name="answerPath"/>, or else the recording's newest saved answer, never one kept as
-    /// unread (see <see cref="TranscriptCopies.NewestAnswer"/>). It is laid out with the recording's marks and the
+    /// unread (see <see cref="ITranscriptCopies.NewestAnswer"/>). It is laid out with the recording's marks and the
     /// Transcript settings as they are now, and written alone as the first copy that has neither a transcript nor an
     /// answer, so nothing is overwritten. Returns the new transcript's path. A recording keeps its recording time, even
     /// once its audio is deleted, and a file transcribed on its own, which had none, gets none (see <see cref="IsRecording"/>).
@@ -185,13 +190,13 @@ public sealed class TranscriptionWorkflow(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            answer = answerPath ?? TranscriptCopies.NewestAnswer(files)
+            answer = answerPath ?? copies.NewestAnswer(files)
                 ?? throw new FileNotFoundException("This recording has no saved answer from ElevenLabs yet; transcribe it first.", files.Json());
 
-            var result = ElevenLabsAnswer.Parse(await File.ReadAllTextAsync(answer, cancellationToken), HttpStatusCode.OK);
+            var result = await answers.ReadAsync(answer, cancellationToken);
             var recordedUtc = IsRecording(files) ? files.StartedUtc : null;
             var classMarks = marks.Read(files);
-            var rebuilt = TranscriptCopies.SaveRebuilt(files, formatter.Format(result, files.Name, recordedUtc, classMarks, ClassMarks.PartsIn(classMarks), VideoOf(files)), logger);
+            var rebuilt = copies.SaveRebuilt(files, formatter.Format(result, files.Name, recordedUtc, classMarks, ClassMark.PartsIn(classMarks), VideoOf(files)), logger);
             logger.LogInformation("Rebuilt from {Answer} into {Transcript}; nothing was uploaded", Path.GetFileName(answer), Path.GetFileName(rebuilt));
             return rebuilt;
         }
@@ -212,9 +217,9 @@ public sealed class TranscriptionWorkflow(
     /// downloaded, as they still do once the audio is deleted. With none of these left the two cannot be told apart, and
     /// false claims no recording time that may be wrong.
     /// </summary>
-    private static bool IsRecording(RecordingFiles files) =>
-        files.FindSegments().Count > 0 || files.FindSegments(Track.Microphone).Count > 0 || File.Exists(files.Marks) || File.Exists(files.Source)
-        || TranscriptCopies.Transcripts(files).Any(SaysWhenRecorded);
+    private bool IsRecording(RecordingFiles files) =>
+        recordings.FindSegments(files).Count > 0 || recordings.FindSegments(files, Track.Microphone).Count > 0 || probe.FileExists(files.Marks) || probe.FileExists(files.Source)
+        || copies.Transcripts(files).Any(SaysWhenRecorded);
 
     /// <summary>
     /// The YouTube video <paramref name="files"/> is the recording of, from its source file, for the transcript's heading;
@@ -237,23 +242,17 @@ public sealed class TranscriptionWorkflow(
 
     /// <summary>
     /// True when the transcript at <paramref name="path"/> says when its recording was made, in the line the formatter
-    /// writes under the title (see <see cref="RecordedLine"/>). It can be read while another ClassScribe writes it.
+    /// writes under the title (see <see cref="RecordedLine"/>), read through the copies' port while another ClassScribe
+    /// may write it.
     /// </summary>
-    private static bool SaysWhenRecorded(string path)
-    {
-        using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
-        reader.ReadLine();   // the title
-        string? line;
-        do line = reader.ReadLine(); while (line is { Length: 0 });
-        return line is not null && RecordedLine.IsMatch(line);
-    }
+    private bool SaysWhenRecorded(string path) => copies.LineUnderTitle(path) is { } line && RecordedLine.IsMatch(line);
 
     /// <summary>
     /// Refuses a recording whose sent track's segments, <paramref name="segments"/>, hold more audio together than one file
     /// sends, ElevenLabs:LongestFileHours less half an hour and the minute a recording may run past it, as one the safety stop
     /// ended there does (see <see cref="TranscriptionLimits.Sends"/>), before anything is prepared, with the limits in words
     /// from the settings. Each segment is read to its end, as the preparer
-    /// reads it (see <see cref="UploadTimeLimit.AudioLength"/>); a file the recorder did not write counts as empty, as it
+    /// reads it (see <see cref="IAudioFileFacts.AudioLength"/>); a file the recorder did not write counts as empty, as it
     /// does in the list of recordings. The microphone's segments beside the class, <paramref name="microphone"/>, are not measured:
     /// they only decide the advice. A folder holding the copied .wav files alone looks like a class-only recording, which
     /// would drop your microphone from every piece without a word, so when the recording has a microphone track the
@@ -264,7 +263,7 @@ public sealed class TranscriptionWorkflow(
     {
         var limits = TranscriptionLimits.From(elevenLabs.Value);
         var length = TimeSpan.Zero;
-        foreach (var segment in segments) length += UploadTimeLimit.AudioLength(segment) ?? TimeSpan.Zero;
+        foreach (var segment in segments) length += facts.AudioLength(segment) ?? TimeSpan.Zero;
         if (limits.Sends(length)) return;
 
         var advice = microphoneAlone
@@ -277,22 +276,22 @@ public sealed class TranscriptionWorkflow(
     }
 
     /// <summary>Makes the smaller upload copy of a WAV file. Returns false when the file should be uploaded as it is.</summary>
-    private bool TryPrepare(string path, string uploadPath, CancellationToken cancellationToken)
+    private bool TryPrepare(string path, RecordingFiles files, CancellationToken cancellationToken)
     {
         if (!string.Equals(Path.GetExtension(path), ".wav", StringComparison.OrdinalIgnoreCase)) return false;
 
         try
         {
-            File.Delete(uploadPath);
+            recordings.DeleteUploadCopy(files);
             logger.LogInformation("Preparing {File} for upload; this takes a moment for a long recording", Path.GetFileName(path));
             progress.Report(TranscriptionStep.Preparing);
-            preparer.Prepare([path], uploadPath, cancellationToken);
+            preparer.Prepare([path], files.Upload, cancellationToken);
             return true;
         }
         catch (Exception ex) when (ex is NotSupportedException or FormatException or ArgumentException or InvalidOperationException)
         {
             logger.LogWarning("Could not reduce {Path} to 16 kHz mono ({Message}); uploading the original instead", path, ex.Message);
-            File.Delete(uploadPath);
+            recordings.DeleteUploadCopy(files);
             return false;
         }
     }
@@ -342,7 +341,7 @@ public sealed class TranscriptionWorkflow(
 
     /// <summary>
     /// Saves ElevenLabs' answer and the Markdown transcript made from it as the next free copy (see
-    /// <see cref="TranscriptCopies.Save(RecordingFiles, string, Func{string}, ILogger)"/>). The answer has been paid
+    /// <see cref="ITranscriptCopies.Save"/>). The answer has been paid
     /// for, so a Ctrl+C that comes now no longer stops this, and it is saved before the transcript is made. An answer
     /// that cannot be saved as the transcript's is kept under a name of its own (see <see cref="KeepAnswer"/>), and
     /// once it is saved, whatever keeps the transcript from being made leaves it as the place to look. Either way the
@@ -354,9 +353,9 @@ public sealed class TranscriptionWorkflow(
     {
         try
         {
-            return TranscriptCopies.Save(files, result.RawJson, () => formatter.Format(result, title, recordedUtc, classMarks, ClassMarks.PartsIn(classMarks), video), logger);
+            return copies.Save(files, result.RawJson, () => formatter.Format(result, title, recordedUtc, classMarks, ClassMark.PartsIn(classMarks), video), logger);
         }
-        catch (Exception ex) when (ex.Data[TranscriptCopies.SavedAnswerKey] is string saved)
+        catch (Exception ex) when (ex.Data[ITranscriptCopies.SavedAnswerKey] is string saved)
         {
             // Any failure counts here, not only the disk's: the answer is saved and paid for, so whatever kept the
             // transcript from being made, that answer is where its text is.
@@ -373,7 +372,7 @@ public sealed class TranscriptionWorkflow(
 
     /// <summary>
     /// Keeps an answer ElevenLabs has charged for that did not become a transcript, so that what was paid for is not
-    /// lost, and returns where it went. It goes under a name of its own (<see cref="RecordingFiles.NextFreeUnreadAnswer"/>),
+    /// lost, and returns where it went. It goes under a name of its own (<see cref="IRecordingFolder.NextFreeUnreadAnswer"/>),
     /// which counts as no transcript and takes no transcript's place: beside the recording or, when its folder will
     /// not take it, under the same name in the recordings folder, which a problem with one recording's folder may have
     /// spared. Nothing is ever overwritten. When neither place works, it returns null and logs the answer's
@@ -385,12 +384,10 @@ public sealed class TranscriptionWorkflow(
         // The recording's own names, first in its folder, then in the recordings folder.
         foreach (var place in new[] { files, files with { Folder = folders.Root } })
         {
-            var target = place.NextFreeUnreadAnswer();
+            var target = recordings.NextFreeUnreadAnswer(place);
             try
             {
-                using (var writer = new StreamWriter(new FileStream(target, FileMode.CreateNew, FileAccess.Write), Utf8NoBom))
-                    writer.Write(answer);
-
+                answers.WriteNew(target, answer);
                 logger.LogWarning("ElevenLabs' answer is kept in {Path}. It has been paid for, so look there for the transcript's text before transcribing again, which is charged again", target);
                 return target;
             }
@@ -411,11 +408,12 @@ public sealed class TranscriptionWorkflow(
     /// logged: after a saved transcript, reporting the run as failed would invite a second, charged attempt, and after a
     /// failure or a cancel, that is what the run reports.
     /// </summary>
-    private void RemoveUploadCopy(string path, bool transcriptSaved)
+    private void RemoveUploadCopy(RecordingFiles files, bool transcriptSaved)
     {
+        var path = files.Upload;
         try
         {
-            if (File.Exists(path)) File.Delete(path);
+            if (probe.FileExists(path)) recordings.DeleteUploadCopy(files);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

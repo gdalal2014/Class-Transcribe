@@ -7,9 +7,10 @@ namespace ClassScribe.Audio;
 /// own, so a crash, a kill, a shutdown or a sign-out loses at most the write in progress, and
 /// <see cref="DataBytes"/> counts only what Windows accepted. <see cref="Flush"/> rewrites the header sizes and
 /// pushes everything to the disk itself, so the file stays a valid WAV while recording and a power cut loses
-/// at most what Windows had not yet written to the disk since the last flush.
+/// at most what Windows had not yet written to the disk since the last flush. It is the writer the WAV track writer factory
+/// opens for a recording session (see <see cref="ITrackWriter"/>).
 /// </summary>
-public sealed class WavSegmentWriter : IDisposable
+public sealed class WavSegmentWriter : ITrackWriter
 {
     private const int BytesPerSample = 2;
 

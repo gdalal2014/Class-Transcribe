@@ -158,10 +158,10 @@ public static class DownloadPlan
 
     /// <summary>
     /// The plan's lines: <paramref name="videos"/> as read from <paramref name="links"/> links of which <paramref name="playlists"/>
-    /// were playlists; the rest as the arguments say.
+    /// were playlists; the rest as the arguments say, the recordings fetched before measured through <paramref name="folders"/>.
     /// </summary>
     public static IReadOnlyList<string> Lines(IReadOnlyList<BatchVideo> videos, int links, IReadOnlyList<string> playlists, bool transcribe, int keyterms,
-        ElevenLabsOptions prices, string? accountLine, PlanRoom room, string driveLine)
+        ElevenLabsOptions prices, string? accountLine, PlanRoom room, string driveLine, IClassFolders folders)
     {
         List<string> lines = [];
         var from = playlists.Count switch
@@ -182,7 +182,7 @@ public static class DownloadPlan
         }
 
         var before = videos.Where(video => video.Past.Kind == PastKind.Whole && video.Past.Recording?.KeptAnswer is null).ToList();
-        var beforeLength = Sum(before.Select(video => video.Past.Recording is { } past ? Sum(past.Files.FindSegments().Select(Storage.ClassFolders.MeasureSegment)) : TimeSpan.Zero));
+        var beforeLength = Sum(before.Select(video => video.Past.Recording is { } past ? folders.TrackLength(past.Files, Audio.Track.Main) : TimeSpan.Zero));
 
         lines.AddRange(ReadyLines(videos, transcribe, keyterms, prices));
         if (transcribe && before.Count > 0)

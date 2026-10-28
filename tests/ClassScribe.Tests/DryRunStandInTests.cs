@@ -170,7 +170,7 @@ public class DryRunStandInTests
             var api = RestService.ForGenerated<IElevenLabsApi>(http, ElevenLabsJson.Default, ElevenLabsApiSettings.Create());
             var options = TestOptions.Create(new ElevenLabsOptions { ApiKey = "dry-run-dummy-key", RetryDelaySeconds = 0, MaxAttempts = 1 });
             var account = new ElevenLabsAccount(api, options, TimeProvider.System, NullLogger<ElevenLabsAccount>.Instance);
-            var client = new ElevenLabsClient(api, options, new TranscriptionProgress(), TimeProvider.System, NullLogger<ElevenLabsClient>.Instance);
+            var client = new ElevenLabsClient(api, options, new AudioFileFacts(), new TranscriptionProgress(), TimeProvider.System, NullLogger<ElevenLabsClient>.Instance);
 
             var before = await account.ReadAsync(CancellationToken.None);
             var result = await client.TranscribeAsync(upload, ["kalām", "tawḥīd"], CancellationToken.None);

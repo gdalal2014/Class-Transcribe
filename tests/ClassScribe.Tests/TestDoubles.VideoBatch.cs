@@ -167,13 +167,13 @@ public sealed class VideoWorld : IDisposable
     {
         var wait = new ClassWait(Runtime.Journal, Runtime.Time, Log<ClassWait>());
         var usage = new UsageReport(Account, Time, Log<UsageReport>());
-        var batch = new YouTubeBatch(new YouTubeLock(Folders, Log<YouTubeLock>()), wait, new BatchTranscripts(Transcriber, wait, ClassFolders, Runtime.Journal, Log<BatchTranscripts>()), Account, usage, Power,
+        var batch = new YouTubeBatch(new YouTubeLock(Folders, Log<YouTubeLock>()), wait, new BatchTranscripts(Transcriber, wait, ClassFolders, new RecordingFolder(), new TranscriptCopies(), Runtime.Journal, Log<BatchTranscripts>()), Account, usage, Power,
             new FakePowerSource(), Ui, Desktop.Object, Recording, ElevenLabs, Runtime.Time, Log<YouTubeBatch>());
         var http = new HttpClient(new YouTubeHostGuard { InnerHandler = Http }) { BaseAddress = new Uri("http://127.0.0.1:5005/") };
         var titles = new OEmbedTitles(RestService.ForGenerated<IYouTubeOEmbedApi>(http, YouTubeJson.Default, OEmbedTitles.RefitSettings()), Runtime.Time, Log<OEmbedTitles>());
         var browsers = new BrowserLocator(new FakeRegistryValues(), Files, YouTube, Log<BrowserLocator>()) { ProgramFiles = @"C:\Program Files", ProgramFilesX86 = @"C:\Program Files (x86)", LocalAppData = @"C:\Users\gdala\AppData\Local" };
         var windows = new VideoWindow(Starter, Browsers.Windows, Folders, Runtime.Time, Log<VideoWindow>());
-        return new VideoBatch(batch, new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), browsers, titles, windows, Commands.Object, Runtime.Journal, ClassFolders,
+        return new VideoBatch(batch, new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), browsers, titles, windows, Commands.Object, Runtime.Journal, ClassFolders, new RecordingFolder(),
             TestGlossaries.Choice(ElevenLabs, classes: TestGlossaries.Classes(Classes)), Signals, Ui,
             YouTube, Recording, ElevenLabs, Time, Log<VideoBatch>());
     }

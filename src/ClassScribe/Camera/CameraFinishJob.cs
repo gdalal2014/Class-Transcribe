@@ -30,6 +30,9 @@ namespace ClassScribe.Camera;
 /// <param name="time">The clock the progress lines are timed on.</param>
 public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonVideoMedia media, TimeProvider time)
 {
+    /// <summary>The lesson's files on disk, by the names its record gives.</summary>
+    private static readonly RecordingFolder Recordings = new();
+
     /// <summary>The sound's rate in the video: 48 kHz, as YouTube asks.</summary>
     public const int SoundRate = 48_000;
 
@@ -80,7 +83,7 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     /// <summary>The job itself, once its recording is known (see the class).</summary>
     private async Task<int> FinishAsync(RecordingFiles files)
     {
-        var tracks = new UploadTracks(files.FindSegments(), files.FindSegments(Track.Microphone));
+        var tracks = new UploadTracks(Recordings.FindSegments(files), Recordings.FindSegments(files, Track.Microphone));
         if (tracks.Main.Count == 0 && tracks.Microphone.Count == 0)
             return await FailAsync(files, $"The sound of {files.BaseName} is not on this laptop, so its video cannot be made here", kept: true);
 
@@ -104,7 +107,7 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         }
 
         var pieces = new List<LessonVideoSource>();
-        foreach (var piece in files.FindCameraPieces())
+        foreach (var piece in Recordings.FindCameraPieces(files))
         {
             var (source, why, notNow) = await DescribeAsync(piece.Path, piece.Start);
             if (notNow)
@@ -236,7 +239,7 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     private async Task DealWithThePiecesAsync(RecordingFiles files, IReadOnlyList<string> read)
     {
         List<string> pieces = [];
-        foreach (var piece in files.FindCameraPieces().Select(piece => piece.Path))
+        foreach (var piece in Recordings.FindCameraPieces(files).Select(piece => piece.Path))
         {
             if (read.Contains(piece, StringComparer.OrdinalIgnoreCase))
                 pieces.Add(piece);
@@ -374,8 +377,8 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     private async Task<int> FailAsync(RecordingFiles files, string why, bool kept, bool retry = true)
     {
         var words = why.TrimEnd('.');
-        if (kept && files.FindCameraPieces().Count > 0) words += ". The camera's pieces are kept";
-        if (retry) words += $". To make it again, free: {Commands.CommandLine.FinishVideo(files.FindSegments().FirstOrDefault() ?? files.FindSegments(Track.Microphone).FirstOrDefault() ?? files.Folder)}";
+        if (kept && Recordings.FindCameraPieces(files).Count > 0) words += ". The camera's pieces are kept";
+        if (retry) words += $". To make it again, free: {Commands.CommandLine.FinishVideo(Recordings.FindSegments(files).FirstOrDefault() ?? Recordings.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder)}";
         await SendAsync(CameraProtocol.Failed, new CameraFailed(words), CameraJson.Default.CameraFailed);
         return CameraProtocol.FailedExitCode;
     }

@@ -79,13 +79,18 @@ public class TranscribeCommandTests
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())),
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
+            new TranscriptCopies(),
+            new RecordingFolder(),
+            new FileProbe(),
+            new ElevenLabsAnswer(),
+            new AudioFileFacts(),
             recording,
             elevenLabs,
             new TranscriptionProgress(),
             usage,
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new TranscribeCommand(workflow, usage, folders, _signals, _desktop.Object, _power, _powerSource, _drive, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
+        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), _signals, _desktop.Object, _power, _powerSource, _drive, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
     }
 
     /// <summary>

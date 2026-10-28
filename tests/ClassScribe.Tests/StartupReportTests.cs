@@ -73,12 +73,12 @@ public partial class StartupReportTests
 
     /// <summary>The report under test, with Google Drive as <see cref="_store"/> has it: not set up unless a test signs in.</summary>
     private StartupReport Report() =>
-        new(_runtime.Journal, new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), _commands.Object, _settings.Gate(), _ui, _desktop.Object,
+        new(_runtime.Journal, new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), new RecordingFolder(), _commands.Object, _settings.Gate(), _ui, _desktop.Object,
             _runtime.Processes, DriveQueue(), _options, ZonedClock.Eastern(_runtime.Time), _log);
 
     /// <summary>What the report reads of Google Drive's queue: the store, and the manifests in ClassScribe's own folder.</summary>
     private DriveQueueReport DriveQueue() =>
-        new(_store, Manifests(), _runtime.Journal, TestOptions.Create(new DriveOptions()), ZonedClock.Eastern(_runtime.Time));
+        new(_store, Manifests(), _runtime.Journal, new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), TestOptions.Create(new DriveOptions()), ZonedClock.Eastern(_runtime.Time));
 
     /// <summary>The upload manifests in ClassScribe's own folder.</summary>
     private UploadManifests Manifests() => new(_runtime.Folder, _runtime.Time, NullLogger<UploadManifests>.Instance);

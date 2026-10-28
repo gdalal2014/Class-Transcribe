@@ -141,7 +141,7 @@ public enum StartOrigin
 /// <param name="ContinueBaseName">
 /// The recording this run continues as its next part, by base name, such as Kalam_2026-10-15_23-00-02Z, found in the folder
 /// of <paramref name="Name"/> under <paramref name="OutputRoot"/> or in one of its date folders (see
-/// <see cref="Storage.ClassFolders.OpenToContinue"/>); null for a new recording.
+/// <c>IClassFolders.OpenToContinue</c>); null for a new recording.
 /// </param>
 /// <param name="Minutes">Stop by itself after this many minutes (--minutes), counted on the steady clock from the start; null to record until stopped.</param>
 /// <param name="Open">False to open nothing at the end (--no-open); otherwise the settings decide.</param>

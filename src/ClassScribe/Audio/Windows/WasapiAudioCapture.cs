@@ -101,10 +101,7 @@ public sealed class WasapiAudioCapture : IAudioCapture
     /// <inheritdoc />
     public bool DeliversContinuously { get; }
 
-    /// <summary>
-    /// For a microphone, how Windows processes its audio before handing it over: what was asked for, or
-    /// <see cref="MicrophoneProcessing.Default"/> when unprocessed audio was not available. Null for a device or an app.
-    /// </summary>
+    /// <inheritdoc />
     public MicrophoneProcessing? Processing { get; }
 
     /// <inheritdoc />

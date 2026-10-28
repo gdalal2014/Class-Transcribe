@@ -32,11 +32,12 @@ namespace ClassScribe.Commands;
 /// <param name="journal">The run files: which run to show, and how it ended.</param>
 /// <param name="viewer">Shows the run.</param>
 /// <param name="commands">Starts the run that continues a lost recorder's recording.</param>
+/// <param name="recordings">A recording's files on disk, for what a lesson's run has left to do.</param>
 /// <param name="ui">The window's screen.</param>
 /// <param name="window">The window's title, taskbar button and flash, for a run reported from its file.</param>
 /// <param name="time">The clock for the times written, and for the minutes a continued recording has left.</param>
 /// <param name="logger">Where the command notes what it found and did; what Gulzar needs to read, it writes to the window itself.</param>
-public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, ICommandRunner commands, IConsoleUi ui, IWindowSignals window, TimeProvider time, ILogger<AttachCommand> logger)
+public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, ICommandRunner commands, IRecordingFolder recordings, IConsoleUi ui, IWindowSignals window, TimeProvider time, ILogger<AttachCommand> logger)
 {
     /// <summary>The exit code when there is nothing to show, the run ended without a saved result, or the recorder could not be reached.</summary>
     private const int Failed = 1;
@@ -98,7 +99,7 @@ public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, IComman
         if (run.Home != RunHome.Separate)
         {
             var (doing, what) = run.State != RunState.Transcribing ? ("recorded", "recording")
-                : LessonRuns.OnlyItsVideoLeft(run) ? ("made into its lesson video", "making of its video")
+                : LessonRuns.OnlyItsVideoLeft(run, recordings) ? ("made into its lesson video", "making of its video")
                 : ("transcribed", "transcription");
             Say($"\"{run.Request.Name}\" is being {doing} in another ClassScribe window (process {run.ProcessId}), which shows it; closing that window ends the {what}.",
                 LogLevel.Warning);
@@ -251,9 +252,9 @@ public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, IComman
     }
 
     /// <summary>What carries on in the background once the window has left <paramref name="run"/>: its transcription, a lesson's video when only that is left (see <see cref="LessonRuns.OnlyItsVideoLeft"/>), or its recording.</summary>
-    private static string CarriesOn(RunRecord run) => run.State switch
+    private string CarriesOn(RunRecord run) => run.State switch
     {
-        RunState.Transcribing when LessonRuns.OnlyItsVideoLeft(run) && run.Folder is { Length: > 0 } lesson =>
+        RunState.Transcribing when LessonRuns.OnlyItsVideoLeft(run, recordings) && run.Folder is { Length: > 0 } lesson =>
             $"The lesson's video is being made in the background; it will appear in {lesson}.",
         RunState.Transcribing when run.Folder is { Length: > 0 } folder => $"The transcription carries on in the background; its transcript will appear in {folder}.",
         RunState.Transcribing => "The transcription carries on in the background.",
@@ -270,9 +271,9 @@ public sealed class AttachCommand(RunJournal journal, IRunViewer viewer, IComman
     }
 
     /// <summary>That the transcript of <paramref name="run"/> was not finished, with the command that transcribes its recording; for a lesson with only its video left, its video.</summary>
-    private static string TranscriptNotFinished(RunRecord run)
+    private string TranscriptNotFinished(RunRecord run)
     {
-        if (LessonRuns.OnlyItsVideoLeft(run)) return LessonRuns.VideoNotFinished(run);
+        if (LessonRuns.OnlyItsVideoLeft(run, recordings)) return LessonRuns.VideoNotFinished(run, recordings);
 
         var said = $"The transcript of \"{run.Request.Name}\" was not finished; its audio is complete.";
         var recording = run is { Folder: { Length: > 0 } folder, BaseName: { Length: > 0 } baseName } ? new RecordingFiles(folder, baseName).Segment(1) : run.Folder;

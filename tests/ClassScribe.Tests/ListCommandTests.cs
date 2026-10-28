@@ -40,7 +40,7 @@ public class ListCommandTests
     /// <summary>The command, with Recording:OutputFolder set to the test's recordings folder and local time in US Eastern summer time.</summary>
     private ListCommand CreateCommand() =>
         new(new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _recordings.Path }), TimeProvider.System, NullLogger<ClassFolders>.Instance),
-            _runtime.Journal, _ui, ZonedTimeProvider.EasternSummer);
+            new TranscriptCopies(), _runtime.Journal, _ui, ZonedTimeProvider.EasternSummer);
 
     /// <summary>What the command wrote, line by line.</summary>
     private string[] Lines => _ui.Screen.Split(Environment.NewLine);
@@ -251,7 +251,7 @@ public class ListCommandVideoTests
         }
 
         new ListCommand(new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = recordings.Path }), TimeProvider.System, NullLogger<ClassFolders>.Instance),
-            runtime.Journal, ui, ZonedTimeProvider.EasternSummer).Run(root: null);
+            new TranscriptCopies(), runtime.Journal, ui, ZonedTimeProvider.EasternSummer).Run(root: null);
 
         Assert.That(ui.Screen.Split(Environment.NewLine).Skip(1), Is.EqualTo(new[]
         {

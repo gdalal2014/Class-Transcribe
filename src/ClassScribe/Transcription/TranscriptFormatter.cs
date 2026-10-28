@@ -29,7 +29,7 @@ public sealed class TranscriptFormatter(IOptionsMonitor<TranscriptOptions> optio
     /// <summary>
     /// Formats the transcript as Markdown, with the recording's marks and notes, if any, at their positions. When the time
     /// the recording started is known, the line under the title gives it, and says in how many parts the recording was
-    /// made when there were <paramref name="parts"/> of them, two or more (see <see cref="ClassMarks.PartsIn"/>). A YouTube
+    /// made when there were <paramref name="parts"/> of them, two or more (see <see cref="ClassMark.PartsIn"/>). A YouTube
     /// video's recording (<paramref name="video"/>) is headed by the video's title, says when it was downloaded or recorded,
     /// and names the video by its link (see <see cref="SourceLine"/>); in a downloaded video's transcript each position links
     /// to that moment on YouTube, since the positions are the video's own.

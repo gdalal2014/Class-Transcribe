@@ -14,13 +14,16 @@ public sealed partial record ClassMark(int Number, TimeSpan Position, string? La
 {
     /// <summary>
     /// True for the note that marks where the recording was taken up again as its next part, in the words
-    /// <see cref="ClassMarks.AddResume"/> writes; each one makes the recording one part more. A note typed by hand in
+    /// <c>IClassMarks.AddResume</c> writes; each one makes the recording one part more. A note typed by hand in
     /// other words is no resume, even one that starts the same way, such as "Resumed after the break".
     /// </summary>
     public bool IsResume => IsNote && Label is { } words && ResumeWords().IsMatch(words);
 
+    /// <summary>How many parts a recording with these marks and notes was made in: one, and one more for each resume note.</summary>
+    public static int PartsIn(IReadOnlyList<ClassMark> marks) => 1 + marks.Count(mark => mark.IsResume);
+
     /// <summary>
-    /// The words of a resume note exactly as <see cref="ClassMarks.AddResume"/> writes them: "Resumed at 23:51 UTC, about
+    /// The words of a resume note exactly as <c>IClassMarks.AddResume</c> writes them: "Resumed at 23:51 UTC, about
     /// 4 minutes not recorded", with "on 16 October at" for "at" on a later day, and "less than a minute", "about 1 hour 5
     /// minutes" or "about 2 hours" for other gaps.
     /// </summary>

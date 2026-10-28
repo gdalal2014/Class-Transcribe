@@ -48,7 +48,7 @@ public class ContinueQuestionTests
 
     /// <summary>The question under test.</summary>
     private ContinueQuestion Question() =>
-        new(new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), _runtime.Journal, _ui, _options, _runtime.Time, _log);
+        new(new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), new RecordingFolder(), _runtime.Journal, _ui, _options, _runtime.Time, _log);
 
     /// <summary>
     /// Writes a recording of "Kalam" that started at 23:00:02 UTC and stopped at 23:47:02, four minutes before now, holding

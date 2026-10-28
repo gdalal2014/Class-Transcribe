@@ -47,7 +47,10 @@ public sealed record TranscribeRequest(string Path, string? OutputRoot = null, b
 public sealed class TranscribeCommand(
     TranscriptionWorkflow workflow,
     UsageReport usage,
-    ClassFolders folders,
+    IClassFolders folders,
+    IFileProbe probe,
+    IRecordingFolder recordings,
+    ITranscriptCopies copies,
     IUserSignals signals,
     IDesktop desktop,
     IPowerRequests power,
@@ -68,14 +71,14 @@ public sealed class TranscribeCommand(
         // Nothing is recording here, so the first Ctrl+C should already cancel the upload.
         signals.RequestStop();
 
-        var fullPath = Path.GetFullPath(request.Path);
-        if (Directory.Exists(fullPath)) return await TranscribeFolderAsync(fullPath, request);
+        var fullPath = probe.FullPath(request.Path);
+        if (probe.DirectoryExists(fullPath)) return await TranscribeFolderAsync(fullPath, request);
 
-        if (File.Exists(fullPath))
+        if (probe.FileExists(fullPath))
         {
             // A recording with audio of either track: the class's .wav files, or your microphone's .mic.wav files alone when the class could not be recorded.
             var recorded = RecordingFiles.TryParse(fullPath);
-            if (recorded is not null && (recorded.FindSegments().Count > 0 || recorded.FindSegments(Track.Microphone).Count > 0))
+            if (recorded is not null && (recordings.FindSegments(recorded).Count > 0 || recordings.FindSegments(recorded, Track.Microphone).Count > 0))
                 return await TranscribeRecordingAsync(recorded, request);
 
             // A file of a recording whose audio is on Google Drive alone, such as its transcript, is no audio to send.
@@ -94,14 +97,14 @@ public sealed class TranscribeCommand(
 
     /// <summary>
     /// Transcribes the recording started last in <paramref name="folder"/> and its date folders (see
-    /// <see cref="ClassFolders.FindNewest"/>): for a course's folder the newest class in either layout, for a date folder
+    /// <see cref="IClassFolders.FindNewest"/>): for a course's folder the newest class in either layout, for a date folder
     /// its own. When the newest is one whose audio is on Google Drive alone, that is said, rather than an older one sent in
     /// its place. The folder's other recordings without a transcript are named before anything is sent and again once the
     /// transcript is saved, so that none is missed: a class split by a crash, for one, is two recordings.
     /// </summary>
     private async Task<int> TranscribeFolderAsync(string folder, TranscribeRequest request)
     {
-        var newest = ClassFolders.FindNewest(folder);
+        var newest = folders.FindNewest(folder);
         if (folders.NewestWithAudioOnDriveIn(folder) is { } onDrive && (newest is null || onDrive.Files.StartedUtc > newest.StartedUtc))
         {
             SayAudioIsOnDrive(onDrive.Files, onDrive.Audio);
@@ -175,7 +178,7 @@ public sealed class TranscribeCommand(
     /// </summary>
     private bool Refuses(RecordingFiles files, TranscribeRequest request)
     {
-        if (ClassFolders.IsBeingWritten(files))
+        if (folders.IsBeingWritten(files))
         {
             logger.LogError("{Recording} is being recorded now; transcribe it once it has stopped", files.BaseName);
             return true;
@@ -191,10 +194,10 @@ public sealed class TranscribeCommand(
         if (!request.FromCommandLine || request.Again) return false;
 
         var firstSegment = FirstSegment(files);
-        if (TranscriptCopies.Transcripts(files) is [.., var transcript])
+        if (copies.Transcripts(files) is [.., var transcript])
         {
             logger.LogError("{Recording} already has a transcript ({Transcript}). Transcribing it again is billed again, so nothing was sent", files.BaseName, Path.GetFileName(transcript));
-            if (TranscriptCopies.NewestAnswer(files) is not null)
+            if (copies.NewestAnswer(files) is not null)
                 logger.LogInformation("To lay it out again for free, from ElevenLabs' saved answer, run: {Command}", CommandLine.Rebuild(firstSegment));
             else if (folders.KeptAnswerOf(files) is { } keptAnswer)
                 logger.LogInformation("To make a new transcript for free from ElevenLabs' answer kept in {Answer}, run: {Command}", keptAnswer, CommandLine.Rebuild(keptAnswer));
@@ -221,7 +224,7 @@ public sealed class TranscribeCommand(
     {
         logger.LogError("{Which} of {Recording} is on Google Drive, not on this laptop: {Location}{Link}. To transcribe it again, download its .wav files from there into {Folder} first",
             onDrive.AllOfIt ? "The audio" : "Part of the audio", files.BaseName, onDrive.Location, onDrive.Link is { } link ? $" ({link})" : "", files.Folder);
-        if (TranscriptCopies.NewestAnswer(files) is { } answer)
+        if (copies.NewestAnswer(files) is { } answer)
             logger.LogInformation("To lay its transcript out again for free, from ElevenLabs' saved answer, run: {Command}", CommandLine.Rebuild(answer));
     }
 
@@ -279,5 +282,5 @@ public sealed class TranscribeCommand(
     /// The recording's first segment on disk, which the commands printed for it name; the bare first segment's name when
     /// none is left, as when its audio was deleted since it was listed.
     /// </summary>
-    private static string FirstSegment(RecordingFiles files) => files.FindSegments() is [var first, ..] ? first : files.Segment(1);
+    private string FirstSegment(RecordingFiles files) => recordings.FindSegments(files) is [var first, ..] ? first : files.Segment(1);
 }

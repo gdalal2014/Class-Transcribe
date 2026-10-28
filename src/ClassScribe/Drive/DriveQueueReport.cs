@@ -1,5 +1,6 @@
 using System.Globalization;
 using ClassScribe.Recorder;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Drive;
@@ -18,7 +19,7 @@ public sealed record DriveWaiting(string Line, int Count, bool SignedIn);
 /// <see cref="UploadManifest.IsBeingUploaded"/>), which the header shows with how far it is. The settings are read each time,
 /// and the local times are those of the clock's time zone. One for the process.
 /// </summary>
-public sealed class DriveQueueReport(IGoogleCredentialStore store, UploadManifests manifests, RunJournal journal, IOptionsMonitor<DriveOptions> options, TimeProvider time)
+public sealed class DriveQueueReport(IGoogleCredentialStore store, UploadManifests manifests, RunJournal journal, IClassFolders folders, IOptionsMonitor<DriveOptions> options, TimeProvider time)
 {
     /// <summary>How the time of a last try is written, in local time: 17 Oct 21:40.</summary>
     private const string TryFormat = "d MMM HH:mm";
@@ -76,7 +77,7 @@ public sealed class DriveQueueReport(IGoogleCredentialStore store, UploadManifes
     public IReadOnlyList<UploadManifest> Queued()
     {
         var runs = journal.List();
-        return [.. manifests.Waiting().Where(manifest => RecordingUpload.BusyIn(runs, manifest.Recording) is null)];
+        return [.. manifests.Waiting().Where(manifest => RecordingUpload.BusyIn(runs, manifest.Recording, folders) is null)];
     }
 
     /// <summary>

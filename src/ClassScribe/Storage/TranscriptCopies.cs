@@ -8,21 +8,14 @@ namespace ClassScribe.Storage;
 
 /// <summary>
 /// The numbered copies of a recording's transcript, the .md of each copy, and of ElevenLabs' answer, the .json beside it
-/// (see <see cref="RecordingFiles.Transcript"/> and <see cref="RecordingFiles.Json"/>). A new copy takes the first number
-/// that has neither file, and claims each file by creating it only when no file of that name is there
-/// (<see cref="FileMode.CreateNew"/>), so nothing is ever overwritten, not even by another ClassScribe saving a transcript
-/// of the same recording at the same moment: whichever comes second takes the next number. Both files are written in
-/// UTF-8 without a byte order mark.
+/// (see <see cref="RecordingFiles.Transcript"/> and <see cref="RecordingFiles.Json"/>): the adapter of
+/// <see cref="ITranscriptCopies"/>. A new copy takes the first number that has neither file, and claims each file by
+/// creating it only when no file of that name is there (<see cref="FileMode.CreateNew"/>), so nothing is ever overwritten,
+/// not even by another ClassScribe saving a transcript of the same recording at the same moment: whichever comes second
+/// takes the next number. Both files are written in UTF-8 without a byte order mark.
 /// </summary>
-public static class TranscriptCopies
+public sealed class TranscriptCopies : ITranscriptCopies
 {
-    /// <summary>
-    /// The <see cref="Exception.Data"/> key under which a failure of
-    /// <see cref="Save(RecordingFiles, string, Func{string}, ILogger)"/> gives the path of ElevenLabs' answer, when the
-    /// answer was saved before the failure, so that whoever reports it can point there.
-    /// </summary>
-    public const string SavedAnswerKey = "ClassScribe.SavedAnswer";
-
     /// <summary>ERROR_FILE_EXISTS as an HRESULT: what creating a file reports when a file of that name is there.</summary>
     private const int FileExists = unchecked((int)0x80070050);
 
@@ -31,22 +24,15 @@ public static class TranscriptCopies
 
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-    /// <summary>
-    /// Saves ElevenLabs' answer <paramref name="json"/>, and the transcript <paramref name="transcript"/> makes from it,
-    /// as the next copy of the recording's transcript, and returns where they went. The answer is saved first, since it
-    /// has been paid for, and the transcript is made only then, once, so that an answer whose transcript cannot be made is
-    /// on disk all the same. When the transcript's name is taken at that moment, by another ClassScribe, the answer moves
-    /// on with the transcript to the next free copy. A failure that comes after the answer was saved carries the answer's
-    /// path in its <see cref="Exception.Data"/> under <see cref="SavedAnswerKey"/>.
-    /// </summary>
-    public static TranscriptFiles Save(RecordingFiles files, string json, Func<string> transcript, ILogger logger) =>
+    /// <inheritdoc />
+    public TranscriptFiles Save(RecordingFiles files, string json, Func<string> transcript, ILogger logger) =>
         Save(files, json, transcript, logger, WriteAll);
 
     /// <summary>
     /// Saves as <see cref="Save(RecordingFiles, string, Func{string}, ILogger)"/> does, with <paramref name="write"/> as
     /// the step that writes each file once it is made, so that a test can have that step fail, as a full disk does.
     /// </summary>
-    internal static TranscriptFiles Save(RecordingFiles files, string json, Func<string> transcript, ILogger logger, Action<FileStream, byte[]> write)
+    internal TranscriptFiles Save(RecordingFiles files, string json, Func<string> transcript, ILogger logger, Action<FileStream, byte[]> write)
     {
         var answer = Utf8NoBom.GetBytes(json);
         byte[]? markdown = null;
@@ -68,7 +54,7 @@ public static class TranscriptCopies
             catch (Exception ex)
             {
                 // Rethrown with the place of the answer, which is saved and paid for, so that whoever reports the failure can point there.
-                ex.Data[SavedAnswerKey] = answerPath;
+                ex.Data[ITranscriptCopies.SavedAnswerKey] = answerPath;
                 throw;
             }
 
@@ -77,18 +63,14 @@ public static class TranscriptCopies
         }
     }
 
-    /// <summary>
-    /// Saves a transcript made again from a saved answer, without an answer of its own, as the first copy that has neither
-    /// a transcript nor an answer, and returns its path. An answer kept without its transcript, or a transcript made by
-    /// hand, keeps its number to itself.
-    /// </summary>
-    public static string SaveRebuilt(RecordingFiles files, string markdown, ILogger logger) => SaveRebuilt(files, markdown, logger, WriteAll);
+    /// <inheritdoc />
+    public string SaveRebuilt(RecordingFiles files, string markdown, ILogger logger) => SaveRebuilt(files, markdown, logger, WriteAll);
 
     /// <summary>
     /// Saves as <see cref="SaveRebuilt(RecordingFiles, string, ILogger)"/> does, with <paramref name="write"/> as the step
     /// that writes the file once it is made, so that a test can have that step fail, as a full disk does.
     /// </summary>
-    internal static string SaveRebuilt(RecordingFiles files, string markdown, ILogger logger, Action<FileStream, byte[]> write)
+    internal string SaveRebuilt(RecordingFiles files, string markdown, ILogger logger, Action<FileStream, byte[]> write)
     {
         var bytes = Utf8NoBom.GetBytes(markdown);
         for (var copy = FirstFree(files, 1); ; copy = FirstFree(files, copy + 1))
@@ -100,29 +82,21 @@ public static class TranscriptCopies
         }
     }
 
-    /// <summary>
-    /// ElevenLabs' answer of the recording's newest transcript: the .json of the highest copy that has one, counted as a
-    /// number, or null when there is none. An answer kept as unread (<see cref="RecordingFiles.UnreadAnswer"/>) is never
-    /// it: such an answer was set aside because it could not be read, or could not be saved in its place.
-    /// </summary>
-    public static string? NewestAnswer(RecordingFiles files) => Copies(files, ".json").LastOrDefault();
+    /// <inheritdoc />
+    public string? NewestAnswer(RecordingFiles files) => Copies(files, ".json").LastOrDefault();
 
-    /// <summary>
-    /// Which copy of the recording's transcript <paramref name="transcriptPath"/> is: 1 for &lt;base&gt;.md, 2 for
-    /// &lt;base&gt; (2).md and so on; null for a file that is no copy of this recording's transcript.
-    /// </summary>
-    public static int? CopyOf(RecordingFiles files, string transcriptPath)
+    /// <inheritdoc />
+    public IReadOnlyList<string> Transcripts(RecordingFiles files) => Copies(files, ".md");
+
+    /// <inheritdoc />
+    public string? LineUnderTitle(string transcriptPath)
     {
-        var copy = new Regex($"^{Regex.Escape(files.BaseName)}(?: \\((?<copy>[0-9]{{1,9}})\\))?\\.md$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
-            .Match(Path.GetFileName(transcriptPath));
-        return !copy.Success ? null : copy.Groups["copy"].Success ? int.Parse(copy.Groups["copy"].Value, CultureInfo.InvariantCulture) : 1;
+        using var reader = new StreamReader(new FileStream(transcriptPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+        reader.ReadLine();   // the title
+        string? line;
+        do line = reader.ReadLine(); while (line is { Length: 0 });
+        return line;
     }
-
-    /// <summary>
-    /// The recording's transcripts on disk: the .md of every copy that has one, in the order of their numbers, made when
-    /// the recording was transcribed or rebuilt later. Empty when its folder holds none, or is not there.
-    /// </summary>
-    public static IReadOnlyList<string> Transcripts(RecordingFiles files) => Copies(files, ".md");
 
     /// <summary>
     /// The recording's files of every copy that ends in <paramref name="extension"/> (.json for the answers, .md for the
