@@ -789,6 +789,28 @@ public class SettingsCheckTests
         }
     }
 
+    /// <summary>
+    /// Google's sign-in page is its address alone, without ? or #: the sign-in adds its own parameters, the drive.file scope
+    /// among them, which stays in code so that the settings can never ask for more of the Drive (architecture 7.4), and a
+    /// parameter of the page's own could come before them. A page that is no https address gets that problem alone.
+    /// </summary>
+    [TestCase("https://accounts.google.com/o/oauth2/v2/auth?hl=ar")]
+    [TestCase("https://accounts.google.com/o/oauth2/v2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive")]
+    [TestCase("https://accounts.google.com/o/oauth2/v2/auth?")]
+    [TestCase("https://accounts.google.com/o/oauth2/v2/auth#consent")]
+    [TestCase("http://127.0.0.1:5007/o/oauth2/v2/auth?prompt=none")]
+    public void The_sign_in_page_is_its_address_alone_without_a_query(string value)
+    {
+        Assert.That(Problems(new() { ["Drive:AuthorizationUrl"] = value }), Is.EqualTo(new[]
+        {
+            $"Drive:AuthorizationUrl is \"{value}\"; it must be the address of Google's sign-in page alone, without ? or #, such as https://accounts.google.com/o/oauth2/v2/auth, as ClassScribe adds the sign-in's own parameters to it."
+        }));
+        Assert.That(Problems(new() { ["Drive:AuthorizationUrl"] = "http://accounts.google.com/o/oauth2/v2/auth?hl=ar" }), Is.EqualTo(new[]
+        {
+            "Drive:AuthorizationUrl is \"http://accounts.google.com/o/oauth2/v2/auth?hl=ar\"; it must be an https address, such as https://accounts.google.com/o/oauth2/v2/auth, or http://127.0.0.1:<port>/ for a local stub."
+        }));
+    }
+
     // ------------------------------------------------------------------ the vendors' values (architecture 7.2)
 
     /// <summary>

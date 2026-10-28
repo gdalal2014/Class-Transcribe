@@ -191,7 +191,8 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     /// The Drive section: the folder's name must be a plain name, which Drive takes as it is; a piece is from 1 to 256 MiB
     /// (Drive:Upload, an enum, is checked by its names when the section is bound); Google's addresses, its sign-in page among
     /// them, must be https, or http only to this computer, for a local stub in a dry run: the client secret and the tokens go
-    /// there, so an address elsewhere without encryption is refused; and the API version is v and one to three digits.
+    /// there, so an address elsewhere without encryption is refused; the sign-in page is its address alone, without a query
+    /// or a fragment; and the API version is v and one to three digits.
     /// </summary>
     private static void CheckDrive(IConfiguration configuration, Found problems)
     {
@@ -214,7 +215,7 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
         CheckLocalOrHttpsAddress(problems, Name(driveSection, nameof(DriveOptions.ApiBaseUrl)), drive.ApiBaseUrl, defaults.ApiBaseUrl);
         CheckApiVersion(problems, Name(driveSection, nameof(DriveOptions.ApiVersion)), drive.ApiVersion, DriveApi.WrittenFor);
         CheckLocalOrHttpsAddress(problems, Name(driveSection, nameof(DriveOptions.OAuthBaseUrl)), drive.OAuthBaseUrl, defaults.OAuthBaseUrl);
-        CheckLocalOrHttpsAddress(problems, Name(driveSection, nameof(DriveOptions.AuthorizationUrl)), drive.AuthorizationUrl, defaults.AuthorizationUrl);
+        CheckSignInPage(problems, Name(driveSection, nameof(DriveOptions.AuthorizationUrl)), drive.AuthorizationUrl, defaults.AuthorizationUrl);
     }
 
     /// <summary>
@@ -300,15 +301,28 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     /// <summary>
     /// Adds a problem when <paramref name="value"/> is not an https address, nor an http one to 127.0.0.1 or localhost, with
     /// the service's own address, <paramref name="example"/>, as the example: a request's answer, or a secret, must never
-    /// travel unencrypted beyond this computer.
+    /// travel unencrypted beyond this computer. Returns whether the address passed.
     /// </summary>
-    private static void CheckLocalOrHttpsAddress(Found problems, string name, string? value, string example)
+    private static bool CheckLocalOrHttpsAddress(Found problems, string name, string? value, string example)
     {
         var usable = Uri.TryCreate(value, UriKind.Absolute, out var address)
             && (address.Scheme == Uri.UriSchemeHttps
                 || (address.Scheme == Uri.UriSchemeHttp && (address.IsLoopback || address.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase))));
         if (!usable)
             problems.Add($"{name} is \"{value}\"; it must be an https address, such as {example}, or http://127.0.0.1:<port>/ for a local stub.");
+        return usable;
+    }
+
+    /// <summary>
+    /// Adds a problem when Google's sign-in page, <paramref name="value"/>, is not an address <see cref="CheckLocalOrHttpsAddress"/>
+    /// takes, or carries a query or a fragment (? or #), with <paramref name="example"/>: the sign-in adds its own parameters,
+    /// the drive.file scope among them, which stays in code so that the settings can never ask for more of the Drive
+    /// (architecture 7.4), and a parameter of the page's own could come before them. One problem at most.
+    /// </summary>
+    private static void CheckSignInPage(Found problems, string name, string? value, string example)
+    {
+        if (CheckLocalOrHttpsAddress(problems, name, value, example) && value!.AsSpan().IndexOfAny('?', '#') >= 0)
+            problems.Add($"{name} is \"{value}\"; it must be the address of Google's sign-in page alone, without ? or #, such as {example}, as ClassScribe adds the sign-in's own parameters to it.");
     }
 
     /// <summary>

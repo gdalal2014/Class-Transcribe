@@ -1221,7 +1221,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ElevenLabs:MaxKeyterms` (1000; 1 to 10,000), `KeytermCharacterLimit` (50; 2 to 1,000),
   `MaxKeytermWords` (5; 1 to 50) and `LongestFileHours` (10; 1 to 24), each refused only outside its
   range and warned about above ElevenLabs' own, as ElevenLabs then refuses the whole request;
-  `Drive:AuthorizationUrl` (Google's sign-in page, which `GoogleSignIn` opens; `CheckLocalOrHttpsAddress`);
+  `Drive:AuthorizationUrl` (Google's sign-in page, which `GoogleSignIn` opens; `CheckSignInPage`:
+  `CheckLocalOrHttpsAddress`, and no `?` or `#`, so no parameter of the settings' can come before the
+  `drive.file` scope, which stays in code);
   and `ElevenLabs:BaseUrl`, now https or http to a loopback address only, since the key travels in a
   header. `TranscriptionLimits` (`Transcription/`, built by `From(ElevenLabsOptions)`) is the file limit
   and what follows from it: `LongestRecording`, half an hour less (`ClassFolders.FindContinuable`,
@@ -1265,8 +1267,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   secret is taken and the sign-in kept). The listener (`ILoopbackReceiver`,
   `HttpListenerLoopbackReceiver` on `http://127.0.0.1:<free port>/`, five tries) and the browser
   (`IBrowser`, `ShellBrowser`, which never logs the address) are seams. The address is
-  `Drive:AuthorizationUrl` (Google's sign-in page, read from the run's settings; a query of its own is
-  kept) and carries PKCE S256, `drive.file` alone, `prompt=consent` and `access_type=offline`; the wait is 5 minutes on the
+  `Drive:AuthorizationUrl` (Google's sign-in page, read from the run's settings; a query or fragment of
+  it, which the check refuses, is left out) and carries PKCE S256, `drive.file` alone, `prompt=consent`
+  and `access_type=offline`, and no other parameter; the wait is 5 minutes on the
   `TimeProvider`, Esc or Ctrl+C gives up (a cancel), any request without the state gets 400 and the
   wait goes on, `access_denied` ends it. After the exchange, `drive.file` must be granted and a
   refresh token given; the sign-in is stored first, then Drive's about is read and the root folder

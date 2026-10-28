@@ -397,7 +397,9 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
     /// <summary>
     /// Google's sign-in address for this sign-in: the sign-in page <paramref name="page"/> (Drive:AuthorizationUrl), with the
     /// client, the loopback redirect address, a code, drive.file alone, the S256 challenge, the state, prompt=consent (so a
-    /// second sign-in gets a fresh refresh token) and offline access after its own query, if it has one.
+    /// second sign-in gets a fresh refresh token) and offline access, and nothing else: a query or fragment of the page's
+    /// address, which the settings check refuses, is left out, so that no parameter of the settings' can come before these
+    /// and ask for more of the Drive (architecture 7.4).
     /// </summary>
     internal static Uri AuthorizationAddress(string page, string clientId, string redirect, string challenge, string state)
     {
@@ -413,8 +415,8 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
             ("prompt", "consent"),
             ("access_type", "offline")
         ];
-        var trimmed = page.Trim();
-        return new Uri($"{trimmed}{(trimmed.Contains('?') ? "&" : "?")}{string.Join("&", parameters.Select(parameter => $"{parameter.Name}={Uri.EscapeDataString(parameter.Value)}"))}");
+        var alone = new Uri(page.Trim()).GetLeftPart(UriPartial.Path);
+        return new Uri($"{alone}?{string.Join("&", parameters.Select(parameter => $"{parameter.Name}={Uri.EscapeDataString(parameter.Value)}"))}");
     }
 
     /// <summary>A small page of its own, with nothing loaded from elsewhere, that says <paramref name="text"/>.</summary>
