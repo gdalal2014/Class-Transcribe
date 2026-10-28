@@ -485,6 +485,7 @@ public class MicrophoneAdviceTests
         services.AddLogging();
         services.AddSingleton(TimeProvider.System);
         services.AddAudio();
+        services.AddAudioUseCases();
         services.AddDesktop();
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         using var scope = provider.CreateScope();

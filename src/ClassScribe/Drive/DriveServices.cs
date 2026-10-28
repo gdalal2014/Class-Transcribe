@@ -9,17 +9,17 @@ using Refit;
 namespace ClassScribe.Drive;
 
 /// <summary>
-/// Registers Google Drive: Google's OAuth and Drive endpoints as Refit clients, the store of the client and sign-in, the
-/// access tokens, the calls to Drive, ClassScribe's folders there, the listener and the browser of the sign-in, the sign-in
-/// itself, and the uploads: the manifests and the upload lock, the resumable upload with its retries, the upload of a
-/// recording and the pass over the queue, the freeing of room on the laptop, what the rest of the app reads of audio kept on
-/// Drive alone, the uploads that happen by themselves after a run, and what the menu and the report at the start say of the
-/// queue.
+/// Registers Google Drive's parts that reach Google, Windows and the disk (architecture 5.2): Google's OAuth and Drive
+/// endpoints as Refit clients, the store of the client and sign-in, the access tokens, the calls to Drive, ClassScribe's
+/// folders there, the listener and the browser of the sign-in, the manifests, the upload lock and the resumable upload. The
+/// sign-in itself, the retries, the upload of a recording and the pass over the queue, the freeing of room on the laptop,
+/// what the rest of the app reads of audio kept on Drive alone, the uploads that happen by themselves after a run, and what
+/// the menu and the report at the start say of the queue are the use cases' (see <see cref="DriveUseCases"/>).
 /// </summary>
 public static class DriveServices
 {
     /// <summary>
-    /// Adds the Google Drive services. Each Refit client reads its base address from the Drive settings when it is made, once
+    /// Adds the Google Drive services that reach Google, Windows and the disk. Each Refit client reads its base address from the Drive settings when it is made, once
     /// per run, so a changed address counts from the next run; HttpClient's own time limit is off, as each call sets its own;
     /// redirects are not followed; and Microsoft.Extensions.Http logs nothing of these requests, not even their addresses,
     /// whatever Logging:LogLevel says, so no secret can reach a log through them. The store needs Windows' data protection.
@@ -52,33 +52,15 @@ public static class DriveServices
         // The sign-in, in the window only: the listener for Google's answer and the browser.
         services.AddSingleton<ILoopbackReceiver, HttpListenerLoopbackReceiver>();
         services.AddSingleton<IBrowser, ShellBrowser>();
-        services.AddTransient<GoogleSignIn>();
 
-        // The uploads: what is remembered of each recording and the lock, one for the process; the steps, one per run, over
-        // that run's Drive client and settings.
+        // The uploads: what is remembered of each recording and the lock, one for the process; the resumable upload, one per
+        // run, over that run's Drive client and settings.
         services.AddSingleton<UploadManifests>();
         services.AddSingleton<DriveUploadLock>();
-        services.AddSingleton<IAudioOnDrive, DriveCopies>();
-        services.AddTransient<DriveRetry>();
         services.AddTransient<ResumableUpload>();
-        services.AddTransient<RecordingUpload>();
-        services.AddTransient<DriveUploadPass>();
-        services.AddTransient<LocalAudioFreer>();
-
-        // The uploads that happen by themselves: one per run, shared by the run, which queues its recording and notes how it
-        // ended, and by whoever ran it, which uploads after it; the pass is made only when one runs.
-        services.AddTransient(provider => new Lazy<DriveUploadPass>(provider.GetRequiredService<DriveUploadPass>));
-        services.AddScoped<IDriveAutoUpload, DriveAutoUpload>();
-
-        // What becomes of a lesson's video and its camera pieces with Drive, as the run's settings have it.
-        services.AddScoped<LessonVideoDrive>();
 
         // Drive's room, for a YouTube batch's plan when the videos' audio goes up: the client is made only when Drive is asked.
         services.AddTransient(provider => new Lazy<DriveClient>(provider.GetRequiredService<DriveClient>));
-        services.AddTransient<IDriveRoom, DriveRoom>();
-
-        // What the menu's header and the report at the start say of the queue, from the store and the manifests alone.
-        services.AddSingleton<DriveQueueReport>();
         return services;
     }
 

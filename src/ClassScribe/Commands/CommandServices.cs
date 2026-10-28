@@ -1,26 +1,23 @@
-using ClassScribe.Recorder;
+using ClassScribe.Desktop;
 using ClassScribe.Runs;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Commands;
 
 /// <summary>
-/// Registers the console, the desktop, the gate, the commands, the menu, the microphone menu and the microphone check,
-/// Google Drive's menu and command, the command line, the report at the start and the app that puts them together; and
-/// what a run needs to record in this window or in a recorder: the run itself, its recording loop and checks, its
-/// bookkeeping, how it shows its end, and the recorder's log.
+/// Registers the window's side of the commands (architecture 5.2): the console and the person's Ctrl+C, the gate, the
+/// runner, the menu and its screens (the microphone menu, Google Drive's menu, the classes' and the settings' menus,
+/// YouTube's menu with what it remembers), the output of settings and class, the command line, the app that puts them
+/// together, and the status sink a run in this window shows its states through. The use cases are registered apart (see
+/// <see cref="CommandUseCases"/>).
 /// </summary>
 public static class CommandServices
 {
-    /// <summary>Adds the commands and what they use to talk to the person at the computer.</summary>
+    /// <summary>Adds the commands' side that talks to the person at the computer.</summary>
     public static IServiceCollection AddCommands(this IServiceCollection services)
     {
         services.AddSingleton<IConsoleUi, ConsoleUi>();
-        services.AddSingleton<IDesktop, WindowsDesktop>();
-        services.AddSingleton<IExitWarnings, ProcessExitWarnings>();
 
         // One per run: each recording or transcription gets fresh Ctrl+C signals (see ICommandRunner).
         services.AddScoped<IUserSignals, ConsoleUserSignals>();
@@ -28,38 +25,29 @@ public static class CommandServices
         // One for the process, so that a warning about the settings is given once.
         services.AddSingleton<RunGate>();
 
-        services.AddRun();
-        services.AddTransient<TranscribeCommand>();
-        services.AddTransient<RebuildCommand>();
-        services.AddTransient<FinishVideoCommand>();
+        // A run in this window shows its states in the window's title and taskbar button, and flashes once for each new
+        // Alert, with a status sink of its own; a recorder's host replaces it with the link's.
+        services.AddScoped<IRecorderStatusSink, WindowStatusSink>();
+
         services.AddSingleton<ICommandRunner, CommandRunner>();
         services.AddSingleton<RecordingNamePrompt>();
         services.AddTransient<MenuCommand>();
 
-        // Menu choice 7, which the runner resolves in a scope of its own, as it does the other commands; and the microphone
-        // check of choice 8 and mic-check, as the run the runner resolves (see IMicCheckRun), which reads Ctrl+C through the
-        // signals of its scope, as a transcription does.
+        // Menu choice 7, which the runner resolves in a scope of its own, as it does the other commands.
         services.AddTransient<MicrophoneMenu>();
-        services.AddTransient<MicCheckCommand>();
-        services.AddTransient<IMicCheckRun>(provider => provider.GetRequiredService<MicCheckCommand>());
 
-        // Google Drive: menu choice 9 and the drive command, each resolved by the runner in a scope of its own; the command
-        // reads Ctrl+C through the signals of its scope.
+        // Google Drive: menu choice 9, resolved by the runner in a scope of its own.
         services.AddTransient<DriveMenu>();
-        services.AddTransient<DriveCommand>();
-        services.AddTransient<DriveUploadCommand>();
 
-        // The commands of their own kind, settings and class, which answer on standard output and say what is wrong on
-        // standard error, read at the moment the output is made, so that a UTF-8 writer Program put in place for redirected
-        // output is the one used. The window alone has the settings writer they need; a recorder never resolves them.
+        // YouTube: menu choice Y, with the course it remembers for the process.
+        services.AddSingleton<YouTubeMenuMemory>();
+        services.AddScoped<YouTubeMenu>();
+
+        // What settings and class answer on standard output and say is wrong on standard error, read at the moment the
+        // output is made, so that a UTF-8 writer Program put in place for redirected output is the one used.
         services.AddSingleton(_ => new CommandOutput(Console.Out, Console.Error));
-        services.AddTransient<SettingsCommand>();
-        services.AddTransient<ClassCommand>();
         services.AddTransient<ClassesMenu>();
         services.AddTransient<SettingsMenu>();
-
-        // Reports nothing until the real report at the start is registered; added only when no report is there yet.
-        services.TryAddSingleton<IStartupReport, NoStartupReport>();
 
         // The command line writes its help to standard output and its mistakes to standard error, as a script expects; it
         // reads the saved classes and the recordings folder as a command runs.
@@ -73,33 +61,6 @@ public static class CommandServices
             provider.GetRequiredService<Settings.SavedClasses>(),
             provider.GetRequiredService<IOptionsMonitor<Settings.RecordingOptions>>()));
         services.AddTransient<App>();
-        return services;
-    }
-
-    /// <summary>
-    /// Adds what one run needs, in this window and in a recorder alike: the record command, as the run; its loop and the
-    /// checks it makes once a second; its bookkeeping and the context its starter fills; and how a run in this window shows
-    /// its end. Each run resolves these in a scope of its own, so it gets its own. A recorder's host replaces what differs
-    /// there: the console, the status sink and the result shower.
-    /// </summary>
-    private static IServiceCollection AddRun(this IServiceCollection services)
-    {
-        // The recorder's log, to which every logger writes as well as to the console: the run names its file beside the
-        // recording, <base>.log. A window keeps the lines between runs in memory only; a recorder's host replaces it with
-        // one that writes those to recorder.log. One provider however often this is called.
-        services.AddSingleton(provider => new RecorderLog(provider.GetRequiredService<TimeProvider>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, RecorderLogProvider>());
-
-        // .NET's warning of an error nobody caught, which a run hears before the exit warnings, to write down the right cause.
-        services.AddSingleton<ICrashWarnings, AppDomainCrashWarnings>();
-
-        services.AddScoped<RunContextSlot>();
-        services.AddScoped<RunBookkeeping>();
-        services.AddScoped<RecordingMonitor>();
-        services.AddScoped<RecordingLoop>();
-        services.AddScoped<IResultShower, WindowResultShower>();
-        services.AddTransient<RecordCommand>();
-        services.AddTransient<IRecordRun>(provider => provider.GetRequiredService<RecordCommand>());
         return services;
     }
 }

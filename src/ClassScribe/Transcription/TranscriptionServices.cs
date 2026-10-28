@@ -6,10 +6,14 @@ using Refit;
 
 namespace ClassScribe.Transcription;
 
-/// <summary>Registers the ElevenLabs client, the glossary, the transcript layout, the workflow that joins them, and the report of what a transcript cost.</summary>
+/// <summary>
+/// Registers the transcription's parts that reach ElevenLabs and the disk (architecture 5.2): the ElevenLabs client, the
+/// reader of the account's credits and the glossary's files. Which glossary a run takes, the transcript layout, the workflow
+/// that joins them and the report of what a transcript cost are the use cases' (see <see cref="TranscriptionUseCases"/>).
+/// </summary>
 public static class TranscriptionServices
 {
-    /// <summary>Adds the transcription services.</summary>
+    /// <summary>Adds the transcription services that reach ElevenLabs and the disk.</summary>
     public static IServiceCollection AddTranscription(this IServiceCollection services)
     {
         services
@@ -26,17 +30,12 @@ public static class TranscriptionServices
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { ConnectCallback = ConnectWithKeepAliveAsync });
         services.AddTransient<ITranscriptionClient, ElevenLabsClient>();
 
-        // The glossary's files for the process; which glossary a run or a transcript takes, with the settings of its scope.
+        // The glossary's files for the process.
         services.AddSingleton<IGlossaryFiles, GlossaryFiles>();
-        services.AddScoped<GlossaryChoice>();
-        services.AddSingleton<TranscriptFormatter>();
-        services.AddTransient<TranscriptionWorkflow>();
-        services.AddScoped<TranscriptionProgress>();
 
         // The account's credits, read before and after a transcript: the reader is one per use, over the same Refit
-        // client; the report is one per run, since the workflow begins it and the command ends it.
+        // client.
         services.AddTransient<IElevenLabsAccount, ElevenLabsAccount>();
-        services.AddScoped<UsageReport>();
         return services;
     }
 

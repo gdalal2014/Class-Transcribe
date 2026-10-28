@@ -1,4 +1,3 @@
-using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
@@ -9,14 +8,17 @@ using Refit;
 
 namespace ClassScribe.YouTube;
 
-/// <summary>Registers the YouTube feature's services: what both paths share, the download path and the record path.</summary>
+/// <summary>
+/// Registers the YouTube feature's parts that reach Windows, the tools, YouTube and the disk (architecture 5.2), for both
+/// paths. The batches, their pace, their transcripts and their command are the use cases' (see <see cref="YouTubeUseCases"/>);
+/// the menu is the window's.
+/// </summary>
 public static class YouTubeServices
 {
     /// <summary>
-    /// Adds the feature: its folders, the lock, the tools' locator and runner, the check, the oEmbed client for the record
-    /// path's titles, and per batch (each in a scope of its own) the pace, the wait for a class, the conversion, the
-    /// transcripts (each again in a scope of its own), the titles, the batches and their command and menu. The runner reaches
-    /// Windows' own start of a process, and so needs Windows.
+    /// Adds the feature's adapters: its folders, the lock, the tools' locator and runner, the check, the oEmbed client for the
+    /// record path's titles, Chrome's locator, the yield of a video's run, the window, and per batch (each in a scope of its
+    /// own) the conversion and the titles. The runner reaches Windows' own start of a process, and so needs Windows.
     /// </summary>
     public static IServiceCollection AddYouTube(this IServiceCollection services)
     {
@@ -27,7 +29,6 @@ public static class YouTubeServices
         services.AddSingleton<IToolRunner>(provider => OperatingSystem.IsWindows()
             ? new ProcessToolRunner(provider.GetRequiredService<ILogger<ProcessToolRunner>>())
             : throw new PlatformNotSupportedException("Running yt-dlp needs Windows."));
-        services.AddSingleton<YouTubeMenuMemory>();
 
         // YouTube's public oEmbed address, for the record path's titles: its base address read from the settings each time a
         // client is made, once per batch; HttpClient's own limit off, as the reader holds its own; a transport of its own that
@@ -47,29 +48,16 @@ public static class YouTubeServices
             .RemoveAllLoggers();
 
         // The record path: where Chrome is, one for the app, which reads the setting at each search; the yield of a video's
-        // run to a class, through the run's own event; the window the batch opens and closes; and, one per run, the window a
-        // video's run records, which a class's run reads to leave video windows out.
+        // run to a class, through the run's own event; and the window the batch opens and closes.
         services.AddSingleton<BrowserLocator>();
         services.AddSingleton<IVideoYield>(provider => OperatingSystem.IsWindows()
             ? new WindowsVideoYield(provider.GetRequiredService<ILogger<WindowsVideoYield>>())
             : throw new PlatformNotSupportedException("A video's run giving way to a class needs Windows."));
         services.AddTransient<VideoWindow>();
-        services.AddScoped<VideoPlayback>();
 
         services.AddTransient<YtDlpCheck>();
-        services.AddScoped<IBatchPace>(provider => new BatchPace(provider.GetRequiredService<TimeProvider>()));
-        services.AddScoped<ClassWait>();
         services.AddScoped<DownloadedAudio>();
-        services.AddScoped<TranscriptionRuns>();
-        services.AddScoped<VideoTranscriptRun>();
-        services.AddScoped<IVideoTranscriber, ScopedVideoTranscriber>();
-        services.AddScoped<BatchTranscripts>();
         services.AddScoped<OEmbedTitles>();
-        services.AddScoped<YouTubeBatch>();
-        services.AddScoped<DownloadBatch>();
-        services.AddScoped<VideoBatch>();
-        services.AddScoped<YouTubeCommand>();
-        services.AddScoped<YouTubeMenu>();
         return services;
     }
 }
