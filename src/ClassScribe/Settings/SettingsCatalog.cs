@@ -62,6 +62,10 @@ public static class SettingsCatalog
     /// <summary>The log's section.</summary>
     public const string LoggingSection = "Logging";
 
+    /// <summary>What a change of the ElevenLabs key is told: the ground rule, in words, and how to set the key where it lives.</summary>
+    public const string ApiKeyRefused =
+        "The ElevenLabs key is never kept in the settings: ClassScribe reads it from the ELEVENLABS_API_KEY environment variable alone. Set it there, for your Windows user, in PowerShell: [Environment]::SetEnvironmentVariable('ELEVENLABS_API_KEY', '<your key>', 'User'), then open a new window.";
+
     /// <summary>The six sections, in the order the user's file holds them; Classes comes after them.</summary>
     public static IReadOnlyList<string> Sections { get; } =
         [RecordingOptions.SectionName, ElevenLabsOptions.SectionName, TranscriptOptions.SectionName, DriveOptions.SectionName, YouTubeOptions.SectionName, LoggingSection];
@@ -71,6 +75,9 @@ public static class SettingsCatalog
 
     /// <summary>The setting named <paramref name="name"/>, in any case; null when there is none.</summary>
     public static SettingKey? Find(string name) => Keys.FirstOrDefault(key => key.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>True when <paramref name="name"/> is ElevenLabs:ApiKey, in any case: never set, reset or listed.</summary>
+    public static bool IsTheKey(string name) => name.Trim().Equals(ElevenLabsOptions.ApiKeySetting, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The map <paramref name="name"/> is an entry of, and the entry's name, such as Logging:LogLevel and ClassScribe.Drive

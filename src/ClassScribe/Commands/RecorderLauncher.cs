@@ -118,7 +118,7 @@ public sealed class RecorderLauncher(IProcessStarter starter, IJobInspector jobs
 
     /// <summary>
     /// Starts the recorder of <paramref name="request"/>'s run with <paramref name="settings"/>, the checked settings it
-    /// records with (see <see cref="SettingsReloader.Snapshot"/>), and waits until it answers. The request file is written
+    /// records with (see <see cref="ISettingsStore.Snapshot"/>), and waits until it answers. The request file is written
     /// first. The recorder starts outside the job where the job allows it; when Windows refuses that, it starts inside the
     /// job only where it outlives this window there too. It has started once its run file says it records, or after
     /// <see cref="AnswerPatience"/> still says it starts, which it writes only once its pipe is up. It was refused when its

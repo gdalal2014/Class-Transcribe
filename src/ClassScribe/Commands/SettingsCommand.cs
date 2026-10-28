@@ -173,7 +173,7 @@ public sealed class SettingsCommand(SettingsWriter writer, SettingsPlaces places
     /// </summary>
     private int Get(string name, bool json)
     {
-        if (SettingsWriter.IsTheKey(name)) return Refuse(Mistake, SettingsWriter.ApiKeyRefused);
+        if (SettingsCatalog.IsTheKey(name)) return Refuse(Mistake, SettingsCatalog.ApiKeyRefused);
 
         var known = SettingsCatalog.Find(name)?.Name ?? (SettingsCatalog.FindEntry(name) is { } entry ? $"{entry.Map.Name}:{entry.Entry}" : null);
         if (known is null)

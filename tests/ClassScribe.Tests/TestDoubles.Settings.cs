@@ -9,8 +9,8 @@ namespace ClassScribe.Tests;
 /// <summary>
 /// The settings files of one test, in temporary folders: the program's folder with its appsettings.json, the user's folder
 /// (empty until the first change), and ClassScribe's own folder for the marker and the lock; with the places over them, the
-/// settings file, the reloader with a real check and the writer, as the app puts them together. Never the real %APPDATA% or
-/// %LOCALAPPDATA%.
+/// settings file, the reloader with a real check, the writer and the store over them, as the app puts them together. Never
+/// the real %APPDATA% or %LOCALAPPDATA%.
 /// </summary>
 public sealed class SettingsFileFixtures : IDisposable
 {
@@ -30,6 +30,7 @@ public sealed class SettingsFileFixtures : IDisposable
         Reloader = new SettingsReloader(Configuration, accepted, SettingsFile, new SettingsCheck(), NullLogger<SettingsReloader>.Instance);
         Reloader.TryReload();
         Writer = new SettingsWriter(Places, SettingsFile, Reloader, Log);
+        Store = new SettingsStore(Places, SettingsFile, Reloader, Writer);
     }
 
     /// <summary>The program's folder.</summary>
@@ -55,6 +56,9 @@ public sealed class SettingsFileFixtures : IDisposable
 
     /// <summary>The writer, logging to <see cref="Log"/>.</summary>
     public SettingsWriter Writer { get; }
+
+    /// <summary>The store the use cases take: the places, the file, the reloader and the writer behind one port.</summary>
+    public SettingsStore Store { get; }
 
     /// <summary>What the writer logged.</summary>
     public RecordingLogger<SettingsWriter> Log { get; } = new();

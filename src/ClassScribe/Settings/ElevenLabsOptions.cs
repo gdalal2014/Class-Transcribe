@@ -55,7 +55,7 @@ public sealed class ElevenLabsOptions
     /// The glossary of every recording no saved class names one for, one term per line: none by default, as ClassScribe ships
     /// none (architecture 8.2). Environment variables such as %APPDATA% are expanded, quotes around the path are ignored, and
     /// a relative path is taken from the folder of the settings in force and from nowhere else (see
-    /// <see cref="SettingsPlaces.ResolveFile(string)"/>). Empty, or none, sends no glossary. A recording's glossary is decided
+    /// <see cref="Transcription.IGlossaryFiles.Resolve"/>). Empty, or none, sends no glossary. A recording's glossary is decided
     /// as it starts and kept with it (see <see cref="Transcription.GlossaryChoice"/>).
     /// </summary>
     public string KeytermsFile { get; init; } = "";

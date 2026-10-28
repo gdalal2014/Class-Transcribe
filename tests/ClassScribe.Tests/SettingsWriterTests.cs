@@ -200,8 +200,8 @@ public class SettingsWriterTests
         Assert.That(_files.Writer.Set("Recording:FlushSecond", "7").Lines.Single(),
             Is.EqualTo("Recording:FlushSecond is not a setting; did you mean Recording:FlushSeconds? ClassScribe settings list shows them all."));
         var key = _files.Writer.Set("ElevenLabs:ApiKey", "sk-secret");
-        Assert.That((key.ExitCode, key.Lines.Single()), Is.EqualTo((2, SettingsWriter.ApiKeyRefused)));
-        Assert.That(_files.Writer.Reset("elevenlabs:apikey").Lines.Single(), Is.EqualTo(SettingsWriter.ApiKeyRefused));
+        Assert.That((key.ExitCode, key.Lines.Single()), Is.EqualTo((2, SettingsCatalog.ApiKeyRefused)));
+        Assert.That(_files.Writer.Reset("elevenlabs:apikey").Lines.Single(), Is.EqualTo(SettingsCatalog.ApiKeyRefused));
         Assert.That(_files.Writer.Set("Recording:FlushSeconds", "abc").Lines.Single(), Is.EqualTo("Recording:FlushSeconds takes a whole number, such as 60, not \"abc\"."));
         Assert.That(_files.Writer.Set("Recording:KeepScreenOn", "Sometimes").Lines.Single(), Is.EqualTo("Recording:KeepScreenOn takes OnBattery, Always or Never, not \"Sometimes\"."));
         Assert.That(_files.Writer.Set("Recording:Device", "Pixel", "Buds").ExitCode, Is.EqualTo(2));

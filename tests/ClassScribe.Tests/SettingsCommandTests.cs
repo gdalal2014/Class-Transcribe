@@ -149,7 +149,7 @@ public class SettingsCommandTests
 
         Assert.That(_out.ToString(), Is.Empty);
         Assert.That(_error.ToString(), Does.Contain("Recording:OutputFolders is not a setting; did you mean Recording:OutputFolder?"));
-        Assert.That(_error.ToString(), Does.Contain(SettingsWriter.ApiKeyRefused));
+        Assert.That(_error.ToString(), Does.Contain(SettingsCatalog.ApiKeyRefused));
     }
 
     /// <summary>A file that is not valid JSON lists nothing: what is wrong goes to standard error, exit 1.</summary>
