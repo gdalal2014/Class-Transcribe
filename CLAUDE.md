@@ -812,7 +812,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (free-space and a video still to be made, a remade video as a revision, the rename guard, pieces in no video kept, the
   wording once a transcript is saved, the camera's restart race) to 4,667, all passing. From `af7be41` the glossary out of
   the app (architecture slice 1) grew on `feature/glossary-out` to 4,610, all passing, with 4 Explicit `DryRunKit` tests
-  (one a whole dry run with a named glossary). The uploads by
+  (one a whole dry run with a named glossary), and on with its review's repairs; rebased on `develop` with the lesson's
+  video, the count is 4,751, all passing, in about four minutes. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -848,11 +849,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
-  three minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
+  four minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
   2 min 17 s for 3,395 later that day, 3 min 55 s for YouTube's 3,875 on 18 October, 3 min 7 s for
   3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, 3 min 4 s for 4,180
   with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, 3 min 32 s for 4,538 with
-  settings and saved classes, plus the build).
+  settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
+  app on 28 October, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
