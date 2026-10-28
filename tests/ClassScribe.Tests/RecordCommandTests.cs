@@ -174,6 +174,7 @@ public partial class RecordCommandTests
             folders,
             marks,
             recording,
+            elevenLabs,
             _progress,
             usage,
             NullLogger<TranscriptionWorkflow>.Instance);

@@ -84,7 +84,12 @@ public sealed record ContinueCandidate(RecordingFiles Files, TimeSpan Length, Da
 /// <param name="time">The clock, in the run's time zone, for the date folders.</param>
 /// <param name="logger">Where problems with folders are said.</param>
 /// <param name="audioOnDrive">What is known of recordings' audio kept on Google Drive alone; none when it is not given.</param>
-public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> options, TimeProvider time, ILogger<ClassFolders> logger, IAudioOnDrive? audioOnDrive = null)
+/// <param name="elevenLabs">
+/// The ElevenLabs settings, read at each use, for the longest recording sent in one file, which a recording may be continued
+/// up to (see <see cref="TranscriptionLimits"/>); the defaults when they are not given.
+/// </param>
+public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> options, TimeProvider time, ILogger<ClassFolders> logger, IAudioOnDrive? audioOnDrive = null,
+    IOptionsMonitor<ElevenLabsOptions>? elevenLabs = null)
 {
     /// <summary>What is known of recordings' audio kept on Google Drive alone.</summary>
     private readonly IAudioOnDrive _onDrive = audioOnDrive ?? NoAudioOnDrive.Instance;
@@ -266,8 +271,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// (<paramref name="camera"/>; teach-video 6.8); it is not being written, on either track nor its newest piece; it has no upload copy, which
     /// is there while a recorder or a window transcribes it, after a transcription that was cut off, and after a failed one
     /// whose copy Recording:KeepUploadFile kept; its audio was last written no more than <paramref name="within"/> ago (zero
-    /// never offers one); and it is shorter than <see cref="TranscriptionWorkflow.LongestRecording"/>, so that continued it
-    /// can still be sent in one file. So a recording ElevenLabs has billed, or may be billing, is not offered: continued, it
+    /// never offers one); and it is shorter than the longest recording sent in one file, ElevenLabs:LongestFileHours less half
+    /// an hour (see <see cref="TranscriptionLimits.LongestRecording"/>), so that continued it can still be sent in one file.
+    /// So a recording ElevenLabs has billed, or may be billing, is not offered: continued, it
     /// would be sent again whole and billed twice. The files cannot tell a recording of the class alone from one made in
     /// person, both a single main track, nor a recording made without the camera from a lesson whose camera never gave a
     /// piece (not connected, or its process never started), both without pieces, nor show a recorder in the moment between
@@ -300,7 +306,7 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
             : IsNewestHeldForWriting(main) || IsNewestHeldForWriting(microphone) || IsNewestHeldForWriting(pieces) ? "it is being recorded now"
             : File.Exists(newest.Upload) ? "its upload copy is there: it is being transcribed, or a transcription of it was cut off"
             : time.GetUtcNow() - stopped > within ? $"it stopped more than {Durations.Format(within)} ago"
-            : length >= TranscriptionWorkflow.LongestRecording ? $"it is {Durations.Format(length)} long already"
+            : length >= TranscriptionLimits.From(elevenLabs?.CurrentValue ?? new ElevenLabsOptions()).LongestRecording ? $"it is {Durations.Format(length)} long already"
             : null;
         if (unfit is not null)
         {

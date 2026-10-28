@@ -37,8 +37,9 @@ public class ClassFoldersTests
     /// Creates the folders under test, rooted in the temporary folder unless another root is given, on the test's clock
     /// read in US Eastern time, where now is 14:30 on 14 October: a new recording's date folder is 2026-10-14 on every machine.
     /// </summary>
-    private ClassFolders Folders(string? outputFolder = null) =>
-        new(TestOptions.Create(new RecordingOptions { OutputFolder = outputFolder ?? _folder.Path }), new ZonedClock(_time, ZonedTimeProvider.EasternSummer.LocalTimeZone), _log);
+    private ClassFolders Folders(string? outputFolder = null, double longestFileHours = 10) =>
+        new(TestOptions.Create(new RecordingOptions { OutputFolder = outputFolder ?? _folder.Path }), new ZonedClock(_time, ZonedTimeProvider.EasternSummer.LocalTimeZone), _log,
+            elevenLabs: TestOptions.Create(new ElevenLabsOptions { LongestFileHours = longestFileHours }));
 
     /// <summary>Holds a recording's first file open without sharing, as another program might.</summary>
     private static FileStream HoldOpen(RecordingFiles files) =>
@@ -852,6 +853,24 @@ public class ClassFoldersTests
         var candidate = Folders().FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(withinMinutes));
 
         Assert.That(candidate is not null, Is.EqualTo(offered));
+    }
+
+    /// <summary>
+    /// A recording as long as ClassScribe sends in one file, ElevenLabs:LongestFileHours less half an hour, is not offered:
+    /// continued, it could no longer be sent whole (architecture 7.2). With a file of an hour and three quarters, one of an
+    /// hour and a quarter is not offered, though it is with ElevenLabs' own 10 hours. Its audio is written at 10 Hz, so the
+    /// hour and a quarter takes 90 KB.
+    /// </summary>
+    [Test]
+    public void A_recording_as_long_as_one_file_less_half_an_hour_is_not_offered()
+    {
+        var files = WriteStopped("Kalam", TimeSpan.FromMinutes(4));
+        File.Delete(files.Segment(1));
+        using (var writer = new WavSegmentWriter(files.Segment(1), 10)) writer.Write(new byte[(int)TimeSpan.FromHours(1.25).TotalSeconds * 10 * 2]);
+        File.SetLastWriteTimeUtc(files.Segment(1), Now.AddMinutes(-4).UtcDateTime);
+
+        Assert.That(Folders(longestFileHours: 1.75).FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60)), Is.Null);
+        Assert.That(Folders().FindContinuable("Kalam", RecordingMode.Class, TimeSpan.FromMinutes(60))?.Length, Is.EqualTo(TimeSpan.FromHours(1.25)));
     }
 
     /// <summary>A recording with a transcript, here a later copy of one, is finished: it is not offered, even a moment after it stopped.</summary>

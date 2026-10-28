@@ -69,11 +69,12 @@ internal sealed class VideoEndWatch(VideoPlayback video, TimeProvider time)
     /// <summary>
     /// One look at the video's recording, with <paramref name="snapshot"/> showing the recording, <paramref name="context"/> the
     /// run, at <paramref name="now"/> on the steady clock, with nothing heard since <paramref name="awakeSince"/> counting, and
-    /// <paramref name="longest"/> as YouTube:LongestVideoHours. Adds its lines to <paramref name="lines"/> and what needs
-    /// attention to <paramref name="conditions"/>, and returns why the recording stops now, or null.
+    /// <paramref name="longest"/> as YouTube:LongestVideoHours gives it, which <paramref name="longestSetting"/> names in the
+    /// line, held to what one file to ElevenLabs holds. Adds its lines to <paramref name="lines"/> and what needs attention to
+    /// <paramref name="conditions"/>, and returns why the recording stops now, or null.
     /// </summary>
     public string? Look(RecordingSnapshot snapshot, MonitorContext context, long now, long awakeSince, TimeSpan silenceWarning, TimeSpan longest,
-        List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
+        string longestSetting, List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
     {
         // 1. The window is gone.
         if (!video.IsOpen())
@@ -147,7 +148,7 @@ internal sealed class VideoEndWatch(VideoPlayback video, TimeProvider time)
         // 5. The longest a video is recorded for: of recording or of running, whichever comes first.
         if (Shorter(longest - ran, longest - snapshot.Position) <= TimeSpan.Zero)
         {
-            lines.Add((LogLevel.Warning, $"This video has played for {RecordingMonitor.DescribeLength(longest)} (YouTube:LongestVideoHours); stopping"));
+            lines.Add((LogLevel.Warning, $"This video has played for {RecordingMonitor.DescribeLength(longest)} ({longestSetting}); stopping"));
             return RunEndCause.VideoLimit;
         }
 

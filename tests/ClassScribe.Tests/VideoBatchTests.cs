@@ -68,6 +68,21 @@ public class VideoBatchTests
     }
 
     /// <summary>
+    /// The plan's longest recording is held to what one file to ElevenLabs can hold, less an hour (architecture 7.2): with
+    /// YouTube:LongestVideoHours at 12, each video is recorded for at most 9 hours, and the plan says why.
+    /// </summary>
+    [Test]
+    public async Task The_plans_longest_recording_is_held_an_hour_within_one_file()
+    {
+        _world.YouTube.Set(new YouTubeOptions { LongestVideoHours = 12 });
+
+        Assert.That(await _world.RunAsync(_world.Request([First, Second], BatchConfirmation.PlanOnly)), Is.Zero);
+
+        Assert.That(_world.Screen, Has.Some.StartsWith(
+            "Each is recorded for as long as it plays, at most 9 hours (YouTube:LongestVideoHours is 12, above what one file to ElevenLabs can hold), ads included, so at most 18 hours for these 2:"));
+    }
+
+    /// <summary>
     /// The plan's price counts the glossary a recording of the course would be sent with, as the one resolver decides it
     /// (architecture 8.3): here a saved class of the course Risala names its own, of three terms, so each hour costs the
     /// glossary's price too.

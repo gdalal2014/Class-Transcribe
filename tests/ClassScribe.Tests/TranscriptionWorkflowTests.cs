@@ -75,7 +75,7 @@ public class TranscriptionWorkflowTests
     /// <summary>
     /// Creates the workflow under test around the mocks, or around the preparer, settings, progress and loggers given; the
     /// account's report runs over the fake reader. The glossary is looked for beside the program alone, unless
-    /// <paramref name="places"/> says where else.
+    /// <paramref name="places"/> says where else; one file holds <paramref name="longestFileHours"/> (ElevenLabs:LongestFileHours).
     /// </summary>
     private TranscriptionWorkflow CreateWorkflow(
         bool keepUploadFile = false,
@@ -86,10 +86,11 @@ public class TranscriptionWorkflowTests
         string apiKey = "dummy-key-for-a-local-test",
         TestOptions<TranscriptOptions>? transcript = null,
         TranscriptionProgress? progress = null,
-        SettingsPlaces? places = null)
+        SettingsPlaces? places = null,
+        double longestFileHours = 10)
     {
         var recording = TestOptions.Create(new RecordingOptions { KeepUploadFile = keepUploadFile, OutputFolder = _recordings });
-        var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt") });
+        var elevenLabs = TestOptions.Create(new ElevenLabsOptions { ApiKey = apiKey, KeytermsFile = keytermsFile ?? _folder.File("no-glossary.txt"), LongestFileHours = longestFileHours });
         return new(
             preparer ?? _preparer.Object,
             _client.Object,
@@ -98,6 +99,7 @@ public class TranscriptionWorkflowTests
             new ClassFolders(recording, ZonedClock.Eastern(new ManualTimeProvider(Started)), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             recording,
+            elevenLabs,
             progress ?? new TranscriptionProgress(),
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
             logger ?? NullLogger<TranscriptionWorkflow>.Instance);
@@ -392,7 +394,8 @@ public class TranscriptionWorkflowTests
 
         var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await workflow.TranscribeRecordingAsync(_files, CancellationToken.None));
 
-        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("at most 10 hours per file").And.Contain("Nothing was prepared or sent"));
+        Assert.That(error!.Message, Does.StartWith($"{_files.BaseName} holds 09:30:01 of audio").And.Contain("at most 10 hours per file").And.Contain("at most 9 hours 30 minutes")
+            .And.Contain("Nothing was prepared or sent"));
         Assert.That(error.Message, Does.Contain("copy some of its .wav files into a folder of their own and transcribe that folder").And.Not.Contain(".mic.wav"),
             "a recording without a microphone track gets the plain advice");
         _preparer.Verify(Calls.AnyPreparation, Times.Never);
@@ -462,6 +465,29 @@ public class TranscriptionWorkflowTests
 
         await CreateWorkflow().TranscribeRecordingAsync(_files, CancellationToken.None);
 
+        _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
+    }
+
+    /// <summary>
+    /// The refusal comes at ElevenLabs:LongestFileHours less half an hour (architecture 7.2), and its words are built from
+    /// the setting: with a file of 5 hours, 4 hours 30 minutes and a second are refused before anything is prepared, and the
+    /// message names 5 hours, the setting and 4 hours 30 minutes; 4 hours 30 minutes are still sent.
+    /// </summary>
+    [Test]
+    public async Task The_refusal_comes_at_the_setting_less_half_an_hour_and_says_so()
+    {
+        WriteLongSegment(1, new TimeSpan(2, 15, 0));
+        WriteLongSegment(2, new TimeSpan(2, 15, 1));
+
+        var error = Assert.ThrowsAsync<RecordingTooLongException>(async () => await CreateWorkflow(longestFileHours: 5).TranscribeRecordingAsync(_files, CancellationToken.None));
+
+        Assert.That(error!.Message, Does.StartWith(
+            $"{_files.BaseName} holds 04:30:01 of audio, and ElevenLabs takes at most 5 hours per file (ElevenLabs:LongestFileHours), so ClassScribe sends at most 4 hours 30 minutes. Nothing was prepared or sent."));
+        _preparer.Verify(Calls.AnyPreparation, Times.Never);
+        _client.Verify(Calls.AnyTranscription, Times.Never);
+
+        WriteLongSegment(2, new TimeSpan(2, 15, 0));
+        await CreateWorkflow(longestFileHours: 5).TranscribeRecordingAsync(_files, CancellationToken.None);
         _client.Verify(Calls.TranscriptionOf(_files.Upload), Times.Once);
     }
 

@@ -102,7 +102,7 @@ public sealed class DownloadBatch(
             return Mistake;
         }
 
-        var guard = new DownloadGuard(youTube.Value);
+        var guard = new DownloadGuard(youTube.Value, TranscriptionLimits.From(elevenLabs.Value));
         foreach (var video in videos)
         {
             if (video.Info is { } info) video.Verdict = guard.Judge(info, request.AllowUnlisted);

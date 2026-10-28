@@ -1,4 +1,5 @@
 using ClassScribe.Settings;
+using ClassScribe.Transcription;
 using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;
@@ -134,5 +135,21 @@ public class DownloadGuardTests
         Assert.That(Guard().Judge(Video(duration: null), false).Words, Is.EqualTo("length unknown: left out"));
         Assert.That(Guard().Judge(Video(duration: 40000), false).Words, Is.EqualTo("longer than 9 h 30 min: left out"));
         Assert.That(Guard().Judge(Video("unlisted"), false).Words, Is.EqualTo("needs your word"));
+    }
+
+    /// <summary>
+    /// The longest video downloaded is the longest recording ClassScribe sends, ElevenLabs:LongestFileHours less half an hour,
+    /// and the verdict's words are built from it (architecture 7.2): with a file of 5 hours, a second over 4 hours 30 minutes
+    /// is left out and 4 hours 30 minutes are ready; with 9.5 hours, the words say 9 hours.
+    /// </summary>
+    [Test]
+    public void The_longest_video_is_one_file_less_half_an_hour_by_the_settings()
+    {
+        var five = new DownloadGuard(new YouTubeOptions(), TranscriptionLimits.From(new ElevenLabsOptions { LongestFileHours = 5 }));
+        var nineAndAHalf = new DownloadGuard(new YouTubeOptions(), TranscriptionLimits.From(new ElevenLabsOptions { LongestFileHours = 9.5 }));
+
+        Assert.That(five.Judge(Video(duration: 4.5 * 3600 + 1), false), Is.EqualTo(new GuardVerdict(GuardVerdictKind.TooLong, "longer than 4 h 30 min: left out", AcceptedBy: null)));
+        Assert.That(five.Judge(Video(duration: 4.5 * 3600), false).Kind, Is.EqualTo(GuardVerdictKind.Ready));
+        Assert.That(nineAndAHalf.Judge(Video(duration: 40000), false).Words, Is.EqualTo("longer than 9 hours: left out"));
     }
 }

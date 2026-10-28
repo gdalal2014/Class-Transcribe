@@ -572,15 +572,19 @@ public sealed class VideoBatch(
 
     /// <summary>
     /// The longest a video is recorded for, and the setting that sets it: YouTube:LongestVideoHours, or the safety stop,
-    /// Recording:StopAfterHours, when that comes first.
+    /// Recording:StopAfterHours, when that comes first, each held to what one file to ElevenLabs holds as the run's monitor
+    /// holds them (see <see cref="TranscriptionLimits"/>); when the file holds YouTube:LongestVideoHours back, the words say so.
     /// </summary>
     private (TimeSpan Longest, string Setting) Longest()
     {
-        var video = TimeSpan.FromHours(youTube.Value.LongestVideoHours);
-        var safety = recording.Value.StopAfterHours;
-        return safety > 0 && TimeSpan.FromHours(safety) < video
-            ? (TimeSpan.FromHours(safety), $"{RecordingOptions.SectionName}:{nameof(RecordingOptions.StopAfterHours)}")
-            : (video, $"{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.LongestVideoHours)}");
+        var limits = TranscriptionLimits.From(elevenLabs.Value);
+        var hours = youTube.Value.LongestVideoHours;
+        var video = limits.VideoLimit(hours);
+        var name = $"{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.LongestVideoHours)}";
+        var setting = limits.HoldsTheVideo(hours) ? string.Create(CultureInfo.InvariantCulture, $"{name} is {hours}, above what one file to ElevenLabs can hold") : name;
+        return limits.SafetyStop(recording.Value.StopAfterHours) is { } safety && safety < video
+            ? (safety, $"{RecordingOptions.SectionName}:{nameof(RecordingOptions.StopAfterHours)}")
+            : (video, setting);
     }
 
     /// <summary>The source file of <paramref name="files"/>; null when there is none, or it cannot be read, which is said at Debug.</summary>

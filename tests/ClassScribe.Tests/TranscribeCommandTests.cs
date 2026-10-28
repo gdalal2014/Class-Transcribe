@@ -80,6 +80,7 @@ public class TranscribeCommandTests
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             recording,
+            elevenLabs,
             new TranscriptionProgress(),
             usage,
             NullLogger<TranscriptionWorkflow>.Instance);

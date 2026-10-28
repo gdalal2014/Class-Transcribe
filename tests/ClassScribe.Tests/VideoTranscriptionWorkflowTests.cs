@@ -52,6 +52,7 @@ public class VideoTranscriptionWorkflowTests
             new ClassFolders(recording, ZonedClock.Eastern(new ManualTimeProvider(Downloaded)), NullLogger<ClassFolders>.Instance),
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             recording,
+            TestOptions.Create(new ElevenLabsOptions()),
             new TranscriptionProgress(),
             new UsageReport(new FakeElevenLabsAccount(), TimeProvider.System, NullLogger<UsageReport>.Instance),
             _log);

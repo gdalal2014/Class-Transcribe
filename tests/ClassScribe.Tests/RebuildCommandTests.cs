@@ -72,6 +72,7 @@ public class RebuildCommandTests
             folders,
             new ClassMarks(NullLogger<ClassMarks>.Instance),
             recording,
+            TestOptions.Create(new ElevenLabsOptions()),
             new TranscriptionProgress(),
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
             NullLogger<TranscriptionWorkflow>.Instance);
