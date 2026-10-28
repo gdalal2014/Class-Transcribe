@@ -16,7 +16,7 @@ namespace ClassScribe.YouTube;
 /// the next start's report as an interrupted transcription. The run's request is the video's: a request with
 /// <see cref="RecordRequest.Video"/> set, which the class machinery never takes for a class.
 /// </summary>
-public sealed class TranscriptionRuns(RunJournal journal, TimeProvider time, ILogger<TranscriptionRuns> logger)
+public sealed class TranscriptionRuns(IRunJournal journal, TimeProvider time, ILogger<TranscriptionRuns> logger)
 {
     /// <summary>
     /// Begins the run file of the transcript of <paramref name="files"/>, the recording of <paramref name="video"/> in the
@@ -33,7 +33,7 @@ public sealed class TranscriptionRuns(RunJournal journal, TimeProvider time, ILo
             BuildInfo.Build, LinkVersion.Current, Pipe: null, RunHome.InWindow, request, files.BaseName, files.Folder, RunState.Transcribing,
             now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
 
-        RunHandle? handle = null;
+        IRunHandle? handle = null;
         try
         {
             handle = journal.Begin(record);
@@ -64,8 +64,8 @@ public sealed class TranscriptionRuns(RunJournal journal, TimeProvider time, ILo
 /// </summary>
 public sealed class TranscriptionRun : IDisposable
 {
-    private readonly RunHandle? _handle;
-    private readonly RunJournal _journal;
+    private readonly IRunHandle? _handle;
+    private readonly IRunJournal _journal;
     private readonly TranscriptionProgress _progress;
     private readonly TimeProvider _time;
     private readonly Lock _gate = new();
@@ -74,7 +74,7 @@ public sealed class TranscriptionRun : IDisposable
     private long _lastHeartbeat;
 
     /// <summary>The run over <paramref name="handle"/>, null when its file could not be written, following <paramref name="progress"/>.</summary>
-    internal TranscriptionRun(RunHandle? handle, RunJournal journal, TranscriptionProgress progress, TimeProvider time)
+    internal TranscriptionRun(IRunHandle? handle, IRunJournal journal, TranscriptionProgress progress, TimeProvider time)
     {
         _handle = handle;
         _journal = journal;

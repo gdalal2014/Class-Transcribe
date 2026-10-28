@@ -1530,6 +1530,7 @@ public class CommandRunnerTests
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_runtime.Time);
         services.AddSingleton(_runtime.Journal);
+        services.AddSingleton<IRunJournal>(_runtime.Journal);
         services.AddSingleton<IClassFolders>(Folders());
         if (withCommands)
         {

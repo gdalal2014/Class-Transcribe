@@ -363,7 +363,7 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     /// </summary>
     private (RecordingFiles Files, RunView Run)? BusyWith(IServiceProvider services, string path)
     {
-        if (!Has<RunJournal>()) return null;
+        if (!Has<IRunJournal>()) return null;
 
         var fullPath = Path.GetFullPath(path);
         var files = Directory.Exists(fullPath) ? services.GetRequiredService<IClassFolders>().FindNewest(fullPath)
@@ -371,7 +371,7 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
             : null;
         if (files is null) return null;
 
-        var busy = services.GetRequiredService<RunJournal>().List()
+        var busy = services.GetRequiredService<IRunJournal>().List()
             .FirstOrDefault(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files));
         return busy is null ? null : (files, busy);
     }

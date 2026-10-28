@@ -5,7 +5,8 @@ namespace ClassScribe.YouTube;
 /// <see cref="RefuseTheRealThingsSwitch"/> (TestGuards, the assembly's set-up), and then the real tool runner and Windows'
 /// own start of a tool refuse to run yt-dlp, Deno or FFmpeg, naming the fake to use instead, so that a test that forgets a
 /// fake fails rather than reaching YouTube from the laptop. ClassScribe itself never turns it on. Every folder of the
-/// feature is derived from <see cref="Recorder.RuntimeFolder"/>, whose own switch keeps tests out of the real one.
+/// feature is derived from ClassScribe's own folder (<see cref="Recorder.IRuntimeFolder"/>), whose adapter's own switch
+/// (<c>RuntimeFolder.RefuseTheRealFolderSwitch</c>) keeps tests out of the real one.
 /// </summary>
 public static class YouTubeGuards
 {

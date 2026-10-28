@@ -128,7 +128,7 @@ public sealed class PlayedRecorder
         if (logLines.Length > 0)
         {
             Directory.CreateDirectory(_runtime.Folder.Root);
-            File.AppendAllLines(Path.Combine(_runtime.Folder.Root, RecorderLog.StartupFileName), logLines);
+            File.AppendAllLines(Path.Combine(_runtime.Folder.Root, IRunLog.StartupFileName), logLines);
         }
 
         var run = new PlayedRun(launch, null, null, null, null);

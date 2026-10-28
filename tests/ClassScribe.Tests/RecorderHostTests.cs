@@ -245,7 +245,7 @@ public partial class RecorderHostTests
 
         Assert.That(exitCode, Is.EqualTo(RecorderHost.UnreadableRequestExitCode));
         Assert.That(_runtime.FilesInRuns(), Is.Empty);
-        Assert.That(File.ReadAllText(Path.Combine(_runtime.Folder.Root, RecorderLog.StartupFileName)), Does.Contain("is not a ClassScribe run id"));
+        Assert.That(File.ReadAllText(Path.Combine(_runtime.Folder.Root, IRunLog.StartupFileName)), Does.Contain("is not a ClassScribe run id"));
     }
 
     /// <summary>Without a request, the window that would have written it gave up: the recorder ends with exit code 4 and records nothing.</summary>
@@ -325,7 +325,7 @@ public partial class RecorderHostTests
         StopFromAnotherWindow(request.RunId);
         Assert.That(await EndedAsync(run), Is.EqualTo(0));
 
-        var startup = File.ReadAllText(Path.Combine(_runtime.Folder.Root, RecorderLog.StartupFileName));
+        var startup = File.ReadAllText(Path.Combine(_runtime.Folder.Root, IRunLog.StartupFileName));
         var own = File.ReadAllText(recording.Files!.Log);
         Assert.That(startup, Does.Contain($"run {request.RunId}"));
         Assert.That(own, Does.Contain($"run {request.RunId}").And.Contain("Recording \"Kalam\" to").And.Contain("Closing a window that shows this recording does not stop it"));
@@ -369,7 +369,7 @@ public partial class RecorderHostTests
         StopFromAnotherWindow(request.RunId);
         await EndedAsync(run);
 
-        var startup = File.ReadAllText(Path.Combine(_runtime.Folder.Root, RecorderLog.StartupFileName));
+        var startup = File.ReadAllText(Path.Combine(_runtime.Folder.Root, IRunLog.StartupFileName));
         Assert.That(startup, Does.Contain("Deleted 1 old files from"), "the journal's line about the pruning, logged at Debug, at the level handed over");
     }
 

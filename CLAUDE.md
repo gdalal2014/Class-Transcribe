@@ -213,7 +213,11 @@ advice after a format error (10 A).
   Infrastructure's own area: `IClassFolders` and `IClassMarks` as the same singletons as `ClassFolders` and `ClassMarks`,
   and `IRecordingFolder`, `ITranscriptCopies` and `IMicCheckLog` in `StorageServices`; `ITrackWriterFactory` and
   `IAudioFileFacts` in `AudioServices`; `ITranscriptAnswers` in `TranscriptionServices`; `IFileProbe` stays in
-  `YouTubeServices`, where it was first registered.
+  `YouTubeServices`, where it was first registered. The ports of runs of slice 3b2 likewise: `IRuntimeFolder`,
+  `IRecordingLock` and `IRunJournal` as the same singletons as `RuntimeFolder`, `RecordingLock` and `RunJournal`, each right
+  after its adapter in `StorageServices`, and `IRunLog` as the same singleton as `RecorderLog` in
+  `RecorderServices.AddRecorderLog`; each is resolved through its adapter's type, so the recorder's host's replacements
+  (`AppHost.AddRecorder`) and a test's `AddSingleton(runtime.Folder)` or `AddSingleton(runtime.Journal)` are followed.
   `AppHost` adds the settings reload (`SettingsServices.AddSettingsReload`: the places, the file, the
   reloader and the one `SettingsWriter`), since it builds the configuration the reload works on;
   `AddSettings` registers `SavedClasses` and `IOutputFolderFacts` beside `SettingsCheck`, `CommandUseCases`
@@ -250,7 +254,8 @@ advice after a format error (10 A).
 - The link (`Link/`): one named pipe per run, `ClassScribe-<run id>` (`LinkProtocol.PipeNameFor`),
   `CurrentUserOnly`, the first instance, up to 4 windows, lines of UTF-8 JSON of at most 64 KB; the
   server never logs, waits or raises events inside its `RecorderLog.Written` handler, and drops a
-  stalled window on the thread pool. `RecorderLog` takes no `ILogger` (the provider writes to it,
+  stalled window on the thread pool. `RecorderLog` (the adapter of `IRunLog`; `Written`, `Since` and
+  `WaitForFollowers` are the link's and stay on the adapter) takes no `ILogger` (the provider writes to it,
   which would be a cycle); followers of `Written` are called in the background in `Seq` order and
   must not log, block or throw.
 - No sound, ever: never write BEL anywhere; terminal sequences end with ST (`ESC \`). The session
@@ -678,11 +683,13 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `CommandLine.YouTube` prints the record-path command the summaries give. Commands printed for later (`CommandLine`) name the program by its full
   path, keep the microphone options (`--mic`, `--in-person`, `--mic-follows` through
   `FollowRule.Word`) and escape PowerShell's `$`, backtick and double quotes.
-- One recording at a time: `%LOCALAPPDATA%\ClassScribe\recording.lock` (`RecordingLock`,
-  `FileShare.None`, held only while capturing, so the next class may start during an upload). Run
-  files in `runs\<run id>.json` (`RunJournal`, `RunRecord`: state, a heartbeat every 10 s, `EndedBy`,
+- One recording at a time: `%LOCALAPPDATA%\ClassScribe\recording.lock` (`RecordingLock`, the
+  `IRecordingLock` of the use cases, in `RuntimeFolder`, the `IRuntimeFolder`; `FileShare.None`, held only
+  while capturing, so the next class may start during an upload). Run
+  files in `runs\<run id>.json` (`RunJournal` with `RunHandle`, the `IRunJournal` and `IRunHandle` of the use
+  cases; `RunRecord`: state, a heartbeat every 10 s, `EndedBy`,
   the outcome, `Seen`; written atomically, retried three times 100 ms apart; seen runs pruned after
-  30 days) are the C5 marker and the next start's report (`StartupReport`: C through
+  30 days, `RunTimings.KeepSeenRunsFor`) are the C5 marker and the next start's report (`StartupReport`: C through
   `ICommandRunner.RecordAsync` with `StartOrigin.StartupReport`, T, O and F carried out by the
   report itself). `StopSignal` is the per-run event `Local\ClassScribe.Stop.<run id>`, the one stop
   that needs no pipe; a video's run also listens on its yield event, `Local\ClassScribe.Yield.<run id>`
@@ -846,7 +853,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   inward with tests of their new homes) bring it to 4,914; the ports of the recording's files and storage of slice 3b1
   (`feature/layers-storage`: `IClassFolders`, `IRecordingFolder`, `ITranscriptCopies`, `IClassMarks`, `IMicCheckLog`,
   `ITrackWriterFactory`, `IAudioFileFacts`, `ITranscriptAnswers`, `IFileProbe`'s new checks and `IAudioCapture.Processing`,
-  each with its contract test over the real adapter in a temporary folder) bring it to 4,939. The uploads by
+  each with its contract test over the real adapter in a temporary folder) bring it to 4,939; the ports of runs of slice
+  3b2 (`feature/layers-runs`: `IRuntimeFolder`, `IRecordingLock`, `IRunJournal` with `IRunHandle` and `IRunLog`, each with
+  its contract test over the real adapter in a temporary folder, in `RecorderPortTests`) bring it to 4,949. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -888,7 +897,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, 3 min 32 s for 4,538 with
   settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
   app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
-  with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports, plus the build).
+  with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
+  4 min 28 s for 4,949 with slice 3b2's, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1905,6 +1915,17 @@ over `WavSegmentWriter`: the one way a recording session reaches the disk), `IAu
 port through its constructor; a static helper of a use case (`LessonRuns`, `DownloadPlan.Lines`, `VideoPlan.Lines`,
 `RecordingUpload.BusyIn`) takes it as a parameter. `design\final\layers-storage-map.md` lists each member's old and new call
 and each constructor that takes a port.
+Slice 3b2 (`feature/layers-runs`) put the runs behind ports the same way, in `Recorder` (architecture 3.9: beside
+`IProcessLiveness` and `IVideoYield`, Application's types there already): `IRuntimeFolder` over `RuntimeFolder`,
+`IRecordingLock` over `RecordingLock`, `IRunJournal` with `IRunHandle` over `RunJournal` and `RunHandle` (kept together: the
+handle uses the journal's internal `Write` and `Logger`; `RunJournal.Begin` still gives a `RunHandle`, for the recorder's host
+and the tests, and the port's `Begin` is explicit over it), and `IRunLog` over `RecorderLog` (the lines as they are written,
+the copy into the recording's `.log`, and `LastStartupLines`, the read of recorder.log that `RecorderLauncher` made itself;
+`Written`, `Since` and `WaitForFollowers` are the link's and stay on the adapter). Two constants moved with their callers:
+`RunJournal.KeepSeenRunsFor` is `RunTimings.KeepSeenRunsFor` (Core) and `RecorderLog.StartupFileName` is
+`IRunLog.StartupFileName`. The window's commands (`AttachCommand`, `ContinueQuestion`, `StartupReport`, `CommandRunner`) take
+the ports too; the recorder's host and Infrastructure's own users keep the adapters. `design\final\layers-runs-map.md` lists
+each member's old and new call and each constructor that takes a port.
 
 - `src/ClassScribe`: `Program.cs` (the console set to UTF-16, a start-up failure printed plainly,
   the close prompt), `AppHost` (builds the host: the checked settings source and a first checked
@@ -1940,14 +1961,17 @@ and each constructor that takes a port.
   start into `ToolJob`; any program but `cmd.exe` refused in tests). `DesktopServices` registers them,
   the usage record, the process names, the own processes, `IProcessFamily`, `IVideoWindows`, the desktop, the exit and
   crash warnings, the process starter and the job inspector; `FreezeWatch` goes with a run's use cases (`CommandUseCases`).
-- `src/ClassScribe/Recorder`: the separate recorder: `RecorderHost.cs` (`RecorderStart` and
+- `src/ClassScribe/Recorder`: the separate recorder, with the ports of runs (Application, architecture 3.9 and 4.3, beside
+  `IProcessLiveness` and `IVideoYield`): `RecorderHost.cs` (`RecorderStart` and
   `RecorderHost`: the recorder process from the request to the end, with `IsRecorderStart` for
-  `Program`), `RuntimeFolder` (`%LOCALAPPDATA%\ClassScribe`), `RecordingLock`, `RunJournal` with
-  `RunView` and `RunHandle` (run and request files, `MarkSeen`, `MarkSeenIfOver`, prune),
+  `Program`), `RuntimeFolder` (`%LOCALAPPDATA%\ClassScribe`; the `IRuntimeFolder`), `RecordingLock` (the `IRecordingLock`),
+  `RunJournal` with `RunView` and `RunHandle` (the `IRunJournal` and `IRunHandle`: run and request files, `MarkSeen`,
+  `MarkSeenIfOver`, prune; the port's `Begin` is explicit over the adapter's, which gives a `RunHandle`),
   `RunRecord.cs` (run file, request file, `RunEndCause`, the video causes among them), `RecorderJson`,
   `ProcessLiveness`, `StopSignal` (with the yield event: `YieldPrefix`, `ListenForYield`, `TrySetYield`,
-  `YieldNameFor`, and `IVideoYield` with `WindowsVideoYield`), `RecorderLog.cs` (`LogEntry` and `RecorderLog`: the ring of 20,000 lines, `Written`,
-  the files) and `RecorderLogProvider`, `LinkConsoleUi` (the windows' keys as the recorder's
+  `YieldNameFor`, and `IVideoYield` with `WindowsVideoYield`), `RecorderLog.cs` (`LogEntry` and `RecorderLog`, the `IRunLog`:
+  the ring of 20,000 lines, `Written`, the files, and `LastStartupLines`, the start-up log's last lines a window reads;
+  `IRunLog.StartupFileName` is `recorder.log`) and `RecorderLogProvider`, `LinkConsoleUi` (the windows' keys as the recorder's
   console), `LinkStatusSink` (states to the windows and the alerts, repeated once a second),
   `RecorderResultShower`, `UnattendedAlerts` (the minimized window brought back by itself; a window
   that left with Esc counts as no close) and `FreezeWatch`.
@@ -2104,7 +2128,7 @@ and each constructor that takes a port.
   `RecorderPhase`, `Attention`, `MicrophoneState`, `CameraState`) and `IRecorderStatusSink.cs`, `StarterContracts.cs`
   (`IRunViewer`, `IRecordStarter`, `IRecordRun`, `IStartupReport`, `NoStartupReport`, `IResultShower`),
   `ViewResult.cs` (`ViewMode`, `ViewEnd`, `ViewResult`), `StartupChoice.cs` (`StartupAction`, `StartupChoice`),
-  `RunTimings` (the heartbeat's interval) and `LinkVersion` (the link's version, which `LinkProtocol.Version` names
+  `RunTimings` (the heartbeat's interval, and `KeepSeenRunsFor`, how long a seen run's file is kept) and `LinkVersion` (the link's version, which `LinkProtocol.Version` names
   and every run file records). `RunRecord.cs` and `RunView` stay in `Recorder` until the move.
 - `src/ClassScribe/Commands`: the menu, the command line (`CommandLineTree` on System.CommandLine,
   with `CommandLineTree.Settings.cs` and `CommandLineTree.Classes.cs`; `App`, `CommandLine` for the
@@ -2184,7 +2208,10 @@ and each constructor that takes a port.
   recording's files read through the real `RecordingFolder`, where a test looks at what it wrote). The ports of slice 3b1 are
   tested against their real adapters over a `TempFolder` in `FileProbeTests`, `ClassFoldersPortTests`, `RecordingFolderTests`,
   `StoragePortTests` (the marks, the copies and the check's log), `WavTrackWriterFactoryTests` and `AudioPortTests` (the file
-  facts, the saved answers and the capture's processing). The cost line's
+  facts, the saved answers and the capture's processing); the ports of runs of slice 3b2 in `RecorderPortTests` (the folder,
+  the lock, the journal and the handle with a run file pinned to `RecorderJson`'s bytes and the journal's retries, the log
+  with the copy into the recording's log and the start-up log's last lines, and the ports' registrations in both hosts),
+  over a `TestRuntime` and a `TempFolder`. The cost line's
   tests are `TranscriptionCostTests`, `ElevenLabsAccountTests` (on `StubHttpHandler`),
   `UsageReportTests`, and the order checks in `TranscriptionWorkflowTests`, `RecordCommandTests`,
   `TranscribeCommandTests` and `EndToEndTests`; the Bluetooth watch's are

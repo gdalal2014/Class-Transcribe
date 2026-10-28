@@ -93,7 +93,7 @@ public sealed class BatchPace(TimeProvider time, Random random) : IBatchPace
 /// that records and is not a video's, the batch waits, looking every 30 seconds, so that nothing reaches YouTube or
 /// ElevenLabs while the class streams. The wait is said once, and so is the going on. It never looks at recording.lock.
 /// </summary>
-public sealed class ClassWait(RunJournal journal, TimeProvider time, ILogger<ClassWait> logger)
+public sealed class ClassWait(IRunJournal journal, TimeProvider time, ILogger<ClassWait> logger)
 {
     /// <summary>How often a batch held up by a class looks whether it has stopped.</summary>
     public static readonly TimeSpan Poll = TimeSpan.FromSeconds(30);

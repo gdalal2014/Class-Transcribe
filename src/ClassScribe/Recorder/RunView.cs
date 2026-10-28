@@ -7,7 +7,7 @@ namespace ClassScribe.Recorder;
 /// A run file as a window finds it: the run as its file last says, and whether the process that records it still runs.
 /// Together they say what a start of ClassScribe does about the run: attach to a recording now, mention a transcription
 /// now, or report an unexpected end, an interrupted transcription or an outcome nobody has seen. A run that has been dealt
-/// with (continued, transcribed, forgotten, or its outcome shown) is marked seen (see <see cref="RunJournal.MarkSeen"/>) and
+/// with (continued, transcribed, forgotten, or its outcome shown) is marked seen (see <c>IRunJournal.MarkSeen</c>) and
 /// is reported no more.
 /// </summary>
 /// <param name="Record">The run as its file last says.</param>

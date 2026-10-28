@@ -69,7 +69,7 @@ public class TranscriptionRunsTests
     public async Task While_it_lasts_Drive_waits_and_transcribe_refuses()
     {
         using var run = Begin();
-        var services = new ServiceCollection().AddSingleton(_runtime.Journal).BuildServiceProvider();
+        var services = new ServiceCollection().AddSingleton(_runtime.Journal).AddSingleton<IRunJournal>(_runtime.Journal).BuildServiceProvider();
         var log = new RecordingLogger<CommandRunner>();
         var runner = new CommandRunner(services.GetRequiredService<IServiceScopeFactory>(), services.GetRequiredService<IServiceProviderIsService>(), log);
 

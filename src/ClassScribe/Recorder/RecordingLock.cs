@@ -9,7 +9,7 @@ namespace ClassScribe.Recorder;
 /// taken. Unlike a named mutex, which belongs to the thread that took it, the file can be let go from any thread, as after
 /// an await. The file itself stays in place; nothing is written into it.
 /// </summary>
-public sealed class RecordingLock(RuntimeFolder folder, ILogger<RecordingLock> logger)
+public sealed class RecordingLock(RuntimeFolder folder, ILogger<RecordingLock> logger) : IRecordingLock
 {
     /// <summary>How many times a held lock is tried again before it counts as held.</summary>
     private const int Retries = 3;

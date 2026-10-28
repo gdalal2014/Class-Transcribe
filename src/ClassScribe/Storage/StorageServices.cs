@@ -26,10 +26,15 @@ public static class StorageServices
         services.AddSingleton<ITranscriptCopies, TranscriptCopies>();
         services.AddSingleton<IMicCheckLog, MicCheckLog>();
 
-        // %LOCALAPPDATA%\ClassScribe: nothing is made there until a run needs it.
+        // %LOCALAPPDATA%\ClassScribe: nothing is made there until a run needs it. Each port of the runs is the same
+        // singleton as its adapter, resolved by the adapter's type, so a host or a test that puts another in its place
+        // (the recorder's host, a TestRuntime's) is followed.
         services.AddSingleton(_ => new RuntimeFolder());
+        services.AddSingleton<IRuntimeFolder>(provider => provider.GetRequiredService<RuntimeFolder>());
         services.AddSingleton<RecordingLock>();
+        services.AddSingleton<IRecordingLock>(provider => provider.GetRequiredService<RecordingLock>());
         services.AddSingleton<RunJournal>();
+        services.AddSingleton<IRunJournal>(provider => provider.GetRequiredService<RunJournal>());
 
         // %APPDATA%\ClassScribe: the Google Drive sign-in, made only when one is stored.
         services.AddSingleton(_ => new RoamingFolder());

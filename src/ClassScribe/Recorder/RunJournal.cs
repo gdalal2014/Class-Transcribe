@@ -14,11 +14,8 @@ namespace ClassScribe.Recorder;
 /// part of one and never none, even after a power cut. Another program holding a file for a moment, as a virus scanner
 /// does, is waited out: each read or write is tried three more times, 100 ms apart. Files are read sharing everything.
 /// </summary>
-public sealed class RunJournal(RuntimeFolder folder, IProcessLiveness liveness, TimeProvider time, ILogger<RunJournal> logger)
+public sealed class RunJournal(RuntimeFolder folder, IProcessLiveness liveness, TimeProvider time, ILogger<RunJournal> logger) : IRunJournal
 {
-    /// <summary>How long a run that has nothing left to report is kept after its last update: 30 days.</summary>
-    public static readonly TimeSpan KeepSeenRunsFor = TimeSpan.FromDays(30);
-
     /// <summary>How a run file's name ends: the run's id, then this.</summary>
     private const string RunFileEnding = ".json";
 
@@ -177,6 +174,9 @@ public sealed class RunJournal(RuntimeFolder folder, IProcessLiveness liveness, 
         logger.LogDebug("Began the run file {Path} ({State})", path, begun.State);
         return new RunHandle(this, path, begun, time);
     }
+
+    /// <summary>The port's <see cref="IRunJournal.Begin"/>: the handle <see cref="Begin"/> gives, as the port sees it.</summary>
+    IRunHandle IRunJournal.Begin(RunRecord record) => Begin(record);
 
     /// <summary>
     /// The runs in the runs folder, newest first, each with whether its process runs. Whatever is not a run file this build
@@ -561,7 +561,7 @@ public sealed class RunJournal(RuntimeFolder folder, IProcessLiveness liveness, 
 /// is let go, nothing more is written, and a run let go without an outcome keeps its file as it last was. It is safe to use
 /// from several threads. One run has one handle, which every part of the run that writes shares.
 /// </summary>
-public sealed class RunHandle : IDisposable
+public sealed class RunHandle : IRunHandle
 {
     private readonly Lock _gate = new();
     private readonly RunJournal _journal;

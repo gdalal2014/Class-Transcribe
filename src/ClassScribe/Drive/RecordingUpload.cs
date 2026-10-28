@@ -65,7 +65,7 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 /// ClassScribe that found the lock held, is left waiting at the end, to be taken once more (see
 /// <see cref="UploadManifest.TimesQueued"/>). While this process still writes the recording's log,
 /// as a recorder does after its class, the last line, where the recording is on Drive, is written just before the log goes
-/// up, so that Drive's copy of the log holds it (see <see cref="RecorderLog.NamedFile"/>). One per run.
+/// up, so that Drive's copy of the log holds it (see <see cref="IRunLog.NamedFile"/>). One per run.
 /// </summary>
 public sealed partial class RecordingUpload(
     DriveClient drive,
@@ -73,9 +73,9 @@ public sealed partial class RecordingUpload(
     ResumableUpload upload,
     DriveRetry retry,
     UploadManifests manifests,
-    RunJournal journal,
+    IRunJournal journal,
     IClassFolders classFolders,
-    RecorderLog log,
+    IRunLog log,
     IOptionsSnapshot<DriveOptions> options,
     IOptionsSnapshot<YouTubeOptions> youTube,
     TimeProvider time,
