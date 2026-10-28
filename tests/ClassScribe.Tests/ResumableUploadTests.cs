@@ -300,7 +300,31 @@ public class ResumableUploadTests
 
         Assert.That(_world.Google.Requests.Where(request => request.Host == "uploads.example.com"), Is.Empty);
         Assert.That(_world.Google.Requests.Where(request => request.IsPiece).Select(request => request.Host).Distinct(), Is.EqualTo(new[] { "www.googleapis.com" }));
-        Assert.That(_world.Lines, Has.Member("The upload of Mantiq.wav begun earlier names an address that is not Google Drive's own, so it is not used; the upload starts again"));
+        Assert.That(_world.Lines, Has.Member(KeptAddressNotUsed));
+        Assert.That(_world.Google.Uploaded.Single().Content, Is.EqualTo(content));
+    }
+
+    /// <summary>What is said of a kept session whose address is not Drive's own as the settings now give it.</summary>
+    private const string KeptAddressNotUsed =
+        "The upload of Mantiq.wav begun earlier names an address that is not Google Drive's own at Drive:ApiBaseUrl and Drive:ApiVersion as they are now, so it is not used; the upload starts again";
+
+    /// <summary>
+    /// A kept session begun under another version of the Drive API, before Drive:ApiVersion changed (here back to v3 from
+    /// v4), is on Drive's own host but not at the version the settings now give, so it is not used, and the warning names
+    /// both settings that decide Drive's address; a new session at the version the settings give takes its place, and
+    /// nothing goes to the old one.
+    /// </summary>
+    [Test]
+    public async Task A_kept_session_of_another_api_version_is_not_used_and_the_warning_names_the_version()
+    {
+        var content = Bytes(1000);
+        var kept = new UploadSession("https://www.googleapis.com/upload/drive/v4/files?uploadType=resumable&upload_id=abc", _world.Time.GetUtcNow(), content.Length,
+            Convert.ToHexStringLower(MD5.HashData(content)), 0, null);
+
+        await SendAsync(content, kept);
+
+        Assert.That(_world.Lines, Has.Member(KeptAddressNotUsed));
+        Assert.That(_world.Google.Requests.Where(request => request.Path.Contains("/v4/", StringComparison.Ordinal)), Is.Empty);
         Assert.That(_world.Google.Uploaded.Single().Content, Is.EqualTo(content));
     }
 

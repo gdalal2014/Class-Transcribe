@@ -218,7 +218,8 @@ public sealed class ResumableUpload(DriveClient drive, DriveRetry retry, IOption
 
     /// <summary>
     /// <paramref name="kept"/> and its address when the session can go on: started for this very content (its size and MD5)
-    /// and target, no more than six days ago, with an address that is Drive's own. Otherwise nothing, and why is noted.
+    /// and target, no more than six days ago, with an address that is Drive's own as Drive:ApiBaseUrl and Drive:ApiVersion now
+    /// give it, so that a session begun under another version of the API starts again too. Otherwise nothing, and why is noted.
     /// </summary>
     private (UploadSession? Session, UploadAddress? Address) Usable(UploadSession? kept, UploadSource source, UploadTarget target, string apiBase)
     {
@@ -236,7 +237,7 @@ public sealed class ResumableUpload(DriveClient drive, DriveRetry retry, IOption
 
         if (UploadAddress.TryParse(kept.Address, apiBase, options.Value.ApiVersion, target.RevisionOf) is not { } address)
         {
-            logger.LogWarning("The upload of {Name} begun earlier names an address that is not Google Drive's own, so it is not used; the upload starts again", target.Name);
+            logger.LogWarning("The upload of {Name} begun earlier names an address that is not Google Drive's own at Drive:ApiBaseUrl and Drive:ApiVersion as they are now, so it is not used; the upload starts again", target.Name);
             return (null, null);
         }
 
