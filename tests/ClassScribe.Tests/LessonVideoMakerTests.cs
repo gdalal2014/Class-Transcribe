@@ -50,7 +50,7 @@ public sealed class LessonVideoMakerTests
     /// <summary>Makes the lesson's video with <paramref name="starter"/>, moving the clock until it is done.</summary>
     private async Task<LessonVideoResult> MakeAsync(FakeCameraProcessStarter starter, bool keepPieces = false, CancellationToken cancellationToken = default, Action<int>? progress = null)
     {
-        var making = new LessonVideoMaker(starter, new RecordingFolder(), _time, _logs).MakeAsync(_files, keepPieces, cancellationToken, progress);
+        var making = new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, _time, _logs).MakeAsync(_files, keepPieces, cancellationToken, progress);
         await _time.AdvanceUntilAsync(() => making.IsCompleted, CameraFinishJob.LookEvery, timeoutSeconds: 30);
         return await making;
     }
@@ -80,7 +80,7 @@ public sealed class LessonVideoMakerTests
     {
         var starter = new FakeCameraProcessStarter { PlayEach = true };
         using var cancel = new CancellationTokenSource();
-        var making = new LessonVideoMaker(starter, new RecordingFolder(), _time, _logs).MakeAsync(_files, keepPieces: true, cancel.Token);
+        var making = new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, _time, _logs).MakeAsync(_files, keepPieces: true, cancel.Token);
         await Wait.UntilAsync(() => starter.Played.Count == 1 && starter.Played[0].Job is not null);
 
         Assert.That(starter.Played[0].Job, Is.EqualTo(new CameraJob(CameraProtocol.Version, CameraJobKind.Finish, Folder: _folder.Path, BaseName: BaseName, KeepPieces: true)));
@@ -109,7 +109,7 @@ public sealed class LessonVideoMakerTests
     public async Task A_process_silent_for_two_minutes_is_ended()
     {
         var starter = new FakeCameraProcessStarter { PlayEach = true };
-        var making = new LessonVideoMaker(starter, new RecordingFolder(), _time, _logs).MakeAsync(_files, keepPieces: false, CancellationToken.None);
+        var making = new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, _time, _logs).MakeAsync(_files, keepPieces: false, CancellationToken.None);
         await Wait.UntilAsync(() => starter.Played.Count == 1 && starter.Played[0].Job is not null);
 
         await _time.AdvanceUntilAsync(() => making.IsCompleted, TimeSpan.FromSeconds(10), timeoutSeconds: 30);
@@ -128,7 +128,7 @@ public sealed class LessonVideoMakerTests
         using var gate = new ManualResetEventSlim();
         _media.HoldWrite = gate;
         using var cancel = new CancellationTokenSource();
-        var making = new LessonVideoMaker(RealHost(), new RecordingFolder(), _time, _logs).MakeAsync(_files, keepPieces: false, cancel.Token);
+        var making = new LessonVideoMaker(RealHost(), new RecordingFolder(), Printed.Commands, _time, _logs).MakeAsync(_files, keepPieces: false, cancel.Token);
         await Wait.UntilAsync(() => _media.Writing);
 
         await cancel.CancelAsync();
@@ -146,7 +146,7 @@ public sealed class LessonVideoMakerTests
     {
         var starter = new FakeCameraProcessStarter { PlayEach = true };
         using var cancel = new CancellationTokenSource();
-        var making = new LessonVideoMaker(starter, new RecordingFolder(), _time, _logs).MakeAsync(_files, keepPieces: false, cancel.Token);
+        var making = new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, _time, _logs).MakeAsync(_files, keepPieces: false, cancel.Token);
         await Wait.UntilAsync(() => starter.Played.Count == 1 && starter.Played[0].Job is not null);
 
         await cancel.CancelAsync();
@@ -166,7 +166,7 @@ public sealed class LessonVideoMakerTests
     {
         var starter = new FakeCameraProcessStarter { PlayEach = true };
         var percents = new System.Collections.Concurrent.ConcurrentQueue<int>();
-        var making = new LessonVideoMaker(starter, new RecordingFolder(), _time, _logs).MakeAsync(_files, keepPieces: false, CancellationToken.None, percents.Enqueue);
+        var making = new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, _time, _logs).MakeAsync(_files, keepPieces: false, CancellationToken.None, percents.Enqueue);
         await Wait.UntilAsync(() => starter.Played.Count == 1 && starter.Played[0].Job is not null);
         var played = starter.Played[0];
 

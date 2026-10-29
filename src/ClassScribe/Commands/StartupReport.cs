@@ -27,13 +27,13 @@ namespace ClassScribe.Commands;
 /// </summary>
 /// <remarks>
 /// The report carries out the choice made itself, since the run it is about is known here only: C through
-/// <see cref="ICommandRunner.RecordAsync(RecordRequest, StartOrigin)"/> as a run started from the report, T through
+/// <see cref="IRunStarter.RecordAsync"/> as a run started from the report, T through
 /// <see cref="ICommandRunner.TranscribeAsync"/>, U through <see cref="ICommandRunner.DriveUploadAsync"/>, each once the
 /// settings have passed the check, as a menu choice does; O and F itself. The choice returned only says what was done; the
 /// caller does not carry it out again.
 /// </remarks>
-public sealed class StartupReport(IRunJournal journal, IClassFolders folders, IRecordingFolder recordings, ICommandRunner commands, RunGate gate, IConsoleUi ui, IDesktop desktop,
-    IProcessLiveness liveness, DriveQueueReport drive, IOptionsMonitor<RecordingOptions> recording, TimeProvider time, ILogger<StartupReport> logger) : IStartupReport
+public sealed class StartupReport(IRunJournal journal, IClassFolders folders, IRecordingFolder recordings, CommandLine commandLine, ICommandRunner commands, RunGate gate, IConsoleUi ui,
+    IDesktop desktop, IProcessLiveness liveness, DriveQueueReport drive, IOptionsMonitor<RecordingOptions> recording, TimeProvider time, ILogger<StartupReport> logger) : IStartupReport
 {
     /// <summary>Where the second offer on a line of offers begins, as in "  C  continue it now as its next part     T  transcribe what was recorded".</summary>
     private const int SecondColumn = 42;
@@ -107,8 +107,8 @@ public sealed class StartupReport(IRunJournal journal, IClassFolders folders, IR
         if (!interactive)
         {
             ui.WriteLine(waiting.SignedIn
-                ? $"To upload {it}: {CommandLine.DriveUpload(null)}"
-                : $"{GoogleTokens.NotSignedIn} Then, to upload {it}: {CommandLine.DriveUpload(null)}");
+                ? $"To upload {it}: {commandLine.DriveUpload(null)}"
+                : $"{GoogleTokens.NotSignedIn} Then, to upload {it}: {commandLine.DriveUpload(null)}");
             return null;
         }
 
@@ -210,7 +210,7 @@ public sealed class StartupReport(IRunJournal journal, IClassFolders folders, IR
         ui.WriteLine($"The lesson video of {RecordStarter.Named(run.Record)} was not made; its sound and its camera pieces are kept.");
         if (!interactive)
         {
-            ui.WriteLine($"To make it, free: {LessonRuns.FinishVideoCommand(run.Record, recordings)}");
+            ui.WriteLine($"To make it, free: {LessonRuns.FinishVideoCommand(run.Record, recordings, commandLine)}");
             return null;
         }
 
@@ -445,15 +445,15 @@ public sealed class StartupReport(IRunJournal journal, IClassFolders folders, IR
     {
         foreach (var line in report.Lines) ui.WriteLine(line);
 
-        if (report.CanContinue) ui.WriteLine($"To continue it as its next part: {CommandLine.Record(ContinueRequest(report.Run))}");
+        if (report.CanContinue) ui.WriteLine($"To continue it as its next part: {commandLine.Record(ContinueRequest(report.Run))}");
         if (report.CanTranscribe)
         {
             ui.WriteLine(report.Run.State == RunState.Transcribing
-                ? $"To transcribe it: {CommandLine.Transcribe(report.Files.Segment(1))}"
-                : $"To transcribe what was recorded: {CommandLine.Transcribe(report.Files.Segment(1))}");
+                ? $"To transcribe it: {commandLine.Transcribe(report.Files.Segment(1))}"
+                : $"To transcribe what was recorded: {commandLine.Transcribe(report.Files.Segment(1))}");
         }
 
-        if (report.CanMakeVideo) ui.WriteLine($"To make its lesson video, free: {LessonRuns.FinishVideoCommand(report.Run, recordings)}");
+        if (report.CanMakeVideo) ui.WriteLine($"To make its lesson video, free: {LessonRuns.FinishVideoCommand(report.Run, recordings, commandLine)}");
         ui.WriteLine(ForgetInTheMenu);
     }
 

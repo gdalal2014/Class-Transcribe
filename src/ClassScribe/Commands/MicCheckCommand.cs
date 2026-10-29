@@ -19,6 +19,7 @@ namespace ClassScribe.Commands;
 /// <param name="record">Reads Windows' microphone usage record.</param>
 /// <param name="names">Names the processes behind the sessions.</param>
 /// <param name="own">Tells ClassScribe's own processes, such as the recorder of a class recorded beside the check.</param>
+/// <param name="program">This process, whose id the header names and the tracker tells from the apps' processes.</param>
 /// <param name="folders">Where the recordings go, under which the mic-check folder is made.</param>
 /// <param name="logs">Opens the check's log file, and gives the header's and the cost line's machine facts.</param>
 /// <param name="ui">The window's keyboard and screen.</param>
@@ -26,7 +27,7 @@ namespace ClassScribe.Commands;
 /// <param name="signals">The Ctrl+C of the check's scope, which stops the check when the runner runs it (<see cref="IMicCheckRun"/>).</param>
 /// <param name="time">The clock: the interval, the time of day on the lines, and the gaps between looks.</param>
 /// <param name="logger">The app's log; what Gulzar reads goes to the window and the check's own file.</param>
-public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsageRecord record, IProcessNames names, IOwnProcesses own,
+public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsageRecord record, IProcessNames names, IOwnProcesses own, IThisProgram program,
     IClassFolders folders, IMicCheckLog logs, IConsoleUi ui, IWindowSignals window, IUserSignals signals, TimeProvider time, ILogger<MicCheckCommand> logger) : IMicCheckRun
 {
     /// <summary>The time between two looks: the longest a change can go unseen, as MicWatch had it.</summary>
@@ -78,8 +79,8 @@ public sealed class MicCheckCommand(IMicrophoneSessions sessions, IMicrophoneUsa
 
         using (log)
         {
-            var watch = new Watch(new MicrophoneChangeTracker(names, own, Environment.ProcessId, time.LocalTimeZone), log, time.GetTimestamp());
-            foreach (var line in logs.HeaderLines(started, Environment.ProcessId, log.Path, Interval, request.StopAfter)) Show(log, line);
+            var watch = new Watch(new MicrophoneChangeTracker(names, own, program.ProcessId, time.LocalTimeZone), log, time.GetTimestamp());
+            foreach (var line in logs.HeaderLines(started, program.ProcessId, log.Path, Interval, request.StopAfter)) Show(log, line);
             logger.LogDebug("The microphone check writes to {Path}", log.Path);
 
             string reason;

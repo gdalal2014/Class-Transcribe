@@ -6,6 +6,8 @@ using System.Text;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
+using ClassScribe.Desktop.Windows;
 using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -1035,6 +1037,44 @@ public sealed class FakeConsoleUi : IConsoleUi
         >= 'A' and <= 'Z' => new(key, ConsoleKey.A + (key - 'A'), true, false, false),
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, "No key press defined for this character.")
     };
+}
+
+/// <summary>
+/// The command lines ClassScribe prints for later, as this very test process prints them: <see cref="CommandLine"/> over the
+/// real <see cref="ThisProgram"/>, the adapter of <see cref="IThisProgram"/>, which the subjects under test are given too, so
+/// that a test expects the very string its subject writes. The members are those of <see cref="CommandLine"/>'s instance forms.
+/// </summary>
+public static class Printed
+{
+    /// <summary>This program as the real adapter (<see cref="ThisProgram"/>) reads it: what the subjects under test are given as their <see cref="IThisProgram"/>.</summary>
+    public static IThisProgram Program { get; } = ThisProgram.Current;
+
+    /// <summary>The command lines of this process, over <see cref="Program"/>.</summary>
+    public static CommandLine Commands { get; } = new(Program);
+
+    /// <summary>The transcribe command (see <see cref="CommandLine.Transcribe(string, bool)"/>).</summary>
+    public static string Transcribe(string path, bool again = false) => Commands.Transcribe(path, again);
+
+    /// <summary>The rebuild command (see <see cref="CommandLine.Rebuild(string)"/>).</summary>
+    public static string Rebuild(string path) => Commands.Rebuild(path);
+
+    /// <summary>The finish-video command (see <see cref="CommandLine.FinishVideo(string)"/>).</summary>
+    public static string FinishVideo(string path) => Commands.FinishVideo(path);
+
+    /// <summary>The settings set command (see <see cref="CommandLine.SettingsSet(string, string)"/>).</summary>
+    public static string SettingsSet(string key, string value) => Commands.SettingsSet(key, value);
+
+    /// <summary>The drive upload command (see <see cref="CommandLine.DriveUpload(string?)"/>).</summary>
+    public static string DriveUpload(string? path) => Commands.DriveUpload(path);
+
+    /// <summary>The youtube command of the record path (see <see cref="CommandLine.YouTube(IEnumerable{string}, string, string)"/>).</summary>
+    public static string YouTube(IEnumerable<string> links, string name, string outputRoot) => Commands.YouTube(links, name, outputRoot);
+
+    /// <summary>A saved class's launcher line (see <see cref="CommandLine.RecordClass(string, bool)"/>).</summary>
+    public static string RecordClass(string name, bool transcribe = true) => Commands.RecordClass(name, transcribe);
+
+    /// <summary>The command that continues a run's recording (see <see cref="CommandLine.Record(RecordRequest)"/>).</summary>
+    public static string Record(RecordRequest request) => Commands.Record(request);
 }
 
 /// <summary>

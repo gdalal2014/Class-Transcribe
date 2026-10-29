@@ -29,8 +29,7 @@ public class VideoTranscriptRunTests
     public void SetUp()
     {
         _world = new YouTubeWorld();
-        var (id, started) = TranscriptionRuns.ThisProcess();
-        _world.Runtime.Processes.Start(id, started);
+        _world.Runtime.Processes.Start(Printed.Program.ProcessId, Printed.Program.StartedUtc);
         _files = _world.ClassFolders.CreateRecording("Risala");
         TestAudio.WriteWav(_files.Segment(1), 16000, new short[1600]);
         VideoSourceFile.Write(_files.Source, VideoSourceFileTests.Downloaded());
@@ -49,8 +48,8 @@ public class VideoTranscriptRunTests
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, TestGlossaries.Choice(_world.ElevenLabs),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), _world.ClassFolders, new ClassMarks(NullLogger<ClassMarks>.Instance), new TranscriptCopies(), new RecordingFolder(), new FileProbe(), new ElevenLabsAnswer(), new AudioFileFacts(),
             _world.Recording, _world.ElevenLabs, progress, usage, _world.Log<TranscriptionWorkflow>());
-        return new VideoTranscriptRun(workflow, new TranscriptionRuns(_world.Runtime.Journal, _world.Runtime.Time, _world.Log<TranscriptionRuns>()), progress, usage,
-            _world.Drive, _world.RecorderLog, _world.Log<VideoTranscriptRun>());
+        return new VideoTranscriptRun(workflow, new TranscriptionRuns(_world.Runtime.Journal, Printed.Program, _world.Runtime.Time, _world.Log<TranscriptionRuns>()), progress, usage,
+            _world.Drive, _world.RecorderLog, Printed.Commands, _world.Log<VideoTranscriptRun>());
     }
 
     /// <summary>The video to transcribe.</summary>

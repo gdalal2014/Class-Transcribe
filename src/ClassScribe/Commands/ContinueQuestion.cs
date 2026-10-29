@@ -9,21 +9,16 @@ using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Commands;
 
-/// <summary>What was decided about continuing a recording of the same name that stopped recently without a transcript.</summary>
-/// <param name="GoBack">True when Esc was pressed in the menu's question: nothing is to start.</param>
-/// <param name="Continue">The recording to continue as its next part; null for a new recording.</param>
-/// <param name="Hint">A line to show before the run starts, such as how to continue the other recording instead; null for none.</param>
-public sealed record ContinueAnswer(bool GoBack, RecordingFiles? Continue, string? Hint);
-
 /// <summary>
 /// Whether a new run continues, as its next part, a recording of the same name that stopped recently without a transcript,
 /// as after a crash, a closed window or a restart (section 1.14 of the design). The menu asks: C continues it, N starts a
 /// new recording, Esc goes back. The command line never asks and never waits: --continue continues it, or says there is
 /// none and starts a new one; --new starts a new one without a word; neither starts a new one, with a line on how to
-/// continue the other one instead. Only a recording that may be continued is ever offered (see <see cref="Find"/>).
+/// continue the other one instead. Only a recording that may be continued is ever offered (see <see cref="Find"/>). The
+/// window's answer to the continue prompt (<see cref="IContinuePrompt"/>).
 /// </summary>
 public sealed class ContinueQuestion(IClassFolders folders, IRecordingFolder recordings, IRunJournal journal, IConsoleUi ui, IOptionsSnapshot<RecordingOptions> recording,
-    TimeProvider time, ILogger<ContinueQuestion> logger)
+    TimeProvider time, ILogger<ContinueQuestion> logger) : IContinuePrompt
 {
     /// <summary>
     /// The menu's question, for a run of <paramref name="name"/> recording what <paramref name="mode"/> names, with the camera

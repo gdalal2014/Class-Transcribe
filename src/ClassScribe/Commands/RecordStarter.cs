@@ -42,13 +42,14 @@ namespace ClassScribe.Commands;
 /// <param name="question">Whether to continue a recent recording of the same name.</param>
 /// <param name="settings">The settings, handed to the recorder.</param>
 /// <param name="recordings">A recording's files on disk, for what a lost lesson's run had left to do.</param>
+/// <param name="commandLine">The commands printed for later: to transcribe a lost run's recording, or to make its lesson video.</param>
 /// <param name="scopes">Makes a scope for a run in this window.</param>
 /// <param name="ui">The window.</param>
 /// <param name="time">The clock.</param>
 /// <param name="logger">Where the starts are noted.</param>
 /// <param name="yield">Asks a YouTube video's run to give way to a class; null where none is known of.</param>
 /// <param name="camera">
-/// The start of a run with a camera (see <see cref="CameraStart"/>), before the continue question: its size resolved, its
+/// The start of a run with a camera (see <see cref="ICameraPrompt"/>), before the continue question: its size resolved, its
 /// refusals, and the menu's Enter or S; null where none is registered, and a run with a camera is then refused as this build
 /// refuses it, so that no class starts with a half-built camera.
 /// </param>
@@ -56,8 +57,8 @@ namespace ClassScribe.Commands;
 /// Decides the run's glossary before it starts, for the request to carry (see <see cref="RecordRequest.Glossary"/>); null where
 /// none is registered, and the run then decides it by the settings it has.
 /// </param>
-public sealed class RecordStarter(IRunJournal journal, RecorderLauncher launcher, IRunViewer viewer, ContinueQuestion question, ISettingsStore settings, IRecordingFolder recordings,
-    IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null, CameraStart? camera = null,
+public sealed class RecordStarter(IRunJournal journal, RecorderLauncher launcher, IRunViewer viewer, IContinuePrompt question, ISettingsStore settings, IRecordingFolder recordings,
+    CommandLine commandLine, IServiceScopeFactory scopes, IConsoleUi ui, TimeProvider time, ILogger<RecordStarter> logger, IVideoYield? yield = null, ICameraPrompt? camera = null,
     GlossaryChoice? glossary = null) : IRecordStarter
 {
     /// <summary>How long a class waits for a YouTube video's run it asked to give way.</summary>
@@ -144,13 +145,13 @@ public sealed class RecordStarter(IRunJournal journal, RecorderLauncher launcher
     /// <summary>A run with a camera where no camera start is registered: refused as this build refuses it, before anything records.</summary>
     private CameraDecision NoCamera()
     {
-        ui.WriteLine($"{Camera.CameraRecorderNotBuilt.Words}. {CameraStart.NothingStarted}");
+        ui.WriteLine($"{Camera.CameraRecorderNotBuilt.Words}. {ICameraPrompt.NothingStarted}");
         return new CameraDecision.Refused(NotDone);
     }
 
     /// <summary>
     /// Whether the run continues a recent recording, as <paramref name="request"/> already says, as the menu's question is
-    /// answered, or as the command line's flags say (see <see cref="ContinueQuestion"/>); the line it gives is shown. The
+    /// answered, or as the command line's flags say (see <see cref="IContinuePrompt"/>); the line it gives is shown. The
     /// request handed on says what was decided, so that neither home decides again: <see cref="ContinueChoice.Continue"/>
     /// with the recording's base name, or <see cref="ContinueChoice.New"/> without one. Null when Esc went back at the question.
     /// </summary>
@@ -444,7 +445,7 @@ public sealed class RecordStarter(IRunJournal journal, RecorderLauncher launcher
             case RunState.Transcribing:
                 MarkSeen(lost.RunId, origin);
                 ui.WriteLine(LessonRuns.OnlyItsVideoLeft(lost, recordings)
-                    ? LessonRuns.VideoNotFinished(lost, recordings)
+                    ? LessonRuns.VideoNotFinished(lost, recordings, commandLine)
                     : $"The transcript of \"{name}\" was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again.{TranscribeCommand(lost)}");
                 return new Step.Done(NotDone);
 
@@ -524,9 +525,9 @@ public sealed class RecordStarter(IRunJournal journal, RecorderLauncher launcher
     /// " To transcribe it: " and the command that transcribes <paramref name="run"/>'s recording, which ends the line it is
     /// added to, so that the command can be copied as it is; empty when it made none.
     /// </summary>
-    private static string TranscribeCommand(RunRecord run) =>
+    private string TranscribeCommand(RunRecord run) =>
         run is { Folder: { } folder, BaseName: { } baseName }
-            ? $" To transcribe it: {CommandLine.Transcribe(new RecordingFiles(folder, baseName).Segment(1))}"
+            ? $" To transcribe it: {commandLine.Transcribe(new RecordingFiles(folder, baseName).Segment(1))}"
             : "";
 
     /// <summary>Since when <paramref name="run"/> records, in local time, and for how long: "19:00 (00:42:13)".</summary>

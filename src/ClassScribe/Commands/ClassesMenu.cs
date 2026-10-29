@@ -1,6 +1,7 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
+using ClassScribe.Desktop;
 using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -22,12 +23,13 @@ namespace ClassScribe.Commands;
 /// <param name="commands">Records a class, and adds, changes or removes one through the class command.</param>
 /// <param name="folders">The recordings folder in force.</param>
 /// <param name="devices">The output devices and the apps with sound now, for the source question.</param>
+/// <param name="program">This process, whose own sound is not offered as an app.</param>
 /// <param name="microphones">The microphones, for the microphone question.</param>
 /// <param name="ui">The window the questions are asked in.</param>
 /// <param name="time">The clock a new run's id is stamped with.</param>
 /// <param name="cameras">The cameras, for the camera question in person; null asks none.</param>
 public sealed class ClassesMenu(ISavedClasses classes, SettingsPlaces places, ICommandRunner commands, IClassFolders folders, ILoopbackCaptureProvider devices,
-    IMicrophoneProvider microphones, IConsoleUi ui, TimeProvider time, ICameraProvider? cameras = null)
+    IThisProgram program, IMicrophoneProvider microphones, IConsoleUi ui, TimeProvider time, ICameraProvider? cameras = null)
 {
     /// <summary>How many entries a list offers, so that one digit picks one.</summary>
     private const int MostListed = 9;
@@ -289,7 +291,7 @@ public sealed class ClassesMenu(ISavedClasses classes, SettingsPlaces places, IC
                 case ConsoleKey.P:
                     return new SourceGiven(SourceOption.InPerson, null);
                 case ConsoleKey.A:
-                    var apps = DevicesCommand.AppsByName(devices.GetPlayingApps()).Select(app => app.Name).Take(MostListed).ToList();
+                    var apps = DevicesCommand.AppsByName(devices.GetPlayingApps(), program).Select(app => app.Name).Take(MostListed).ToList();
                     return await PickAsync("App", apps, "an app's process name, such as chrome or zoom") is { } app ? new SourceGiven(SourceOption.App, app) : null;
                 case ConsoleKey.D:
                     var outputs = devices.GetOutputDevices().Select(device => device.Name).Take(MostListed).ToList();

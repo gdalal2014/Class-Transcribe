@@ -43,6 +43,7 @@ public sealed class RecordCommand(
     IClassMarks marks,
     IRecordingFolder recordingFolder,
     IFileProbe probe,
+    CommandLine commandLine,
     RunBookkeeping bookkeeping,
     IResultShower results,
     IRecorderStatusSink status,
@@ -223,7 +224,7 @@ public sealed class RecordCommand(
         {
             // Your microphone's files alone are a recording the transcribe command takes by one of them (a folder is read by its .wav files).
             return NothingRecorded(request, files, stopping, withMicrophone && summary.MicrophoneSegments.Count > 0
-                ? $"No audio was captured from the class. Was anything playing? Your microphone's audio is kept in {files.Folder}. To transcribe it on its own, run: {CommandLine.Transcribe(files.Segment(1, Track.Microphone))}"
+                ? $"No audio was captured from the class. Was anything playing? Your microphone's audio is kept in {files.Folder}. To transcribe it on its own, run: {commandLine.Transcribe(files.Segment(1, Track.Microphone))}"
                 : "No audio was captured. Was anything playing?");
         }
 
@@ -242,7 +243,7 @@ public sealed class RecordCommand(
         // A lesson's video is made beside the transcript, in a camera process of its own; the run's outcome waits for it.
         StartTheLessonVideo(request, files);
 
-        var command = CommandLine.Transcribe(files.Segment(1));
+        var command = commandLine.Transcribe(files.Segment(1));
         if (!request.Transcribe)
         {
             // 8. Record only, with nothing loud enough to hear, as the warnings during the class count it: the file is kept,
@@ -466,10 +467,10 @@ public sealed class RecordCommand(
                 // offers the free rebuild instead (see TranscribeCommand). The commands given here are those two, so that
                 // each runs as printed.
                 var kept = $"The audio is safe in {files.Folder}. ElevenLabs' answer, which has been paid for, is kept in {answer}: look there for the transcript's text first, because transcribing again is charged again";
-                var rebuild = CommandLine.Rebuild(answer);
+                var rebuild = commandLine.Rebuild(answer);
                 logger.LogWarning("{Message}", kept);
                 logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", rebuild);
-                logger.LogInformation("To transcribe it again all the same, choose 3 in the menu, or run: {Command}", CommandLine.Transcribe(files.Segment(1), again: true));
+                logger.LogInformation("To transcribe it again all the same, choose 3 in the menu, or run: {Command}", commandLine.Transcribe(files.Segment(1), again: true));
                 return ($"{kept}. To lay that answer out as a transcript for free, run: {rebuild}", rebuild);
             }
 

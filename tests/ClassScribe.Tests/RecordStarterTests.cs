@@ -103,7 +103,7 @@ public partial class RecordStarterTests
         var launcher = new RecorderLauncher(_starter, _jobs, folder ?? _runtime.Folder, _runtime.Journal, _recorderLog, _options, clock, new RecordingLogger<RecorderLauncher>());
         var question = new ContinueQuestion(new ClassFolders(_options, clock, new RecordingLogger<ClassFolders>()), new RecordingFolder(), _runtime.Journal, _ui, _options, clock,
             new RecordingLogger<ContinueQuestion>());
-        return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Store, new RecordingFolder(), _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log,
+        return new RecordStarter(_runtime.Journal, launcher, _viewer, question, _settings.Store, new RecordingFolder(), Printed.Commands, _services.GetRequiredService<IServiceScopeFactory>(), _ui, clock, _log,
             _videoYield, _camera, _glossary);
     }
 
@@ -720,7 +720,7 @@ public partial class RecordStarterTests
         Assert.That(exitCode, Is.EqualTo(1));
         Assert.That(_starter.Recorders, Has.Count.EqualTo(1));
         Assert.That(_ui.Screen, Does.EndWith(
-            $"{Environment.NewLine}The transcript of \"Kalam\" was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again. To transcribe it: {CommandLine.Transcribe(files.Segment(1))}"));
+            $"{Environment.NewLine}The transcript of \"Kalam\" was not finished; its audio is complete. If the upload had finished, ElevenLabs may bill it again. To transcribe it: {Printed.Transcribe(files.Segment(1))}"));
         Assert.That(_runtime.Journal.Find(RunId)!.Record.Seen, Is.True);
     }
 
@@ -785,7 +785,7 @@ public partial class RecordStarterTests
         Assert.That(_starter.Recorders, Has.Count.EqualTo(1));
         Assert.That(_inWindow.Requests, Is.Empty);
         Assert.That(_ui.Screen, Does.EndWith(
-            $"{Environment.NewLine}The recorder ended unexpectedly while it stopped the recording \"Kalam\"; its audio is kept. To transcribe it: {CommandLine.Transcribe(files.Segment(1))}"));
+            $"{Environment.NewLine}The recorder ended unexpectedly while it stopped the recording \"Kalam\"; its audio is kept. To transcribe it: {Printed.Transcribe(files.Segment(1))}"));
         Assert.That(_runtime.Journal.Find(RunId)!.Record.Seen, Is.True);
     }
 

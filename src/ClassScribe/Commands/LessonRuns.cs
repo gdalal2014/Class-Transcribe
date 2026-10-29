@@ -34,11 +34,11 @@ public static class LessonRuns
     public static bool VideoNotMade(RunRecord run, IClassFolders folders) =>
         IsLesson(run) && FilesOf(run) is { } files && folders.LessonVideoStateOf(files) == LessonVideoState.NotMade && !folders.IsLessonVideoBeingMade(files);
 
-    /// <summary>The command that makes <paramref name="run"/>'s lesson video, free, by one of its files, read through <paramref name="recordings"/>.</summary>
-    public static string FinishVideoCommand(RunRecord run, IRecordingFolder recordings) =>
-        CommandLine.FinishVideo(FilesOf(run) is { } files ? recordings.FindSegments(files).FirstOrDefault() ?? files.Folder : run.Folder ?? run.Request.OutputRoot);
+    /// <summary>The command that makes <paramref name="run"/>'s lesson video, free, by one of its files, read through <paramref name="recordings"/>, printed by <paramref name="commandLine"/>.</summary>
+    public static string FinishVideoCommand(RunRecord run, IRecordingFolder recordings, CommandLine commandLine) =>
+        commandLine.FinishVideo(FilesOf(run) is { } files ? recordings.FindSegments(files).FirstOrDefault() ?? files.Folder : run.Folder ?? run.Request.OutputRoot);
 
-    /// <summary>The words of a lesson whose video's making was cut off (see <see cref="OnlyItsVideoLeft"/>): its sound and pieces are kept, and how to make it.</summary>
-    public static string VideoNotFinished(RunRecord run, IRecordingFolder recordings) =>
-        $"The lesson video of \"{run.Request.Name}\" was not finished; its sound and its camera pieces are kept. To make it, free, run: {FinishVideoCommand(run, recordings)}";
+    /// <summary>The words of a lesson whose video's making was cut off (see <see cref="OnlyItsVideoLeft"/>): its sound and pieces are kept, and how to make it, printed by <paramref name="commandLine"/>.</summary>
+    public static string VideoNotFinished(RunRecord run, IRecordingFolder recordings, CommandLine commandLine) =>
+        $"The lesson video of \"{run.Request.Name}\" was not finished; its sound and its camera pieces are kept. To make it, free, run: {FinishVideoCommand(run, recordings, commandLine)}";
 }

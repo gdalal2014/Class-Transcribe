@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
@@ -106,6 +105,7 @@ public sealed class RunBookkeeping(
     ICrashWarnings crashes,
     IWindowSignals window,
     RunContextSlot context,
+    IThisProgram program,
     IOptionsSnapshot<RecordingOptions> recording,
     TimeProvider time,
     ILogger<RunBookkeeping> logger) : IDisposable
@@ -478,8 +478,7 @@ public sealed class RunBookkeeping(
     private IRunHandle? BeginOwn(RecordRequest request, RecordingFiles files, RunContext? current)
     {
         var now = time.GetUtcNow();
-        var (processId, processStartedUtc) = ThisProcess();
-        var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, processId, processStartedUtc, Environment.ProcessPath ?? AppContext.BaseDirectory,
+        var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, program.ProcessId, program.StartedUtc, program.ProcessPath ?? program.AppFolder,
             BuildInfo.Build, LinkVersion.Current, current?.PipeName, current?.Home ?? RunHome.InWindow, request, files.BaseName, files.Folder,
             RunState.Recording, now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
         IRunHandle run;
@@ -546,13 +545,6 @@ public sealed class RunBookkeeping(
         SessionEndKind.ClosingPrograms => "programs being closed, as for an update",
         _ => "a restart or a shutdown"
     };
-
-    /// <summary>This process's id and when it started, in UTC, as a run file names the process that records the run.</summary>
-    private static (int Id, DateTimeOffset StartedUtc) ThisProcess()
-    {
-        using var process = Process.GetCurrentProcess();
-        return (process.Id, new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero));
-    }
 
     /// <summary>Does its work the first time it is disposed, and nothing after, from whichever thread.</summary>
     private sealed class Once(Action work) : IDisposable

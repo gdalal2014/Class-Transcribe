@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
@@ -45,17 +46,32 @@ internal enum ProcessWindowShow : short
     MinimizedNotActive = 7
 }
 
-/// <summary>The program ClassScribe runs as, and the folder its files are in.</summary>
+/// <summary>
+/// The program ClassScribe runs as, and the folder its files are in; with this process's id and start, the adapter of
+/// <see cref="IThisProgram"/>.
+/// </summary>
 /// <param name="ProcessPath">
 /// The program's full path (<see cref="Environment.ProcessPath"/>): ClassScribe.exe, or dotnet.exe running ClassScribe.dll;
 /// null when Windows does not say.
 /// </param>
 /// <param name="AppFolder">The folder of ClassScribe's files (<see cref="AppContext.BaseDirectory"/>), where ClassScribe.dll is.</param>
-internal sealed record ThisProgram(string? ProcessPath, string AppFolder)
+internal sealed record ThisProgram(string? ProcessPath, string AppFolder) : IThisProgram
 {
     /// <summary>The program this process runs.</summary>
     public static ThisProgram Current => new(Environment.ProcessPath, AppContext.BaseDirectory);
 
+    /// <inheritdoc />
+    public int ProcessId { get; init; } = Environment.ProcessId;
+
+    /// <inheritdoc />
+    public DateTimeOffset StartedUtc { get; init; } = ThisProcessStart();
+
+    /// <summary>When this process started, in UTC, as Windows records it (<see cref="Process.StartTime"/>).</summary>
+    private static DateTimeOffset ThisProcessStart()
+    {
+        using var process = Process.GetCurrentProcess();
+        return new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero);
+    }
 
     /// <summary>
     /// The program to start and its whole command line, to run this program again with <paramref name="arguments"/>: the

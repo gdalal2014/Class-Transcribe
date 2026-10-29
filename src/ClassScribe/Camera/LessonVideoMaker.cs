@@ -19,9 +19,10 @@ namespace ClassScribe.Camera;
 /// </summary>
 /// <param name="starter">Starts the camera process.</param>
 /// <param name="recordings">The lesson's files on disk, for the command that makes the video again.</param>
+/// <param name="commandLine">The commands printed for later: the one that makes the video again.</param>
 /// <param name="time">The clock the limits are measured on.</param>
 /// <param name="loggers">Makes the log, under the category Camera.</param>
-public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFolder recordings, TimeProvider time, ILoggerFactory loggers)
+public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFolder recordings, CommandLine commandLine, TimeProvider time, ILoggerFactory loggers)
 {
     /// <summary>How long the camera process may go without a progress line, while it makes the video, before it is ended.</summary>
     public static readonly TimeSpan ProgressLimit = TimeSpan.FromMinutes(2);
@@ -220,5 +221,5 @@ public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFo
 
     /// <summary>The command that makes the video of <paramref name="files"/> again, by one of its files.</summary>
     private string CommandOf(RecordingFiles files) =>
-        CommandLine.FinishVideo(recordings.FindSegments(files).FirstOrDefault() ?? recordings.FindSegments(files, Audio.Track.Microphone).FirstOrDefault() ?? files.Folder);
+        commandLine.FinishVideo(recordings.FindSegments(files).FirstOrDefault() ?? recordings.FindSegments(files, Audio.Track.Microphone).FirstOrDefault() ?? files.Folder);
 }

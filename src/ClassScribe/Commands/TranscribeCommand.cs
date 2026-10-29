@@ -51,6 +51,7 @@ public sealed class TranscribeCommand(
     IFileProbe probe,
     IRecordingFolder recordings,
     ITranscriptCopies copies,
+    CommandLine commandLine,
     IUserSignals signals,
     IDesktop desktop,
     IPowerRequests power,
@@ -198,21 +199,21 @@ public sealed class TranscribeCommand(
         {
             logger.LogError("{Recording} already has a transcript ({Transcript}). Transcribing it again is billed again, so nothing was sent", files.BaseName, Path.GetFileName(transcript));
             if (copies.NewestAnswer(files) is not null)
-                logger.LogInformation("To lay it out again for free, from ElevenLabs' saved answer, run: {Command}", CommandLine.Rebuild(firstSegment));
+                logger.LogInformation("To lay it out again for free, from ElevenLabs' saved answer, run: {Command}", commandLine.Rebuild(firstSegment));
             else if (folders.KeptAnswerOf(files) is { } keptAnswer)
-                logger.LogInformation("To make a new transcript for free from ElevenLabs' answer kept in {Answer}, run: {Command}", keptAnswer, CommandLine.Rebuild(keptAnswer));
+                logger.LogInformation("To make a new transcript for free from ElevenLabs' answer kept in {Answer}, run: {Command}", keptAnswer, commandLine.Rebuild(keptAnswer));
         }
         else if (folders.KeptAnswerOf(files) is { } kept)
         {
             logger.LogError("ElevenLabs' answer to an earlier try at {Recording}, which has been paid for, is kept in {Answer}. Transcribing it again is billed again, so nothing was sent", files.BaseName, kept);
-            logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", CommandLine.Rebuild(kept));
+            logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", commandLine.Rebuild(kept));
         }
         else
         {
             return false;
         }
 
-        logger.LogInformation("To transcribe it again all the same, run: {Command}", CommandLine.Transcribe(firstSegment, again: true));
+        logger.LogInformation("To transcribe it again all the same, run: {Command}", commandLine.Transcribe(firstSegment, again: true));
         return true;
     }
 
@@ -225,7 +226,7 @@ public sealed class TranscribeCommand(
         logger.LogError("{Which} of {Recording} is on Google Drive, not on this laptop: {Location}{Link}. To transcribe it again, download its .wav files from there into {Folder} first",
             onDrive.AllOfIt ? "The audio" : "Part of the audio", files.BaseName, onDrive.Location, onDrive.Link is { } link ? $" ({link})" : "", files.Folder);
         if (copies.NewestAnswer(files) is { } answer)
-            logger.LogInformation("To lay its transcript out again for free, from ElevenLabs' saved answer, run: {Command}", CommandLine.Rebuild(answer));
+            logger.LogInformation("To lay its transcript out again for free, from ElevenLabs' saved answer, run: {Command}", commandLine.Rebuild(answer));
     }
 
     /// <summary>True when there is an API key; otherwise it says where the key belongs.</summary>
@@ -267,13 +268,13 @@ public sealed class TranscribeCommand(
             {
                 logger.LogInformation(
                     "Also in this folder, without a transcript: {Recording} ({Details}). ElevenLabs' answer to an earlier try, which has been paid for, is kept in {Answer}. To lay it out as a transcript for free: {Command}",
-                    other.Files.BaseName, details, kept, CommandLine.Rebuild(kept));
+                    other.Files.BaseName, details, kept, commandLine.Rebuild(kept));
             }
             else
             {
                 logger.LogInformation(
                     "Also in this folder, without a transcript: {Recording} ({Details}). To transcribe it: {Command}",
-                    other.Files.BaseName, details, CommandLine.Transcribe(FirstSegment(other.Files)));
+                    other.Files.BaseName, details, commandLine.Transcribe(FirstSegment(other.Files)));
             }
         }
     }

@@ -7,12 +7,14 @@ namespace ClassScribe.Commands;
 
 /// <summary>
 /// Command lines the app prints for the person to run later, such as to try a transcript again, to rebuild one for free,
-/// or to continue a recording that ended unexpectedly. Each names this very program by its full path, so that it runs as
-/// printed from any folder: a bare "ClassScribe" is not a command, neither for the published exe nor under dotnet run.
-/// Each value is put in PowerShell's double quotes, with the characters that mean something there escaped, so that it
-/// reaches ClassScribe as it is.
+/// or to continue a recording that ended unexpectedly. Each names this very program by its full path (see
+/// <see cref="IThisProgram"/>), so that it runs as printed from any folder: a bare "ClassScribe" is not a command, neither
+/// for the published exe nor under dotnet run. Each value is put in PowerShell's double quotes, with the characters that
+/// mean something there escaped, so that it reaches ClassScribe as it is. The static forms take the program's path and
+/// folder as given; the instance forms take this program's. One for the process.
 /// </summary>
-public static class CommandLine
+/// <param name="program">This program: its path and the folder of its files, which the commands name.</param>
+public sealed class CommandLine(IThisProgram program)
 {
     /// <summary>The left double quotation mark, U+201C, which PowerShell takes for a straight double quote.</summary>
     private const char LeftDoubleQuote = (char)0x201C;
@@ -28,7 +30,7 @@ public static class CommandLine
     /// <paramref name="again"/>, it ends with --again, which a recording that already has a transcript needs, since
     /// transcribing it again is billed again.
     /// </summary>
-    public static string Transcribe(string path, bool again = false) => Transcribe(path, Environment.ProcessPath, AppContext.BaseDirectory, again);
+    public string Transcribe(string path, bool again = false) => Transcribe(path, program.ProcessPath, program.AppFolder, again);
 
     /// <summary>
     /// The same for the program at <paramref name="processPath"/>, whose files are in
@@ -42,7 +44,7 @@ public static class CommandLine
     /// The PowerShell command that rebuilds the transcript of <paramref name="path"/> with this very program, for free,
     /// from ElevenLabs' saved answer: a recording's folder, one of its files, or the answer itself.
     /// </summary>
-    public static string Rebuild(string path) => Rebuild(path, Environment.ProcessPath, AppContext.BaseDirectory);
+    public string Rebuild(string path) => Rebuild(path, program.ProcessPath, program.AppFolder);
 
     /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
     public static string Rebuild(string path, string? processPath, string appFolder) => Command(processPath, appFolder, $"rebuild {Quote(path)}");
@@ -51,13 +53,13 @@ public static class CommandLine
     /// The PowerShell command that makes a lesson's video again, for free, from its camera pieces and its sound, with this
     /// very program (finish-video): a recording's folder or one of its files.
     /// </summary>
-    public static string FinishVideo(string path) => FinishVideo(path, Environment.ProcessPath, AppContext.BaseDirectory);
+    public string FinishVideo(string path) => FinishVideo(path, program.ProcessPath, program.AppFolder);
 
     /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
     public static string FinishVideo(string path, string? processPath, string appFolder) => Command(processPath, appFolder, $"finish-video {Quote(path)}");
 
     /// <summary>The PowerShell command that sets the setting <paramref name="key"/> to <paramref name="value"/> in the user's own settings file, with this very program.</summary>
-    public static string SettingsSet(string key, string value) => SettingsSet(key, value, Environment.ProcessPath, AppContext.BaseDirectory);
+    public string SettingsSet(string key, string value) => SettingsSet(key, value, program.ProcessPath, program.AppFolder);
 
     /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
     public static string SettingsSet(string key, string value, string? processPath, string appFolder) => Command(processPath, appFolder, $"settings set {key} {Quote(value)}");
@@ -66,7 +68,7 @@ public static class CommandLine
     /// The PowerShell command that uploads <paramref name="path"/> to Google Drive with this very program: a recording's file,
     /// a folder of recordings, or, when it is null, what waits in the queue.
     /// </summary>
-    public static string DriveUpload(string? path) => DriveUpload(path, Environment.ProcessPath, AppContext.BaseDirectory);
+    public string DriveUpload(string? path) => DriveUpload(path, program.ProcessPath, program.AppFolder);
 
     /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
     public static string DriveUpload(string? path, string? processPath, string appFolder) =>
@@ -77,8 +79,8 @@ public static class CommandLine
     /// without --download), into the course <paramref name="name"/> under <paramref name="outputRoot"/>, going ahead after the
     /// plan (--yes): for a video the download path may not take, and for the rest of a video stopped at its longest.
     /// </summary>
-    public static string YouTube(IEnumerable<string> links, string name, string outputRoot) =>
-        YouTube(links, name, outputRoot, Environment.ProcessPath, AppContext.BaseDirectory);
+    public string YouTube(IEnumerable<string> links, string name, string outputRoot) =>
+        YouTube(links, name, outputRoot, program.ProcessPath, program.AppFolder);
 
     /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
     public static string YouTube(IEnumerable<string> links, string name, string outputRoot, string? processPath, string appFolder) =>
@@ -89,7 +91,7 @@ public static class CommandLine
     /// --class (layout-config 4.4), or record-only --class when <paramref name="transcribe"/> is false: what class add, rename
     /// and the menu's C print for a launcher of one line.
     /// </summary>
-    public static string RecordClass(string name, bool transcribe = true) => RecordClass(name, transcribe, Environment.ProcessPath, AppContext.BaseDirectory);
+    public string RecordClass(string name, bool transcribe = true) => RecordClass(name, transcribe, program.ProcessPath, program.AppFolder);
 
     /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
     public static string RecordClass(string name, bool transcribe, string? processPath, string appFolder) =>
@@ -103,7 +105,7 @@ public static class CommandLine
     /// --no-open when the run was to open nothing, and --continue. Nothing else: --minutes counted from the run's own
     /// start, so the continued part records until stopped.
     /// </summary>
-    public static string Record(RecordRequest request) => Record(request, Environment.ProcessPath, AppContext.BaseDirectory);
+    public string Record(RecordRequest request) => Record(request, program.ProcessPath, program.AppFolder);
 
     /// <summary>The same for the program at <paramref name="processPath"/>, whose files are in <paramref name="appFolder"/>.</summary>
     public static string Record(RecordRequest request, string? processPath, string appFolder)

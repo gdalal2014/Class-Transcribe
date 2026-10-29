@@ -61,6 +61,10 @@ public static class DesktopServices
             : throw new PlatformNotSupportedException("Naming the processes that use a microphone needs Windows."));
         services.AddSingleton<IOwnProcesses, OwnProcesses>();
 
+        // This program as the process that runs it: its path and folder, which the commands printed for later name, and
+        // this process's id and start, which the run files name it by; read once, from Windows.
+        services.AddSingleton<IThisProgram>(_ => ThisProgram.Current);
+
         // A YouTube video's window (the record path): the tree of processes its browser heads, from Windows' process list, and
         // its windows' titles and close, from Windows' windows. Each only reads, but the close, which is posted as a click on
         // the close button is; nothing is touched before the first use.

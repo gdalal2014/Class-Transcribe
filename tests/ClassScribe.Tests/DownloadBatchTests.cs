@@ -362,7 +362,7 @@ public class DownloadBatchTests
 
         Assert.That(exitCode, Is.EqualTo(1));
         // The command that records the video id names as it plays, as the summary gives it.
-        string RecordIt(string id) => CommandLine.YouTube([YouTubeLinks.WatchUrl(id)], "Risala", _world.Recordings.Path);
+        string RecordIt(string id) => Printed.YouTube([YouTubeLinks.WatchUrl(id)], "Risala", _world.Recordings.Path);
         Assert.That(_world.Screen, Has.Some.EqualTo($"  01  A lesson: your course's channel: never downloaded; record it as it plays instead: {RecordIt(Third)}"));
         Assert.That(_world.Screen, Has.Some.EqualTo($"  02  Members only: needs a sign-in: left out; record it as it plays instead: {RecordIt(Second)}"));
         var botLine = _world.Screen.Single(line => line.StartsWith("  03  A public talk: ", StringComparison.Ordinal));
@@ -676,7 +676,7 @@ public class DownloadBatchTests
         Assert.That(_world.Tools.Downloads, Is.EqualTo([Second]));
         Assert.That(_world.Screen, Has.Some.EndsWith(BatchVideo.FromEmbeddedPlayerWords));
         Assert.That(_world.Screen, Has.Some.EqualTo(
-            $"  01  {First}: {BatchVideo.FromEmbeddedPlayerSaid}; record it as it plays instead: {CommandLine.YouTube([Link(First)], "Risala", _world.Recordings.Path)}"));
+            $"  01  {First}: {BatchVideo.FromEmbeddedPlayerSaid}; record it as it plays instead: {Printed.YouTube([Link(First)], "Risala", _world.Recordings.Path)}"));
     }
 
     /// <summary>

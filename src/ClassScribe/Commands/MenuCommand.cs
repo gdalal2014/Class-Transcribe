@@ -1,5 +1,6 @@
 using System.Globalization;
 using ClassScribe.Audio;
+using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
 using ClassScribe.Settings;
@@ -35,6 +36,7 @@ public sealed class MenuCommand(
     IRecordingFolder recordings,
     ITranscriptCopies copies,
     ILoopbackCaptureProvider devices,
+    IThisProgram program,
     SourceChoice choice,
     RecordingNamePrompt prompt,
     IDesktop desktop,
@@ -73,9 +75,9 @@ public sealed class MenuCommand(
     /// finds a recording in progress (see <see cref="NoStartupReport"/>). The container uses the other constructor.
     /// </summary>
     internal MenuCommand(ICommandRunner commands, IConsoleUi ui, RunGate gate, SettingsFile settings, IOptionsMonitor<ElevenLabsOptions> elevenLabs, IClassFolders folders,
-        IRecordingFolder recordings, ITranscriptCopies copies, ILoopbackCaptureProvider devices, SourceChoice choice, RecordingNamePrompt prompt, IDesktop desktop,
-        TimeProvider time, ILogger<MenuCommand> logger)
-        : this(commands, new NoStartupReport(), ui, gate, settings, elevenLabs, folders, recordings, copies, devices, choice, prompt, desktop, time, logger)
+        IRecordingFolder recordings, ITranscriptCopies copies, ILoopbackCaptureProvider devices, IThisProgram program, SourceChoice choice, RecordingNamePrompt prompt,
+        IDesktop desktop, TimeProvider time, ILogger<MenuCommand> logger)
+        : this(commands, new NoStartupReport(), ui, gate, settings, elevenLabs, folders, recordings, copies, devices, program, choice, prompt, desktop, time, logger)
     {
     }
 
@@ -337,7 +339,7 @@ public sealed class MenuCommand(
 
         var entries = connected
             .Select(device => new SourceEntry(DevicesCommand.Describe(device), device.Name, "Recording:Device", () => choice.Device = device.Name))
-            .Concat(DevicesCommand.AppsByName(devices.GetPlayingApps()).Select(app => new SourceEntry(DevicesCommand.Describe(app), app.Name, "Recording:App", () => choice.App = app.Name)))
+            .Concat(DevicesCommand.AppsByName(devices.GetPlayingApps(), program).Select(app => new SourceEntry(DevicesCommand.Describe(app), app.Name, "Recording:App", () => choice.App = app.Name)))
             .Take(9)
             .ToList();
 

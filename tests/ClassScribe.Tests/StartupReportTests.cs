@@ -73,7 +73,7 @@ public partial class StartupReportTests
 
     /// <summary>The report under test, with Google Drive as <see cref="_store"/> has it: not set up unless a test signs in.</summary>
     private StartupReport Report() =>
-        new(_runtime.Journal, new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), new RecordingFolder(), _commands.Object, _settings.Gate(), _ui, _desktop.Object,
+        new(_runtime.Journal, new ClassFolders(_options, _runtime.Time, new RecordingLogger<ClassFolders>()), new RecordingFolder(), Printed.Commands, _commands.Object, _settings.Gate(), _ui, _desktop.Object,
             _runtime.Processes, DriveQueue(), _options, ZonedClock.Eastern(_runtime.Time), _log);
 
     /// <summary>What the report reads of Google Drive's queue: the store, and the manifests in ClassScribe's own folder.</summary>
@@ -584,8 +584,8 @@ public partial class StartupReportTests
         Assert.That(_ui.Screen, Is.EqualTo(string.Join(Environment.NewLine,
             "The recording \"Kalam\" (Kalam_2026-10-15_23-00-02Z) ended unexpectedly at about 19:47, 00:47:10 in. Its audio is kept.",
             "If you did not stop it, check Bitdefender's Notifications (Protection > Advanced Threat Defense).",
-            $"To continue it as its next part: {CommandLine.Record(continued)}",
-            $"To transcribe what was recorded: {CommandLine.Transcribe(files.Segment(1))}",
+            $"To continue it as its next part: {Printed.Record(continued)}",
+            $"To transcribe what was recorded: {Printed.Transcribe(files.Segment(1))}",
             "To forget it: start ClassScribe without a command, then press F.")));
         Assert.That(_ui.KeyReads, Is.Zero);
         Assert.That(Run().Seen, Is.False);
@@ -831,7 +831,7 @@ public partial class StartupReportTests
 
         Assert.That(_ui.Screen, Is.EqualTo(string.Join(Environment.NewLine,
             $"Google Drive: 1 recording waits to go up ({files.BaseName}, {size}; last try 15 Oct 19:48: Google Drive could not be reached (No such host is known.)).",
-            $"To upload it: {CommandLine.DriveUpload(null)}")));
+            $"To upload it: {Printed.DriveUpload(null)}")));
         Assert.That(_ui.KeyReads, Is.Zero);
     }
 

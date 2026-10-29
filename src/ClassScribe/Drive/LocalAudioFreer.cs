@@ -28,7 +28,8 @@ public sealed record FreedAudio(RecordingFiles Files, IReadOnlyList<string> Dele
 /// than its video, keeps everything while its sound is here: making the video needs both (see <see cref="VideoStillToMake"/>).
 /// One per run.
 /// </summary>
-public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, IClassFolders folders, IRecordingFolder recordings, TimeProvider time, ILogger<LocalAudioFreer> logger)
+public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, IClassFolders folders, IRecordingFolder recordings,
+    CommandLine commandLine, TimeProvider time, ILogger<LocalAudioFreer> logger)
 {
     /// <summary>ERROR_SHARING_VIOLATION as an HRESULT: another program holds the file in a way that does not allow this open.</summary>
     private const int SharingViolation = unchecked((int)0x80070020);
@@ -36,11 +37,12 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     /// <summary>
     /// Why nothing of the lesson <paramref name="files"/> is freed while its video is still to be made (a camera's piece
     /// without a video, or newer than it, see <see cref="IClassFolders.LessonVideoStateOf"/>): making it needs both its sound and
-    /// its pieces. Names the command that makes it, free, by a file read through <paramref name="recordings"/>.
+    /// its pieces. Names the command that makes it, free, by a file read through <paramref name="recordings"/>, printed by
+    /// <paramref name="commandLine"/>.
     /// </summary>
-    public static string VideoStillToMake(RecordingFiles files, IRecordingFolder recordings) =>
+    public static string VideoStillToMake(RecordingFiles files, IRecordingFolder recordings, CommandLine commandLine) =>
         $"The lesson video of {files.BaseName} is still to be made, so none of its audio or camera pieces were deleted: making it needs them. Make it first, free: " +
-        CommandLine.FinishVideo(recordings.FindSegments(files).FirstOrDefault() ?? recordings.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder);
+        commandLine.FinishVideo(recordings.FindSegments(files).FirstOrDefault() ?? recordings.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder);
 
     /// <summary>
     /// Deletes the audio of <paramref name="files"/> from this laptop once every file of it is checked against its copy on
@@ -53,7 +55,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         if (uploads.Busy(files) is { } busy) return Refuse(files, $"{files.BaseName} {busy}, so none of its audio was deleted.");
         if (UploadCopyInUse(files)) return Refuse(files, $"{files.BaseName} is being transcribed now, so none of its audio was deleted.");
         if (folders.LessonVideoStateOf(files) == LessonVideoState.NotMade && (recordings.FindSegments(files).Count > 0 || recordings.FindSegments(files, Track.Microphone).Count > 0))
-            return Refuse(files, VideoStillToMake(files, recordings));
+            return Refuse(files, VideoStillToMake(files, recordings, commandLine));
 
         var manifest = manifests.Read(files);
         var freed = await FreeAudioAsync(files, manifest, cancellationToken);
@@ -82,7 +84,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         }
 
         if (manifest is null)
-            return Refuse(files, $"{files.BaseName} has not gone up to Google Drive yet, so none of its audio was deleted. Upload it first: {CommandLine.DriveUpload(files.Segment(1))}");
+            return Refuse(files, $"{files.BaseName} has not gone up to Google Drive yet, so none of its audio was deleted. Upload it first: {commandLine.DriveUpload(files.Segment(1))}");
 
         List<(string Path, ManifestFile Entry)> checkedFiles = [];
         List<string> problems = [];

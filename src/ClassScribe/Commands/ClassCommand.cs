@@ -90,8 +90,9 @@ public sealed record ClassAnswer(int ExitCode, IReadOnlyList<string> Errors)
 /// <param name="files">Whether a glossary or an old course's folder is there.</param>
 /// <param name="recording">The run's recording settings: the recordings folder a class without its own uses.</param>
 /// <param name="folders">The recordings' library: where a course's folder is under a recordings folder.</param>
+/// <param name="commandLine">The commands printed for later: a class's launcher line.</param>
 /// <param name="logger">Where a file that cannot be read is noted.</param>
-public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOptionsSnapshot<RecordingOptions> recording, IClassFolders folders, ILogger<ClassCommand> logger)
+public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOptionsSnapshot<RecordingOptions> recording, IClassFolders folders, CommandLine commandLine, ILogger<ClassCommand> logger)
 {
     /// <summary>The exit code of a mistake in what was asked, or a class that cannot be used.</summary>
     private const int Mistake = 2;
@@ -174,7 +175,7 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
             document.Classes(create: true)![name] = written;
             return SettingsEdit.Changed(
                 [$"Saved the class \"{name}\" in {store.UserFile}: {Describe(name, fields)}.", .. GlossaryNotThere(fields),
-                    $"From PowerShell: {CommandLine.RecordClass(name)}"]) with { ClassName = name };
+                    $"From PowerShell: {commandLine.RecordClass(name)}"]) with { ClassName = name };
         }).ExitCode);
     }
 
@@ -228,7 +229,7 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
             document.Root[SettingsDocument.Find(document.Root, SettingsCatalog.ClassesSection)!] = renamed;
             return SettingsEdit.Changed(
                 $"Renamed the class \"{found.Key}\" to \"{newName}\"; its course, its folders, its files and Google Drive stay as they are.",
-                $"Its launcher's line now: {CommandLine.RecordClass(newName)}") with { ClassName = newName };
+                $"Its launcher's line now: {commandLine.RecordClass(newName)}") with { ClassName = newName };
         }).ExitCode);
     }
 
@@ -279,7 +280,7 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
     /// none, null for ElevenLabs:KeytermsFile), and its command.
     /// </summary>
     private ClassShown Shown(SavedClassEntry entry, IReadOnlyDictionary<string, string?> fields) =>
-        new(entry, fields, entry.Class?.KeytermsFile is { } glossary ? GlossaryPath(glossary, store.Folder) : null, entry.Class is { } usable ? CommandLine.RecordClass(usable.Name) : null);
+        new(entry, fields, entry.Class?.KeytermsFile is { } glossary ? GlossaryPath(glossary, store.Folder) : null, entry.Class is { } usable ? commandLine.RecordClass(usable.Name) : null);
 
     /// <summary>
     /// The file a class's glossary value names, as a full path, a relative one taken from <paramref name="folder"/>; "" for

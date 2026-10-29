@@ -1,3 +1,4 @@
+using ClassScribe.Commands;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Drive;
@@ -12,15 +13,16 @@ namespace ClassScribe.Drive;
 /// </summary>
 /// <param name="store">The Google client and sign-in, which say whether Drive is set up.</param>
 /// <param name="options">The run's Drive settings.</param>
-public sealed class LessonVideoDrive(IGoogleCredentialStore store, IOptionsSnapshot<DriveOptions> options)
+/// <param name="commandLine">The commands printed for later: this very program's settings set, which turns lesson videos on.</param>
+public sealed class LessonVideoDrive(IGoogleCredentialStore store, IOptionsSnapshot<DriveOptions> options, CommandLine commandLine)
 {
     /// <summary>The start line with Drive:LessonVideos on and the audio going up.</summary>
     public const string GoesUpLine =
         "The lesson's video goes to Google Drive after the class (Drive:LessonVideos); its camera pieces stay on this laptop until free-space finds the video safe there.";
 
-    /// <summary>The start line with Drive:LessonVideos off, the default: how to turn it on, with this very program's settings set.</summary>
-    public static string StaysHereLine =>
-        $"The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: {Commands.CommandLine.SettingsSet("Drive:LessonVideos", "true")}. Its camera pieces are deleted once the video passes its check.";
+    /// <summary>The start line with Drive:LessonVideos off, the default: how to turn it on, with this very program's settings set, printed by <paramref name="commandLine"/>.</summary>
+    public static string StaysHereLine(CommandLine commandLine) =>
+        $"The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: {commandLine.SettingsSet("Drive:LessonVideos", "true")}. Its camera pieces are deleted once the video passes its check.";
 
     /// <summary>The start line with Drive:LessonVideos on and Drive:Upload WithoutAudio, which keeps the video's sound off Drive too.</summary>
     public const string WithoutAudioLine =
@@ -39,7 +41,7 @@ public sealed class LessonVideoDrive(IGoogleCredentialStore store, IOptionsSnaps
     public string? StartLine()
     {
         if (!IsSetUp) return null;
-        if (!options.Value.LessonVideos) return StaysHereLine;
+        if (!options.Value.LessonVideos) return StaysHereLine(commandLine);
 
         return options.Value.Upload == DriveUploadScope.Everything ? GoesUpLine : WithoutAudioLine;
     }

@@ -55,7 +55,7 @@ public partial class RecordCommandTests
         media.HoldWrite = gate;
         var recordings = new FakeRecordingFactory();
         var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
-        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: false));
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: false));
         await Wait.UntilAsync(() => recording.Started);
         WriteTheLesson(recording);
 
@@ -85,7 +85,7 @@ public partial class RecordCommandTests
         var (media, starter, logs) = LessonVideoParts();
         var recordings = new FakeRecordingFactory();
         var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
-        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: true));
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: true));
         await Wait.UntilAsync(() => recording.Started);
         WriteTheLesson(recording);
 
@@ -110,7 +110,7 @@ public partial class RecordCommandTests
         media.HoldWrite = gate;
         var recordings = new FakeRecordingFactory();
         var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
-        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: true));
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: true));
         await Wait.UntilAsync(() => recording.Started);
         WriteTheLesson(recording);
 
@@ -141,7 +141,7 @@ public partial class RecordCommandTests
         media.HoldWrite = gate;
         var recordings = new FakeRecordingFactory();
         var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
-        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: false));
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: false));
         await Wait.UntilAsync(() => recording.Started);
         WriteTheLesson(recording);
         _signals.RequestStop();
@@ -165,10 +165,10 @@ public partial class RecordCommandTests
     {
         var (_, starter, logs) = LessonVideoParts();
         var store = FakeCredentialStore.With("refresh");
-        var drive = new LessonVideoDrive(store, TestOptions.Create(new DriveOptions { LessonVideos = lessonVideos }));
+        var drive = new LessonVideoDrive(store, TestOptions.Create(new DriveOptions { LessonVideos = lessonVideos }), Printed.Commands);
         var recordings = new FakeRecordingFactory();
         var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
-        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), TimeProvider.System, logs), lessonDrive: drive)
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, logs), lessonDrive: drive)
             .RunAsync(LessonRequest(transcribe: false));
         await Wait.UntilAsync(() => recording.Started);
         WriteTheLesson(recording);
@@ -176,7 +176,7 @@ public partial class RecordCommandTests
 
         Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(30)), Is.EqualTo(0));
         Assert.That(OnDisk.FindCameraPieces(recording.Files!), lessonVideos ? Has.Count.EqualTo(1) : Is.Empty);
-        Assert.That(_log.Messages, Has.Member(lessonVideos ? LessonVideoDrive.GoesUpLine : LessonVideoDrive.StaysHereLine), "the start says where the video goes");
+        Assert.That(_log.Messages, Has.Member(lessonVideos ? LessonVideoDrive.GoesUpLine : LessonVideoDrive.StaysHereLine(Printed.Commands)), "the start says where the video goes");
     }
 
     /// <summary>A lesson whose camera wrote no piece makes no video, and says so; the sound is kept as always.</summary>
@@ -186,7 +186,7 @@ public partial class RecordCommandTests
         var (_, starter, logs) = LessonVideoParts();
         var recordings = new FakeRecordingFactory();
         var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
-        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: false));
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: false));
         await Wait.UntilAsync(() => recording.Started);
         TestAudio.WriteWav(recording.Files!.Segment(1), 16000, new short[16000]);
         recording.MainSegments = [recording.Files.Segment(1)];

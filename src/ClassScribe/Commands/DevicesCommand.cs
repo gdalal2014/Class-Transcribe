@@ -21,10 +21,11 @@ namespace ClassScribe.Commands;
 /// <param name="microphones">Lists the microphones, made when the command runs.</param>
 /// <param name="sessions">Reads which apps have each microphone open, made when the command runs.</param>
 /// <param name="cameras">Lists the cameras, made when the command runs.</param>
+/// <param name="program">This process, whose id tells its own capture among the apps and the sessions.</param>
 /// <param name="ui">The window the lists are written to.</param>
 /// <param name="logger">The log, which has a list that could not be read at Debug, with where the failure came from.</param>
 public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<IMicrophoneProvider> microphones, Lazy<IMicrophoneSessions> sessions,
-    Lazy<ICameraProvider> cameras, IConsoleUi ui, ILogger<DevicesCommand> logger)
+    Lazy<ICameraProvider> cameras, IThisProgram program, IConsoleUi ui, ILogger<DevicesCommand> logger)
 {
     /// <summary>What the line for --device auto says it records.</summary>
     private const string Automatic = "The device the class plays on";
@@ -56,12 +57,12 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
         var connected = microphoneList ?? [];
 
         var devices = (deviceList ?? []).Select(device => (What: Describe(device), Option: $"--device \"{device.Name}\"")).ToList();
-        var apps = AppsByName(appList?.Apps ?? []).Select(app => (What: Describe(app), Option: $"--app {Quoted(app.Name)}")).ToList();
+        var apps = AppsByName(appList?.Apps ?? [], program).Select(app => (What: Describe(app), Option: $"--app {Quoted(app.Name)}")).ToList();
         var unreadApps = appList?.Unread ?? [];
         var mics = connected.Select(microphone =>
         {
             var listing = listings.FirstOrDefault(candidate => candidate.EndpointId == microphone.Id);
-            return (What: Describe(microphone, listing), Option: MicOption(microphone), Problem: listing?.Problem);
+            return (What: Describe(microphone, listing, program), Option: MicOption(microphone), Problem: listing?.Problem);
         }).ToList();
         var cameraList = await cameras.Value.GetCamerasAsync(CancellationToken.None);
         var cams = cameraList.Cameras.Select(camera => (What: Describe(camera, Cameras.MicrophoneOf(camera, connected)), Option: (string?)$"--camera \"{camera.Name}\"")).ToList();
@@ -149,9 +150,9 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     /// Bluetooth one that it is never chosen unless named, since using it switches earbuds to call quality, and for an
     /// input that records what the computer plays that it is never recorded; then, from <paramref name="listing"/> when
     /// Windows' list of sessions has it, whether Windows mutes it and which apps hold it now, the ones taking sound as
-    /// listening. Windows' own sounds and ClassScribe's own processes are left out.
+    /// listening. Windows' own sounds and ClassScribe's own processes, <paramref name="program"/>'s among them, are left out.
     /// </summary>
-    public static string Describe(Microphone microphone, MicrophoneSessionListing? listing)
+    public static string Describe(Microphone microphone, MicrophoneSessionListing? listing, IThisProgram program)
     {
         var notes = string.Join(", ", new[]
         {
@@ -166,7 +167,7 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
         var clauses = new List<string>();
         if (notes.Length > 0) clauses.Add(notes);
         if (listing is { MutedInWindows: true }) clauses.Add("muted in Windows");
-        if (listing is not null) clauses.AddRange(HeldBy(listing));
+        if (listing is not null) clauses.AddRange(HeldBy(listing, program));
         return clauses.Count > 0 ? $"{microphone.Name}  ({string.Join("; ", clauses)})" : microphone.Name;
     }
 
@@ -184,12 +185,13 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
 
     /// <summary>
     /// The apps with sound, one per name at its loudest, since a browser can have several processes with sound open, in
-    /// the order of their names; ClassScribe's own processes, this one and any other ClassScribe, are left out.
+    /// the order of their names; ClassScribe's own processes, this one (<paramref name="program"/>) and any other
+    /// ClassScribe, are left out.
     /// </summary>
-    public static IReadOnlyList<PlayingApp> AppsByName(IEnumerable<PlayingApp> apps) =>
+    public static IReadOnlyList<PlayingApp> AppsByName(IEnumerable<PlayingApp> apps, IThisProgram program) =>
     [
         .. apps
-            .Where(app => !IsOwn(app.ProcessId, app.Name))
+            .Where(app => !IsOwn(app.ProcessId, app.Name, program))
             .GroupBy(app => app.Name, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(app => app.Level).First())
             .OrderBy(app => app.Name, StringComparer.OrdinalIgnoreCase)
@@ -201,20 +203,20 @@ public sealed class DevicesCommand(Lazy<ILoopbackCaptureProvider> outputs, Lazy<
     /// it open and takes none. Sessions that have expired, Windows' own sounds, sessions of no process and ClassScribe's
     /// own are left out; a process that could not be named is named by its number.
     /// </summary>
-    private static IEnumerable<string> HeldBy(MicrophoneSessionListing listing) =>
+    private static IEnumerable<string> HeldBy(MicrophoneSessionListing listing, IThisProgram program) =>
         listing.Sessions
-            .Where(session => !session.SystemSounds && session.ProcessId > 0 && session.State != CaptureSessionState.Expired && !IsOwn(session.ProcessId, session.ImageName))
+            .Where(session => !session.SystemSounds && session.ProcessId > 0 && session.State != CaptureSessionState.Expired && !IsOwn(session.ProcessId, session.ImageName, program))
             .GroupBy(session => session.ImageName ?? $"process {session.ProcessId}", StringComparer.OrdinalIgnoreCase)
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.Any(session => session.State == CaptureSessionState.Active) ? $"{group.Key} is listening" : $"{group.Key} holds it without listening");
 
     /// <summary>
-    /// True for ClassScribe's own processes: this one, and any process of ClassScribe's program, by the name
-    /// <see cref="OwnProcesses"/> knows it by. Static because <see cref="MenuCommand"/> calls <see cref="AppsByName"/>
+    /// True for ClassScribe's own processes: this one (<paramref name="program"/>), and any process of ClassScribe's
+    /// program, by its name (<see cref="ProgramFiles.Name"/>). Static because the menus call <see cref="AppsByName"/>
     /// without a command; the registered <see cref="IOwnProcesses"/> answers the same question for the recorder.
     /// </summary>
-    private static bool IsOwn(int processId, string? processName) =>
-        processId == Environment.ProcessId || string.Equals(processName, ProgramFiles.Name, StringComparison.OrdinalIgnoreCase);
+    private static bool IsOwn(int processId, string? processName, IThisProgram program) =>
+        processId == program.ProcessId || string.Equals(processName, ProgramFiles.Name, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The option that picks <paramref name="microphone"/>: its whole name with --mic (--in-person takes it the same way); none for an input that is never recorded.</summary>
     private static string? MicOption(Microphone microphone) => microphone.IsLoopbackInput ? null : $"--mic \"{microphone.Name}\"";
