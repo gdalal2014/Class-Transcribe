@@ -32,8 +32,8 @@ public static class CommandUseCases
         services.AddTransient<DriveCommand>();
         services.AddTransient<DriveUploadCommand>();
 
-        // The commands of their own kind, settings and class, which answer on standard output and say what is wrong on
-        // standard error. The window alone has the settings writer they need; a recorder never resolves them.
+        // The commands of their own kind, settings and class, whose answers the window writes on standard output and standard
+        // error. The window alone has the settings store they need; a recorder never resolves them.
         services.AddTransient<SettingsCommand>();
         services.AddTransient<ClassCommand>();
 

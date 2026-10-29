@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -33,9 +34,9 @@ public class SettingsCommandTests
     [TearDown]
     public void TearDown() => _files.Dispose();
 
-    /// <summary>The command under test, over the fixture's settings.</summary>
-    private SettingsCommand Command() =>
-        new(_files.Writer, _files.Places, _files.SettingsFile, _files.Reloader, _desktop.Object, new CommandOutput(_out, _error), NullLogger<SettingsCommand>.Instance);
+    /// <summary>The command under test, over the fixture's settings, with the window's writer of its answers.</summary>
+    private SettingsOutput Command() =>
+        new(new SettingsCommand(_files.Store, new FileProbe(), _desktop.Object, NullLogger<SettingsCommand>.Instance), new CommandOutput(_out, _error));
 
     /// <summary>Runs <paramref name="request"/> and returns the exit code.</summary>
     private int Run(SettingsRequest request) => Command().RunAsync(request).GetAwaiter().GetResult();
@@ -199,8 +200,9 @@ public class SettingsCommandTests
         _files.Writer.Set("Recording:FlushSeconds", "7");
         File.Delete(_files.UserFile);
         var places = new SettingsPlaces(_files.Program.Path, _files.User.Path, _files.State.Path);
-        var command = new SettingsCommand(new SettingsWriter(places, new SettingsFile(places, NullLogger<SettingsFile>.Instance), _files.Reloader, _files.Log), places,
-            new SettingsFile(places, NullLogger<SettingsFile>.Instance), _files.Reloader, _desktop.Object, new CommandOutput(_out, _error), NullLogger<SettingsCommand>.Instance);
+        var file = new SettingsFile(places, NullLogger<SettingsFile>.Instance);
+        var store = new SettingsStore(places, file, _files.Reloader, new SettingsWriter(places, file, _files.Reloader, _files.Log));
+        var command = new SettingsOutput(new SettingsCommand(store, new FileProbe(), _desktop.Object, NullLogger<SettingsCommand>.Instance), new CommandOutput(_out, _error));
 
         Assert.That(command.RunAsync(new SettingsRequest.Open()).Result, Is.EqualTo(1));
         Assert.That(command.RunAsync(new SettingsRequest.List(false)).Result, Is.EqualTo(0));
