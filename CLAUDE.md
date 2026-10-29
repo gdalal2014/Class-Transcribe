@@ -222,6 +222,11 @@ advice after a format error (10 A).
   `AddSettings` (both hosts); `ISettingsStore` as `SettingsStore`, the thin adapter over the places, the file, the reloader
   and the writer, right after the writer in `AddSettingsReload` (the window alone, as the writer: a recorder never writes
   the settings, and `RecordStarter`, which takes the port for the snapshot, is never resolved there).
+  The ports of the program and the prompts of slice 3b4: `IThisProgram` as `ThisProgram.Current` in `DesktopServices` (both
+  hosts, one for the process), right after `IOwnProcesses`; `CommandLine`, the class over it, a singleton of
+  `CommandUseCases`; `IContinuePrompt` and `ICameraPrompt` as the same scoped `ContinueQuestion` and `CameraStart`, each
+  right after its adapter in `WindowServices`; and `IRunStarter` as the same singleton as `ICommandRunner`, right after it in
+  `CommandServices` (the registrations before and after each slice are compared from a dump of every descriptor).
   `AppHost` adds the settings reload (`SettingsServices.AddSettingsReload`: the places, the file, the
   reloader, the one `SettingsWriter` and the `ISettingsStore` over them), since it builds the configuration the reload works on;
   `AddSettings` registers `SavedClasses` (with `ISavedClasses`) and `IOutputFolderFacts` beside `SettingsCheck`, `CommandUseCases`
@@ -237,8 +242,8 @@ advice after a format error (10 A).
   not the whole container. There is no `Link/LinkServices.cs`: the view makes its own client, the
   server is the recorder host's.
 - Every start of a recording is a `RecordRequest` with a `StartOrigin` (`Runs/Requests.cs`),
-  through `ICommandRunner.RecordAsync` to `IRecordStarter` in a scope of its own; `ICommandRunner`
-  no longer has `RecordAsync(string, bool)`. Run ids are made only by `RunIds.New` and checked with
+  through `IRunStarter.RecordAsync` (`Runs/IRunStarter.cs`, the one call `ICommandRunner` extends and `CommandRunner`
+  answers) to `IRecordStarter` in a scope of its own; `ICommandRunner` no longer has `RecordAsync(string, bool)`. Run ids are made only by `RunIds.New` and checked with
   `RunIds.IsWellFormed` (`ProcessArguments.IsRunId` is the same rule) before they name a file, a
   pipe, an event or a command line. Run and request files go through `RecorderJson`, which writes
   enums by name, names each class source by `kind`, and passes over unknown fields; a field added to
@@ -406,8 +411,9 @@ advice after a format error (10 A).
   `new SettingsPlaces(<temporary folder>, userFolder: null)` or a `SettingsFileFixtures`' places as
   `places`, never `SettingsPlaces.ForThisUser`; `configureServices` runs last. `TestDoubles.cs` has
   `TestOptions<T>` (one object for `IOptions`,
-  `IOptionsSnapshot` and `IOptionsMonitor`; `Set` fires `OnChange`) and `TestSettings` (a real gate
-  over a temporary `appsettings.json`). Write hours of audio with `WavSegmentWriter` at 10 Hz, so
+  `IOptionsSnapshot` and `IOptionsMonitor`; `Set` fires `OnChange`), `TestSettings` (a real gate
+  over a temporary `appsettings.json`) and `Printed` (the command lines this test process prints, `CommandLine` over the
+  real `ThisProgram`, `Printed.Program`, which a subject that takes `IThisProgram` or `CommandLine` is given). Write hours of audio with `WavSegmentWriter` at 10 Hz, so
   the files stay under a megabyte. Every test that builds the app with `AppHost.Build` and runs a
   command or the menu must register a `TestRuntime`'s `RuntimeFolder`
   (`AddSingleton(runtime.Folder)`): the start-up report, the runner and the starter read and mark
@@ -673,7 +679,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   gate and the start-up report for commands, then invoke). `--mic` and `--in-person` take an optional
   value, so a name right after them is taken as the microphone's, which the message points out.
   `--continue` / `--new` decide about a recent recording of the same name without a question; the
-  menu asks C, N or Esc (`ContinueQuestion`), and only a recording of the same `RecordingMode` is
+  menu asks C, N or Esc (`ContinueQuestion`, the window's `IContinuePrompt`, which `RecordStarter` takes, with its
+  `ContinueAnswer` in `Runs/IContinuePrompt.cs`), and only a recording of the same `RecordingMode` is
   offered. `transcribe <path> --output` is passed on as a full path for a file that is not a
   recording's. `list`, `devices` and `mic-check [--seconds <1..86400>] [--log-folder "<folder>"]`
   work; `attach` is hidden. `youtube <link>... [--list "<file>"] --name "<course>" --output "<folder>"
@@ -685,7 +692,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `VideoBatch.MostVideos` (10) videos and `--allow-unlisted`; with it more than
   `DownloadBatch.MostVideos` (500)), and `YouTubeCommand.RunAsync` refuses `--allow-unlisted` while
   `YouTube:CourseChannels` is empty (exit 2), since the parser cannot see the settings.
-  `CommandLine.YouTube` prints the record-path command the summaries give. Commands printed for later (`CommandLine`) name the program by its full
+  `CommandLine.YouTube` prints the record-path command the summaries give. Commands printed for later (`CommandLine`, a
+  class over `IThisProgram` since slice 3b4, one for the process, which every class that prints one takes; its forms with
+  an explicit `(processPath, appFolder)` stay static) name the program by its full
   path, keep the microphone options (`--mic`, `--in-person`, `--mic-follows` through
   `FollowRule.Word`) and escape PowerShell's `$`, backtick and double quotes.
 - One recording at a time: `%LOCALAPPDATA%\ClassScribe\recording.lock` (`RecordingLock`, the
@@ -695,7 +704,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   cases; `RunRecord`: state, a heartbeat every 10 s, `EndedBy`,
   the outcome, `Seen`; written atomically, retried three times 100 ms apart; seen runs pruned after
   30 days, `RunTimings.KeepSeenRunsFor`) are the C5 marker and the next start's report (`StartupReport`: C through
-  `ICommandRunner.RecordAsync` with `StartOrigin.StartupReport`, T, O and F carried out by the
+  `IRunStarter.RecordAsync`, the runner's, with `StartOrigin.StartupReport`, T, O and F carried out by the
   report itself). `StopSignal` is the per-run event `Local\ClassScribe.Stop.<run id>`, the one stop
   that needs no pipe; a video's run also listens on its yield event, `Local\ClassScribe.Yield.<run id>`
   (`StopSignal.ListenForYield`, `TrySetYield`, behind `IVideoYield`/`WindowsVideoYield`), by which a
@@ -862,7 +871,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   3b2 (`feature/layers-runs`: `IRuntimeFolder`, `IRecordingLock`, `IRunJournal` with `IRunHandle` and `IRunLog`, each with
   its contract test over the real adapter in a temporary folder, in `RecorderPortTests`) bring it to 4,949; the ports of
   settings and classes of slice 3b3 (`feature/layers-settings`: `ISettingsStore` with `IStagedSettings`, and `ISavedClasses`,
-  each with its contract test over the real adapter in temporary folders, in `SettingsPortTests`) bring it to 4,957. The uploads by
+  each with its contract test over the real adapter in temporary folders, in `SettingsPortTests`) bring it to 4,957; the ports
+  of the program and the prompts of slice 3b4 (`feature/layers-program`: `IThisProgram`, `IContinuePrompt`, `ICameraPrompt`
+  and `IRunStarter`, each with its contract test over the real adapter, in `ProgramPortTests` and `PromptPortTests`) bring
+  it to 4,966. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -905,7 +917,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
   app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
   with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
-  4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, plus the build).
+  4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, 4 min 24 s for 4,966 with slice 3b4's,
+  plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -953,8 +966,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   in person, lists the cameras (`MicrophoneMenu`'s optional `ICameraProvider`) and asks the size (`Picture size: Enter for
   720p (your setting), 1 480p, 2 720p, 3 1080p, T to type a size`), held by `SourceChoice` (`PickMicrophone(..., camera,
   size)`, `PickedCameraResolution`, `CameraResolution`; W and N drop the camera; the header adds `with the camera "..."
-  (720p)`). `RecordStarter` hands a plan with a camera to `CameraStart` (scoped; before the continue question, amendment
-  17), which resolves the size into the request (`--resolution`, else menu 7's pick, else `Recording:CameraResolution`,
+  (720p)`). `RecordStarter` hands a plan with a camera to its `ICameraPrompt` (`Runs/ICameraPrompt.cs`; `CameraStart` in the
+  window, scoped; before the continue question, amendment 17), which resolves the size into the request (`--resolution`, else menu 7's pick, else `Recording:CameraResolution`,
   else 720p, so the recorder never reads it and the run file keeps it), then refuses with the set-up's first problem or
   `ICameraRecorder.NotReady`: in the menu `Camera "...": <why>. Enter records the sound only; Esc goes back.`, elsewhere
   `<why>. Nothing was recorded; leave out --camera to record the sound alone.` with exit 1; otherwise the menu asks
@@ -962,7 +975,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (`Camera/CameraRecorder.cs`, with `ICameraTrack`, `CameraTrackStart`, `CameraTrackState`, `CameraConcern` and
   `CameraOffsets`) is registered as `CameraRecorder` (slice 7, "The lesson's picture" below; `NotReady` only before Windows
   10 version 2004); `CameraRecorderNotBuilt` stays as a stand-in for the refusal's tests, a `RecordStarter` without a
-  `CameraStart` refuses with its words, and `TrackSetFactory.Create` throws `CameraNotBuiltException` for a plan with a
+  camera prompt refuses with its words (`ICameraPrompt.NothingStarted`), and `TrackSetFactory.Create` throws `CameraNotBuiltException` for a plan with a
   camera outside person, or without a ready camera recorder. `CommandLine.Record` keeps `--camera` and `--resolution`. Amendment 2's extension data: `RunRecord`,
   `RecordRequest` and `SourcePlan` carry `[JsonExtensionData] Dictionary<string, JsonElement>? Extra` (null when nothing
   unknown was read, so records still compare equal), with a setter, not `init`: the generated reader fills init-only
@@ -1585,7 +1598,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   hand-off check: the started process must not have exited within 3 s, or Chrome handed the video to a
   window left open, `HandedOff`, and Enter tries again); `RecordAsync` (a `RecordRequest` with
   `VideoRequest`, `RecordingMode.Class`, `ClassSource.App("chrome")`, `Transcribe` false, `Continue`
-  `New`, through `ICommandRunner.RecordAsync` with `StartOrigin.VideoBatch`, shown here as the run's
+  `New`, through `IRunStarter.RecordAsync` (`VideoBatch` takes the run starter alone, which the runner is) with
+  `StartOrigin.VideoBatch`, shown here as the run's
   owner; its run found in the journal by batch id and position, since the starter may give a new run
   id; a start refused because a class records is waited for and asked again); `VideoWindow.CloseAsync`
   (`WM_CLOSE` through `IVideoWindows`, never a kill, 15 s); two windows or runs in a row that failed
@@ -1696,7 +1710,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   other handle, `ChildEnvironment.WithoutTheKey`, the working folder `%LOCALAPPDATA%\ClassScribe`, and a kill-on-close
   `ToolJob` made before it runs, the job and the pipes let go again when Windows refuses or the start throws
   (`PipedProcessTests`); its standard error goes to the log at Debug under the category `Camera`; `ThisProgram.CommandFor`
-  gives this program's command line to it and to `ProcessStarter`. `ICameraProcess` gives the channel, the process id, the
+  gives this program's command line to it and to `ProcessStarter` (the record `ThisProgram` is also the `IThisProgram` the
+  use cases read this program's path, folder, process id and start from, since slice 3b4). `ICameraProcess` gives the channel, the process id, the
   exit code and `Kill`; `CameraLines` sends the job and the stop and reads each line as its type (a known type whose body
   is not an object is a `JsonException`, never another exception). The real start refuses in
   a test (`DeviceGuards`, naming `FakeCameraProcess`), and Windows' tool start refuses any program but cmd.exe there too.
@@ -1935,6 +1950,20 @@ the copy into the recording's `.log`, and `LastStartupLines`, the read of record
 `IRunLog.StartupFileName`. The window's commands (`AttachCommand`, `ContinueQuestion`, `StartupReport`, `CommandRunner`) take
 the ports too; the recorder's host and Infrastructure's own users keep the adapters. `design\final\layers-runs-map.md` lists
 each member's old and new call and each constructor that takes a port.
+Slice 3b4 (`feature/layers-program`) put the program and the prompts behind ports: `IThisProgram` (`Desktop`: the program's
+path, the folder of its files, this process's id and its start, over the record `ThisProgram`, which `ProcessStarter` and
+`CameraProcessStarter` keep using for CreateProcessW's command line), which `CommandLine` (a class now, one for the process;
+its explicit `(processPath, appFolder)` forms stay static), `RunBookkeeping`, `TranscriptionRuns`, `MicCheckCommand` and
+`DevicesCommand` (`AppsByName` and `Describe(microphone, listing)` take it as a parameter, which `MenuCommand` and
+`ClassesMenu` pass) read in place of `Environment.ProcessPath`, `AppContext.BaseDirectory`, `Environment.ProcessId` and
+`Process.GetCurrentProcess`; every class that prints a command takes the `CommandLine` (`LessonRuns`,
+`LessonVideoDrive.StaysHereLine` and `LocalAudioFreer.VideoStillToMake` as a parameter; `CameraFinishJob`, in the camera
+process, over `ThisProgram.Current`); `IContinuePrompt` (`Runs`, with `ContinueAnswer` beside it) over `ContinueQuestion` and
+`ICameraPrompt` (`Runs`, with `NothingStarted`, moved from `CameraStart`) over `CameraStart`, which `RecordStarter` takes; and
+`IRunStarter` (`Runs`: the one call `RecordAsync(request, origin)`), which `ICommandRunner` extends, `CommandRunner` answers
+in a scope of the run's own, and `VideoBatch` takes. `IServiceScopeFactory` stays in `RecordStarter` and
+`ScopedVideoTranscriber` (architecture question 5). `design\final\layers-program-map.md` lists each member's old and new
+call and each constructor that takes a port.
 
 - `src/ClassScribe`: `Program.cs` (the console set to UTF-16, a start-up failure printed plainly,
   the close prompt), `AppHost` (builds the host: the checked settings source and a first checked
@@ -1959,7 +1988,9 @@ each member's old and new call and each constructor that takes a port.
   (`IProcessStarter`), the job check (`IJobInspector`), Windows' end of the session
   (`ISessionEvents`), the registry read only (`IRegistryValues`, HKEY_CURRENT_USER, for the
   microphone advice), the program behind a process id (`IProcessNames`, a limited query) and
-  ClassScribe's own processes (`IOwnProcesses`, by pid and by `ProgramFiles.Name`; `ProgramFiles` names the program, its exe and its dll); for YouTube,
+  ClassScribe's own processes (`IOwnProcesses`, by pid and by `ProgramFiles.Name`; `ProgramFiles` names the program, its exe and its dll),
+  this program as the process that runs it (`IThisProgram`: its path, the folder of its files, this process's id and
+  start; the record `ThisProgram` in `Desktop/Windows` is the adapter); for YouTube,
   `IRegistryValues.ReadLocalMachineString` (the machine's PATH, Chrome's App Paths), `IFileProbe` (a
   file or a folder there, when a file was last written, how long it is, its full path, a program's version: the checks the
   commands make with `File`, `Directory` and `Path.GetFullPath`), `ChildEnvironment.WithoutTheKey`, `IProcessStarter.StartBrowser`,
@@ -2137,12 +2168,14 @@ each member's old and new call and each constructor that takes a port.
   every area describes a run with: `Requests.cs` (`RecordRequest`, `SourcePlan`, `ClassSource`, `MicrophoneChoice`,
   `CameraChoice`, `VideoRequest`, `ContinueChoice`, `StartOrigin`, `RunIds`), `RecorderState.cs` (`RecorderState`,
   `RecorderPhase`, `Attention`, `MicrophoneState`, `CameraState`) and `IRecorderStatusSink.cs`, `StarterContracts.cs`
-  (`IRunViewer`, `IRecordStarter`, `IRecordRun`, `IStartupReport`, `NoStartupReport`, `IResultShower`),
+  (`IRunViewer`, `IRecordStarter`, `IRecordRun`, `IStartupReport`, `NoStartupReport`, `IResultShower`), the ports of slice
+  3b4 that the window answers (`IContinuePrompt.cs` with `ContinueAnswer`, `ICameraPrompt.cs` with `NothingStarted`, and
+  `IRunStarter.cs`: `ContinueQuestion`, `CameraStart` and `CommandRunner` implement them),
   `ViewResult.cs` (`ViewMode`, `ViewEnd`, `ViewResult`), `StartupChoice.cs` (`StartupAction`, `StartupChoice`),
   `RunTimings` (the heartbeat's interval, and `KeepSeenRunsFor`, how long a seen run's file is kept) and `LinkVersion` (the link's version, which `LinkProtocol.Version` names
   and every run file records). `RunRecord.cs` and `RunView` stay in `Recorder` until the move.
 - `src/ClassScribe/Commands`: the menu, the command line (`CommandLineTree` on System.CommandLine,
-  with `CommandLineTree.Settings.cs` and `CommandLineTree.Classes.cs`; `App`, `CommandLine` for the
+  with `CommandLineTree.Settings.cs` and `CommandLineTree.Classes.cs`; `App`, `CommandLine`, over `IThisProgram`, for the
   commands printed for later), `settings` (`SettingsCommand`, `SettingsRequest`, `SettingsAnswer`,
   `SettingRow`) and `class` (`ClassCommand`, `ClassRequest`, `ClassAnswer`, `ClassShown`), the use cases, which answer with
   data that the window's `SettingsOutput` and `ClassOutput` write on `CommandOutput` as text or JSON (architecture
@@ -2151,7 +2184,8 @@ each member's old and new call and each constructor that takes a port.
   `IRecordRun` in either home, `RecordingLoop` for the keys, states and heartbeat, `RecordingMonitor`
   for the once-a-second checks, `RunBookkeeping.cs` for the lock, the run file, the recording's log,
   keep-awake and the end handlers, with `RunContext`, `RunContextSlot` and `ICrashWarnings`,
-  `WindowResultShower`), the starter (`RecordStarter`, `RecorderLauncher`, `ContinueQuestion`), the
+  `WindowResultShower`), the starter (`RecordStarter`, `RecorderLauncher`, and the window's prompts `ContinueQuestion` and
+  `CameraStart`, the `IContinuePrompt` and `ICameraPrompt` of `Runs`), the
   view of a background run (`RecorderView`, `AttachCommand`), the report at the start
   (`StartupReport`, with `LessonRuns` for a lesson's video), `transcribe`, `rebuild`, `finish-video`
   (`FinishVideoCommand`), `list` and `devices` (output devices, apps with sound,
@@ -2228,7 +2262,13 @@ each member's old and new call and each constructor that takes a port.
   facts before and after the first change and the missing-file state, the file read and staged with a value by name, a
   section's children and the classes, bytes that are not a settings file, every change through the one writer, the
   override, the snapshot and a file a setting names, the saved classes in force and in the file, and the ports'
-  registrations in both hosts), over a `SettingsFileFixtures`, which gains `Store` as `TestSettings` does. The cost line's
+  registrations in both hosts), over a `SettingsFileFixtures`, which gains `Store` as `TestSettings` does; the ports of the
+  program and the prompts of slice 3b4 in `ProgramPortTests` (this process's facts over the real `ThisProgram`, the command
+  lines over it against the explicit forms, and the registrations of the port and `CommandLine` in both hosts) and
+  `PromptPortTests` (the continue prompt over the real `ContinueQuestion` in temporary folders, the camera prompt over the
+  real `CameraStart` and the camera's fakes, the run starter over the real `CommandRunner` with a played starter in each
+  scope, and the registrations in both hosts); the expected command lines in every test are `Printed`'s (`TestDoubles.cs`:
+  `CommandLine` over the real `ThisProgram`, `Printed.Program`, which the subjects are given too). The cost line's
   tests are `TranscriptionCostTests`, `ElevenLabsAccountTests` (on `StubHttpHandler`),
   `UsageReportTests`, and the order checks in `TranscriptionWorkflowTests`, `RecordCommandTests`,
   `TranscribeCommandTests` and `EndToEndTests`; the Bluetooth watch's are
