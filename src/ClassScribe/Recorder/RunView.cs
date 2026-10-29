@@ -1,3 +1,4 @@
+using System.IO;
 using ClassScribe.Runs;
 using ClassScribe.Storage;
 

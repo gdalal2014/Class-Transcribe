@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Runs;
 using ClassScribe.Storage;
@@ -221,5 +222,5 @@ public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFo
 
     /// <summary>The command that makes the video of <paramref name="files"/> again, by one of its files.</summary>
     private string CommandOf(RecordingFiles files) =>
-        commandLine.FinishVideo(recordings.FindSegments(files).FirstOrDefault() ?? recordings.FindSegments(files, Audio.Track.Microphone).FirstOrDefault() ?? files.Folder);
+        commandLine.FinishVideo(recordings.FindSegments(files).FirstOrDefault() ?? recordings.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder);
 }

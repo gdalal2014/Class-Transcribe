@@ -1,3 +1,4 @@
+using System.IO;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;

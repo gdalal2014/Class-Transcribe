@@ -1,3 +1,5 @@
+using ClassScribe.Audio;
+
 namespace ClassScribe.Camera;
 
 /// <summary>
@@ -24,7 +26,7 @@ public interface ILessonVideoMedia
     /// it cannot be written, and an <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is
     /// cancelled; either leaves the file for the caller to delete.
     /// </summary>
-    void Write(LessonVideoPlan plan, Audio.MixedSound sound, string path, Action<double> progress, CancellationToken cancellationToken);
+    void Write(LessonVideoPlan plan, MixedSound sound, string path, Action<double> progress, CancellationToken cancellationToken);
 
     /// <summary>
     /// Checks the video at <paramref name="path"/> as <paramref name="check"/> asks: it opens, it has a picture and a sound,

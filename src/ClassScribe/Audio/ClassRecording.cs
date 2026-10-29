@@ -3,6 +3,7 @@ using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Audio;
 
@@ -143,7 +144,7 @@ public sealed class ClassRecordingFactory(
     ILogger<RecordingSession> sessionLogger,
     ILogger<CaptureChooser> chooserLogger,
     ILogger<ClassRecording> logger,
-    YouTube.VideoPlayback? video = null) : IRecordingFactory
+    VideoPlayback? video = null) : IRecordingFactory
 {
     /// <summary>
     /// A recording, not started yet, of the class from what <paramref name="source"/> names (see

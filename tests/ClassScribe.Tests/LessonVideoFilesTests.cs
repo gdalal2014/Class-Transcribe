@@ -1,3 +1,4 @@
+using ClassScribe.Commands;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -203,7 +204,7 @@ public sealed class LessonVideoFilesTests
         var recorded = new RecordedClass(new RecordingFiles(_folder.Path, "Tajwid_2026-10-14_17-30-00Z"), Now.UtcDateTime, TimeSpan.FromHours(1), HasTranscript: false,
             KeptAnswer: null, BeingWritten: false, LessonVideo: state);
 
-        var notes = Commands.ListCommand.NotesOf(recorded).ToList();
+        var notes = ListCommand.NotesOf(recorded).ToList();
 
         Assert.That(notes.Where(found => found.StartsWith("lesson video", StringComparison.Ordinal)), note is null ? Is.Empty : Is.EqualTo(new[] { note }));
     }

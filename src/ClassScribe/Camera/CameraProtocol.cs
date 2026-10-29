@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using ClassScribe.Audio.Timeline;
 using ClassScribe.Runs;
 
 namespace ClassScribe.Camera;
@@ -14,7 +15,7 @@ namespace ClassScribe.Camera;
 /// <see cref="Log"/> lines, which the starter writes into its own log under the category Camera. Its exit codes are
 /// internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. It takes the hold, check and record jobs, opening the
 /// camera only shared, and the finish job, which opens no camera. Version 2 defined the clock line's body
-/// (<see cref="Audio.Timeline.ClockState"/>) and took the record job; version 3 (slice 8) takes the finish job, with
+/// (<see cref="ClockState"/>) and took the record job; version 3 (slice 8) takes the finish job, with
 /// <see cref="CameraJob.KeepPieces"/>, its <see cref="Progress"/> lines at least every ten seconds, and <see cref="Made"/>.
 /// </summary>
 public static class CameraProtocol
@@ -40,7 +41,7 @@ public static class CameraProtocol
     /// <summary>The job, the first line to the camera process (see <see cref="CameraJob"/>).</summary>
     public const string Job = "job";
 
-    /// <summary>The recording clock's whole state (see <see cref="Audio.Timeline.ClockState"/>), sent whenever it changes; each replaces the one before it whole.</summary>
+    /// <summary>The recording clock's whole state (see <see cref="ClockState"/>), sent whenever it changes; each replaces the one before it whole.</summary>
     public const string Clock = "clock";
 
     /// <summary>Let the camera go during a pause (P), so that its light goes off; an empty body.</summary>

@@ -3,6 +3,7 @@ using ClassScribe.Runs;
 using ClassScribe.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Commands;
 
@@ -98,7 +99,7 @@ public interface ICommandRunner : IRunStarter
     Task<int> DriveFreeSpaceAsync(string path);
 
     /// <summary>Runs the batch of YouTube videos <paramref name="request"/> describes (see <see cref="YouTubeCommand"/>). Returns the exit code.</summary>
-    Task<int> YouTubeAsync(YouTube.YouTubeRequest request);
+    Task<int> YouTubeAsync(YouTubeRequest request);
 
     /// <summary>youtube check: where yt-dlp and its helpers are, their versions, and what to install or update. Returns the exit code.</summary>
     Task<int> YouTubeCheckAsync();
@@ -292,7 +293,7 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
     }
 
     /// <summary>Runs a batch of YouTube videos with the youtube command (<see cref="YouTubeCommand"/>), in a scope of its own. Returns its exit code.</summary>
-    public async Task<int> YouTubeAsync(YouTube.YouTubeRequest request)
+    public async Task<int> YouTubeAsync(YouTubeRequest request)
     {
         Require<YouTubeCommand>("YouTube videos are not part of this build yet.");
         await using var scope = scopes.CreateAsyncScope();

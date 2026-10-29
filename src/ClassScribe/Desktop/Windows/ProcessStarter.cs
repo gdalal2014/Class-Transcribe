@@ -4,6 +4,8 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
+using ClassScribe.Commands;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Desktop.Windows;
 
@@ -76,7 +78,7 @@ internal sealed record ThisProgram(string? ProcessPath, string AppFolder) : IThi
     /// <summary>
     /// The program to start and its whole command line, to run this program again with <paramref name="arguments"/>: the
     /// exe, quoted, then the arguments; under dotnet, dotnet running ClassScribe's dll from the app's folder, as
-    /// <see cref="Commands.CommandLine"/> prints it. Null when Windows did not say which program this process runs.
+    /// <see cref="CommandLine"/> prints it. Null when Windows did not say which program this process runs.
     /// </summary>
     public (string Application, string CommandLine)? CommandFor(string arguments)
     {
@@ -211,11 +213,11 @@ public sealed class ProcessStarter(string workingFolder, ILogger<ProcessStarter>
     /// <remarks>
     /// Outside the job first; a job that does not allow breakaway refuses that with Access Denied, and Chrome is then started
     /// inside it, once more and no other way. In a test run Windows' own start refuses a browser outright (see
-    /// <see cref="YouTube.YouTubeGuards"/>).
+    /// <see cref="YouTubeGuards"/>).
     /// </remarks>
     public StartedProcess StartBrowser(string program, IReadOnlyList<string> arguments, string workingFolder)
     {
-        var launch = new ProcessLaunch(program, YouTube.WindowsCommandLine.Of(program, arguments), InheritHandles: false,
+        var launch = new ProcessLaunch(program, WindowsCommandLine.Of(program, arguments), InheritHandles: false,
             ProcessCreationFlags.UnicodeEnvironment | ProcessCreationFlags.BreakawayFromJob, workingFolder, Show: null)
         {
             Environment = ChildEnvironment.WithoutTheKey(CurrentEnvironment())
@@ -255,7 +257,7 @@ public sealed class ProcessStarter(string workingFolder, ILogger<ProcessStarter>
     /// <summary>
     /// Starts this program with <paramref name="arguments"/> and <paramref name="flags"/>: <paramref name="what"/> names it
     /// in the log and in Windows' refusal. Under dotnet, the program is dotnet running ClassScribe's dll from the app's
-    /// folder, as <see cref="Commands.CommandLine"/> prints it.
+    /// folder, as <see cref="CommandLine"/> prints it.
     /// </summary>
     private StartedProcess Start(string what, string arguments, ProcessCreationFlags flags, ProcessWindowShow? show)
     {

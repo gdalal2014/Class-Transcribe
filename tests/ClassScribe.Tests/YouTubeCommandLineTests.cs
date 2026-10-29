@@ -1,4 +1,5 @@
 using ClassScribe.Commands;
+using ClassScribe.Settings;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -151,7 +152,7 @@ public class YouTubeCommandLineTests
     public async Task Allow_unlisted_needs_the_course_channels()
     {
         using var world = new YouTubeWorld();
-        world.YouTube.Set(new Settings.YouTubeOptions());
+        world.YouTube.Set(new YouTubeOptions());
         var log = new RecordingLogger<YouTubeCommand>();
         var command = new YouTubeCommand(world.Batch(), world.Tool(), new FakeUserSignals(), world.Ui, world.YouTube, log);
 

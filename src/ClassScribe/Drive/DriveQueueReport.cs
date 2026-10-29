@@ -109,7 +109,7 @@ public sealed class DriveQueueReport(IGoogleCredentialStore store, IUploadManife
     /// How many files of <paramref name="files"/> wait on this laptop to go up and their size (see
     /// <see cref="IUploadManifests.OnDisk"/>), a lesson's finished video counted only with Drive:LessonVideos on, as it is now.
     /// </summary>
-    public (int Count, long Bytes) OnDisk(Storage.RecordingFiles files) => manifests.OnDisk(files, options.CurrentValue.LessonVideos);
+    public (int Count, long Bytes) OnDisk(RecordingFiles files) => manifests.OnDisk(files, options.CurrentValue.LessonVideos);
 
     /// <summary>
     /// " (41%)": how much of the recording uploading now Drive has, against its files on this laptop, never 100% before it is

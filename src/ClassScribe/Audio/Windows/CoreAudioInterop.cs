@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using ClassScribe.Desktop;
 
 namespace ClassScribe.Audio.Windows;
 
@@ -386,7 +387,7 @@ internal interface IMMDeviceRaw
 
 /// <summary>
 /// IMMEndpoint: whether an endpoint plays or records. Its one method, read only by the test guard of Windows' activation of
-/// a microphone (see <see cref="Desktop.DeviceGuards"/>), so that a test can never activate a capture endpoint's audio client.
+/// a microphone (see <see cref="DeviceGuards"/>), so that a test can never activate a capture endpoint's audio client.
 /// </summary>
 [ComImport, Guid("1BE09788-6894-4089-8586-9A2A6C265AC5"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMEndpointRaw

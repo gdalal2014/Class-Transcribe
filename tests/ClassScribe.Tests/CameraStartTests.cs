@@ -1,4 +1,6 @@
 using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
+using ClassScribe.Audio.Timeline;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Runs;
@@ -123,7 +125,7 @@ public class CameraStartTests
     [Test]
     public async Task A_set_up_problem_refuses_the_camera_first()
     {
-        _usage.Listing = new Audio.Microphones.UsageRecordListing("Allow", "Deny", [], null);
+        _usage.Listing = new UsageRecordListing("Allow", "Deny", [], null);
 
         var decided = await Start(new ReadyRecorder()).DecideAsync(Lesson(new CameraChoice("OBSBOT")), StartOrigin.CommandLine);
 
@@ -138,7 +140,7 @@ public class CameraStartTests
     [Test]
     public async Task In_this_build_a_set_up_problem_is_said_before_not_built_yet()
     {
-        _usage.Listing = new Audio.Microphones.UsageRecordListing("Allow", "Deny", [], null);
+        _usage.Listing = new UsageRecordListing("Allow", "Deny", [], null);
 
         var decided = await Start(new CameraRecorderNotBuilt()).DecideAsync(Lesson(new CameraChoice("OBSBOT")), StartOrigin.CommandLine);
 
@@ -175,7 +177,7 @@ public class CameraStartTests
     [Test]
     public void The_recordings_factory_refuses_a_plan_with_a_camera()
     {
-        var refused = Assert.Throws<CameraNotBuiltException>(() => new CameraRecorderNotBuilt().Start(new CameraTrackStart(new CameraChoice(null), "folder", "base", TimeSpan.Zero), new ClassScribe.Audio.Timeline.RecordingClock(TimeProvider.System)));
+        var refused = Assert.Throws<CameraNotBuiltException>(() => new CameraRecorderNotBuilt().Start(new CameraTrackStart(new CameraChoice(null), "folder", "base", TimeSpan.Zero), new RecordingClock(TimeProvider.System)));
 
         Assert.That(refused!.Message, Is.EqualTo(CameraRecorderNotBuilt.Words));
         Assert.That(new CameraRecorderNotBuilt().NotReady, Is.EqualTo(CameraRecorderNotBuilt.Words));
@@ -188,6 +190,6 @@ public class CameraStartTests
         public string? NotReady => null;
 
         /// <inheritdoc />
-        public ICameraTrack Start(CameraTrackStart start, ClassScribe.Audio.Timeline.RecordingClock clock) => throw new AssertionException("no camera track is started by the window");
+        public ICameraTrack Start(CameraTrackStart start, RecordingClock clock) => throw new AssertionException("no camera track is started by the window");
     }
 }

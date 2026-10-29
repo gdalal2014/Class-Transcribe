@@ -59,19 +59,19 @@ public static class LinkProtocol
 /// <summary>The type of each message, as the "type" of its line names it.</summary>
 public static class LinkTypes
 {
-    /// <summary>A window to the recorder, first: who it is and the last line of the log it has (see <see cref="Link.Hello"/>).</summary>
+    /// <summary>A window to the recorder, first: who it is and the last line of the log it has (see <see cref="Hello"/>).</summary>
     public const string Hello = "hello";
 
     /// <summary>A window to the recorder: a recording key pressed in the window (see <see cref="KeyPress"/>).</summary>
     public const string Key = "key";
 
-    /// <summary>A window to the recorder, last: the window stops showing the run (see <see cref="Link.Bye"/>).</summary>
+    /// <summary>A window to the recorder, last: the window stops showing the run (see <see cref="Bye"/>).</summary>
     public const string Bye = "bye";
 
-    /// <summary>The recorder to a window, in answer to its hello: the run and its state (see <see cref="Link.Welcome"/>).</summary>
+    /// <summary>The recorder to a window, in answer to its hello: the run and its state (see <see cref="Welcome"/>).</summary>
     public const string Welcome = "welcome";
 
-    /// <summary>The recorder to a window, in answer to a hello in another protocol (see <see cref="Link.Refused"/>).</summary>
+    /// <summary>The recorder to a window, in answer to a hello in another protocol (see <see cref="Refused"/>).</summary>
     public const string Refused = "refused";
 
     /// <summary>The recorder to a window: a line of its log (see <see cref="LogLine"/>).</summary>
@@ -80,7 +80,7 @@ public static class LinkTypes
     /// <summary>The recorder to a window: the run's state, on every change and once a second (see <see cref="StateUpdate"/>).</summary>
     public const string State = "state";
 
-    /// <summary>The recorder to a window, last: how the run ended (see <see cref="Link.End"/>).</summary>
+    /// <summary>The recorder to a window, last: how the run ended (see <see cref="End"/>).</summary>
     public const string End = "end";
 }
 

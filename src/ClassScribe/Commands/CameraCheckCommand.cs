@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
+using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
 using ClassScribe.Runs;
@@ -36,7 +37,7 @@ public sealed record CameraCheckRequest(string? NamePart = null, string? Resolut
 /// <param name="time">The clock the check's time limit is measured on.</param>
 /// <param name="logger">The log, for the check's outcome.</param>
 public sealed class CameraCheckCommand(ICameraProvider cameras, IMicrophoneProvider microphones, ICameraUsageRecord usage, CameraSetupFacts setup,
-    Audio.SourceChoice choice, IOptionsSnapshot<RecordingOptions> recording, IConsoleUi ui, ICameraProcessStarter starter, TimeProvider time,
+    SourceChoice choice, IOptionsSnapshot<RecordingOptions> recording, IConsoleUi ui, ICameraProcessStarter starter, TimeProvider time,
     ILogger<CameraCheckCommand> logger)
 {
     /// <summary>The line when the person did not type Y.</summary>

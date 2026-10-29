@@ -1,4 +1,6 @@
 using ClassScribe.Settings;
+using ClassScribe.Storage;
+using ClassScribe.Transcription;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Options;
 
@@ -20,7 +22,7 @@ public sealed class YouTubeMenuMemory
 /// stream's link, which only D takes; the rest go on. The recordings folder is Recording:OutputFolder, as for the menu's
 /// classes.
 /// </summary>
-public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.IClassFolders folders, YouTubeMenuMemory memory, Transcription.GlossaryChoice glossaries,
+public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, IClassFolders folders, YouTubeMenuMemory memory, GlossaryChoice glossaries,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs)
 {
     /// <summary>Asks for the batch and runs it. Returns the exit code; 0 when Esc went back.</summary>
@@ -123,7 +125,7 @@ public sealed class YouTubeMenu(YouTubeCommand command, IConsoleUi ui, Storage.I
             var typed = await ui.ReadLineAsync(CancellationToken.None);
             if (typed is null) return null;
 
-            var name = typed.Trim().Length == 0 && memory.LastCourse is { } again ? again : Storage.FolderNames.SafeName(typed);
+            var name = typed.Trim().Length == 0 && memory.LastCourse is { } again ? again : FolderNames.SafeName(typed);
             if (name.Length > 0) return name;
 
             ui.WriteLine("A course's name is needed: its folder is named after it.");

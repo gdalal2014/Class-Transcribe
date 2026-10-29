@@ -1,11 +1,12 @@
 using Refit;
+using ClassScribe.Transcription;
 
 namespace ClassScribe.Drive;
 
 /// <summary>
 /// The Drive calls ClassScribe makes (base https://www.googleapis.com/, Drive:ApiBaseUrl), declared for Refit. Each takes
 /// the access token as its Authorization header, "Bearer" and the token, from <see cref="GoogleTokens"/>, as
-/// <see cref="Transcription.IElevenLabsApi"/> takes its key, so the caller can renew a refused token and ask once more, and
+/// <see cref="IElevenLabsApi"/> takes its key, so the caller can renew a refused token and ask once more, and
 /// the version of the API in the middle of its path, from Drive:ApiVersion (architecture 7.3), such as v3 in /drive/v3/about.
 /// Every answer comes back whatever its status: a 308 of a resumable upload is no error, and its Location and Range headers
 /// are read. Every call here accepts the drive.file scope. Nothing here deletes, trashes or shares anything on Drive.

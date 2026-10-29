@@ -4,6 +4,7 @@ using System.Text.Json;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio.Timeline;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
@@ -19,6 +20,8 @@ using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using ClassScribe.Transcription;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;
 
@@ -172,7 +175,7 @@ public class EndToEndTests
         _cameraStarts = new FakeCameraProcessStarter
         {
             Run = async (process, jobId) =>
-                process.Exited(await new Camera.CameraHost { Captures = _cameraCaptures, Writers = _pieceWriters, Media = _lessonMedia }
+                process.Exited(await new CameraHost { Captures = _cameraCaptures, Writers = _pieceWriters, Media = _lessonMedia }
                     .RunAsync(jobId, process.ProcessStream, process.ProcessStream))
         };
     }
@@ -276,10 +279,10 @@ public class EndToEndTests
             if (!_mixForUpload) services.Replace(ServiceDescriptor.Singleton(Mocks.AudioPreparer().Object));
             services.Replace(ServiceDescriptor.Singleton(_recorderDesktop.Object));
             services.Replace(ServiceDescriptor.Singleton<IVideoWindows>(_videoBrowsers.Windows));
-            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraProvider>(new FakeCameraProvider()));
-            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraProcessStarter>(_cameraStarts));
-            services.Replace(ServiceDescriptor.Scoped(provider => new YouTube.VideoPlayback(_runtime.Processes, _videoBrowsers.Windows, new ProcessFamily(_videoProcesses),
-                provider.GetRequiredService<RunJournal>(), TimeProvider.System, provider.GetRequiredService<ILogger<YouTube.VideoPlayback>>())));
+            services.Replace(ServiceDescriptor.Singleton<ICameraProvider>(new FakeCameraProvider()));
+            services.Replace(ServiceDescriptor.Singleton<ICameraProcessStarter>(_cameraStarts));
+            services.Replace(ServiceDescriptor.Scoped(provider => new VideoPlayback(_runtime.Processes, _videoBrowsers.Windows, new ProcessFamily(_videoProcesses),
+                provider.GetRequiredService<RunJournal>(), TimeProvider.System, provider.GetRequiredService<ILogger<VideoPlayback>>())));
             services.Replace(ServiceDescriptor.Singleton(provider => _server = new RecorderServer(
                 provider.GetRequiredService<RecorderLog>(), provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<ILogger<RecorderServer>>())));
             services.ConfigureAll<HttpClientFactoryOptions>(options => options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = new GoogleOrElse(_google, _elevenLabs)));
@@ -411,7 +414,7 @@ public class EndToEndTests
             Assert.That((run.State, run.Outcome?.Kind, run.Outcome?.TranscriptPath, run.Seen, run.Home),
                 Is.EqualTo((RunState.Finished, OutcomeKind.Transcribed, transcript, true, RunHome.Separate)));
             Assert.That(run.Request, Is.EqualTo(new RecordRequest(run.RunId, "Kalam", Transcribe: true, new SourcePlan(RecordingMode.Class, new ClassSource.Automatic(), null),
-                _recordings.Path, ContinueChoice.New, ContinueBaseName: null, Minutes: null, Open: true, Glossary: new Transcription.GlossaryPick("", "", "ElevenLabs:KeytermsFile"))),
+                _recordings.Path, ContinueChoice.New, ContinueBaseName: null, Minutes: null, Open: true, Glossary: new GlossaryPick("", "", "ElevenLabs:KeytermsFile"))),
                 "the request the menu made, with the starter's decisions: not to continue, and no glossary, as the settings name none");
             Assert.That(File.Exists(_runtime.Journal.RequestFile(run.RunId)), Is.False, "the recorder took its request");
             Assert.That(_elevenLabs.Requests.Where(request => request.Method == HttpMethod.Post).Select(request => request.ApiKey), Is.EqualTo(new[] { Key }), "one upload, with the dummy key");
@@ -514,9 +517,9 @@ public class EndToEndTests
     {
         var microphone = MicrophoneCapture();
         using var app = BuildWindow(extra: services => services
-            .Replace(ServiceDescriptor.Singleton<Camera.ICameraProvider>(new FakeCameraProvider()))
-            .Replace(ServiceDescriptor.Singleton<Camera.ICameraSystem>(new FakeCameraSystem()))
-            .Replace(ServiceDescriptor.Singleton<Camera.ICameraUsageRecord>(new FakeCameraUsageRecord()))
+            .Replace(ServiceDescriptor.Singleton<ICameraProvider>(new FakeCameraProvider()))
+            .Replace(ServiceDescriptor.Singleton<ICameraSystem>(new FakeCameraSystem()))
+            .Replace(ServiceDescriptor.Singleton<ICameraUsageRecord>(new FakeCameraUsageRecord()))
             .Replace(ServiceDescriptor.Singleton<IRegistryValues>(_registry)));
         var command = Task.Run(() => app.Services.GetRequiredService<App>().RunAsync(["record-only", "Kalam", "--in-person", "--camera", "OBSBOT", "--output", _recordings.Path, "--no-open"]));
 
@@ -724,7 +727,7 @@ public class EndToEndTests
         _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
         _elevenLabs.Enqueue(HttpStatusCode.OK, Answer);
         _elevenLabs.EnqueueFor(StubHttpHandler.SubscriptionPath, HttpStatusCode.Unauthorized, """{"detail":{"status":"missing_permissions"}}""");
-        var folders = new YouTube.YouTubeFolders(_runtime.Folder);
+        var folders = new YouTubeFolders(_runtime.Folder);
         var tools = new FakeToolRunner(folders, TimeProvider.System)
             .With("abcdefghijk", YtDlpReadTests.Info("abcdefghijk", "The creed, part 1", duration: 3), 3)
             .With("bcdefghijkl", YtDlpReadTests.Info("bcdefghijkl", "The creed, part 2", duration: 3), 3);
@@ -733,11 +736,11 @@ public class EndToEndTests
         disk.Add(Path.Combine(links, "yt-dlp.exe"), Path.Combine(links, "deno.exe"), Path.Combine(links, "ffmpeg.exe"), Path.Combine(links, "ffprobe.exe"));
         disk.ReadsTheDiskUnder(_recordings.Path, _runtime.Folder.Root);
         using var app = BuildWindow(extra: services => services
-            .AddSingleton<YouTube.IToolRunner>(tools)
+            .AddSingleton<IToolRunner>(tools)
             .AddSingleton<IFileProbe>(disk)
             .AddSingleton<IRegistryValues>(_registry)
             .AddSingleton<IPowerRequests>(new FakePowerRequests())
-            .AddScoped<YouTube.IBatchPace, InstantPace>());
+            .AddScoped<IBatchPace, InstantPace>());
 
         var exitCode = await app.Services.GetRequiredService<App>().RunAsync(
             ["youtube", "https://youtu.be/abcdefghijk", "https://youtu.be/bcdefghijkl", "--name", "Risala", "--output", _recordings.Path, "--download", "--yes", "--no-open"])
@@ -829,15 +832,15 @@ public class EndToEndTests
         Assert.That(await command.WaitAsync(EndPatience), Is.EqualTo(0));
         foreach (var recorder in _recorders) Assert.That(await recorder.WaitAsync(EndPatience), Is.EqualTo(0));
         var dateFolder = Directory.GetDirectories(Path.Combine(_recordings.Path, "Risala")).Single();
-        var sources = Directory.GetFiles(dateFolder, "*.source.json").Order(StringComparer.Ordinal).Select(path => YouTube.VideoSourceFile.Read(path)!).ToList();
+        var sources = Directory.GetFiles(dateFolder, "*.source.json").Order(StringComparer.Ordinal).Select(path => VideoSourceFile.Read(path)!).ToList();
         var transcripts = Directory.GetFiles(dateFolder, "*.md").Order(StringComparer.Ordinal).ToList();
         var browsers = _videoBrowsers.Started;
         using (Assert.EnterMultipleScope())
         {
             Assert.That(sources.Select(source => (source.Title, source.Obtained, source.Ended, source.EndConfirmed, source.Tool)), Is.EqualTo(new[]
             {
-                ("The creed, part 1", YouTube.VideoSource.Recorded, "the video window was closed", true, "Chrome 141.0.7390.108"),
-                ("The creed, part 2", YouTube.VideoSource.Recorded, "stopped with Q", true, "Chrome 141.0.7390.108")
+                ("The creed, part 1", VideoSource.Recorded, "the video window was closed", true, "Chrome 141.0.7390.108"),
+                ("The creed, part 2", VideoSource.Recorded, "stopped with Q", true, "Chrome 141.0.7390.108")
             }));
             Assert.That(transcripts.Select(path => File.ReadAllLines(path)[0]), Is.EqualTo(["# The creed, part 1", "# The creed, part 2"]));
             Assert.That(File.ReadAllText(transcripts[0]), Does.Contain("recorded as it played in ClassScribe's window"));

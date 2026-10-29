@@ -4,6 +4,7 @@ using ClassScribe.Recorder;
 using ClassScribe.Runs;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;
 
@@ -338,7 +339,7 @@ public class ContinueQuestionTests
     public async Task A_video_recorded_just_before_a_class_is_never_offered()
     {
         var video = WriteStopped();
-        YouTube.VideoSourceFile.Write(video.Source, VideoSourceFileTests.Downloaded());
+        VideoSourceFile.Write(video.Source, VideoSourceFileTests.Downloaded());
 
         var answer = await Question().AskAsync("Kalam", RecordingMode.Class, _recordings.Path);
 

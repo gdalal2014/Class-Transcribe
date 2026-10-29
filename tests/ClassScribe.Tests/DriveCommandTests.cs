@@ -1,6 +1,7 @@
 using System.Net;
 using ClassScribe.Commands;
 using ClassScribe.Drive;
+using ClassScribe.Recorder;
 
 namespace ClassScribe.Tests;
 
@@ -159,7 +160,7 @@ public class DriveCommandTests
         var mantiq = _world.WriteRecording(@"Mantiq\2026-10-17", "Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), 2000, ".md");
         _world.Manifests().Queue(mantiq);
         _world.Runtime.Processes.Start(TestRuns.ProcessId, TestRuns.ProcessStart);
-        _world.Runtime.Journal.Begin(TestRuns.Record(TestRuns.Id(), ClassScribe.Recorder.RunState.Recording, name: "Mantiq") with { BaseName = mantiq.BaseName, Folder = mantiq.Folder });
+        _world.Runtime.Journal.Begin(TestRuns.Record(TestRuns.Id(), RunState.Recording, name: "Mantiq") with { BaseName = mantiq.BaseName, Folder = mantiq.Folder });
 
         Assert.That(await _world.Command().StatusAsync(), Is.EqualTo(0));
 

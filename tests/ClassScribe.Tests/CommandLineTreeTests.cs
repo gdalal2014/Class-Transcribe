@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Runs;
@@ -544,7 +545,7 @@ public class CommandLineTreeTests
 
         CreateLine();
         AssertRefused(await RunAsync("record", "Kalam", "--in-person", "--camera", "--resolution", "4k", "--output", Classes));
-        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {Camera.CameraSize.Rule}; \"4k\" is not one" }));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {CameraSize.Rule}; \"4k\" is not one" }));
     }
 
     /// <summary>A recording's name right after --camera is taken as the camera's, which the message about the missing name points out.</summary>
@@ -580,7 +581,7 @@ public class CommandLineTreeTests
     {
         AssertRefused(await RunAsync("camera-check", "--resolution", given));
 
-        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {Camera.CameraSize.Rule}; \"{given}\" is not one" }));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--resolution takes {CameraSize.Rule}; \"{given}\" is not one" }));
     }
 
     /// <summary>

@@ -796,7 +796,7 @@ public sealed class RecordCommand(
         return source.Mode switch
         {
             RecordingMode.Microphone when source.Camera is { } camera =>
-                $"{microphone}, in person, and the camera {(camera.NamePart is { Length: > 0 } part ? $"\"{part}\"" : "of the lesson (a USB camera, else the built-in front camera)")} at {camera.Resolution ?? Camera.CameraSize.DefaultText}",
+                $"{microphone}, in person, and the camera {(camera.NamePart is { Length: > 0 } part ? $"\"{part}\"" : "of the lesson (a USB camera, else the built-in front camera)")} at {camera.Resolution ?? CameraSize.DefaultText}",
             RecordingMode.Microphone => microphone,
             RecordingMode.ClassAndMicrophone => $"{DescribeClass(source.Class)}, and {microphone}",
             _ => DescribeClass(source.Class)

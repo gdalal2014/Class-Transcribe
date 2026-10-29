@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ClassScribe.Audio.Timeline;
 
 namespace ClassScribe.Camera;
 
@@ -19,5 +20,5 @@ namespace ClassScribe.Camera;
 [JsonSerializable(typeof(CameraFailed))]
 [JsonSerializable(typeof(CameraLog))]
 [JsonSerializable(typeof(CameraEmpty))]
-[JsonSerializable(typeof(Audio.Timeline.ClockState))]
+[JsonSerializable(typeof(ClockState))]
 public sealed partial class CameraJson : JsonSerializerContext;

@@ -579,7 +579,7 @@ public sealed class DownloadBatch(
     }
 
     /// <summary>The recording of <paramref name="video"/> to transcribe: the one this batch downloaded, or the one fetched whole before; null for none.</summary>
-    private static Storage.RecordingFiles? Recording(BatchVideo video) =>
+    private static RecordingFiles? Recording(BatchVideo video) =>
         video.Downloaded is not null ? video.Recording : video.Past is { Kind: PastKind.Whole, Recording: { KeptAnswer: null } past } ? past.Files : null;
 
     /// <summary>What of <paramref name="video"/> is transcribed: its recording, as the request's video; null when none is to be.</summary>

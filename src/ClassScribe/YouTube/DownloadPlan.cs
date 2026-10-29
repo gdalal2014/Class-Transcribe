@@ -1,4 +1,5 @@
 using System.Globalization;
+using ClassScribe.Audio;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -39,7 +40,7 @@ public sealed class BatchVideo(int Number, string VideoId, VideoPlaylist? Playli
     public string? Confirmed { get; set; }
 
     /// <summary>The recording of it this batch made, once made.</summary>
-    public Storage.RecordingFiles? Recording { get; set; }
+    public RecordingFiles? Recording { get; set; }
 
     /// <summary>The length of its audio, once downloaded whole.</summary>
     public TimeSpan? Downloaded { get; set; }
@@ -182,7 +183,7 @@ public static class DownloadPlan
         }
 
         var before = videos.Where(video => video.Past.Kind == PastKind.Whole && video.Past.Recording?.KeptAnswer is null).ToList();
-        var beforeLength = Sum(before.Select(video => video.Past.Recording is { } past ? folders.TrackLength(past.Files, Audio.Track.Main) : TimeSpan.Zero));
+        var beforeLength = Sum(before.Select(video => video.Past.Recording is { } past ? folders.TrackLength(past.Files, Track.Main) : TimeSpan.Zero));
 
         lines.AddRange(ReadyLines(videos, transcribe, keyterms, prices));
         if (transcribe && before.Count > 0)
@@ -285,7 +286,7 @@ public static class DownloadPlan
         foreach (var video in ready)
         {
             var seconds = (video.Length ?? TimeSpan.Zero).TotalSeconds;
-            var wav = (long)(seconds * (video.Info?.SourceRate ?? VideoInfo.HighestRate) * 2) + Audio.WavHeader.Size;
+            var wav = (long)(seconds * (video.Info?.SourceRate ?? VideoInfo.HighestRate) * 2) + WavHeader.Size;
             audio += wav;
             staging = Math.Max(staging, wav + (long)(seconds * 20_000));
         }

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ClassScribe.Desktop;
+using ClassScribe.Recorder;
 
 namespace ClassScribe.Tests;
 
@@ -111,7 +112,7 @@ public sealed class FakeVideoBrowsers
 /// lets go; a yield asked of a run that listens reaches it on the thread pool, as the real event's answer does, and each run
 /// asked is kept, listened to or not.
 /// </summary>
-public sealed class FakeVideoYield : ClassScribe.Recorder.IVideoYield
+public sealed class FakeVideoYield : IVideoYield
 {
     private readonly ConcurrentDictionary<string, Action> _listening = new();
     private readonly ConcurrentQueue<string> _asked = new();

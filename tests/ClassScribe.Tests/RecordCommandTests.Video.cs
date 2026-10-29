@@ -3,6 +3,7 @@ using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -184,7 +185,7 @@ public partial class RecordCommandTests
         Assert.That((SourceFile().Ended, SourceFile().EndConfirmed), Is.EqualTo((VideoEnds.ClosedBeforeItBegan, false)));
 
         var dated = Directory.GetDirectories(Path.Combine(_folder.Path, "Risala")).Single();
-        var classFolders = new ClassFolders(TestOptions.Create(new Settings.RecordingOptions { OutputFolder = _folder.Path }), TimeProvider.System, NullLogger<ClassFolders>.Instance);
+        var classFolders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path }), TimeProvider.System, NullLogger<ClassFolders>.Instance);
         Assert.That(classFolders.CreateRecording("Risala", _folder.Path).Folder, Is.EqualTo(dated), "the day's class takes the same date folder");
     }
 

@@ -1,4 +1,5 @@
 using ClassScribe.Audio;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
@@ -109,7 +110,7 @@ public partial class RecordStarterTests
 
     /// <summary>This build's camera start over the fakes: this laptop's cameras, set up as the camera needs, and a camera's recording not built yet.</summary>
     private CameraStart NotBuiltCamera() =>
-        new(new FakeCameraProvider(), new Camera.CameraRecorderNotBuilt(), new Camera.CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
+        new(new FakeCameraProvider(), new CameraRecorderNotBuilt(), new CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
             new SourceChoice(_options), _ui, NullLogger<CameraStart>.Instance);
 
     /// <summary>
@@ -147,7 +148,7 @@ public partial class RecordStarterTests
 
         Assert.That(await RunAsync(lesson), Is.EqualTo(1));
 
-        Assert.That(_ui.Screen, Does.Contain(Camera.CameraRecorderNotBuilt.Words));
+        Assert.That(_ui.Screen, Does.Contain(CameraRecorderNotBuilt.Words));
         Assert.That(_starter.Recorders, Is.Empty, "no recorder was started");
         Assert.That(_inWindow.Runs, Is.Empty, "nothing recorded in this window");
     }
@@ -726,7 +727,7 @@ public partial class RecordStarterTests
 
     /// <summary>This build's camera start over the fakes, ready: this laptop's cameras, set up as the camera needs, and a camera recorder that records.</summary>
     private CameraStart ReadyCamera() =>
-        new(new FakeCameraProvider(), new FakeCameraRecorder(), new Camera.CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
+        new(new FakeCameraProvider(), new FakeCameraRecorder(), new CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
             new SourceChoice(_options), _ui, NullLogger<CameraStart>.Instance);
 
     /// <summary>

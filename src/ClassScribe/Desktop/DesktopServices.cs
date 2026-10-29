@@ -14,7 +14,7 @@ namespace ClassScribe.Desktop;
 /// processes and which of them are ClassScribe's own, the processes and windows of a YouTube video's Chrome, the window's
 /// title, taskbar button and flash, Windows' end of the session, the desktop, the warnings of an exit and of an error
 /// nobody caught, and the starter of the recorder and the alert window with the reader of the job ClassScribe runs in. The
-/// watch for times when ClassScribe did not run is the use cases' (see <see cref="Commands.CommandUseCases"/>), and the
+/// watch for times when ClassScribe did not run is the use cases' (see <see cref="CommandUseCases"/>), and the
 /// window's status sink the window's.
 /// </summary>
 public static class DesktopServices

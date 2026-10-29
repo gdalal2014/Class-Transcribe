@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Runtime.Versioning;
 using NAudio.MediaFoundation;
+using ClassScribe.Storage;
 
 namespace ClassScribe.Camera.Windows;
 
@@ -21,7 +22,7 @@ public sealed class MediaFoundationPieceWriterFactory : IPieceWriterFactory
 /// profile, the level by the size, no B-frames, a keyframe every 30 frames, constant bitrate. The hardware encoder is asked
 /// for with MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS unless the settings say software. The file is made by ClassScribe itself,
 /// with others allowed to read it, and handed to the sink writer as a byte stream, so that a recording whose piece is being
-/// written is seen as such (<see cref="Storage.ClassFolders.IsBeingWritten"/>). The black frame at time 0 is the first
+/// written is seen as such (<see cref="ClassFolders.IsBeingWritten"/>). The black frame at time 0 is the first
 /// sample; each sample lasts until the next. Media Foundation's objects are reached through NAudio's declarations;
 /// ClassScribe adds the video GUIDs (<see cref="VideoGuids"/>).
 /// </summary>

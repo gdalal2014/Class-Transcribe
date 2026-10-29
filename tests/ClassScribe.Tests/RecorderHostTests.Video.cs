@@ -3,6 +3,7 @@ using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
+using ClassScribe.Storage;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -56,7 +57,7 @@ public partial class RecorderHostTests
         Assert.That(await EndedAsync(run), Is.Zero);
         var record = RunFile(request.RunId);
         Assert.That(record.EndedBy, Is.EqualTo(RunEndCause.ClassStarted));
-        var source = VideoSourceFile.Read(new Storage.RecordingFiles(record.Folder!, record.BaseName!).Source)!;
+        var source = VideoSourceFile.Read(new RecordingFiles(record.Folder!, record.BaseName!).Source)!;
         Assert.That((source.Ended, source.EndConfirmed), Is.EqualTo(("stopped so that a class could record", false)));
         Assert.That(_videoWindows.ClosesOf(Environment.ProcessId), Is.EqualTo(1));
         Assert.That(LoggedLines(), Has.Some.EndsWith("A class is starting, so this video's recording gives way to it"));

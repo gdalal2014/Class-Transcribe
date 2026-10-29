@@ -1,3 +1,4 @@
+using ClassScribe.Desktop;
 using ClassScribe.Runs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -11,7 +12,7 @@ namespace ClassScribe.Commands;
 /// recorder's host adds these too, since it is put together from the same registrations, and uses none of them. The starter,
 /// the launcher of the recorder and the list, devices and camera-check commands are the use cases' (see
 /// <see cref="CommandUseCases"/>), and the starter of the recorder and the reader of the job ClassScribe runs in are Windows'
-/// (see <see cref="Desktop.DesktopServices"/>).
+/// (see <see cref="DesktopServices"/>).
 /// </summary>
 public static class WindowServices
 {

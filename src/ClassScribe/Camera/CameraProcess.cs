@@ -1,3 +1,5 @@
+using ClassScribe.Runs;
+
 namespace ClassScribe.Camera;
 
 /// <summary>A camera process ClassScribe started, and the lines it speaks over its standard input and output.</summary>
@@ -23,7 +25,7 @@ public interface ICameraProcess : IAsyncDisposable
 public interface ICameraProcessStarter
 {
     /// <summary>
-    /// Starts a camera process for the job <paramref name="jobId"/>, a well-formed id (<see cref="Runs.RunIds"/>); throws
+    /// Starts a camera process for the job <paramref name="jobId"/>, a well-formed id (<see cref="RunIds"/>); throws
     /// an <see cref="ArgumentException"/> for any other before anything starts, and a
     /// <see cref="System.ComponentModel.Win32Exception"/> when Windows does not start it.
     /// </summary>

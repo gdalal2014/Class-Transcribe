@@ -257,7 +257,7 @@ public class DownloadBatchTests
     [Test]
     public async Task Without_a_key_a_batch_that_transcribes_is_refused_before_anything()
     {
-        _world.ElevenLabs.Set(new Settings.ElevenLabsOptions { ApiKey = "" });
+        _world.ElevenLabs.Set(new ElevenLabsOptions { ApiKey = "" });
 
         var exitCode = await _world.RunAsync(_world.Request([Link(First)]));
 
@@ -703,7 +703,7 @@ public class DownloadBatchTests
     [Test]
     public async Task Without_the_course_channels_the_advice_says_to_list_them_before_allow_unlisted()
     {
-        _world.YouTube.Set(new Settings.YouTubeOptions());
+        _world.YouTube.Set(new YouTubeOptions());
         _world.Tools.With(Third, YtDlpReadTests.Info(Third, "Your own upload", duration: 3, availability: "unlisted"), 3);
 
         await _world.RunAsync(_world.Request([Link(Third)]));

@@ -1,7 +1,9 @@
+using ClassScribe.Recorder;
+
 namespace ClassScribe.Desktop;
 
 /// <summary>
-/// The computer's clocks, as <see cref="Recorder.FreezeWatch"/> reads them to find a time when ClassScribe did not run,
+/// The computer's clocks, as <see cref="FreezeWatch"/> reads them to find a time when ClassScribe did not run,
 /// and to tell whether the laptop slept then or stayed awake while Windows held ClassScribe up.
 /// </summary>
 public interface ISystemTimes

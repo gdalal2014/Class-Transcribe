@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using ClassScribe.Drive;
+using ClassScribe.Transcription;
 
 namespace ClassScribe.Settings;
 
@@ -43,7 +44,7 @@ public sealed partial class YouTubeOptions
     /// <summary>
     /// The longest a video is recorded for as it plays, in hours, ads included: its recording stops there. From 0.25 to 24. One
     /// above an hour less than one file to ElevenLabs holds (ElevenLabs:LongestFileHours) is warned about and held there (see
-    /// <see cref="Transcription.TranscriptionLimits.VideoLimit"/>), and one above Recording:StopAfterHours is warned about, as
+    /// <see cref="TranscriptionLimits.VideoLimit"/>), and one above Recording:StopAfterHours is warned about, as
     /// the safety stop ends the video first.
     /// </summary>
     public double LongestVideoHours { get; init; } = 4;

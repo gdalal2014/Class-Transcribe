@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ClassScribe.Camera;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
@@ -145,7 +146,7 @@ public sealed class RecordStarter(IRunJournal journal, RecorderLauncher launcher
     /// <summary>A run with a camera where no camera start is registered: refused as this build refuses it, before anything records.</summary>
     private CameraDecision NoCamera()
     {
-        ui.WriteLine($"{Camera.CameraRecorderNotBuilt.Words}. {ICameraPrompt.NothingStarted}");
+        ui.WriteLine($"{CameraRecorderNotBuilt.Words}. {ICameraPrompt.NothingStarted}");
         return new CameraDecision.Refused(NotDone);
     }
 

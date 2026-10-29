@@ -1,3 +1,4 @@
+using ClassScribe.Desktop.Windows;
 using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;
@@ -188,7 +189,7 @@ public class ChromeWindowsGuardTests
     [Test]
     public void The_real_windows_of_Chrome_are_refused_in_a_test()
     {
-        var windows = new ClassScribe.Desktop.Windows.ChromeWindows();
+        var windows = new ChromeWindows();
 
         Assert.That(() => windows.TitlesOf(Environment.ProcessId), Throws.InvalidOperationException.With.Message.Contains("FakeVideoWindows"));
         Assert.That(() => windows.Close(Environment.ProcessId), Throws.InvalidOperationException.With.Message.Contains("FakeVideoWindows"));

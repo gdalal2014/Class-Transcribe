@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Net;
 using System.Runtime.Versioning;
 using ClassScribe.Audio;
+using ClassScribe.Camera;
+using ClassScribe.Drive;
 using ClassScribe.YouTube;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
@@ -153,8 +155,8 @@ public partial class RecordCommandTests
     private RecordCommand CreateCommand(
         string apiKey = "test-key", TimeProvider? time = null, bool openWhenDone = false, string? outputFolder = null, KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
         bool blockShutdown = true, IRecordingFactory? recordings = null, RuntimeFolder? runtimeFolder = null, ILogger<RecordCommand>? logger = null,
-        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown, YouTube.VideoPlayback? video = null,
-        IVideoYield? yield = null, Camera.LessonVideoMaker? lessonVideos = null, Drive.LessonVideoDrive? lessonDrive = null,
+        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown, VideoPlayback? video = null,
+        IVideoYield? yield = null, LessonVideoMaker? lessonVideos = null, LessonVideoDrive? lessonDrive = null,
         IGlossaryFiles? glossaryFiles = null, double? stopAfterHours = null, double? longestFileHours = null, IAudioPreparer? preparer = null)
     {
         time ??= TimeProvider.System;

@@ -1,5 +1,6 @@
 using ClassScribe.Camera.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using ClassScribe.Recorder;
 
 namespace ClassScribe.Camera;
 
@@ -29,7 +30,7 @@ public static class CameraServices
         // The start of a camera process (--camera-process <job id>), in a kill-on-close job, from ClassScribe's own folder;
         // the webcam hold and the camera check start one, and a test run refuses the real start (DeviceGuards).
         services.AddSingleton<ICameraProcessStarter>(provider => OperatingSystem.IsWindows()
-            ? new CameraProcessStarter(provider.GetRequiredService<Recorder.RuntimeFolder>(), provider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>())
+            ? new CameraProcessStarter(provider.GetRequiredService<RuntimeFolder>(), provider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>())
             : throw new PlatformNotSupportedException("Starting a camera process needs Windows."));
         return services;
     }

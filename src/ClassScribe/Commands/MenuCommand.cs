@@ -7,6 +7,7 @@ using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ClassScribe.Transcription;
 
 namespace ClassScribe.Commands;
 
@@ -44,7 +45,7 @@ public sealed class MenuCommand(
     ILogger<MenuCommand> logger,
     ISavedClasses? classes = null,
     SettingsWriter? writer = null,
-    Transcription.IGlossaryFiles? glossaries = null)
+    IGlossaryFiles? glossaries = null)
 {
     /// <summary>The key of the saved classes, menu C.</summary>
     private const char ClassesKey = 'C';
@@ -256,7 +257,7 @@ public sealed class MenuCommand(
         foreach (var unusable in classes?.All().Where(entry => !entry.Usable) ?? []) ui.WriteLine($"WARNING  {unusable.CannotBeUsed}");
         if (classes is not null && glossaries is not null)
         {
-            foreach (var glossary in Transcription.GlossaryChoice.MissingGlossaries(classes.All(), glossaries)) ui.WriteLine($"WARNING  {glossary}");
+            foreach (var glossary in GlossaryChoice.MissingGlossaries(classes.All(), glossaries)) ui.WriteLine($"WARNING  {glossary}");
         }
         _staleCopyShown = settings.DescribeStaleCopy();
         if (_staleCopyShown is { } stale) ui.WriteLine($"WARNING  {stale}.");

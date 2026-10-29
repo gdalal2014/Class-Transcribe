@@ -1,5 +1,7 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
+using ClassScribe.Transcription;
 
 namespace ClassScribe.Settings;
 
@@ -88,8 +90,8 @@ public sealed class RecordingOptions
     public bool OpenTranscriptWhenDone { get; init; } = true;
 
     /// <summary>
-    /// When the screen is kept on while recording and uploading: <see cref="Settings.KeepScreenOn.OnBattery"/> (the
-    /// default), <see cref="Settings.KeepScreenOn.Always"/> or <see cref="Settings.KeepScreenOn.Never"/>. The names are
+    /// When the screen is kept on while recording and uploading: <see cref="KeepScreenOn.OnBattery"/> (the
+    /// default), <see cref="KeepScreenOn.Always"/> or <see cref="KeepScreenOn.Never"/>. The names are
     /// taken in any case; a number is refused.
     /// </summary>
     public KeepScreenOn KeepScreenOn { get; init; } = KeepScreenOn.OnBattery;
@@ -103,8 +105,8 @@ public sealed class RecordingOptions
 
     /// <summary>
     /// When ClassScribe brings back a minimized window by itself while it records in the background and no window shows
-    /// the recording: <see cref="Settings.ReopenWindow.OnCloseAndProblems"/> (the default),
-    /// <see cref="Settings.ReopenWindow.OnProblems"/> or <see cref="Settings.ReopenWindow.Never"/>. The names are taken in
+    /// the recording: <see cref="ReopenWindow.OnCloseAndProblems"/> (the default),
+    /// <see cref="ReopenWindow.OnProblems"/> or <see cref="ReopenWindow.Never"/>. The names are taken in
     /// any case; a number is refused.
     /// </summary>
     public ReopenWindow ReopenWindow { get; init; } = ReopenWindow.OnCloseAndProblems;
@@ -125,7 +127,7 @@ public sealed class RecordingOptions
     /// The safety stop: a recording stops by itself after this many hours, with a warning 15 minutes before, so that a
     /// recording left running by mistake does not run all night, and stays short enough to send in one file. 0 turns the stop
     /// off; at most 24. A stop later than half an hour less than one file to ElevenLabs holds (ElevenLabs:LongestFileHours) is
-    /// warned about, and the recording stops there instead (see <see cref="Transcription.TranscriptionLimits.SafetyStop"/>).
+    /// warned about, and the recording stops there instead (see <see cref="TranscriptionLimits.SafetyStop"/>).
     /// </summary>
     public double StopAfterHours { get; init; } = 9;
 
@@ -144,9 +146,9 @@ public sealed class RecordingOptions
     public string Microphone { get; init; } = "";
 
     /// <summary>
-    /// <see cref="Audio.Microphones.MicrophoneProcessing.Raw"/> (the default) asks Windows for the microphone's audio without
-    /// Windows' sound processing, and takes <see cref="Audio.Microphones.MicrophoneProcessing.Default"/> when that is not
-    /// available; <see cref="Audio.Microphones.MicrophoneProcessing.Default"/> takes the processed audio, as any app gets it.
+    /// <see cref="MicrophoneProcessing.Raw"/> (the default) asks Windows for the microphone's audio without
+    /// Windows' sound processing, and takes <see cref="MicrophoneProcessing.Default"/> when that is not
+    /// available; <see cref="MicrophoneProcessing.Default"/> takes the processed audio, as any app gets it.
     /// The names are taken in any case; a number is refused.
     /// </summary>
     public MicrophoneProcessing MicrophoneProcessing { get; init; } = MicrophoneProcessing.Raw;
@@ -162,10 +164,10 @@ public sealed class RecordingOptions
     public string MicrophoneFollows { get; init; } = FollowRule.AnyWord;
 
     /// <summary>
-    /// Whether the class app lets go of the microphone when you mute in it: <see cref="Audio.Microphones.ClassAppMute.Visible"/>
-    /// (it does, and ClassScribe follows your mute by itself), <see cref="Audio.Microphones.ClassAppMute.Invisible"/> (it keeps
+    /// Whether the class app lets go of the microphone when you mute in it: <see cref="ClassAppMute.Visible"/>
+    /// (it does, and ClassScribe follows your mute by itself), <see cref="ClassAppMute.Invisible"/> (it keeps
     /// the microphone open, so your voice is recorded only after you press V, and only while the app holds the microphone),
-    /// or <see cref="Audio.Microphones.ClassAppMute.Unknown"/> (the default: as Invisible, and ClassScribe reports what it sees).
+    /// or <see cref="ClassAppMute.Unknown"/> (the default: as Invisible, and ClassScribe reports what it sees).
     /// The names are taken in any case; a number is refused.
     /// </summary>
     public ClassAppMute ClassAppMute { get; init; } = ClassAppMute.Unknown;
@@ -173,17 +175,17 @@ public sealed class RecordingOptions
     /// <summary>
     /// The size of the camera's picture when a lesson is recorded with the camera: 480p (848x480), 720p (1280x720, the
     /// default, about 2.3 GB an hour with the sound), 1080p (1920x1080), or a width and a height such as 1024x576, checked by
-    /// <see cref="Camera.CameraSize.TryParse"/>. --resolution and menu choice 7 choose another for a run; this setting is
+    /// <see cref="CameraSize.TryParse"/>. --resolution and menu choice 7 choose another for a run; this setting is
     /// read when neither does (amendment 39).
     /// </summary>
-    public string CameraResolution { get; init; } = Camera.CameraSize.DefaultText;
+    public string CameraResolution { get; init; } = CameraSize.DefaultText;
 
     /// <summary>
     /// When on, and the microphone being recorded belongs to a webcam (by the container it shares with a camera that is
     /// neither built in nor virtual), ClassScribe keeps that webcam's picture open, shared and never exclusively, from
     /// before the microphone opens until the recording ends, keeping none of it, so that a webcam that sleeps by itself
     /// (the OBSBOT's Device Auto Sleep) cannot fall asleep and silence its microphone; the camera's light stays on while
-    /// recording. Off by default (camera-first 3.4). The hold is <see cref="Camera.IWebcamHold"/>.
+    /// recording. Off by default (camera-first 3.4). The hold is <see cref="IWebcamHold"/>.
     /// </summary>
     public bool WakeCameraMicrophone { get; init; }
 
@@ -191,7 +193,7 @@ public sealed class RecordingOptions
     /// Moves a camera's picture against the sound in a lesson, by part of its name, in milliseconds, such as
     /// <c>{ "OBSBOT": -60, "Integrated": -30 }</c>: negative is earlier. Each camera stamps its frames a little early or late
     /// against the moment they were taken; a clap measures it (the README says how). When several parts are in a camera's
-    /// name, the longest applies (see <see cref="Camera.CameraOffsets.For"/>). Empty by default: no camera is moved.
+    /// name, the longest applies (see <see cref="CameraOffsets.For"/>). Empty by default: no camera is moved.
     /// </summary>
     public Dictionary<string, int> CameraOffsets { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }

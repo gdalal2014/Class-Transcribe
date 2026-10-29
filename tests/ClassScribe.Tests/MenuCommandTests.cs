@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.Text.Json;
 using ClassScribe.Audio;
+using ClassScribe.Camera;
 using ClassScribe.YouTube;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
@@ -1541,7 +1542,7 @@ public class CommandRunnerTests
                 NullLogger<AttachCommand>.Instance) { TurnOnCtrlC = () => 0 });
             services.AddScoped(provider => Noted(provider, new ListCommand(Folders(), new TranscriptCopies(), _runtime.Journal, _ui, ZonedTimeProvider.EasternSummer)));
             services.AddScoped(provider => Noted(provider, new DevicesCommand(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => new FakeMicrophoneProvider()), new Lazy<IMicrophoneSessions>(() => new FakeMicrophoneSessions()),
-                new Lazy<Camera.ICameraProvider>(() => new FakeCameraProvider()), Printed.Program, _ui, NullLogger<DevicesCommand>.Instance)));
+                new Lazy<ICameraProvider>(() => new FakeCameraProvider()), Printed.Program, _ui, NullLogger<DevicesCommand>.Instance)));
             services.AddScoped(provider => Noted(provider, CreateTranscribeCommand()));
             services.AddScoped(provider => Noted(provider, CreateMicrophoneMenu()));
             services.AddScoped<IMicCheckRun>(provider => Noted(provider, new FakeMicCheckRun(_checked) { ExitCode = micCheckExitCode }));

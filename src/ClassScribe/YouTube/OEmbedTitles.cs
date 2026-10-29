@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Refit;
+using ClassScribe.Settings;
 
 namespace ClassScribe.YouTube;
 
@@ -119,7 +120,7 @@ public sealed class OEmbedTitles(IYouTubeOEmbedApi api, TimeProvider time, ILogg
     internal static string? HandleOf(string? channelUrl) =>
         Uri.TryCreate(channelUrl, UriKind.Absolute, out var address)
         && address.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries) is [var first, ..]
-        && Uri.UnescapeDataString(first) is { } handle && Settings.YouTubeOptions.IsChannel(handle) && handle.StartsWith('@')
+        && Uri.UnescapeDataString(first) is { } handle && YouTubeOptions.IsChannel(handle) && handle.StartsWith('@')
             ? handle
             : null;
 }

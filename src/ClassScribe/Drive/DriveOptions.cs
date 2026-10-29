@@ -1,3 +1,5 @@
+using ClassScribe.Settings;
+
 namespace ClassScribe.Drive;
 
 /// <summary>What of a recording goes up to Google Drive (Drive:Upload).</summary>
@@ -78,7 +80,7 @@ public sealed class DriveOptions
     /// /upload/drive/v3/files: v and one to three digits. An upload session's address must name it too. One other than the
     /// version this build's requests and answers were written for (<c>DriveApi.WrittenFor</c>) is warned about, as
     /// Drive may refuse them or answer in another shape. A release that moves the default adds a
-    /// <see cref="Settings.DefaultChanges"/> row.
+    /// <see cref="DefaultChanges"/> row.
     /// </summary>
     public string ApiVersion { get; init; } = "v3";
 
