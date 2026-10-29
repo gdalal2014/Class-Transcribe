@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ClassScribe.Camera.Windows;
 using ClassScribe.Link;
 using ClassScribe.Runs;
 
@@ -28,13 +29,13 @@ public sealed class CameraHost
 
     /// <summary>Makes the cameras' captures: Windows' own MediaCapture unless a test gives a fake; null on a Windows too old for the camera API.</summary>
     public ICameraCaptureFactory? Captures { get; init; } =
-        OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) ? new Windows.WindowsCameraCaptureFactory() : null;
+        OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) ? new WindowsCameraCaptureFactory() : null;
 
     /// <summary>Makes a record job's piece: Media Foundation's sink writer unless a test gives a fake; null where Windows has none.</summary>
-    public IPieceWriterFactory? Writers { get; init; } = OperatingSystem.IsWindows() ? new Windows.MediaFoundationPieceWriterFactory() : null;
+    public IPieceWriterFactory? Writers { get; init; } = OperatingSystem.IsWindows() ? new MediaFoundationPieceWriterFactory() : null;
 
     /// <summary>Does a finish job's media work: Media Foundation unless a test gives a fake; null where Windows has none.</summary>
-    public ILessonVideoMedia? Media { get; init; } = OperatingSystem.IsWindows() ? new Windows.MediaFoundationLessonVideo() : null;
+    public ILessonVideoMedia? Media { get; init; } = OperatingSystem.IsWindows() ? new MediaFoundationLessonVideo() : null;
 
     /// <summary>How long a call on the camera's route may take before the job gives up: the probe's 30 seconds.</summary>
     public TimeSpan CallLimit { get; init; } = TimeSpan.FromSeconds(30);

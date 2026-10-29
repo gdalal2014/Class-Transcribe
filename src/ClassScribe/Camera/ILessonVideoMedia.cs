@@ -1,10 +1,11 @@
 using ClassScribe.Audio;
+using ClassScribe.Camera.Windows;
 
 namespace ClassScribe.Camera;
 
 /// <summary>
 /// The media work of a lesson's video, the seam between the finish job and Media Foundation (see
-/// <see cref="Windows.MediaFoundationLessonVideo"/>), so that the job's rules are tested with a fake: what a source holds,
+/// <see cref="MediaFoundationLessonVideo"/>), so that the job's rules are tested with a fake: what a source holds,
 /// writing the video, and checking it. It opens no device.
 /// </summary>
 public interface ILessonVideoMedia
