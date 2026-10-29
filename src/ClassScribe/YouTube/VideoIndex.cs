@@ -11,9 +11,12 @@ namespace ClassScribe.YouTube;
 /// video (a download, or a recording whose end was confirmed), transcribed or not; otherwise, a recording that may be cut
 /// short included, transcribed or not, it is fetched again as a new recording, the old one staying as it is.
 /// With --again every video is fetched again. So the same command run again, after a crash, a closed window, YouTube's bot
-/// check or ElevenLabs' refusal, picks up where it stopped, and nothing is fetched or billed twice unless asked.
+/// check or ElevenLabs' refusal, picks up where it stopped, and nothing is fetched or billed twice unless asked. The adapter
+/// of <see cref="IVideoIndex"/>, over <paramref name="folders"/>, the recordings' library, which gives each recording's kept
+/// answer; one per batch, filled by its <see cref="Read"/>.
 /// </summary>
-public sealed class VideoIndex
+/// <param name="folders">The recordings' library.</param>
+public sealed class VideoIndex(IClassFolders folders) : IVideoIndex
 {
     /// <summary>A recording's files on disk, by the names its record gives.</summary>
     private static readonly RecordingFolder Recordings = new();
@@ -24,20 +27,12 @@ public sealed class VideoIndex
     /// <summary>The recordings of each video, by its ID, newest first.</summary>
     private readonly Dictionary<string, List<PastVideo>> _byVideo = new(StringComparer.Ordinal);
 
-    /// <summary>An index of nothing.</summary>
-    private VideoIndex()
+    /// <inheritdoc />
+    public void Read(string root, ILogger logger)
     {
-    }
-
-    /// <summary>
-    /// Reads the source file of every video's recording under <paramref name="root"/>, as <paramref name="folders"/> keeps
-    /// them. A folder that cannot be looked into, and a source file that cannot be read, are passed over, the second said at
-    /// Debug: that video is then fetched again, which costs time, never a recording.
-    /// </summary>
-    public static VideoIndex Read(string root, IClassFolders folders, ILogger logger)
-    {
-        var index = new VideoIndex();
-        if (!Directory.Exists(root)) return index;
+        var index = this;
+        _byVideo.Clear();
+        if (!Directory.Exists(root)) return;
 
         var listing = new EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = 0 };
         foreach (var course in Directory.EnumerateDirectories(root, "*", listing))
@@ -79,16 +74,12 @@ public sealed class VideoIndex
 
         foreach (var recordings in index._byVideo.Values)
             recordings.Sort((a, b) => Nullable.Compare(b.Files.StartedUtc, a.Files.StartedUtc));
-        return index;
     }
 
-    /// <summary>The recordings of video <paramref name="videoId"/> made before, newest first.</summary>
+    /// <inheritdoc />
     public IReadOnlyList<PastVideo> Of(string videoId) => _byVideo.TryGetValue(videoId, out var recordings) ? recordings : [];
 
-    /// <summary>
-    /// What was done before with video <paramref name="videoId"/>, the dates as the local day of <paramref name="zone"/>; with
-    /// <paramref name="again"/> (--again), it is fetched again in every case.
-    /// </summary>
+    /// <inheritdoc />
     public PastVerdict Judge(string videoId, bool again, TimeZoneInfo zone)
     {
         var recordings = Of(videoId);

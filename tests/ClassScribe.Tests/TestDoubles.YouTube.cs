@@ -414,15 +414,19 @@ public sealed class YouTubeWorld : IDisposable
     /// <summary>The wait while a class records, over the test's run files.</summary>
     public ClassWait Wait() => new(Runtime.Journal, Runtime.Time, Log<ClassWait>());
 
+    /// <summary>yt-dlp as a batch uses it: the port's real adapter over the check, which looks for the tools on the played disk and asks their versions of the played runner.</summary>
+    public YtDlpTool Tool() =>
+        new(new YtDlpCheck(new ToolLocator(new FakeRegistryValues(), Files, YouTube, Log<ToolLocator>()) { LocalAppData = @"C:\Users\gdala\AppData\Local" }, Tools, Folders, Time, Log<YtDlpCheck>()), Folders);
+
     /// <summary>The batch, put together.</summary>
     public DownloadBatch Batch()
     {
         var usage = new UsageReport(Account, Time, Log<UsageReport>());
         var batch = new YouTubeBatch(new YouTubeLock(Folders, Log<YouTubeLock>()), Wait(), Transcripts(), Account, usage, Power, new FakePowerSource(), Ui, Desktop.Object,
-            Recording, ElevenLabs, Runtime.Time, Log<YouTubeBatch>());
-        var locator = new ToolLocator(new FakeRegistryValues(), Files, YouTube, Log<ToolLocator>()) { LocalAppData = @"C:\Users\gdala\AppData\Local" };
-        return new DownloadBatch(batch, new YtDlpCheck(locator, Tools, Folders, Time, Log<YtDlpCheck>()), Folders, Tools, Pace,
-            new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), ClassFolders, Printed.Commands, RecorderLog, DriveRoom, Drive, FreeSpace,
+            new FileProbe(), Recording, ElevenLabs, Runtime.Time, Log<YouTubeBatch>());
+        return new DownloadBatch(batch, Tool(), Folders, Tools, Pace,
+            new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), new VideoIndex(ClassFolders), new VideoSourceFile(), new FileProbe(), ClassFolders,
+            Printed.Commands, RecorderLog, DriveRoom, Drive, FreeSpace,
             TestGlossaries.Choice(ElevenLabs, classes: new SavedClasses(new ConfigurationBuilder().AddInMemoryCollection(Classes).Build())), Ui, YouTube, ElevenLabs, Time,
             Log<DownloadBatch>());
     }

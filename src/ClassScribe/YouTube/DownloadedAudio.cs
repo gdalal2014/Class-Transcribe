@@ -24,9 +24,9 @@ internal sealed record ConversionNote(string VideoId, string Title, string Folde
 /// or nothing of them is kept; only then are they renamed to their segments' names. A note names the recording before
 /// anything is written, and goes once the parts are renamed, so that a crash in between leaves what the next batch needs to
 /// clean up (<see cref="CleanUp"/>), under the batch's lock. The note, the staging folders and the cache are under
-/// ClassScribe's own folder.
+/// ClassScribe's own folder. The adapter of <see cref="IDownloadedAudio"/>.
 /// </summary>
-public sealed class DownloadedAudio(YouTubeFolders folders, IOptionsSnapshot<RecordingOptions> recording, TimeProvider time, ILogger<DownloadedAudio> logger)
+public sealed class DownloadedAudio(YouTubeFolders folders, IOptionsSnapshot<RecordingOptions> recording, TimeProvider time, ILogger<DownloadedAudio> logger) : IDownloadedAudio
 {
     /// <summary>A recording's files on disk, by the names its record gives.</summary>
     private static readonly RecordingFolder Recordings = new();
@@ -40,11 +40,7 @@ public sealed class DownloadedAudio(YouTubeFolders folders, IOptionsSnapshot<Rec
     /// <summary>How long a staging folder is kept untouched before it is deleted: a failed download goes on from where it stopped until then.</summary>
     public static readonly TimeSpan KeepStagingFor = TimeSpan.FromDays(7);
 
-    /// <summary>
-    /// Writes the audio of <paramref name="staged"/> as the main track of <paramref name="target"/>, the video
-    /// <paramref name="title"/>, <paramref name="expected"/> long, and returns its length. The staged file is left where it is.
-    /// </summary>
-    /// <exception cref="IncompleteAudioException">The audio is more than 2 seconds from the video's length; nothing of it is kept.</exception>
+    /// <inheritdoc />
     public TimeSpan Convert(string staged, RecordingFiles target, TimeSpan expected, string title, CancellationToken cancellationToken)
     {
         WriteNote(new ConversionNote(Path.GetFileName(Path.GetDirectoryName(staged)) ?? "", title, target.Folder, target.BaseName));
@@ -81,7 +77,7 @@ public sealed class DownloadedAudio(YouTubeFolders folders, IOptionsSnapshot<Rec
     /// crash cut short, as its note names them (its unfinished parts, and any part already renamed, since the note goes only
     /// once all are), with a line that says so; and the staging folders untouched for more than 7 days. What cannot be deleted
     /// now, as a file another program holds, is said and left for the next batch: the video is fetched again either way, into
-    /// a new recording, since its source file says its end was never confirmed.
+    /// a new recording, since its source file says its end was never confirmed (the port's <see cref="IDownloadedAudio.CleanUp"/>).
     /// </summary>
     public void CleanUp()
     {

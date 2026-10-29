@@ -13,10 +13,11 @@ namespace ClassScribe.YouTube;
 /// &lt;RuntimeFolder&gt;\video-browser\               the profile of ClassScribe's own Chrome window (the record path)
 /// </code>
 /// The video window's profile may hold Google sign-in cookies, once Gulzar signs in there for YouTube Premium: it is a
-/// secret, and nothing of ClassScribe reads, lists, copies, uploads or logs anything in it, nor hands it to yt-dlp.
+/// secret, and nothing of ClassScribe reads, lists, copies, uploads or logs anything in it, nor hands it to yt-dlp. The
+/// adapter of <see cref="IYouTubeFolders"/>, which makes and deletes the batch's folders too.
 /// </summary>
 /// <param name="runtime">ClassScribe's own folder.</param>
-public sealed class YouTubeFolders(RuntimeFolder runtime)
+public sealed class YouTubeFolders(RuntimeFolder runtime) : IYouTubeFolders
 {
     /// <summary>The name of the feature's folder in ClassScribe's own folder.</summary>
     public const string FolderName = "youtube";
@@ -50,4 +51,13 @@ public sealed class YouTubeFolders(RuntimeFolder runtime)
         YouTubeLinks.IsVideoId(videoId)
             ? Path.Combine(Staging, videoId)
             : throw new ArgumentException($"\"{videoId}\" is not a YouTube video's ID.", nameof(videoId));
+
+    /// <inheritdoc />
+    public void MakeRoot() => Directory.CreateDirectory(Root);
+
+    /// <inheritdoc />
+    public string MakeStaging(string videoId) => Directory.CreateDirectory(StagingOf(videoId)).FullName;
+
+    /// <inheritdoc />
+    public void DeleteStaging(string videoId) => Directory.Delete(StagingOf(videoId), recursive: true);
 }

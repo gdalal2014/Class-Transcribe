@@ -18,10 +18,13 @@ public class DownloadGuardTests
     /// <summary>The guard, with the course's channel and his own channel listed.</summary>
     private static DownloadGuard Guard() => new(new YouTubeOptions { CourseChannels = [Course, "@CourseHandle"], MayDownloadChannels = ["@yourchannel"] });
 
-    /// <summary>A video's information, as yt-dlp reads it.</summary>
-    private static YtDlpInfo Video(string? availability = "public", string liveStatus = "not_live", int ageLimit = 0, double? duration = 3753,
+    /// <summary>A video's information, as yt-dlp reads it and the tool's adapter hands it to the batch.</summary>
+    private static VideoInfo Video(string? availability = "public", string liveStatus = "not_live", int ageLimit = 0, double? duration = 3753,
         string channelId = "UCotherotherotherotherot", string handle = "@other") =>
-        YtDlpRead.Info(YtDlpReadTests.Info(availability: availability, liveStatus: liveStatus, ageLimit: ageLimit, duration: duration, channelId: channelId, handle: handle), "x");
+        Read(YtDlpReadTests.Info(availability: availability, liveStatus: liveStatus, ageLimit: ageLimit, duration: duration, channelId: channelId, handle: handle));
+
+    /// <summary>The video's information in <paramref name="json"/>, as the tool's adapter hands it to the batch.</summary>
+    private static VideoInfo Read(string json) => YtDlpTool.InfoOf(YtDlpRead.Info(json, "x"));
 
     /// <summary>A public video is ready, under the batch's confirmation.</summary>
     [Test]
@@ -63,10 +66,10 @@ public class DownloadGuardTests
     [TestCase("unlisted")]
     public void A_video_whose_channel_is_unknown_needs_his_word(string availability)
     {
-        var unknown = YtDlpRead.Info($$"""{"id":"abcdefghijk","duration":60,"availability":"{{availability}}","live_status":"not_live","age_limit":0}""", "x");
+        var unknown = Read($$"""{"id":"abcdefghijk","duration":60,"availability":"{{availability}}","live_status":"not_live","age_limit":0}""");
 
         Assert.That(Guard().Judge(unknown, allowUnlisted: true), Is.EqualTo(new GuardVerdict(GuardVerdictKind.NeedsWord, DownloadGuard.ChannelUnknown, null)));
-        Assert.That(new DownloadGuard(new YouTubeOptions()).Judge(YtDlpRead.Info("""{"id":"abcdefghijk","duration":60,"availability":"public"}""", "x"), allowUnlisted: false).Kind,
+        Assert.That(new DownloadGuard(new YouTubeOptions()).Judge(Read("""{"id":"abcdefghijk","duration":60,"availability":"public"}"""), allowUnlisted: false).Kind,
             Is.EqualTo(GuardVerdictKind.Ready));
     }
 
@@ -74,7 +77,7 @@ public class DownloadGuardTests
     [Test]
     public void A_courses_channel_is_found_by_its_address()
     {
-        var info = YtDlpRead.Info($$"""{"id":"abcdefghijk","duration":60,"availability":"unlisted","channel_url":"https://www.youtube.com/channel/{{Course}}","uploader_id":"@other"}""", "x");
+        var info = Read($$"""{"id":"abcdefghijk","duration":60,"availability":"unlisted","channel_url":"https://www.youtube.com/channel/{{Course}}","uploader_id":"@other"}""");
 
         Assert.That(Guard().Judge(info, allowUnlisted: true).Kind, Is.EqualTo(GuardVerdictKind.CourseChannel));
     }
@@ -83,8 +86,8 @@ public class DownloadGuardTests
     [Test]
     public void A_courses_handle_is_found_when_yt_dlp_gives_it_encoded()
     {
-        var info = YtDlpRead.Info(
-            """{"id":"abcdefghijk","duration":60,"availability":"public","uploader_id":"@%D9%82%D9%86%D8%A7%D8%A9","uploader_url":"https://www.youtube.com/@%D9%82%D9%86%D8%A7%D8%A9"}""", "x");
+        var info = Read(
+            """{"id":"abcdefghijk","duration":60,"availability":"public","uploader_id":"@%D9%82%D9%86%D8%A7%D8%A9","uploader_url":"https://www.youtube.com/@%D9%82%D9%86%D8%A7%D8%A9"}""");
 
         Assert.That(new DownloadGuard(new YouTubeOptions { CourseChannels = ["@قناة"] }).Judge(info, allowUnlisted: false).Kind, Is.EqualTo(GuardVerdictKind.CourseChannel));
     }

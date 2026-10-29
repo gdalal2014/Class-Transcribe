@@ -447,7 +447,7 @@ public class VideoBatchTests
         world.YouTube.Set(new YouTubeOptions { BrowserPath = @"D:\Gone\chrome.exe" });
 
         Assert.That(await world.RunAsync(world.Request([First])), Is.EqualTo(1));
-        Assert.That(world.Lines, Has.Some.EqualTo(BrowserLocator.NotFound));
+        Assert.That(world.Lines, Has.Some.EqualTo(IToolLocator.BrowserNotFound));
         Assert.That(world.Http.Requests, Is.Empty);
     }
 

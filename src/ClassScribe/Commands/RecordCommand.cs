@@ -43,6 +43,7 @@ public sealed class RecordCommand(
     IClassMarks marks,
     IRecordingFolder recordingFolder,
     IFileProbe probe,
+    IVideoSources sources,
     CommandLine commandLine,
     RunBookkeeping bookkeeping,
     IResultShower results,
@@ -614,7 +615,7 @@ public sealed class RecordCommand(
             Confirmed: null, AcceptedBy: null, ended, confirmed);
         try
         {
-            VideoSourceFile.Write(files.Source, source);
+            sources.Write(files.Source, source);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

@@ -69,9 +69,6 @@ public sealed partial class YouTubeOptions
     /// </summary>
     public static bool IsChannel(string? entry) => entry is not null && ChannelShape().IsMatch(entry);
 
-    /// <summary>A path setting as it is used: environment variables such as %LOCALAPPDATA% expanded, and the quotes and spaces around it gone.</summary>
-    public static string Expanded(string? path) => Environment.ExpandEnvironmentVariables(path ?? "").Trim().Trim('"').Trim();
-
     /// <summary>A channel's UC id or @handle, and nothing else; \z ends the match at the very end.</summary>
     [GeneratedRegex(@"^(?:UC[A-Za-z0-9_-]{22}|@[\p{L}\p{N}_.-]{3,30})\z", RegexOptions.CultureInvariant)]
     private static partial Regex ChannelShape();

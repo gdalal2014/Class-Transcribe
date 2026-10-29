@@ -36,8 +36,8 @@ public sealed record YtDlpInfo(string? Id, string? Title, double? Duration, stri
     string? ChannelUrl, string? UploadDate, string? WebpageUrl, string? Availability, string? LiveStatus, bool? WasLive, int? AgeLimit,
     IReadOnlyList<YtDlpFormat>? Formats)
 {
-    /// <summary>The rate assumed when no format says its own: 48 kHz, the most YouTube's audio has.</summary>
-    public const int HighestRate = 48000;
+    /// <summary>The rate assumed when no format says its own: 48 kHz, the most YouTube's audio has (see <see cref="VideoInfo.HighestRate"/>).</summary>
+    public const int HighestRate = VideoInfo.HighestRate;
 
     /// <summary>Its length; null when it is not known.</summary>
     public TimeSpan? Length => Duration is { } seconds and > 0 && double.IsFinite(seconds) ? TimeSpan.FromSeconds(seconds) : null;

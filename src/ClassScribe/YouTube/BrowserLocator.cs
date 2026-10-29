@@ -12,15 +12,18 @@ namespace ClassScribe.YouTube;
 /// HKEY_LOCAL_MACHINE for a machine install and then under HKEY_CURRENT_USER for one of this user's; else Program Files,
 /// Program Files (x86) and %LOCALAPPDATA%, each followed by Google\Chrome\Application\chrome.exe. The registry and the disk
 /// are read through seams, so that no test looks at the real ones. It lives as long as the app, and reads the setting at each
-/// search.
+/// search. The adapter of <see cref="IToolLocator"/>.
 /// </summary>
-public sealed class BrowserLocator(IRegistryValues registry, IFileProbe files, IOptionsMonitor<YouTubeOptions> options, ILogger<BrowserLocator> logger)
+public sealed class BrowserLocator(IRegistryValues registry, IFileProbe files, IOptionsMonitor<YouTubeOptions> options, ILogger<BrowserLocator> logger) : IToolLocator
 {
     /// <summary>Chrome's App Paths key, under HKEY_LOCAL_MACHINE or HKEY_CURRENT_USER, whose (Default) value is its chrome.exe.</summary>
     public const string AppPathsKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe";
 
-    /// <summary>What a batch says when Chrome is nowhere to be found.</summary>
-    public const string NotFound = "Chrome was not found (YouTube:BrowserPath, App Paths, Program Files, LOCALAPPDATA). Install it, or set YouTube:BrowserPath to its chrome.exe";
+    /// <inheritdoc />
+    string? IToolLocator.FindBrowser() => Find();
+
+    /// <inheritdoc />
+    string IToolLocator.BrowserVersionOf(string chrome) => VersionOf(chrome);
 
     /// <summary>Where Chrome keeps chrome.exe below each of the folders it is installed in.</summary>
     private static readonly string InstallFolder = Path.Combine("Google", "Chrome", "Application", "chrome.exe");
@@ -34,10 +37,10 @@ public sealed class BrowserLocator(IRegistryValues registry, IFileProbe files, I
     /// <summary>This user's local application data folder, where a per-user Chrome lives; a test gives its own.</summary>
     internal string LocalAppData { get; init; } = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify);
 
-    /// <summary>Chrome's chrome.exe, as a full path; null when it is nowhere to be found (see <see cref="NotFound"/>).</summary>
+    /// <summary>Chrome's chrome.exe, as a full path; null when it is nowhere to be found (see <see cref="IToolLocator.BrowserNotFound"/>).</summary>
     public string? Find()
     {
-        var setting = YouTubeOptions.Expanded(options.CurrentValue.BrowserPath);
+        var setting = SettingPaths.Expanded(options.CurrentValue.BrowserPath);
         if (setting.Length > 0)
         {
             var given = IsExe(setting) && files.FileExists(setting) ? setting : null;
@@ -78,7 +81,7 @@ public sealed class BrowserLocator(IRegistryValues registry, IFileProbe files, I
                 continue;
             }
 
-            if (YouTubeOptions.Expanded(value) is { Length: > 0 } path) yield return path;
+            if (SettingPaths.Expanded(value) is { Length: > 0 } path) yield return path;
         }
     }
 

@@ -9,9 +9,9 @@ namespace ClassScribe.YouTube;
 /// open from the start of a batch to its end, as recording.lock is while a class records, so that two batches never fetch
 /// the same video or bill it twice. The holder writes its process id into it and lets others read that, so that a second
 /// batch can name the window that holds it. Windows closes the file when the process that holds it ends, however it ends,
-/// so a closed window frees it. It is never recording.lock: no class ever waits for it.
+/// so a closed window frees it. It is never recording.lock: no class ever waits for it. The adapter of <see cref="IYouTubeLock"/>.
 /// </summary>
-public sealed class YouTubeLock(YouTubeFolders folders, ILogger<YouTubeLock> logger)
+public sealed class YouTubeLock(YouTubeFolders folders, ILogger<YouTubeLock> logger) : IYouTubeLock
 {
     /// <summary>How many times a held lock is tried again before it counts as held.</summary>
     private const int Retries = 3;

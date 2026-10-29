@@ -28,7 +28,7 @@ public sealed class RecordedVideo(int number, YouTubeLink link)
     /// <summary>Its title: as YouTube gave it, else its ID.</summary>
     public string Title => Read?.Title ?? Link.Id;
 
-    /// <summary>What was done with it before (see <see cref="VideoIndex"/>).</summary>
+    /// <summary>What was done with it before (see <see cref="IVideoIndex"/>).</summary>
     public PastVerdict Past { get; set; } = new(PastKind.None, null, "");
 
     /// <summary>True when it is to be recorded: never recorded whole or transcribed before, or --again.</summary>
@@ -161,10 +161,12 @@ public static class VideoPlan
 /// </summary>
 public sealed class VideoBatch(
     YouTubeBatch batch,
-    DownloadedAudio downloads,
-    BrowserLocator browsers,
-    OEmbedTitles titles,
-    VideoWindow windows,
+    IDownloadedAudio downloads,
+    IToolLocator browsers,
+    IVideoTitles titles,
+    IVideoWindowOpener windows,
+    IVideoIndex index,
+    IVideoSources sources,
     IRunStarter runStarter,
     IRunJournal journal,
     IClassFolders classFolders,
@@ -232,9 +234,9 @@ public sealed class VideoBatch(
         // Without a key the transcripts cannot be made, so no window is opened either.
         if (request.Transcribe && !batch.HasKey()) return 1;
 
-        if (browsers.Find() is not { } chrome)
+        if (browsers.FindBrowser() is not { } chrome)
         {
-            logger.LogError("{Problem}", BrowserLocator.NotFound);
+            logger.LogError("{Problem}", IToolLocator.BrowserNotFound);
             return 1;
         }
 
@@ -250,7 +252,7 @@ public sealed class VideoBatch(
         {
             foreach (var video in videos) video.Read = await titles.ReadAsync(video.Link.Id, stopping.Token);
 
-            var index = VideoIndex.Read(request.OutputRoot, classFolders, logger);
+            index.Read(request.OutputRoot, logger);
             foreach (var video in videos) video.Past = index.Judge(video.Link.Id, request.Again, time.LocalTimeZone);
 
             var accountLine = request.Transcribe ? await batch.AccountLineAsync(stopping.Token) : null;
@@ -298,7 +300,7 @@ public sealed class VideoBatch(
     {
         string? batchFolder = null;
         var failures = 0;
-        var tool = browsers.VersionOf(chrome);
+        var tool = browsers.BrowserVersionOf(chrome);
         for (var i = 0; i < toRecord.Count; i++)
         {
             var video = toRecord[i];
@@ -594,7 +596,7 @@ public sealed class VideoBatch(
     {
         try
         {
-            return VideoSourceFile.Read(files.Source);
+            return sources.Read(files.Source);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
         {

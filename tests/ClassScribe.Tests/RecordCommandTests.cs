@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Runtime.Versioning;
 using ClassScribe.Audio;
+using ClassScribe.YouTube;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
@@ -188,6 +189,7 @@ public partial class RecordCommandTests
             new RecordingFolder(),
             new FileProbe(),
             new ElevenLabsAnswer(),
+            new VideoSourceFile(),
             new AudioFileFacts(),
             recording,
             elevenLabs,
@@ -219,7 +221,7 @@ public partial class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, new WavTrackWriterFactory(), recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance, video),
-            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new RecordingFolder(), new FileProbe(), Printed.Commands, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
+            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new RecordingFolder(), new FileProbe(), new VideoSourceFile(), Printed.Commands, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.Text.Json;
 using ClassScribe.Audio;
+using ClassScribe.YouTube;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
@@ -1586,7 +1587,7 @@ public class CommandRunnerTests
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance);
         var usage = new UsageReport(new FakeElevenLabsAccount(), TimeProvider.System, NullLogger<UsageReport>.Instance);
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, TestGlossaries.Choice(elevenLabs),
-            new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), folders, new ClassMarks(NullLogger<ClassMarks>.Instance), new TranscriptCopies(), new RecordingFolder(), new FileProbe(), new ElevenLabsAnswer(), new AudioFileFacts(), recording, elevenLabs,
+            new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), folders, new ClassMarks(NullLogger<ClassMarks>.Instance), new TranscriptCopies(), new RecordingFolder(), new FileProbe(), new ElevenLabsAnswer(), new VideoSourceFile(), new AudioFileFacts(), recording, elevenLabs,
             new TranscriptionProgress(), usage, NullLogger<TranscriptionWorkflow>.Instance);
         return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), Printed.Commands, new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), recording, elevenLabs,
             ZonedTimeProvider.EasternSummer, _transcribeLog);

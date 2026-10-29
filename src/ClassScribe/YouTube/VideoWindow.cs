@@ -11,9 +11,9 @@ namespace ClassScribe.YouTube;
 /// or an address bar, and without any switch that would make it play by itself: Gulzar presses play. When a window of that
 /// profile is already open, a new chrome.exe hands it the video and ends, so the process started must still run 3 seconds
 /// later, or the video went to that window. The close is WM_CLOSE posted to the window, never a kill, then up to 15
-/// seconds for Chrome to end, on the steady clock.
+/// seconds for Chrome to end, on the steady clock. The adapter of <see cref="IVideoWindowOpener"/>.
 /// </summary>
-public sealed class VideoWindow(IProcessStarter starter, IVideoWindows windows, YouTubeFolders folders, TimeProvider time, ILogger<VideoWindow> logger)
+public sealed class VideoWindow(IProcessStarter starter, IVideoWindows windows, YouTubeFolders folders, TimeProvider time, ILogger<VideoWindow> logger) : IVideoWindowOpener
 {
     /// <summary>How long after the start Chrome must still run, or it handed the video to a window left open.</summary>
     public static readonly TimeSpan HandOffCheckAfter = TimeSpan.FromSeconds(3);

@@ -278,7 +278,7 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     private static void CheckExe(Found problems, string name, string? value, string what, string whose, string install)
     {
         CheckPath(problems, name, value);
-        var path = YouTubeOptions.Expanded(value);
+        var path = SettingPaths.Expanded(value);
         if (path.Length == 0 || path.IndexOfAny(Path.GetInvalidPathChars()) >= 0) return;
 
         if (!Path.IsPathFullyQualified(path))

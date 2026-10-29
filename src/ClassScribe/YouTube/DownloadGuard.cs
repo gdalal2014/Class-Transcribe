@@ -71,7 +71,7 @@ public sealed class DownloadGuard(YouTubeOptions options, TranscriptionLimits? l
     private static readonly HashSet<string> Unfinished = new(StringComparer.OrdinalIgnoreCase) { "is_live", "is_upcoming", "post_live" };
 
     /// <summary>The verdict on the video <paramref name="info"/> describes; <paramref name="allowUnlisted"/> is --allow-unlisted.</summary>
-    public GuardVerdict Judge(YtDlpInfo info, bool allowUnlisted)
+    public GuardVerdict Judge(VideoInfo info, bool allowUnlisted)
     {
         if (IsOneOf(info, options.CourseChannels))
             return new(GuardVerdictKind.CourseChannel, "your course's channel: never downloaded", AcceptedBy: null);
@@ -101,18 +101,18 @@ public sealed class DownloadGuard(YouTubeOptions options, TranscriptionLimits? l
     /// True when --allow-unlisted takes the video <paramref name="info"/> describes, should it need a word: yt-dlp says it is
     /// unlisted, not merely that it is not sure it is public, and its read names its channel.
     /// </summary>
-    public static bool AllowUnlistedTakes(YtDlpInfo info) =>
+    public static bool AllowUnlistedTakes(VideoInfo info) =>
         string.Equals(info.Availability, "unlisted", StringComparison.OrdinalIgnoreCase) && KnowsChannel(info);
 
     /// <summary>True when the video's read names its channel: by its UC id, its @handle, or its /channel/ address.</summary>
-    public static bool KnowsChannel(YtDlpInfo info) =>
+    public static bool KnowsChannel(VideoInfo info) =>
         !string.IsNullOrWhiteSpace(info.ChannelId) || info.Handle is not null || (info.ChannelUrl?.Contains("/channel/", StringComparison.Ordinal) ?? false);
 
     /// <summary>
     /// True when the video's channel is one of <paramref name="channels"/>: a UC id the same as its channel's id, or as the id
     /// in its channel's address; an @handle the same as its handle, in any letter case.
     /// </summary>
-    public static bool IsOneOf(YtDlpInfo info, IEnumerable<string> channels) =>
+    public static bool IsOneOf(VideoInfo info, IEnumerable<string> channels) =>
         channels.Select(channel => channel.Trim()).Any(channel => channel.StartsWith('@')
             ? string.Equals(channel, info.Handle, StringComparison.OrdinalIgnoreCase)
             : string.Equals(channel, info.ChannelId, StringComparison.Ordinal)
