@@ -9,12 +9,12 @@ public sealed class ElevenLabsOptions
     /// <summary>Environment variable that holds the API key. It is the name ElevenLabs' own samples use.</summary>
     public const string ApiKeyVariable = "ELEVENLABS_API_KEY";
 
-    /// <summary>The setting the API key is bound from. Only <see cref="ApiKeyFromEnvironment"/> fills it.</summary>
+    /// <summary>The setting the API key is bound from. Only <c>ApiKeyFromEnvironment</c> fills it.</summary>
     public const string ApiKeySetting = $"{SectionName}:{nameof(ApiKey)}";
 
     /// <summary>
     /// API key, taken from the <see cref="ApiKeyVariable"/> environment variable and nowhere else (see
-    /// <see cref="ApiKeyFromEnvironment"/>). A key written into appsettings.json is ignored, with a warning.
+    /// <c>ApiKeyFromEnvironment</c>). A key written into appsettings.json is ignored, with a warning.
     /// </summary>
     public string ApiKey { get; init; } = "";
 

@@ -24,6 +24,7 @@ public static class CameraServices
         // Each recording's webcam hold (camera-first 3.4): which webcam the microphone belongs to, and with
         // Recording:WakeCameraMicrophone on its picture held open, shared, in a camera process.
         services.AddSingleton<WebcamHolds>();
+        services.AddSingleton<IWebcamHolds>(provider => provider.GetRequiredService<WebcamHolds>());
 
         // The start of a camera process (--camera-process <job id>), in a kill-on-close job, from ClassScribe's own folder;
         // the webcam hold and the camera check start one, and a test run refuses the real start (DeviceGuards).

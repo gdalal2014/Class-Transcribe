@@ -38,7 +38,7 @@ namespace ClassScribe.Audio;
 /// </param>
 /// <param name="webcams">
 /// Makes each recording's webcam hold: which webcam the microphone belongs to, and with Recording:WakeCameraMicrophone on,
-/// its picture held open, shared, while the microphone records (see <see cref="Camera.WebcamHold"/>); null for none, as for
+/// its picture held open, shared, while the microphone records (see <see cref="Camera.IWebcamHold"/>); null for none, as for
 /// the tests that need none.
 /// </param>
 /// <param name="cameraRecorder">
@@ -60,11 +60,11 @@ public sealed class TrackSetFactory(
     TimeProvider time,
     ILoggerFactory loggers,
     YouTube.VideoPlayback? video = null,
-    Camera.WebcamHolds? webcams = null,
+    Camera.IWebcamHolds? webcams = null,
     Camera.ICameraRecorder? cameraRecorder = null) : IRecordingFactory
 {
     /// <summary>What makes each recording's webcam hold; null when none was given. For the tests of the registration.</summary>
-    internal Camera.WebcamHolds? Webcams => webcams;
+    internal Camera.IWebcamHolds? Webcams => webcams;
 
     /// <summary>What records a lesson's picture; null when none was given. For the tests of the registration.</summary>
     internal Camera.ICameraRecorder? CameraRecorder => cameraRecorder;

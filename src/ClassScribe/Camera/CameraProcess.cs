@@ -1,5 +1,3 @@
-using ClassScribe.Link;
-
 namespace ClassScribe.Camera;
 
 /// <summary>A camera process ClassScribe started, and the lines it speaks over its standard input and output.</summary>
@@ -8,8 +6,8 @@ public interface ICameraProcess : IAsyncDisposable
     /// <summary>Windows' id for the process.</summary>
     int ProcessId { get; }
 
-    /// <summary>The lines to and from the process (see <see cref="CameraProtocol"/>).</summary>
-    LineChannel Channel { get; }
+    /// <summary>The lines to and from the process, message by message (see <see cref="CameraProtocol"/>).</summary>
+    ICameraLink Link { get; }
 
     /// <summary>The process's exit code once it has ended; null while it runs.</summary>
     int? ExitCode { get; }

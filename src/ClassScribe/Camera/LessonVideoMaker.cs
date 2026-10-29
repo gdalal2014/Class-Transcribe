@@ -78,7 +78,7 @@ public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFo
         var job = new CameraJob(CameraProtocol.Version, CameraJobKind.Finish, Folder: files.Folder, BaseName: files.BaseName, KeepPieces: keepPieces);
         try
         {
-            await CameraLines.SendJobAsync(process.Channel, job, CancellationToken.None).AsTask().WaitAsync(SendLimit, time);
+            await process.Link.SendJobAsync(job, CancellationToken.None).AsTask().WaitAsync(SendLimit, time);
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or TimeoutException)
         {
@@ -93,9 +93,9 @@ public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFo
         LessonVideoResult? said = null;
         try
         {
-            while (await process.Channel.ReceiveAsync(reading.Token) is { } line)
+            while (await process.Link.ReceiveAsync(reading.Token) is { } line)
             {
-                switch (CameraLines.Read(line))
+                switch (line.Message)
                 {
                     case CameraProgress step:
                         quiet.CancelAfter(ProgressLimit);
@@ -141,11 +141,11 @@ public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFo
     {
         try
         {
-            await CameraLines.SendSignalAsync(process.Channel, CameraProtocol.Cancel, CancellationToken.None).AsTask().WaitAsync(SendLimit, time);
+            await process.Link.SendSignalAsync(CameraProtocol.Cancel, CancellationToken.None).AsTask().WaitAsync(SendLimit, time);
             using var waiting = new CancellationTokenSource(CancelWait, time);
-            while (await process.Channel.ReceiveAsync(waiting.Token) is { } line)
+            while (await process.Link.ReceiveAsync(waiting.Token) is { } line)
             {
-                if (CameraLines.Read(line) is CameraLog log) Log(log);
+                if (line.Message is CameraLog log) Log(log);
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or TimeoutException or OperationCanceledException or JsonException or InvalidDataException)

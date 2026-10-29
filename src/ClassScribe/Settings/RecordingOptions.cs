@@ -157,7 +157,7 @@ public sealed class RecordingOptions
     /// that app has the microphone open and taking sound. "auto", the default (N9: it was chrome, which fits one laptop only),
     /// follows any app that holds the recorded microphone; "none" records whenever V is on. In app mode the app recorded
     /// with --app or Recording:App is followed, and this setting is not read; --mic-follows, a saved class and menu choice 7
-    /// can name another for a run. Empty, or naming ClassScribe itself, is refused (see <see cref="SettingsCheck"/>).
+    /// can name another for a run. Empty, or naming ClassScribe itself, is refused (see <c>SettingsCheck</c>).
     /// </summary>
     public string MicrophoneFollows { get; init; } = FollowRule.AnyWord;
 
@@ -183,7 +183,7 @@ public sealed class RecordingOptions
     /// neither built in nor virtual), ClassScribe keeps that webcam's picture open, shared and never exclusively, from
     /// before the microphone opens until the recording ends, keeping none of it, so that a webcam that sleeps by itself
     /// (the OBSBOT's Device Auto Sleep) cannot fall asleep and silence its microphone; the camera's light stays on while
-    /// recording. Off by default (camera-first 3.4). The hold is <see cref="Camera.WebcamHold"/>.
+    /// recording. Off by default (camera-first 3.4). The hold is <see cref="Camera.IWebcamHold"/>.
     /// </summary>
     public bool WakeCameraMicrophone { get; init; }
 

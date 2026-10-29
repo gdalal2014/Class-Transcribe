@@ -2,8 +2,8 @@ namespace ClassScribe.Desktop;
 
 /// <summary>
 /// What Windows says about the end of the session: a restart, a shutdown or a sign-out. A console program like ClassScribe
-/// hears nothing of these from the console, since it has user32 loaded (see <see cref="Commands.ProcessExitWarnings"/>), so
-/// they come through a window of its own (<see cref="Windows.SessionWindow"/>), which also lets a recording make Windows
+/// hears nothing of these from the console, since it has user32 loaded (see <c>ProcessExitWarnings</c>), so
+/// they come through a window of its own (<c>SessionWindow</c>), which also lets a recording make Windows
 /// ask first.
 /// </summary>
 /// <remarks>

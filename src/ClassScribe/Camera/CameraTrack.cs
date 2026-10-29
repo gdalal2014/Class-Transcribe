@@ -284,8 +284,8 @@ public sealed class CameraTrack : ICameraTrack
         lock (_gate) reading = _reading;
         try
         {
-            await SendWithinAsync(process, () => CameraLines.SendClockAsync(process.Channel, _clock.Snapshot(), CancellationToken.None));
-            await SendWithinAsync(process, () => CameraLines.SendStopAsync(process.Channel, new CameraStop(end.TotalSeconds), CancellationToken.None));
+            await SendWithinAsync(process, () => process.Link.SendClockAsync(_clock.Snapshot(), CancellationToken.None));
+            await SendWithinAsync(process, () => process.Link.SendStopAsync(new CameraStop(end.TotalSeconds), CancellationToken.None));
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or ArgumentException)
         {
@@ -427,19 +427,19 @@ public sealed class CameraTrack : ICameraTrack
         {
             if (snapshot.Version != _sentVersion)
             {
-                await SendWithinAsync(process, () => CameraLines.SendClockAsync(process.Channel, snapshot, CancellationToken.None));
+                await SendWithinAsync(process, () => process.Link.SendClockAsync(snapshot, CancellationToken.None));
                 _sentVersion = snapshot.Version;
             }
 
             if (_sentOff != off)
             {
-                await SendWithinAsync(process, () => CameraLines.SendSignalAsync(process.Channel, off ? CameraProtocol.Off : CameraProtocol.On, CancellationToken.None));
+                await SendWithinAsync(process, () => process.Link.SendSignalAsync(off ? CameraProtocol.Off : CameraProtocol.On, CancellationToken.None));
                 _sentOff = off;
             }
 
             if (end >= 0 && _sentEndTicks != end)
             {
-                await SendWithinAsync(process, () => CameraLines.SendEndAsync(process.Channel, new CameraStop(TimeSpan.FromTicks(end).TotalSeconds), CancellationToken.None));
+                await SendWithinAsync(process, () => process.Link.SendEndAsync(new CameraStop(TimeSpan.FromTicks(end).TotalSeconds), CancellationToken.None));
                 _sentEndTicks = end;
             }
         }
@@ -481,9 +481,9 @@ public sealed class CameraTrack : ICameraTrack
         var off = _wantOff;
         try
         {
-            await SendWithinAsync(process, () => CameraLines.SendJobAsync(process.Channel, job, CancellationToken.None));
-            await SendWithinAsync(process, () => CameraLines.SendClockAsync(process.Channel, snapshot, CancellationToken.None));
-            if (off) await SendWithinAsync(process, () => CameraLines.SendSignalAsync(process.Channel, CameraProtocol.Off, CancellationToken.None));
+            await SendWithinAsync(process, () => process.Link.SendJobAsync(job, CancellationToken.None));
+            await SendWithinAsync(process, () => process.Link.SendClockAsync(snapshot, CancellationToken.None));
+            if (off) await SendWithinAsync(process, () => process.Link.SendSignalAsync(CameraProtocol.Off, CancellationToken.None));
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
@@ -558,9 +558,9 @@ public sealed class CameraTrack : ICameraTrack
         var failedEncoder = false;
         try
         {
-            while (await process.Channel.ReceiveAsync(CancellationToken.None) is { } line)
+            while (await process.Link.ReceiveAsync(CancellationToken.None) is { } line)
             {
-                switch (CameraLines.Read(line))
+                switch (line.Message)
                 {
                     case CameraOpened opened:
                         OnOpened(camera, opened);

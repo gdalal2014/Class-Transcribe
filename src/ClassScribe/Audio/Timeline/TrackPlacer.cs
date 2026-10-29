@@ -18,9 +18,9 @@ public enum PlacementKind
     Drop,
 
     /// <summary>
-    /// The packet is far ahead of the track, which only happens when the process was frozen: ask <see cref="FreezeWatch.CheckNow"/>
+    /// The packet is far ahead of the track, which only happens when the process was frozen: ask <c>FreezeWatch.CheckNow</c>
     /// for a look, which cuts a freeze from the clock, and place the packet again with the look made. The cut keeps
-    /// <see cref="FreezeWatch.Margin"/> at each edge, so after a sleep the packet placed again still lands about three to
+    /// <c>FreezeWatch.Margin</c> at each edge, so after a sleep the packet placed again still lands about three to
     /// five seconds ahead (the margins, plus the time from the last tick before the sleep) and is a <see cref="LongGap"/>.
     /// </summary>
     CheckFreeze,

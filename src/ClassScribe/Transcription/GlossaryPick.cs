@@ -17,7 +17,7 @@ public sealed record GlossaryPick(string Setting, string Path, string From,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassName = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Warning = null);
 
-/// <summary>What a transcript sends, and what its entry in the recording's record says (see <see cref="GlossaryChoice.Sent"/>).</summary>
+/// <summary>What a transcript sends, and what its entry in the recording's record says (see <c>GlossaryChoice.Sent</c>).</summary>
 /// <param name="Path">The glossary's file as a full path; empty for none.</param>
 /// <param name="From">Where it came from, in words: as decided when the recording started, or the step that decided it now.</param>
 /// <param name="Terms">The terms that go up.</param>

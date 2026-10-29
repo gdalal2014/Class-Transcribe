@@ -6,8 +6,8 @@ namespace ClassScribe.Camera;
 /// <summary>
 /// The camera process's role and the lines it speaks (teach-video 6.2, amendment 24): ClassScribe started as
 /// <c>ClassScribe.exe --camera-process &lt;job id&gt;</c>, by a window or a recorder, in a kill-on-close job of the starter's,
-/// talking over its standard input and output in lines of UTF-8 JSON of at most 64 KB, through the link's
-/// <see cref="Link.LineChannel"/>: no named pipe, so nothing to name or guard. Frames never cross, only control and status.
+/// talking over its standard input and output in lines of UTF-8 JSON of at most 64 KB, through the link's line channel
+/// (<c>LineChannel</c>): no named pipe, so nothing to name or guard. Frames never cross, only control and status.
 /// To the camera process: the job first, then for a record job <see cref="Clock"/>, <see cref="Off"/> and <see cref="On"/>
 /// (P), <see cref="Stop"/> and <see cref="Cancel"/>. From it: <see cref="Opened"/>, <see cref="Status"/> once a second,
 /// <see cref="Problem"/>, <see cref="Piece"/>, <see cref="Progress"/>, <see cref="Made"/> or <see cref="Failed"/>, and

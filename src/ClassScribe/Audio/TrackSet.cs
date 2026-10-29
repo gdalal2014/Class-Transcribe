@@ -16,7 +16,7 @@ namespace ClassScribe.Audio;
 /// <param name="inner">The app's provider.</param>
 /// <param name="beforeOpen">
 /// Called before each capture is opened, with its microphone, on the thread that opens it: the webcam hold waits there for
-/// the held camera's first frame (see <see cref="Camera.WebcamHold.BeforeOpen"/>); null for nothing to wait for.
+/// the held camera's first frame (see <see cref="Camera.IWebcamHold.BeforeOpen"/>); null for nothing to wait for.
 /// </param>
 public sealed class MicrophoneProviderTap(IMicrophoneProvider inner, Action<Microphone>? beforeOpen = null) : IMicrophoneProvider
 {
@@ -83,10 +83,10 @@ public sealed class MicrophoneProviderTap(IMicrophoneProvider inner, Action<Micr
 /// <param name="Follows">The app the track follows, as the recording was built to follow it; null in person.</param>
 /// <param name="Webcam">
 /// The webcam the picked microphone belongs to, which the hold keeps awake with Recording:WakeCameraMicrophone on (see
-/// <see cref="Camera.WebcamHold"/>); null when no camera list is at hand, as for the tests that need none.
+/// <see cref="Camera.IWebcamHold"/>); null when no camera list is at hand, as for the tests that need none.
 /// </param>
 public sealed record MicrophoneTrack(RecordingSession Session, MicrophoneSource Source, MicrophoneProviderTap Tap, MicrophoneGate Gate,
-    ClassMicrophoneWatch? Watch, FollowRule? Follows, Camera.WebcamHold? Webcam = null);
+    ClassMicrophoneWatch? Watch, FollowRule? Follows, Camera.IWebcamHold? Webcam = null);
 
 /// <summary>
 /// A recording of the class and your microphone together, or of your microphone alone in person, as the record command

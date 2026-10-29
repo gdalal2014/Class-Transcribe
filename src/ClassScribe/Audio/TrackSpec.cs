@@ -21,7 +21,7 @@ public enum TrackPlacement
 /// <param name="Placement">Appended as they come, or placed on the recording clock.</param>
 /// <param name="NoteGapsLongerThan">
 /// For a track placed <see cref="TrackPlacement.Contiguous"/>: a stretch at least this long with nothing arriving, which is
-/// left out of the files, is noted through <see cref="RecordingSession.NoteWorthy"/>; zero notes nothing. Not used on
+/// left out of the files, is noted through <c>RecordingSession.NoteWorthy</c>; zero notes nothing. Not used on
 /// the clock, where such a stretch is silence in the files.
 /// </param>
 public sealed record TrackSpec(Track Track, TrackPlacement Placement, TimeSpan NoteGapsLongerThan = default);

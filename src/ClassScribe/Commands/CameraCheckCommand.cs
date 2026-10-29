@@ -137,10 +137,10 @@ public sealed class CameraCheckCommand(ICameraProvider cameras, IMicrophoneProvi
             using var limit = new CancellationTokenSource(CheckLimit, time);
             try
             {
-                await CameraLines.SendJobAsync(process.Channel, new CameraJob(CameraProtocol.Version, CameraJobKind.Check, camera.Id, camera.Name, size.Text), limit.Token);
-                while (await process.Channel.ReceiveAsync(limit.Token) is { } line)
+                await process.Link.SendJobAsync(new CameraJob(CameraProtocol.Version, CameraJobKind.Check, camera.Id, camera.Name, size.Text), limit.Token);
+                while (await process.Link.ReceiveAsync(limit.Token) is { } line)
                 {
-                    switch (CameraLines.Read(line))
+                    switch (line.Message)
                     {
                         case CameraLog log:
                             ui.WriteLine($"  {log.Text}");

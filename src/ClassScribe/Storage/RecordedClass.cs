@@ -22,7 +22,7 @@ namespace ClassScribe.Storage;
 /// <param name="HasMicrophone">True when your microphone was recorded with the class, on a track of its own: the .mic.wav files.</param>
 /// <param name="OnDrive">
 /// The recording's audio when it is on Google Drive alone, checked, and none of it is left on this laptop (see
-/// <see cref="IAudioOnDrive"/>): its transcripts can be read and rebuilt, and transcribing it again needs the audio back.
+/// <c>IAudioOnDrive</c>): its transcripts can be read and rebuilt, and transcribing it again needs the audio back.
 /// Null while its audio is on this laptop.
 /// </param>
 /// <param name="Video">

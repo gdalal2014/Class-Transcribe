@@ -42,7 +42,7 @@ public sealed record UnreadAudioSession(string DeviceName, string? ProcessName, 
 }
 
 /// <summary>The apps with sound open, as one look listed them, and what that look could not read.</summary>
-/// <param name="Apps">The apps, as <see cref="ILoopbackCaptureProvider.GetPlayingApps"/> lists them.</param>
+/// <param name="Apps">The apps, as <c>ILoopbackCaptureProvider.GetPlayingApps</c> lists them.</param>
 /// <param name="Unread">The sessions, or the devices' lists of sessions, that could not be read in full; empty when everything was.</param>
 public sealed record PlayingAppsListing(IReadOnlyList<PlayingApp> Apps, IReadOnlyList<UnreadAudioSession> Unread);
 

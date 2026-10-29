@@ -138,7 +138,11 @@ public sealed class FakeCameraProcess : ICameraProcess
     {
         ProcessId = processId;
         Channel = new Link.LineChannel(new StickingInput(_pipe.WindowEnd, this));
+        Link = new CameraLink(Channel);
     }
+
+    /// <inheritdoc />
+    public ICameraLink Link { get; }
 
     /// <summary>
     /// True once the process stopped reading its input: each write of the starter's from then on hangs, whatever its
@@ -156,7 +160,7 @@ public sealed class FakeCameraProcess : ICameraProcess
     /// <inheritdoc />
     public int ProcessId { get; }
 
-    /// <inheritdoc />
+    /// <summary>The starter's end of the lines, which the real link speaks over; the tests speak over it by hand too.</summary>
     public Link.LineChannel Channel { get; }
 
     /// <summary>The process's own end of the lines, which the test reads the job from and writes the process's lines to.</summary>

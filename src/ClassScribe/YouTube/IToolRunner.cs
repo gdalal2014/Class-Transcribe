@@ -19,7 +19,7 @@ public sealed record ToolResult(int ExitCode, IReadOnlyList<string> Output, IRea
 
 /// <summary>
 /// Runs a tool to its end (design 3.2), behind an interface so that no test ever runs a real one: the batch's tests play yt-dlp
-/// with a fake that writes the files it would. The real one is <see cref="ProcessToolRunner"/>.
+/// with a fake that writes the files it would. The real one is <c>ProcessToolRunner</c>.
 /// </summary>
 public interface IToolRunner
 {

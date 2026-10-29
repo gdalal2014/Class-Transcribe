@@ -7,7 +7,7 @@ public interface IAudioPreparer
     /// Mixes the tracks of a recording into one 16 kHz mono 16-bit WAV at <paramref name="outputPath"/>: the class and
     /// your microphone summed sample for sample from their common start, the shorter padded with silence at its end, so
     /// that both are heard where the recording placed them. A microphone track with no files is left out without a
-    /// word; one with files that never rose above <see cref="AudioPreparer.MicrophoneSoundThreshold"/> is left out and
+    /// word; one with files that never rose above <c>AudioPreparer.MicrophoneSoundThreshold</c> is left out and
     /// the log says that your microphone stayed silent. Either way the main track is then prepared exactly as
     /// <see cref="Prepare(IReadOnlyList{string}, string, CancellationToken)"/> prepares it. A preparation that fails
     /// or is cancelled leaves no file behind.

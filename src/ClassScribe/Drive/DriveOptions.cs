@@ -76,7 +76,7 @@ public sealed class DriveOptions
     /// <summary>
     /// The version of the Drive API the calls go to, in the middle of their paths, as v3 in /drive/v3/files and
     /// /upload/drive/v3/files: v and one to three digits. An upload session's address must name it too. One other than the
-    /// version this build's requests and answers were written for (<see cref="DriveApi.WrittenFor"/>) is warned about, as
+    /// version this build's requests and answers were written for (<c>DriveApi.WrittenFor</c>) is warned about, as
     /// Drive may refuse them or answer in another shape. A release that moves the default adds a
     /// <see cref="Settings.DefaultChanges"/> row.
     /// </summary>

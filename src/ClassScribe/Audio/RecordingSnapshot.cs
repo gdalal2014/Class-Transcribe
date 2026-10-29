@@ -1,7 +1,7 @@
 namespace ClassScribe.Audio;
 
 /// <summary>Something worth a note in the transcript at a position in the recording, such as a time the laptop slept.</summary>
-/// <param name="Position">Where in the recording, counted as <see cref="IRecording.Position"/> counts.</param>
+/// <param name="Position">Where in the recording, counted as <c>IRecording.Position</c> counts.</param>
 /// <param name="Text">The note in words, such as "The laptop slept from 19:42 to 19:50; nothing was recorded then".</param>
 public sealed record TimelineNote(TimeSpan Position, string Text);
 
@@ -41,7 +41,7 @@ public sealed record TrackSnapshot(string Source, string? WaitingFor, TimeSpan W
     TimeSpan? RawZerosFor = null, bool RawSoundSinceOpened = false, bool WindowsSilent = false, int CaptureNumber = 0);
 
 /// <summary>A running recording as the checks made once a second see it.</summary>
-/// <param name="Position">Where the recording is now: what a mark set now gets (see <see cref="IRecording.Position"/>).</param>
+/// <param name="Position">Where the recording is now: what a mark set now gets (see <c>IRecording.Position</c>).</param>
 /// <param name="Paused">True while paused with P.</param>
 /// <param name="Main">The main track: the class, or your microphone in person.</param>
 /// <param name="Microphone">Your microphone, recorded with the class; null when the recording has no such track.</param>

@@ -4,7 +4,7 @@ namespace ClassScribe.Recorder;
 /// The yield of a YouTube video's run to a class (design 2.5): a class that starts while a video records asks the video's run
 /// to give way, and the run stops as Q pressed twice stops it, noting that a class stopped it, so that its end is not
 /// confirmed and the same command records it again. Behind an interface so that the starter's and the run's tests need no
-/// real event; the real one is <see cref="WindowsVideoYield"/>.
+/// real event; the real one is <c>WindowsVideoYield</c>.
 /// </summary>
 public interface IVideoYield
 {
