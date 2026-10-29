@@ -457,7 +457,7 @@ public class ServiceRegistrationTests
 
         Assert.That(exitCode, Is.Zero, "nobody typed, so the question went back");
         Assert.That(ui.Screen, Does.Contain(CameraStart.Prompt));
-        Assert.That(ui.Screen, Does.Not.Contain(CameraStart.NothingStarted));
+        Assert.That(ui.Screen, Does.Not.Contain(ICameraPrompt.NothingStarted));
         Assert.That(app.Services.GetRequiredService<Camera.ICameraRecorder>(), Is.InstanceOf<Camera.CameraRecorder>());
         Assert.That(scope.ServiceProvider.GetRequiredService<TrackSetFactory>().CameraRecorder, Is.InstanceOf<Camera.CameraRecorder>());
     }

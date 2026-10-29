@@ -9,13 +9,11 @@ namespace ClassScribe.Commands;
 /// <summary>
 /// Runs the app's commands. Each run gets a scope of its own, made when it starts and disposed when it ends: fresh Ctrl+C
 /// signals, the settings as the gate last accepted them, and a fresh recording. The menu and the command line reach every
-/// command through it, so that they resolve whatever the commands' own services are.
+/// command through it, so that they resolve whatever the commands' own services are. Recording is the run starter's call
+/// (<see cref="IRunStarter.RecordAsync"/>), which this extends: the use cases that start a run take the starter alone.
 /// </summary>
-public interface ICommandRunner
+public interface ICommandRunner : IRunStarter
 {
-    /// <summary>Records as <paramref name="request"/> says, started from <paramref name="origin"/>, and transcribes when it asks. Returns the exit code.</summary>
-    Task<int> RecordAsync(RecordRequest request, StartOrigin origin);
-
     /// <summary>
     /// Transcribes what the request names: a class folder, a file of a recording, or any other file. A recording that a
     /// recorder records or transcribes now is refused. Returns the exit code.

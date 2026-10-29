@@ -13,7 +13,8 @@ namespace ClassScribe.Commands;
 /// Windows too old, its privacy switches, no H.264 encoder; then a camera recorder that cannot record the picture, see
 /// <see cref="ICameraRecorder.NotReady"/>). Refused, the menu says why and offers Enter to record the sound only, Esc to go back; any other start
 /// says why and starts nothing, exit 1. Otherwise the menu asks <c>Enter records with the camera; S records the sound only</c>,
-/// so that a camera never comes on because of an earlier choice alone; the command line is the user's word already.
+/// so that a camera never comes on because of an earlier choice alone; the command line is the user's word already. The
+/// window's answer to the camera prompt (<see cref="ICameraPrompt"/>).
 /// </summary>
 /// <param name="cameras">Lists the cameras, to name the one the run would take.</param>
 /// <param name="recorder">The camera's side of a run: whether this build can record the picture.</param>
@@ -21,16 +22,13 @@ namespace ClassScribe.Commands;
 /// <param name="choice">What is chosen for the session: the picture's size in force.</param>
 /// <param name="ui">The window the questions are asked in.</param>
 /// <param name="logger">Where what was decided is noted.</param>
-public sealed class CameraStart(ICameraProvider cameras, ICameraRecorder recorder, CameraSetupFacts setup, SourceChoice choice, IConsoleUi ui, ILogger<CameraStart> logger)
+public sealed class CameraStart(ICameraProvider cameras, ICameraRecorder recorder, CameraSetupFacts setup, SourceChoice choice, IConsoleUi ui, ILogger<CameraStart> logger) : ICameraPrompt
 {
     /// <summary>The prompt's keys after the camera's name, amendment 17's words: letters that do not repeat the continue question's.</summary>
     public const string Prompt = "Enter records with the camera; S records the sound only.";
 
     /// <summary>What a refusal offers in the menu.</summary>
     public const string SoundOnlyOffer = "Enter records the sound only; Esc goes back.";
-
-    /// <summary>What a refusal says anywhere else.</summary>
-    public const string NothingStarted = "Nothing was recorded; leave out --camera to record the sound alone.";
 
     /// <summary>
     /// Decides the start of <paramref name="request"/>, from <paramref name="origin"/>, when its plan has a camera (see the
@@ -54,7 +52,7 @@ public sealed class CameraStart(ICameraProvider cameras, ICameraRecorder recorde
             logger.LogDebug("The camera {Camera} was refused for \"{Name}\": {Why}", named, request.Name, why);
             if (origin != StartOrigin.Menu)
             {
-                ui.WriteLine($"{why}. {NothingStarted}");
+                ui.WriteLine($"{why}. {ICameraPrompt.NothingStarted}");
                 return new CameraDecision.Refused(1);
             }
 

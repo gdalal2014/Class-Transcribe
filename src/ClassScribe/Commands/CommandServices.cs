@@ -30,6 +30,9 @@ public static class CommandServices
         services.AddScoped<IRecorderStatusSink, WindowStatusSink>();
 
         services.AddSingleton<ICommandRunner, CommandRunner>();
+
+        // The runner is the run starter a YouTube batch records each of its videos through, in a scope of the run's own.
+        services.AddSingleton<IRunStarter>(provider => provider.GetRequiredService<ICommandRunner>());
         services.AddSingleton<RecordingNamePrompt>();
         services.AddTransient<MenuCommand>();
 

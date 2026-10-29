@@ -73,7 +73,7 @@ public class CameraStartTests
         var decided = await Start().DecideAsync(Lesson(new CameraChoice("OBSBOT", "1080p")), origin);
 
         Assert.That(decided, Is.EqualTo(new CameraDecision.Refused(1)));
-        Assert.That(_ui.Screen, Is.EqualTo($"{CameraRecorderNotBuilt.Words}. {CameraStart.NothingStarted}"));
+        Assert.That(_ui.Screen, Is.EqualTo($"{CameraRecorderNotBuilt.Words}. {ICameraPrompt.NothingStarted}"));
         Assert.That(_ui.KeyReads, Is.Zero, "nothing is asked");
     }
 

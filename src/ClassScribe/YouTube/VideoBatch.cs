@@ -165,7 +165,7 @@ public sealed class VideoBatch(
     BrowserLocator browsers,
     OEmbedTitles titles,
     VideoWindow windows,
-    ICommandRunner commands,
+    IRunStarter runStarter,
     IRunJournal journal,
     IClassFolders classFolders,
     IRecordingFolder recordings,
@@ -392,7 +392,7 @@ public sealed class VideoBatch(
             Minutes: null, Open: false, videoRequest);
         try
         {
-            await commands.RecordAsync(runRequest, StartOrigin.VideoBatch);
+            await runStarter.RecordAsync(runRequest, StartOrigin.VideoBatch);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

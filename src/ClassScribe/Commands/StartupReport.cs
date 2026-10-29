@@ -27,7 +27,7 @@ namespace ClassScribe.Commands;
 /// </summary>
 /// <remarks>
 /// The report carries out the choice made itself, since the run it is about is known here only: C through
-/// <see cref="ICommandRunner.RecordAsync(RecordRequest, StartOrigin)"/> as a run started from the report, T through
+/// <see cref="IRunStarter.RecordAsync"/> as a run started from the report, T through
 /// <see cref="ICommandRunner.TranscribeAsync"/>, U through <see cref="ICommandRunner.DriveUploadAsync"/>, each once the
 /// settings have passed the check, as a menu choice does; O and F itself. The choice returned only says what was done; the
 /// caller does not carry it out again.
