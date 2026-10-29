@@ -117,7 +117,9 @@ public sealed class HttpListenerLoopbackReceiver(ILogger<HttpListenerLoopbackRec
             catch (HttpListenerException ex)
             {
                 // Handed on as the port says it: a browser that has gone is an IOException to the sign-in, which names no
-                // listener of its own.
+                // listener of its own. (With IgnoreWriteExceptions the listener passes a page the browser did not take over
+                // and lets the request go, throwing nothing here; the port allows that, this IOException, and an
+                // ObjectDisposedException for a request let go; LoopbackReceiverTests pins that nothing else comes out.)
                 throw new IOException(ex.Message, ex);
             }
         }

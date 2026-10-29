@@ -124,7 +124,8 @@ public class CameraPortTests
             services.AddSingleton(_runtime.Folder).AddSingleton(new RoamingFolder(_temp.File("Roaming"))));
         var runId = TestRuns.Id();
         using var log = new RecorderLog(_runtime.Time);
-        using var recorder = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, places, _runtime.Time);
+        using var recorder = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, places, _runtime.Time,
+            services => services.AddSingleton(new RoamingFolder(_temp.File("Roaming"))));
 
         Assert.Multiple(() =>
         {

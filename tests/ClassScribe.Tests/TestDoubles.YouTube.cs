@@ -89,6 +89,12 @@ public sealed class FakeFileProbe : IFileProbe
         _files.Contains(path) ? Lengths.GetValueOrDefault(path) : OnDisk(path) ? new FileInfo(path).Length : throw new FileNotFoundException("The fake has no such file.", path);
 
     /// <inheritdoc />
+    public (long Length, DateTime LastWriteUtc)? Describe(string path) =>
+        _files.Contains(path) ? (Lengths.GetValueOrDefault(path), LastWrites.TryGetValue(path, out var written) ? written : DateTime.FromFileTimeUtc(0))
+        : OnDisk(path) && new FileInfo(path) is { Exists: true } info ? (info.Length, info.LastWriteTimeUtc)
+        : null;
+
+    /// <inheritdoc />
     public string FullPath(string path) => Path.GetFullPath(path);
 }
 

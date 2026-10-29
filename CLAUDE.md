@@ -893,9 +893,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `IDriveUploadLock`, `IVideoTool`, `IVideoTitles`, `IVideoIndex`, `IVideoSources`, `IDownloadedAudio`, `IVideoWindowOpener`,
   `IToolLocator`, `IYouTubeLock`, `IYouTubeFolders`, `ICameraLink` and `IWebcamHolds`, each with its contract test over the
   real adapter in a temporary folder or the existing fakes, in `DrivePortTests`, `YouTubePortTests` and `CameraPortTests`)
-  bring it to 4,990, all passing. The trial move's 80 architecture tests (`ArchitectureTests`, `ArchitectureRulesTests` and
-  `RepositoryLayoutTests`' checks of the four project folders, in `design\final\architecture-analysis\trial`, where the move
-  and namespace scripts are) wait for slice 4 to commit them, which makes 5,070. The uploads by
+  bring it to 4,990, and stop point S4's fixes (`IFileProbe.Describe`, one look at a file for `RecordingUpload.IsKnownInSync`;
+  the loopback answer's contract pinned on both sides; in `FileProbeTests`, `RecordingUploadTests`, `LoopbackReceiverTests`
+  and `GoogleSignInTests`) to 4,994, all passing. The trial move's 80 architecture tests (`ArchitectureTests`,
+  `ArchitectureRulesTests` and `RepositoryLayoutTests`' checks of the four project folders, in
+  `design\final\architecture-analysis\trial`, where the move and namespace scripts are) wait for slice 4 to commit them,
+  which makes 5,074. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -939,7 +942,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
   with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
   4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, 4 min 24 s for 4,966 with slice 3b4's,
-  4 min 27 s for 4,969 with stop point S3's fixes, 4 min 28 s for 4,990 with slice 3c's ports, plus the build).
+  4 min 27 s for 4,969 with stop point S3's fixes, 4 min 28 s for 4,990 with slice 3c's ports, 4 min 27 s for 4,994 with
+  stop point S4's fixes, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1471,7 +1475,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   others go on), `DriveUploadPass.RunAsync` (Google out of reach, Drive full, a sign-in gone or a
   manifest that cannot be written ends the pass, with what waits) and `UploadOneAsync` (a recording
   refused waits), `LocalAudioFreer` (a
-  file that cannot be deleted stays; a sharing violation is the answer; no upload copy),
+  file that cannot be deleted stays), `RecordingFolder.IsUploadCopyInUse` (the look `LocalAudioFreer` made, moved to the
+  storage port in slice 3c: a sharing violation is the answer; no upload copy),
   `DriveUploadCommand.FreeSpaceAsync` and `ClassFolders.OnDiskName` (a folder that cannot be looked
   into keeps the name given).
 - Google Drive by itself (slice 3 of design `drive.md`): `IDriveAutoUpload` (`DriveAutoUpload`,
@@ -1994,8 +1999,11 @@ one file) over the thin adapter `GoogleDrive`, which forwards to `DriveClient`, 
 `GoogleTokens`, whose `SendFormAsync`, `Parse` and `Describe` stay internal; `IGoogleClientFiles` (`Read(path)`) over
 `GoogleClientFile`, an instance now; `IUploadManifests` (its `OnDisk` explicit over the kept static) and `IDriveUploadLock`;
 the disk calls of `RecordingUpload`, `LocalAudioFreer` and `DriveCopies` through `IRecordingFolder` (`FilesOf`,
-`OpenToRead`, `Delete`, `IsUploadCopyInUse`) and `IFileProbe`; `ILoopbackRequest.AnswerAsync` throws an `IOException`
-where the listener's adapter wraps its `HttpListenerException`. YouTube (`YouTube`): `IVideoTool` (with `VideoInfo`,
+`OpenToRead`, `Delete`, `IsUploadCopyInUse`) and `IFileProbe` (with `Describe`, one look at a file's length and last write,
+for `RecordingUpload.IsKnownInSync`, so that a file deleted between two looks is not in sync rather than an error);
+`ILoopbackRequest.AnswerAsync` passes a browser that has gone over or throws an `IOException` (the listener's adapter wraps
+its `HttpListenerException`) or an `ObjectDisposedException`, never the listener's own type, which `LoopbackReceiverTests`
+and `GoogleSignInTests` (`BrowserPlay.ClosesTheTab`) pin. YouTube (`YouTube`): `IVideoTool` (with `VideoInfo`,
 `ListedPlaylist`, `ListedVideo`: `CheckAsync`, the `ToolCall`s `ReadPlaylist`, `ReadVideo` and `Download`, `Playlist`,
 `HasInfo`, `ReadInfoAsync`, `StagedWav`, `Classify`) over `YtDlpTool`, scoped, which holds `YtDlpCheck`'s paths and builds
 and checks every argument list through `YtDlpArguments` as before, while the batch still runs the tool through
@@ -2188,28 +2196,28 @@ each constructor that takes a port, and what the trial move made the one-project
   use cases, called from `ApplicationServices`).
 - `src/ClassScribe/YouTube` (registered by `YouTubeServices.AddYouTube`, its adapters, and `YouTubeUseCases.AddYouTubeUseCases`,
   its use cases): shared parts `YouTubeLink.cs`
-  (`YouTubeLink`, `YouTubeLinkKind`, `LinkReading`, `YouTubeLinks`), `LinkList.cs` (`LinkWord`,
-  `LinkListReading`, `LinkList`), `VideoSource.cs` (`VideoPlaylist`, `VideoSource`, `YouTubeJson`,
+  (`YouTubeLink`, `YouTubeLinkKind`, `LinkReading`, `YouTubeLinks`), `LinkWord.cs`, `LinkList.cs`
+  (`LinkListReading`, `LinkList`), `VideoSource.cs` (`VideoPlaylist`, `VideoSource`), `VideoSourceFile.cs` (`YouTubeJson`,
   `VideoSourceFile`) with its port `IVideoSources.cs`, `YouTubeFolders` with `IYouTubeFolders.cs`, `YouTubeGuards`,
   `YouTubeLock` with `IYouTubeLock.cs`, `YouTubeRequest.cs`
   (`YouTubeRequest`, `BatchConfirmation`), `YouTubeBatch.cs` (`YouTubeBatch`, `BatchKeys`),
-  `BatchPace.cs` (`IBatchPace`, `BatchPace`, `ClassWait`), `VideoIndex.cs` (`PastVideo`, `PastKind`,
-  `PastVerdict`, `VideoIndex`) with `IVideoIndex.cs`, `VideoTranscripts.cs` (`VideoToTranscribe`, `IVideoTranscriber`,
+  `BatchPace.cs` (`IBatchPace`, `BatchPace`, `ClassWait`), `PastVideo.cs` (`PastVideo`, `PastKind`, `PastVerdict`),
+  `VideoIndex.cs` (`VideoIndex`) with `IVideoIndex.cs`, `VideoTranscripts.cs` (`VideoToTranscribe`, `IVideoTranscriber`,
   `ScopedVideoTranscriber`, `VideoTranscriptRun`, `TranscriptOutcome`, `BatchTranscripts`) and
   `TranscriptionRuns.cs` (`TranscriptionRuns`, `TranscriptionRun`); the download path `IVideoTool.cs` (`IVideoTool`,
   `VideoInfo`, `ListedPlaylist`, `ListedVideo`) with `YtDlpTool` (the adapter over `YtDlpCheck`, `YtDlpArguments`,
-  `YtDlpRead` and `YtDlpErrors`), `IToolLocator.cs`, `ToolLocator.cs`
-  (`ToolPaths`, `ToolSearch`, `ToolLocator`), `IToolRunner.cs` (`ToolCall`, `ToolLine`, `ToolResult`,
-  `IToolRunner`, `WindowsCommandLine`), `ProcessToolRunner`, `YtDlpArguments`, `YtDlpRead.cs`
-  (`YtDlpInfo`, `YtDlpPlaylist`, `YtDlpRead` and their JSON context), `YtDlpErrors.cs`
-  (`DownloadFailureKind`, `DownloadFailure`, `YtDlpErrors`), `YtDlpCheck.cs` (`ToolCheck`, `YtDlpCheck`),
+  `YtDlpRead` and `YtDlpErrors`), `IToolLocator.cs`, `ToolPaths.cs`, `ToolLocator.cs`
+  (`ToolSearch`, `ToolLocator`), `IToolRunner.cs` (`ToolCall`, `ToolLine`, `ToolResult`,
+  `IToolRunner`), `WindowsCommandLine.cs`, `ProcessToolRunner`, `YtDlpArguments`, `YtDlpRead.cs`
+  (`YtDlpInfo`, `YtDlpPlaylist`, `YtDlpRead` and their JSON context), `DownloadFailure.cs`
+  (`DownloadFailureKind`, `DownloadFailure`), `YtDlpErrors.cs` (`YtDlpErrors`), `ToolCheck.cs`, `YtDlpCheck.cs` (`YtDlpCheck`),
   `DownloadGuard.cs` (`GuardVerdictKind`, `GuardVerdict`, `DownloadGuard`), `DownloadPlan.cs`
-  (`BatchVideo`, `PlanRoom`, `DownloadPlan`), `DownloadedAudio.cs` (`IncompleteAudioException`,
-  `ConversionNote`, `DownloadedAudio`) with `IDownloadedAudio.cs`, and `DownloadBatch`; the record path `BrowserLocator`
-  (the `IToolLocator` of the browser's search), `OEmbedTitles.cs` (`IYouTubeOEmbedApi`, `OEmbedAnswer`, `VideoTitle`,
-  `OEmbedTitles`, `YouTubeHostGuard`) with `IVideoTitles.cs`, `VideoWindow.cs` (`OpenedWindow`, `WindowOpening`,
-  `VideoTitles`, `VideoWindow`) with `IVideoWindowOpener.cs`, `VideoPlayback`, `VideoEnds.cs` (`VideoEnds`,
-  `VideoWindowClosedException`) and `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`).
+  (`BatchVideo`, `PlanRoom`, `DownloadPlan`), `IncompleteAudioException.cs`, `DownloadedAudio.cs`
+  (`ConversionNote`, `DownloadedAudio`) with `IDownloadedAudio.cs`, and `DownloadBatch`; the record path `BrowserLocator`
+  (the `IToolLocator` of the browser's search), `VideoTitle.cs`, `OEmbedTitles.cs` (`IYouTubeOEmbedApi`, `OEmbedAnswer`,
+  `OEmbedTitles`, `YouTubeHostGuard`) with `IVideoTitles.cs`, `OpenedWindow.cs` (`OpenedWindow`, `WindowOpening`),
+  `VideoTitles.cs`, `VideoWindow.cs` (`VideoWindow`) with `IVideoWindowOpener.cs`, `VideoPlayback`, `VideoEnds.cs`
+  (`VideoEnds`, `VideoWindowClosedException`) and `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`).
 - `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`, the `IClassFolders` of the use cases: course and date folders, the old flat layout read too; `CreateRecordingIn` and `IsVideo` for YouTube; `TrackLength`, `FilesIn` and `FoldersIn` for the use cases), recording file names (`RecordingFiles`: both
   tracks, and a lesson's camera pieces, `CameraPieceFile`) with what is on disk of a recording (`IRecordingFolder`, `RecordingFolder`), numbered transcript copies (`ITranscriptCopies`, `TranscriptCopies`, never overwritten), marks (`IClassMarks`, `ClassMarks`; `ClassMark.PartsIn`), the
   microphone check's log file (`IMicCheckLog` and `IMicCheckLogFile`, `MicCheckLog` and `MicCheckLogFile`: the header, the cost line, flushed per line), and

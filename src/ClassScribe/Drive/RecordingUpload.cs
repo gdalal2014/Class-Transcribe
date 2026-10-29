@@ -208,9 +208,12 @@ public sealed partial class RecordingUpload(
         manifests.Read(files) is { State: UploadState.Done } manifest
         && FilesToUpload(files).All(path => IsKnownInSync(manifest.File(Path.GetFileName(path)), path));
 
-    /// <summary>True when the file at <paramref name="path"/> is unchanged since its copy on Drive, <paramref name="entry"/>, was checked and found the same.</summary>
+    /// <summary>
+    /// True when the file at <paramref name="path"/> is unchanged since its copy on Drive, <paramref name="entry"/>, was
+    /// checked and found the same. The file is looked at once, so one deleted meanwhile is not in sync rather than an error.
+    /// </summary>
     private bool IsKnownInSync(ManifestFile? entry, string path) =>
-        entry is { InSync: true } && probe.FileExists(path) && entry.Size == probe.Length(path) && entry.LastWriteUtc == new DateTimeOffset(probe.LastWriteUtc(path), TimeSpan.Zero);
+        entry is { InSync: true } && probe.Describe(path) is { } file && entry.Size == file.Length && entry.LastWriteUtc == new DateTimeOffset(file.LastWriteUtc, TimeSpan.Zero);
 
     /// <summary>
     /// Why <paramref name="files"/> cannot go up now, as "is being recorded now"; null when it can. A run that records it,

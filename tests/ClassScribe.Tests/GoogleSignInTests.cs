@@ -178,6 +178,25 @@ public class GoogleSignInTests
     }
 
     /// <summary>
+    /// The tab closed before the page arrived, which the listener says as an IOException, is passed over at Debug: the code
+    /// Google sent is exchanged all the same, the sign-in is kept and the listener closed.
+    /// </summary>
+    [Test]
+    public async Task A_tab_closed_before_the_page_arrived_does_not_end_the_sign_in()
+    {
+        _world.Browser.Play = BrowserPlay.ClosesTheTab;
+
+        var signedIn = await SignInAsync();
+
+        Assert.That(signedIn.Email, Is.EqualTo("student@example.com"));
+        Assert.That(_world.Store.Stored!.IsSignedIn, Is.True);
+        Assert.That(_world.Google.TokenRequests, Has.Count.EqualTo(1));
+        Assert.That(_world.Logs.Messages, Has.Some.EqualTo("The browser did not take the page"));
+        Assert.That(_world.Receiver.Current!.Answers, Is.Empty, "the page never reached the tab");
+        Assert.That(_world.Receiver.Current.Disposed, Is.True);
+    }
+
+    /// <summary>
     /// Cancel on Google's page (access_denied) ends the sign-in with that said, answers the browser, keeps the client just
     /// imported (so trying again needs no file) and stores no sign-in. Nothing is exchanged.
     /// </summary>

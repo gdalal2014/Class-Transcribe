@@ -1,6 +1,7 @@
 using System.Net;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Storage;
@@ -286,6 +287,50 @@ public class RecordingUploadTests
         Assert.That(Manifest.Files.Select(file => file.Name), Has.Member($"{_mantiq.BaseName}.wav").And.Member($"{_mantiq.BaseName}.mic.wav"));
         Assert.That(_world.Manifests().Waiting(), Is.Empty);
         Assert.That(_world.Lines.Last(), Does.StartWith($"{_mantiq.BaseName} is on Google Drive: My Drive > ClassScribe > Mantiq > 2026-10-17 (6 files,"));
+    }
+
+    /// <summary>
+    /// Whether a done recording is up to date is read from one look at each of its files: a verified file that vanishes
+    /// between the listing and the look, as when free-space in another window deletes it, makes the recording not up to date
+    /// rather than an error, so the pass queues it and the run notes the file as gone. With the file there, it is up to date.
+    /// </summary>
+    [Test]
+    public async Task A_verified_file_that_vanishes_as_it_is_looked_at_makes_the_recording_not_up_to_date()
+    {
+        await UploadAsync();
+
+        Assert.That(_world.RecordingUpload().IsUpToDate(_mantiq), Is.True, "with every file there");
+        Assert.That(_world.RecordingUpload(new VanishingProbe(_mantiq.Segment(1))).IsUpToDate(_mantiq), Is.False, "with the class's audio gone at the look");
+    }
+
+    /// <summary>The disk as the real probe reads it, but for one file, listed and then gone: there when asked, gone at the look, its length an error, as a file deleted between two looks is.</summary>
+    private sealed class VanishingProbe(string vanished) : IFileProbe
+    {
+        private readonly FileProbe _disk = new();
+
+        /// <summary>True when <paramref name="path"/> names the vanished file.</summary>
+        private bool IsVanished(string path) => string.Equals(Path.GetFullPath(path), Path.GetFullPath(vanished), StringComparison.OrdinalIgnoreCase);
+
+        /// <inheritdoc />
+        public bool FileExists(string path) => IsVanished(path) || _disk.FileExists(path);
+
+        /// <inheritdoc />
+        public bool DirectoryExists(string path) => _disk.DirectoryExists(path);
+
+        /// <inheritdoc />
+        public DateTime LastWriteUtc(string path) => IsVanished(path) ? DateTime.FromFileTimeUtc(0) : _disk.LastWriteUtc(path);
+
+        /// <inheritdoc />
+        public long Length(string path) => IsVanished(path) ? throw new FileNotFoundException("The file was deleted meanwhile.", path) : _disk.Length(path);
+
+        /// <inheritdoc />
+        public (long Length, DateTime LastWriteUtc)? Describe(string path) => IsVanished(path) ? null : _disk.Describe(path);
+
+        /// <inheritdoc />
+        public string FullPath(string path) => _disk.FullPath(path);
+
+        /// <inheritdoc />
+        public string? VersionOf(string path) => _disk.VersionOf(path);
     }
 
     /// <summary>A file that never went up and is gone from the laptop is forgotten, which is said; nothing is missing.</summary>

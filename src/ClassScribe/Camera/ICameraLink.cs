@@ -10,8 +10,9 @@ public sealed record CameraLine(string Type, object? Message);
 /// <summary>
 /// The camera process, message by message (architecture 4.3): the job, a stop, the sound's end, the clock's state and a
 /// signal sent to it; what it says received, each line as its record. The lines are those of <see cref="CameraProtocol"/>;
-/// how they travel (UTF-8 JSON over the process's standard input and output) is the adapter's. A send to a process that is
-/// gone, or whose lines are closed, throws the stream's own exception, as does a line that is no message of the protocol.
+/// how they travel (UTF-8 JSON over the process's standard input and output) is the adapter's. A message longer than a
+/// line (<c>LinkProtocol.MaxLineBytes</c>, 64 KB) throws an <see cref="ArgumentException"/> and is not sent; a send to
+/// a process that is gone, or whose lines are closed, throws the stream's own exception; no send checks its type.
 /// </summary>
 public interface ICameraLink
 {

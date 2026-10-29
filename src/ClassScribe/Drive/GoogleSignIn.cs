@@ -324,7 +324,8 @@ public sealed class GoogleSignIn(IGoogleAccount account, IGoogleCredentialStore 
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
         {
             // Deliberately not rethrown: the tab was closed before the page arrived (the listener's adapter says so as an
-            // IOException); the page only says to go back to ClassScribe, whose window says how the sign-in ended.
+            // IOException, or as an ObjectDisposedException once it has let the request go); the page only says to go back
+            // to ClassScribe, whose window says how the sign-in ended.
             logger.LogDebug(ex, "The browser did not take the page");
         }
     }
