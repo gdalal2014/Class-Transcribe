@@ -197,6 +197,14 @@ advice after a format error (10 A).
   `RemoveAllLoggers()`; `OEmbedTitles.RefitSettings()` lets a failed connection come through as its own
   `HttpRequestException`. It returns `HttpResponseMessage`, so a video YouTube does not answer for is
   no title, never thrown. yt-dlp is a program, not an HTTP API: it runs through `IToolRunner`.
+- A type is named by its simple name with a `using` line for its namespace, never with its area in front (`WebcamHold`,
+  not `Camera.WebcamHold`; `RecordingFiles`, not `Storage.RecordingFiles`; `RunState`, not `ClassScribe.Runs.RunState`), in
+  code and in XML-doc crefs alike: the trial move (architecture 11.6, `design\final\trial-move.md`) showed that a partial
+  name survives the move of 10.2 and 10.3 only inside its own project, and that a file sees its area's other projects only
+  through `using` lines. An alias must name a type in full (`using Condition = (string Name, ClassScribe.Runs.AttentionLevel
+  Level, ...)`), and the move's namespace script rewrites those itself. A private method that would shadow a use case's
+  name is named apart (`CommandLineTree.YouTubeCommandTree`, as `ClassCommandTree` and `SettingsCommandTree`). A Core file
+  that uses `System.IO` writes `using System.IO;` itself (architecture 1.4), so the move commit alone builds.
 - No `ArgumentNullException` guards on DI-injected parameters.
 - Registration, by layer (architecture slice 3a and 5.2): each area's `<Area>Services.cs` registers what it owns of
   Infrastructure, the options bound to their sections, the Refit clients and every adapter (`SettingsServices`,
@@ -519,7 +527,7 @@ advice after a format error (10 A).
   `YtDlpCheck`, `DownloadedAudio`, `VideoIndex` (the done-before words), `YouTubeBatch` (`KeysLine`, the
   lock and key refusals), `BatchKeys`, `ClassWait`, `BatchTranscripts` (the stop, the meanwhile lines,
   the projection), `UsageReport.Describe`, `VideoPlan` and `VideoBatch` (the record path's plan, prompts
-  and summary), `VideoWindow.HandedOff`, `BrowserLocator.NotFound`, `VideoTitle.NoTitle`,
+  and summary), `VideoWindow.HandedOff`, `IToolLocator.BrowserNotFound`, `VideoTitle.NoTitle`,
   `VideoEndWatch` (the rules' lines, `PressPlay`), `VideoEnds`, `RecordCommand` (a video's start and end
   lines), `RecordStarter` (the yield, `Explain`, a lost video recorder), `StopSignal` (the yield's
   lines), `StartupReport` (a video named as the video), `LocalAudioFreer` (a video's audio kept),
@@ -880,7 +888,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   of the program and the prompts of slice 3b4 (`feature/layers-program`: `IThisProgram`, `IContinuePrompt`, `ICameraPrompt`
   and `IRunStarter`, each with its contract test over the real adapter, in `ProgramPortTests` and `PromptPortTests`) bring
   it to 4,966, and stop point S3's fixes (the recorder's log left to its host, the start-up log's last lines for a count of
-  0 or less, a class's glossary path worked out only for the JSON forms) to 4,969. The uploads by
+  0 or less, a class's glossary path worked out only for the JSON forms) to 4,969; the ports of Drive, YouTube and the
+  camera of slice 3c (`feature/layers-vendors`: `IGoogleDrive`, `IGoogleAccount`, `IGoogleClientFiles`, `IUploadManifests`,
+  `IDriveUploadLock`, `IVideoTool`, `IVideoTitles`, `IVideoIndex`, `IVideoSources`, `IDownloadedAudio`, `IVideoWindowOpener`,
+  `IToolLocator`, `IYouTubeLock`, `IYouTubeFolders`, `ICameraLink` and `IWebcamHolds`, each with its contract test over the
+  real adapter in a temporary folder or the existing fakes, in `DrivePortTests`, `YouTubePortTests` and `CameraPortTests`)
+  bring it to 4,990, all passing. The trial move's 79 architecture tests (`ArchitectureTests`, `ArchitectureRulesTests` and
+  `RepositoryLayoutTests`' checks of the four project folders, in `design\final\architecture-analysis\trial`, where the move
+  and namespace scripts are) wait for slice 4 to commit them, which makes 5,069. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -924,7 +939,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
   with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
   4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, 4 min 24 s for 4,966 with slice 3b4's,
-  4 min 27 s for 4,969 with stop point S3's fixes, plus the build).
+  4 min 27 s for 4,969 with stop point S3's fixes, 4 min 28 s for 4,990 with slice 3c's ports, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1117,7 +1132,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   transcript sent, `RecordingFiles.Glossary`; see the glossary bullet), and for a lesson with the camera its pieces, `<base>.cam.mp4` and `<base>.cam@hh-mm-ss.fff.mp4`
   (`RecordingFiles.CameraPiece(start)`, `IRecordingFolder.FindCameraPieces` in their order on the clock, `IsCameraPiece`; a sign of a
   class for the date folders; held while written for `IsBeingWritten`, the newest piece open for writing with reading
-  allowed; never sent to Drive, `RecordingUpload.FilesToUpload` and `UploadManifests.OnDisk` leave them out; a lesson with
+  allowed; never sent to Drive, `RecordingUpload.FilesToUpload` and `IUploadManifests.OnDisk` leave them out; a lesson with
   pieces continued only by a run with the camera, `ClassFolders.FindContinuable(..., camera)`; one without pieces is the run
   files' to decide, `ContinueQuestion.FindContinuable`: a run that asked for the camera is continued with it, a piece or
   none, and with no run file left, no piece means no camera). `Track` has no
@@ -1366,7 +1381,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (`NextAttemptUtc`), or all of it for `drive upload` alone; a recording busy when the pass came to it
   is looked at once more before the pass lets go (`Taken`), so a class whose run ends meanwhile goes up
   with it, and so is one done with that was queued again after its try began (`Taken.Begin` notes
-  `UploadManifest.TimesQueued`, which `UploadManifests.Queue` counts up; `KeepWaiting`, what an upload
+  `UploadManifest.TimesQueued`, which `IUploadManifests.Queue` counts up; `KeepWaiting`, what an upload
   writes of a recording it cannot take now, does not); what waits goes up
   `DriveUploadPass.AfterTheNextClass` ("after the next class, or with menu choice 9 > U, or
   ClassScribe drive upload") while `Drive:Enabled` is on, else `HowTheQueueGoesUp`; one pass at a time under `%LOCALAPPDATA%\ClassScribe\drive\upload.lock`
@@ -1390,7 +1405,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   left behind; the files are `RecordingFiles.TryParse`'s of the same base name but the
   `.upload.wav` (and with `WithoutAudio` the `.wav`s), never a PDF beside them, in the order `.md`
   copies, `.json` answers, `.marks.txt`, main `.wav` parts, `.mic.wav` parts, `.log` last; Drive's
-  folder is `DriveFolders.FindOrCreatePathAsync(IClassFolders.DriveLevelsOf(IClassFolders.AsOnDisk(folder)))`
+  folder is `IGoogleDrive.FindOrCreatePathAsync(IClassFolders.DriveLevelsOf(IClassFolders.AsOnDisk(folder)))`
   (course > date folder, or an old flat folder's name; each level by remembered id in
   `folders.json` keyed by its path under the root, else by escaped name in its parent, else made;
   levels forgotten when the root changes); each file's MD5 is cached in the manifest by size and
@@ -1970,6 +1985,30 @@ process, over `ThisProgram.Current`); `IContinuePrompt` (`Runs`, with `ContinueA
 in a scope of the run's own, and `VideoBatch` takes. `IServiceScopeFactory` stays in `RecordStarter` and
 `ScopedVideoTranscriber` (architecture question 5). `design\final\layers-program-map.md` lists each member's old and new
 call and each constructor that takes a port.
+Slice 3c (`feature/layers-vendors`) put Drive, YouTube and the camera behind ports the same way, and ran the trial move
+(architecture 11.6; `design\final\trial-move.md`, with the move and namespace scripts and the architecture tests in
+`design\final\architecture-analysis\trial`, for slice 4 to commit). Drive (`Drive`): `IGoogleDrive` (with `DriveItem` and
+`DriveAccount`, Google's answers mapped: the account, an item, a folder's children, the root and the path, `SendAsync` for
+one file) over the thin adapter `GoogleDrive`, which forwards to `DriveClient`, `DriveFolders` and `ResumableUpload`;
+`IGoogleAccount` (with `GoogleAnswer`: the sign-in's exchange and revoke, `Seed`, `Forget`, `NotSetUp`, `NotSignedIn`) over
+`GoogleTokens`, whose `SendFormAsync`, `Parse` and `Describe` stay internal; `IGoogleClientFiles` (`Read(path)`) over
+`GoogleClientFile`, an instance now; `IUploadManifests` (its `OnDisk` explicit over the kept static) and `IDriveUploadLock`;
+the disk calls of `RecordingUpload`, `LocalAudioFreer` and `DriveCopies` through `IRecordingFolder` (`FilesOf`,
+`OpenToRead`, `Delete`, `IsUploadCopyInUse`) and `IFileProbe`; `ILoopbackRequest.AnswerAsync` throws an `IOException`
+where the listener's adapter wraps its `HttpListenerException`. YouTube (`YouTube`): `IVideoTool` (with `VideoInfo`,
+`ListedPlaylist`, `ListedVideo`: `CheckAsync`, the `ToolCall`s `ReadPlaylist`, `ReadVideo` and `Download`, `Playlist`,
+`HasInfo`, `ReadInfoAsync`, `StagedWav`, `Classify`) over `YtDlpTool`, scoped, which holds `YtDlpCheck`'s paths and builds
+and checks every argument list through `YtDlpArguments` as before, while the batch still runs the tool through
+`IToolRunner`; `IVideoTitles` over `OEmbedTitles`; `IVideoIndex` (the index itself, scoped: `Read(root, logger)`, `Judge`,
+`Of`) over `VideoIndex`; `IVideoSources` over `VideoSourceFile`'s statics; `IDownloadedAudio`; `IVideoWindowOpener` over
+`VideoWindow`; `IToolLocator` (`FindBrowser`, `BrowserVersionOf`, `BrowserNotFound`) over `BrowserLocator`; `IYouTubeLock`;
+`IYouTubeFolders` (with `MakeRoot`, `MakeStaging`, `DeleteStaging`); and `YouTubeOptions.Expanded` moved to Infrastructure
+as `SettingPaths.Expanded` (`Settings/SettingPaths.cs`). The camera (`Camera`): `ICameraLink` (with `CameraLine`: the sends
+and `ReceiveAsync`) over `CameraLink`, an adapter over `CameraLines` and a `LineChannel`, so `ICameraProcess.Channel` is
+`ICameraProcess.Link`; `IWebcamHolds` with `IWebcamHold` over `WebcamHolds` and `WebcamHold`, which `MicrophoneTrack`,
+`TrackSet` and `TrackSetFactory` take. Each port is registered right after its adapter with the adapter's lifetime, and
+`Lazy<DriveClient>` became `Lazy<IGoogleDrive>`. `design\final\layers-vendors-map.md` lists each member's old and new call,
+each constructor that takes a port, and what the trial move made the one-project tree change (its section 6).
 
 - `src/ClassScribe`: `Program.cs` (the console set to UTF-16, a start-up failure printed plainly,
   the close prompt), `AppHost` (builds the host: the checked settings source and a first checked
@@ -2080,7 +2119,9 @@ call and each constructor that takes a port.
   `CameraPieces.cs` (`PieceSettings`, `IPieceWriter`, `IPieceWriterFactory`, `ICameraFrame`, `CameraPicture`,
   `FramePlacer`, `FrameQueue`), `CameraRecorder.cs` (`ICameraRecorder`, `CameraRecorder`, `ICameraTrack`,
   `CameraTrackStart`, `CameraTrackState`, `CameraConcern`, `CameraOffsets`, `CameraRecorderNotBuilt`), `CameraTrack.cs`
-  (the recorder's side of a lesson's picture), `WebcamHold.cs` (`WebcamHold`,
+  (the recorder's side of a lesson's picture), `ICameraLink.cs` (`ICameraLink`, `CameraLine`: the camera process's lines
+  as the use cases speak them) with `CameraLink.cs` (the adapter over `CameraLines` and a `LineChannel`), `IWebcamHolds.cs`
+  (`IWebcamHolds`, `IWebcamHold`) with `WebcamHold.cs` (`WebcamHold`,
   `WebcamHolds`, `WebcamState`), `Windows/WindowsCameraCapture.cs` (the real MediaCapture),
   `Windows/WindowsCameraFrame.cs` (a frame's pixels copied out, `MemoryBufferBytes`), `Windows/MediaFoundationPieceWriter.cs`
   (the piece writer and its factory, `VideoGuids`, `FileStreamAsIStream`),
@@ -2123,16 +2164,18 @@ call and each constructor that takes a port.
 - `src/ClassScribe/Drive`: Google Drive (design `drive.md`, slices 1 to 3): `DriveOptions` (with `DriveUploadScope`),
   `IGoogleOAuthApi.cs` and `IDriveApi.cs` (the Refit interfaces, `DriveApiSettings`), `GoogleJson.cs`
   (`GoogleOAuthJson`, `DriveJson`, `DriveStoreJson` and their records, which print no token),
-  `GoogleDriveException.cs` (`DriveProblem`), `GoogleClientFile.cs` (`GoogleClient`, the import),
-  `Pkce`, `ILoopbackReceiver.cs` and `Windows/HttpListenerLoopbackReceiver.cs`, `IBrowser.cs`
+  `GoogleDriveException.cs` (`DriveProblem`), `GoogleClientFile.cs` (`GoogleClient`, the import) with its port
+  `IGoogleClientFiles.cs`, `Pkce`, `ILoopbackReceiver.cs` and `Windows/HttpListenerLoopbackReceiver.cs`, `IBrowser.cs`
   (`ShellBrowser`), `GoogleCredentialStore.cs` (`GoogleCredentials`, `StoredCredentials`,
   `IGoogleCredentialStore`, `DpapiGoogleCredentialStore`), `GoogleTokens.cs` (`GoogleTokenCache`,
-  `GoogleTokens`), `DriveClient` (the calls, the 401 renewal, Google's refusals in words and kinds,
-  `PieceAnswer`), `DriveFolders` (the root folder and the levels under it, `DriveFolderPath`),
-  `GoogleSignIn` (`SignedIn`, `SignOutOutcome`), and the uploads: `DriveRetry`, `PieceContent`,
-  `ResumableUpload.cs` (`UploadAddress`, `UploadSource`, `UploadTarget`, `IUploadWatch`,
+  `GoogleTokens`) with its port `IGoogleAccount.cs` (`IGoogleAccount`, `GoogleAnswer`), `DriveClient` (the calls, the 401
+  renewal, Google's refusals in words and kinds, `PieceAnswer`), `DriveFolders` (the root folder and the levels under it,
+  `DriveFolderPath`), `IGoogleDrive.cs` (`IGoogleDrive`, `DriveItem`, `DriveAccount`) with `GoogleDrive` (the adapter over
+  `DriveClient`, `DriveFolders` and `ResumableUpload`), `GoogleSignIn` (`SignedIn`, `SignOutOutcome`), and the uploads:
+  `DriveRetry`, `PieceContent`, `ResumableUpload.cs` (`UploadAddress`, `UploadSource`, `UploadTarget`, `IUploadWatch`,
   `ResumableUpload`), `UploadManifest.cs` (`UploadState`, `UploadSession`, `ManifestFile`,
-  `UploadManifest`, `UploadJson`, `UploadManifests`), `DriveUploadLock`, `RecordingUpload`
+  `UploadManifest`, `UploadJson`, `UploadManifests`) with `IUploadManifests.cs`, `DriveUploadLock` with `IDriveUploadLock.cs`,
+  `RecordingUpload`
   (`RecordingOutcome`, `RecordingUploadResult`), `DriveUploadPass` (`PassResult`),
   `LocalAudioFreer` (`FreedAudio`), `LessonVideoDrive` (whether a lesson's video goes to Drive, the start line),
   `DriveCopies` (the `IAudioOnDrive` of `Storage`),
@@ -2147,23 +2190,26 @@ call and each constructor that takes a port.
   its use cases): shared parts `YouTubeLink.cs`
   (`YouTubeLink`, `YouTubeLinkKind`, `LinkReading`, `YouTubeLinks`), `LinkList.cs` (`LinkWord`,
   `LinkListReading`, `LinkList`), `VideoSource.cs` (`VideoPlaylist`, `VideoSource`, `YouTubeJson`,
-  `VideoSourceFile`), `YouTubeFolders`, `YouTubeGuards`, `YouTubeLock`, `YouTubeRequest.cs`
+  `VideoSourceFile`) with its port `IVideoSources.cs`, `YouTubeFolders` with `IYouTubeFolders.cs`, `YouTubeGuards`,
+  `YouTubeLock` with `IYouTubeLock.cs`, `YouTubeRequest.cs`
   (`YouTubeRequest`, `BatchConfirmation`), `YouTubeBatch.cs` (`YouTubeBatch`, `BatchKeys`),
   `BatchPace.cs` (`IBatchPace`, `BatchPace`, `ClassWait`), `VideoIndex.cs` (`PastVideo`, `PastKind`,
-  `PastVerdict`, `VideoIndex`), `VideoTranscripts.cs` (`VideoToTranscribe`, `IVideoTranscriber`,
+  `PastVerdict`, `VideoIndex`) with `IVideoIndex.cs`, `VideoTranscripts.cs` (`VideoToTranscribe`, `IVideoTranscriber`,
   `ScopedVideoTranscriber`, `VideoTranscriptRun`, `TranscriptOutcome`, `BatchTranscripts`) and
-  `TranscriptionRuns.cs` (`TranscriptionRuns`, `TranscriptionRun`); the download path `ToolLocator.cs`
+  `TranscriptionRuns.cs` (`TranscriptionRuns`, `TranscriptionRun`); the download path `IVideoTool.cs` (`IVideoTool`,
+  `VideoInfo`, `ListedPlaylist`, `ListedVideo`) with `YtDlpTool` (the adapter over `YtDlpCheck`, `YtDlpArguments`,
+  `YtDlpRead` and `YtDlpErrors`), `IToolLocator.cs`, `ToolLocator.cs`
   (`ToolPaths`, `ToolSearch`, `ToolLocator`), `IToolRunner.cs` (`ToolCall`, `ToolLine`, `ToolResult`,
   `IToolRunner`, `WindowsCommandLine`), `ProcessToolRunner`, `YtDlpArguments`, `YtDlpRead.cs`
   (`YtDlpInfo`, `YtDlpPlaylist`, `YtDlpRead` and their JSON context), `YtDlpErrors.cs`
   (`DownloadFailureKind`, `DownloadFailure`, `YtDlpErrors`), `YtDlpCheck.cs` (`ToolCheck`, `YtDlpCheck`),
   `DownloadGuard.cs` (`GuardVerdictKind`, `GuardVerdict`, `DownloadGuard`), `DownloadPlan.cs`
   (`BatchVideo`, `PlanRoom`, `DownloadPlan`), `DownloadedAudio.cs` (`IncompleteAudioException`,
-  `ConversionNote`, `DownloadedAudio`) and `DownloadBatch`; the record path `BrowserLocator`,
-  `OEmbedTitles.cs` (`IYouTubeOEmbedApi`, `OEmbedAnswer`, `VideoTitle`, `OEmbedTitles`,
-  `YouTubeHostGuard`), `VideoWindow.cs` (`OpenedWindow`, `WindowOpening`, `VideoTitles`,
-  `VideoWindow`), `VideoPlayback`, `VideoEnds.cs` (`VideoEnds`, `VideoWindowClosedException`) and
-  `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`).
+  `ConversionNote`, `DownloadedAudio`) with `IDownloadedAudio.cs`, and `DownloadBatch`; the record path `BrowserLocator`
+  (the `IToolLocator` of the browser's search), `OEmbedTitles.cs` (`IYouTubeOEmbedApi`, `OEmbedAnswer`, `VideoTitle`,
+  `OEmbedTitles`, `YouTubeHostGuard`) with `IVideoTitles.cs`, `VideoWindow.cs` (`OpenedWindow`, `WindowOpening`,
+  `VideoTitles`, `VideoWindow`) with `IVideoWindowOpener.cs`, `VideoPlayback`, `VideoEnds.cs` (`VideoEnds`,
+  `VideoWindowClosedException`) and `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`).
 - `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`, the `IClassFolders` of the use cases: course and date folders, the old flat layout read too; `CreateRecordingIn` and `IsVideo` for YouTube; `TrackLength`, `FilesIn` and `FoldersIn` for the use cases), recording file names (`RecordingFiles`: both
   tracks, and a lesson's camera pieces, `CameraPieceFile`) with what is on disk of a recording (`IRecordingFolder`, `RecordingFolder`), numbered transcript copies (`ITranscriptCopies`, `TranscriptCopies`, never overwritten), marks (`IClassMarks`, `ClassMarks`; `ClassMark.PartsIn`), the
   microphone check's log file (`IMicCheckLog` and `IMicCheckLogFile`, `MicCheckLog` and `MicCheckLogFile`: the header, the cost line, flushed per line), and
@@ -2304,7 +2350,8 @@ call and each constructor that takes a port.
   `VideoBatchTests`, `VideoContinuationTests`, the partials `RecordCommandTests.Video.cs`,
   `RecordStarterTests.Video.cs` and `RecorderHostTests.Video.cs`, and additions to `StopSignalTests`,
   `StartupReportTests`, `ContinueQuestionTests`, `RecordingFilesTests`, `RegistryValuesTests`,
-  `ServiceRegistrationTests` and `EndToEndTests`. The glossary's tests: `KeytermRulesTests`,
+  `ServiceRegistrationTests` and `EndToEndTests`; the contract tests of slice 3c's ports are `DrivePortTests`,
+  `YouTubePortTests` and `CameraPortTests`. The glossary's tests: `KeytermRulesTests`,
   `GlossaryFilesTests` (the example glossary, which the test project links into its output as
   `Examples\keyterms-islamic-sciences.txt`), `GlossaryChoiceTests`, `GlossaryRecordTests` (with
   `GlossaryRecordTests.Reuse.cs`, and `GlossaryRecordTests.Recorder.cs` for a recorder's resolver,
