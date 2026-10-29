@@ -1,4 +1,5 @@
 using System.Net;
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
@@ -624,7 +625,7 @@ public class DownloadBatchTests
             if (classFiles is null && call.Arguments.Contains("--newline"))
             {
                 classFiles = _world.ClassFolders.CreateRecording("Risala", _world.Recordings.Path);
-                using var writer = new Audio.WavSegmentWriter(classFiles.Segment(1), 10);
+                using var writer = new WavSegmentWriter(classFiles.Segment(1), 10);
                 writer.Write(new byte[20]);
             }
 
