@@ -83,7 +83,7 @@ public class RebuildCommandTests
             new UsageReport(_account, TimeProvider.System, NullLogger<UsageReport>.Instance),
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new RebuildCommand(workflow, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), _desktop.Object, _drive, recording, _log);
+        return new RebuildCommand(workflow, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), Printed.Commands, _desktop.Object, _drive, recording, _log);
     }
 
     /// <summary>Where a transcription's last line says what it cost, a rebuild's says that nothing was sent and nothing charged; the account is never read.</summary>
@@ -264,7 +264,7 @@ public class RebuildCommandTests
         {
             $"{kept.BaseName} has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try, which has been paid for, is kept in {keptAnswer}. {answered.BaseName}, the newest recording here with a saved answer, is rebuilt instead"
         }));
-        Assert.That(_log.Messages, Has.Member($"To lay that answer out as a transcript for free, run: {CommandLine.Rebuild(keptAnswer)}"));
+        Assert.That(_log.Messages, Has.Member($"To lay that answer out as a transcript for free, run: {Printed.Rebuild(keptAnswer)}"));
     }
 
     /// <summary>
@@ -306,7 +306,7 @@ public class RebuildCommandTests
         {
             $"{recording.BaseName} has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try, which has been paid for, is kept in {recording.UnreadAnswer()}"
         }));
-        Assert.That(_log.Messages[^1], Is.EqualTo($"To lay that answer out as a transcript for free, run: {CommandLine.Rebuild(recording.UnreadAnswer())}"));
+        Assert.That(_log.Messages[^1], Is.EqualTo($"To lay that answer out as a transcript for free, run: {Printed.Rebuild(recording.UnreadAnswer())}"));
         Assert.That(Directory.GetFiles(_class, "*.md"), Is.Empty);
     }
 
@@ -552,7 +552,7 @@ public class RebuildCommandTests
         {
             $"{recording.BaseName} has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try, which has been paid for, is kept in {recording.UnreadAnswer()}"
         }));
-        Assert.That(_log.Messages[^1], Is.EqualTo($"To lay that answer out as a transcript for free, run: {CommandLine.Rebuild(recording.UnreadAnswer())}"));
+        Assert.That(_log.Messages[^1], Is.EqualTo($"To lay that answer out as a transcript for free, run: {Printed.Rebuild(recording.UnreadAnswer())}"));
         Assert.That(Directory.GetFiles(_class, "*.md"), Is.Empty);
     }
 

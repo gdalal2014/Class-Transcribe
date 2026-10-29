@@ -32,6 +32,7 @@ public sealed class DownloadBatch(
     IBatchPace pace,
     DownloadedAudio audio,
     IClassFolders classFolders,
+    CommandLine commandLine,
     IRunLog log,
     IDriveRoom driveRoom,
     IDriveAutoUpload drive,
@@ -629,22 +630,22 @@ public sealed class DownloadBatch(
     /// </summary>
     private (bool Done, string Line) Outcome(YouTubeRequest request, BatchVideo video)
     {
-        var recordIt = CommandLine.YouTube([YouTubeLinks.WatchUrl(video.VideoId)], request.Name, request.OutputRoot);
+        var recordIt = commandLine.YouTube([YouTubeLinks.WatchUrl(video.VideoId)], request.Name, request.OutputRoot);
         if (video.Transcript is { Step: TranscriptStep.Transcribed, TranscriptPath: { } transcript })
             return (true, $"{(video.Downloaded is null ? "fetched before; " : "downloaded; ")}transcribed: {transcript}");
         if (video.Transcript is { } failed) return (false, $"{(video.Downloaded is null ? "" : "downloaded; ")}not transcribed: {failed.Problem}");
         if (video.Downloaded is not null)
         {
             return request.Transcribe
-                ? (false, $"downloaded into {video.Recording!.BaseName}; not transcribed yet: {CommandLine.Transcribe(video.Recording.Segment(1))}")
-                : (true, $"downloaded into {video.Recording!.BaseName}. To transcribe it: {CommandLine.Transcribe(video.Recording.Segment(1))}");
+                ? (false, $"downloaded into {video.Recording!.BaseName}; not transcribed yet: {commandLine.Transcribe(video.Recording.Segment(1))}")
+                : (true, $"downloaded into {video.Recording!.BaseName}. To transcribe it: {commandLine.Transcribe(video.Recording.Segment(1))}");
         }
 
         if (video.Past.Kind == PastKind.Transcribed) return (true, video.Past.Words);
         if (video.Past is { Kind: PastKind.Whole, Recording: { } past })
         {
-            if (past.KeptAnswer is { } kept) return (false, $"fetched before; ElevenLabs' answer, paid for, is kept in {kept}. To lay it out for free: {CommandLine.Rebuild(kept)}");
-            return request.Transcribe ? (false, $"fetched before; not transcribed: {CommandLine.Transcribe(past.Files.Segment(1))}") : (true, video.Past.Words);
+            if (past.KeptAnswer is { } kept) return (false, $"fetched before; ElevenLabs' answer, paid for, is kept in {kept}. To lay it out for free: {commandLine.Rebuild(kept)}");
+            return request.Transcribe ? (false, $"fetched before; not transcribed: {commandLine.Transcribe(past.Files.Segment(1))}") : (true, video.Past.Words);
         }
 
         if (video.RefusedForItsLink) return (false, $"{BatchVideo.FromEmbeddedPlayerSaid}; record it as it plays instead: {recordIt}");

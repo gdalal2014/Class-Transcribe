@@ -18,6 +18,9 @@ public static class CommandUseCases
     public static IServiceCollection AddCommandUseCases(this IServiceCollection services)
     {
         services.AddRun();
+
+        // The command lines printed for later, which name this very program: one for the process.
+        services.AddSingleton<CommandLine>();
         services.AddTransient<TranscribeCommand>();
         services.AddTransient<RebuildCommand>();
         services.AddTransient<FinishVideoCommand>();

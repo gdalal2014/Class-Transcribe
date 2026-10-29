@@ -64,8 +64,8 @@ public class ClassesMenuTests
         var saved = new SavedClasses(new ConfigurationBuilder().AddInMemoryCollection(classes ?? Saved).Build());
         var folders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path }), TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<ClassFolders>.Instance);
         var microphones = new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array, LaptopMicrophones.Obsbot);
-        var menu = new ClassesMenu(saved, new SettingsPlaces(_folder.Path, userFolder: null), _commands.Object, folders, new FakeCaptureProvider(), microphones, _ui, TimeProvider.System,
-            cameras);
+        var menu = new ClassesMenu(saved, new SettingsPlaces(_folder.Path, userFolder: null), _commands.Object, folders, new FakeCaptureProvider(), Printed.Program, microphones, _ui,
+            TimeProvider.System, cameras);
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
 

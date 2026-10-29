@@ -1,6 +1,7 @@
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
+using ClassScribe.Desktop.Windows;
 using ClassScribe.Runs;
 
 namespace ClassScribe.Tests;
@@ -64,15 +65,15 @@ public class CommandLineTests
         Assert.That(CommandLine.Transcribe(Recording, processPath: null, BuildFolder, again: true), Does.EndWith(" --again"));
     }
 
-    /// <summary>The forms without a program path name the program this very process runs, as the forms with one do for the path given.</summary>
+    /// <summary>The forms without a program path name the program this very process runs (through the real <see cref="ThisProgram"/>), as the forms with one do for the path given.</summary>
     [Test]
     public void The_short_forms_name_this_program()
     {
         var request = Request(new ClassSource.Automatic());
 
-        Assert.That(CommandLine.Rebuild(Recording), Is.EqualTo(CommandLine.Rebuild(Recording, Environment.ProcessPath, AppContext.BaseDirectory)));
-        Assert.That(CommandLine.Transcribe(Recording, again: true), Is.EqualTo(CommandLine.Transcribe(Recording, Environment.ProcessPath, AppContext.BaseDirectory, again: true)));
-        Assert.That(CommandLine.Record(request), Is.EqualTo(CommandLine.Record(request, Environment.ProcessPath, AppContext.BaseDirectory)));
+        Assert.That(Printed.Rebuild(Recording), Is.EqualTo(CommandLine.Rebuild(Recording, Environment.ProcessPath, AppContext.BaseDirectory)));
+        Assert.That(Printed.Transcribe(Recording, again: true), Is.EqualTo(CommandLine.Transcribe(Recording, Environment.ProcessPath, AppContext.BaseDirectory, again: true)));
+        Assert.That(Printed.Record(request), Is.EqualTo(CommandLine.Record(request, Environment.ProcessPath, AppContext.BaseDirectory)));
     }
 
     /// <summary>
@@ -183,7 +184,7 @@ public class CommandLineTests
     {
         Assert.That(CommandLine.YouTube(["https://www.youtube.com/watch?v=abcdefghijk&t=14400s"], "Risala $1", @"C:\Users\gdala\ClassScribe", Exe, ExeFolder),
             Is.EqualTo(@"& ""C:\Program Files\ClassScribe\ClassScribe.exe"" youtube ""https://www.youtube.com/watch?v=abcdefghijk&t=14400s"" --name ""Risala `$1"" --output ""C:\Users\gdala\ClassScribe"" --yes"));
-        Assert.That(CommandLine.YouTube(["https://www.youtube.com/watch?v=abcdefghijk"], "Risala", @"D:\Classes"),
+        Assert.That(Printed.YouTube(["https://www.youtube.com/watch?v=abcdefghijk"], "Risala", @"D:\Classes"),
             Is.EqualTo(CommandLine.YouTube(["https://www.youtube.com/watch?v=abcdefghijk"], "Risala", @"D:\Classes", Environment.ProcessPath, AppContext.BaseDirectory)));
     }
 

@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using ClassScribe.Audio;
+using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
 using ClassScribe.Storage;
@@ -16,7 +16,7 @@ namespace ClassScribe.YouTube;
 /// the next start's report as an interrupted transcription. The run's request is the video's: a request with
 /// <see cref="RecordRequest.Video"/> set, which the class machinery never takes for a class.
 /// </summary>
-public sealed class TranscriptionRuns(IRunJournal journal, TimeProvider time, ILogger<TranscriptionRuns> logger)
+public sealed class TranscriptionRuns(IRunJournal journal, IThisProgram program, TimeProvider time, ILogger<TranscriptionRuns> logger)
 {
     /// <summary>
     /// Begins the run file of the transcript of <paramref name="files"/>, the recording of <paramref name="video"/> in the
@@ -28,8 +28,7 @@ public sealed class TranscriptionRuns(IRunJournal journal, TimeProvider time, IL
         var now = time.GetUtcNow();
         var request = new RecordRequest(RunIds.New(now), name, Transcribe: false, new SourcePlan(RecordingMode.Class, new ClassSource.Automatic(), Microphone: null),
             outputRoot, ContinueChoice.New, ContinueBaseName: null, Minutes: null, Open: false, video);
-        var (processId, processStartedUtc) = ThisProcess();
-        var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, processId, processStartedUtc, Environment.ProcessPath ?? AppContext.BaseDirectory,
+        var record = new RunRecord(RunRecord.CurrentVersion, request.RunId, program.ProcessId, program.StartedUtc, program.ProcessPath ?? program.AppFolder,
             BuildInfo.Build, LinkVersion.Current, Pipe: null, RunHome.InWindow, request, files.BaseName, files.Folder, RunState.Transcribing,
             now, now, TimeSpan.Zero, UploadPercent: null, EndedBy: null, Outcome: null, Seen: false);
 
@@ -47,13 +46,6 @@ public sealed class TranscriptionRuns(IRunJournal journal, TimeProvider time, IL
         }
 
         return new TranscriptionRun(handle, journal, progress, time);
-    }
-
-    /// <summary>This process's id and the time it started, which tell it from a later process given the same id.</summary>
-    internal static (int Id, DateTimeOffset StartedUtc) ThisProcess()
-    {
-        using var process = Process.GetCurrentProcess();
-        return (process.Id, new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero));
     }
 }
 

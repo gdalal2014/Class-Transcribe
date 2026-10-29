@@ -62,8 +62,8 @@ public sealed class FinishVideoCommandTests
         var recording = TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path, OpenFolderWhenDone = true });
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance, new OnDrive(this));
         var starter = new FakeCameraProcessStarter { Run = (process, jobId) => new CameraHost { Media = _media }.RunAsync(jobId, process.ProcessStream, process.ProcessStream) };
-        return new FinishVideoCommand(folders, new FileProbe(), new RecordingFolder(), new LessonVideoMaker(starter, new RecordingFolder(), TimeProvider.System, _logs),
-            new LessonVideoDrive(new FakeCredentialStore(), TestOptions.Create(new DriveOptions())), _drive, _signals, _power, new FakePowerSource(), _desktop.Object, recording, _log);
+        return new FinishVideoCommand(folders, new FileProbe(), new RecordingFolder(), new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, _logs),
+            new LessonVideoDrive(new FakeCredentialStore(), TestOptions.Create(new DriveOptions()), Printed.Commands), _drive, _signals, _power, new FakePowerSource(), _desktop.Object, recording, _log);
     }
 
     /// <summary>What the tests say of the lesson's audio on Google Drive.</summary>

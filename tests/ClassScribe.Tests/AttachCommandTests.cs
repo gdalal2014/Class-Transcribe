@@ -67,7 +67,7 @@ public class AttachCommandTests
     public void TearDown() => _runtime.Dispose();
 
     /// <summary>The command under test, which turns Ctrl+C on through the test rather than through Windows.</summary>
-    private AttachCommand Command() => new(_runtime.Journal, _viewer.Object, _commands.Object, new RecordingFolder(), _ui, _window, _runtime.Time, _log)
+    private AttachCommand Command() => new(_runtime.Journal, _viewer.Object, _commands.Object, new RecordingFolder(), Printed.Commands, _ui, _window, _runtime.Time, _log)
     {
         TurnOnCtrlC = () =>
         {

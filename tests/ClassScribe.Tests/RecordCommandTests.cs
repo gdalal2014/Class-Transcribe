@@ -209,7 +209,7 @@ public partial class RecordCommandTests
         _journal = new RunJournal(ownFolder, _runtime.Processes, time, NullLogger<RunJournal>.Instance);
         _bookkeeping = new RunBookkeeping(
             new RecordingLock(ownFolder, NullLogger<RecordingLock>.Instance, _ => { }), _journal, _recorderLog, _power, _powerSource, _session, _exitWarnings.Object,
-            _crashes, _window, _context, recording, time, _bookkeepingLog)
+            _crashes, _window, _context, Printed.Program, recording, time, _bookkeepingLog)
         {
             HandlerLogPatience = handlerLogPatience ?? RunBookkeeping.DefaultHandlerLogPatience
         };
@@ -219,7 +219,7 @@ public partial class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, new WavTrackWriterFactory(), recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance, video),
-            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new RecordingFolder(), new FileProbe(), _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
+            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new RecordingFolder(), new FileProbe(), Printed.Commands, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
     }
 
     /// <summary>
@@ -533,10 +533,10 @@ public partial class RecordCommandTests
     {
         Assert.That(_log.Messages.TakeLast(2), Is.EqualTo(new[]
         {
-            $"To lay that answer out as a transcript for free, run: {CommandLine.Rebuild(answer)}",
-            $"To transcribe it again all the same, choose 3 in the menu, or run: {CommandLine.Transcribe(Recording(), again: true)}"
+            $"To lay that answer out as a transcript for free, run: {Printed.Rebuild(answer)}",
+            $"To transcribe it again all the same, choose 3 in the menu, or run: {Printed.Transcribe(Recording(), again: true)}"
         }));
-        Assert.That(_log.Messages, Has.None.EndsWith(CommandLine.Transcribe(Recording())), "the plain command, which the command line refuses here");
+        Assert.That(_log.Messages, Has.None.EndsWith(Printed.Transcribe(Recording())), "the plain command, which the command line refuses here");
     }
 
     // ------------------------------------------------------------------ recording and transcribing
@@ -1528,7 +1528,7 @@ public partial class RecordCommandTests
         _signals.RequestStop();
 
         Assert.That(await run, Is.EqualTo(0));
-        var command = CommandLine.Transcribe(Recording());
+        var command = Printed.Transcribe(Recording());
         var outcome = new RunOutcome(OutcomeKind.Recorded, 0, $"The recording is in {KalamFolder()}. To transcribe it later, choose 3 in the menu, or run: {command}",
             null, KalamFolder(), command);
         Assert.That(RunFile().Outcome, Is.EqualTo(outcome));
@@ -1547,7 +1547,7 @@ public partial class RecordCommandTests
         await run;
 
         var hint = _log.Messages.Single(m => m.StartsWith("The recording is in", StringComparison.Ordinal));
-        Assert.That(hint, Does.Contain("choose 3 in the menu").And.Contain(CommandLine.Transcribe(Only("*.wav"))));
+        Assert.That(hint, Does.Contain("choose 3 in the menu").And.Contain(Printed.Transcribe(Only("*.wav"))));
         Assert.That(hint, Does.Not.Contain("run: ClassScribe transcribe"), "a bare ClassScribe is not a command anywhere");
     }
 
@@ -1585,7 +1585,7 @@ public partial class RecordCommandTests
         _client.Verify(Calls.AnyTranscription, Times.Never);
         Assert.That(_log.Problems.Last(), Does.StartWith("Nothing audible was captured from \"Fake Speakers\", so nothing was sent to ElevenLabs").And.Contain("Windows is not muted"));
         Assert.That(_log.Problems, Has.None.Contains("try the transcript again"));
-        Assert.That(_log.Problems, Has.None.Contains(CommandLine.Transcribe(Recording())));
+        Assert.That(_log.Problems, Has.None.Contains(Printed.Transcribe(Recording())));
         Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.NothingRecorded, 1, _log.Problems.Last(), null, KalamFolder(), null)));
         Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Failed));
     }
@@ -1647,8 +1647,8 @@ public partial class RecordCommandTests
         Assert.That(TestAudio.ReadWav(Only("*.wav")).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
         _client.Verify(Calls.AnyTranscription, Times.Never);
         Assert.That(_log.Problems.Last(), Does.Contain("open a new terminal").And.Contain("quit every VS Code window")
-            .And.Contain("choose 3 in the menu").And.Contain(CommandLine.Transcribe(Only("*.wav"))));
-        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.TranscriptFailed, 1, _log.Problems.Last(), null, KalamFolder(), CommandLine.Transcribe(Only("*.wav")))));
+            .And.Contain("choose 3 in the menu").And.Contain(Printed.Transcribe(Only("*.wav"))));
+        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.TranscriptFailed, 1, _log.Problems.Last(), null, KalamFolder(), Printed.Transcribe(Only("*.wav")))));
     }
 
     /// <summary>
@@ -1705,9 +1705,9 @@ public partial class RecordCommandTests
 
         Assert.ThrowsAsync<TranscriptionException>(async () => await run);
         Assert.That(TestAudio.ReadWav(Recording()).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
-        Assert.That(_log.Problems.Last(), Does.Contain("choose 3 in the menu").And.Contain(CommandLine.Transcribe(Recording())));
+        Assert.That(_log.Problems.Last(), Does.Contain("choose 3 in the menu").And.Contain(Printed.Transcribe(Recording())));
         Assert.That(_log.Problems.Last(), Does.Not.Contain("kept in"), "no answer arrived, so none was kept");
-        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.TranscriptFailed, 1, _log.Problems.Last(), null, KalamFolder(), CommandLine.Transcribe(Recording()))));
+        Assert.That(RunFile().Outcome, Is.EqualTo(new RunOutcome(OutcomeKind.TranscriptFailed, 1, _log.Problems.Last(), null, KalamFolder(), Printed.Transcribe(Recording()))));
         Assert.That(RunFile().State, Is.EqualTo(RunState.Finished));
         Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Failed));
         _desktop.VerifyNoOtherCalls();
@@ -1733,7 +1733,7 @@ public partial class RecordCommandTests
         _client.Verify(Calls.AnyTranscription, Times.Never);
         Assert.That(_log.Problems.Last(), Does.StartWith($"The audio is safe in {KalamFolder()}"));
         Assert.That(_log.Messages, Has.None.Contains("try the transcript again"));
-        Assert.That(_log.Messages, Has.None.Contains(CommandLine.Transcribe(Recording())));
+        Assert.That(_log.Messages, Has.None.Contains(Printed.Transcribe(Recording())));
         Assert.That(RunFile().Outcome!.RetryCommand, Is.Null);
     }
 
@@ -1786,7 +1786,7 @@ public partial class RecordCommandTests
         var answer = Only("*.unread.json");
         Assert.That(_log.Problems.Last(), Does.Contain($"kept in {answer}").And.Contain("charged again"));
         AssertTheCommandsAfterAKeptAnswer(answer);
-        Assert.That(RunFile().Outcome!.RetryCommand, Is.EqualTo(CommandLine.Rebuild(answer)));
+        Assert.That(RunFile().Outcome!.RetryCommand, Is.EqualTo(Printed.Rebuild(answer)));
     }
 
     /// <summary>
@@ -1854,7 +1854,7 @@ public partial class RecordCommandTests
         Assert.That(_log.Problems.Last(), Does.Contain("ElevenLabs has charged for this answer, but it could not be saved anywhere.")
             .And.Contain($"Its transcription ID at ElevenLabs is {Mocks.Transcript.TranscriptionId}, with which the transcript can be fetched from ElevenLabs.")
             .And.Contain("Transcribing again is charged again.")
-            .And.Contain(CommandLine.Transcribe(Recording()))
+            .And.Contain(Printed.Transcribe(Recording()))
             .And.Not.Contain("kept in"));
     }
 
@@ -1873,7 +1873,7 @@ public partial class RecordCommandTests
         Assert.That(error, Is.InstanceOf<TranscriptionException>());
         Assert.That(_log.Problems.Last(), Does.Contain("ElevenLabs has charged for this answer, but it could not be saved anywhere, and its transcription ID at ElevenLabs is unknown.")
             .And.Contain("Transcribing again is charged again.")
-            .And.Contain(CommandLine.Transcribe(Recording()))
+            .And.Contain(Printed.Transcribe(Recording()))
             .And.Not.Contain("kept in"));
     }
 
@@ -1922,7 +1922,7 @@ public partial class RecordCommandTests
 
         Assert.ThrowsAsync<TranscriptionException>(async () => await run);
         Assert.That(_log.Problems.Last(), Does.Contain("To try the transcript again")
-            .And.Contain(CommandLine.Transcribe(Recording()))
+            .And.Contain(Printed.Transcribe(Recording()))
             .And.Not.Contain("kept in"));
     }
 
@@ -1951,7 +1951,7 @@ public partial class RecordCommandTests
         Assert.That(TestAudio.ReadWav(Recording()).Samples, Is.EqualTo(new short[] { 1000, -1000 }));
         Assert.That(_log.Messages, Has.Some.StartsWith("Press Ctrl+C to cancel the upload"));
         var outcome = RunFile().Outcome!;
-        Assert.That((outcome.Kind, outcome.ExitCode, outcome.RetryCommand), Is.EqualTo((OutcomeKind.Cancelled, 130, CommandLine.Transcribe(Recording()))));
+        Assert.That((outcome.Kind, outcome.ExitCode, outcome.RetryCommand), Is.EqualTo((OutcomeKind.Cancelled, 130, Printed.Transcribe(Recording()))));
         Assert.That(_status.Last!.Phase, Is.EqualTo(RecorderPhase.Cancelled));
     }
 
@@ -2350,7 +2350,7 @@ public partial class RecordCommandTests
         _signals.RequestStop();
 
         Assert.That(await run, Is.EqualTo(1));
-        Assert.That(_log.Problems, Has.One.EqualTo($"No audio was captured from the class. Was anything playing? Your microphone's audio is kept in {KalamFolder()}. To transcribe it on its own, run: {CommandLine.Transcribe(microphoneFile)}"));
+        Assert.That(_log.Problems, Has.One.EqualTo($"No audio was captured from the class. Was anything playing? Your microphone's audio is kept in {KalamFolder()}. To transcribe it on its own, run: {Printed.Transcribe(microphoneFile)}"));
         Assert.That(RunFile().Outcome!.Kind, Is.EqualTo(OutcomeKind.NothingRecorded));
     }
 }

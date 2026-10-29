@@ -395,7 +395,7 @@ public sealed class YouTubeWorld : IDisposable
     public ILogger<T> Log<T>() => new Logger<T>(Logs);
 
     /// <summary>The batch's transcripts over the played transcriber.</summary>
-    public BatchTranscripts Transcripts() => new(Transcriber, Wait(), ClassFolders, new RecordingFolder(), new TranscriptCopies(), Runtime.Journal, Log<BatchTranscripts>());
+    public BatchTranscripts Transcripts() => new(Transcriber, Wait(), ClassFolders, new RecordingFolder(), new TranscriptCopies(), Runtime.Journal, Printed.Commands, Log<BatchTranscripts>());
 
     /// <summary>The wait while a class records, over the test's run files.</summary>
     public ClassWait Wait() => new(Runtime.Journal, Runtime.Time, Log<ClassWait>());
@@ -408,7 +408,7 @@ public sealed class YouTubeWorld : IDisposable
             Recording, ElevenLabs, Runtime.Time, Log<YouTubeBatch>());
         var locator = new ToolLocator(new FakeRegistryValues(), Files, YouTube, Log<ToolLocator>()) { LocalAppData = @"C:\Users\gdala\AppData\Local" };
         return new DownloadBatch(batch, new YtDlpCheck(locator, Tools, Folders, Time, Log<YtDlpCheck>()), Folders, Tools, Pace,
-            new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), ClassFolders, RecorderLog, DriveRoom, Drive, FreeSpace,
+            new DownloadedAudio(Folders, Recording, Runtime.Time, Log<DownloadedAudio>()), ClassFolders, Printed.Commands, RecorderLog, DriveRoom, Drive, FreeSpace,
             TestGlossaries.Choice(ElevenLabs, classes: new SavedClasses(new ConfigurationBuilder().AddInMemoryCollection(Classes).Build())), Ui, YouTube, ElevenLabs, Time,
             Log<DownloadBatch>());
     }

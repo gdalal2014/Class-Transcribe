@@ -78,7 +78,7 @@ public class LocalAudioFreerTests
         var freed = await FreeAsync();
 
         Assert.That(freed.Deleted, Is.Empty);
-        Assert.That(freed.Problem, Is.EqualTo($"{_mantiq.BaseName} has not gone up to Google Drive yet, so none of its audio was deleted. Upload it first: {CommandLine.DriveUpload(_mantiq.Segment(1))}"));
+        Assert.That(freed.Problem, Is.EqualTo($"{_mantiq.BaseName} has not gone up to Google Drive yet, so none of its audio was deleted. Upload it first: {Printed.DriveUpload(_mantiq.Segment(1))}"));
         Assert.That(File.Exists(_mantiq.Segment(1)), Is.True);
         Assert.That(_world.Google.Requests, Is.Empty);
     }

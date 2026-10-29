@@ -29,8 +29,7 @@ public class TranscriptionRunsTests
     public void SetUp()
     {
         _runtime = new TestRuntime();
-        var (id, started) = TranscriptionRuns.ThisProcess();
-        _runtime.Processes.Start(id, started);
+        _runtime.Processes.Start(Printed.Program.ProcessId, Printed.Program.StartedUtc);
         _recordings = new TempFolder();
         _files = RecordingFiles.ForNew(Path.Combine(_recordings.Path, "Risala", "2026-10-18"), "Risala", new DateTimeOffset(2026, 10, 18, 14, 2, 11, TimeSpan.Zero));
         Directory.CreateDirectory(_files.Folder);
@@ -48,7 +47,7 @@ public class TranscriptionRunsTests
 
     /// <summary>Begins the transcript's run.</summary>
     private TranscriptionRun Begin() =>
-        new TranscriptionRuns(_runtime.Journal, _runtime.Time, NullLogger<TranscriptionRuns>.Instance).Begin("Risala", _recordings.Path, YouTubeTestRuns.Video(), _files, _progress);
+        new TranscriptionRuns(_runtime.Journal, Printed.Program, _runtime.Time, NullLogger<TranscriptionRuns>.Instance).Begin("Risala", _recordings.Path, YouTubeTestRuns.Video(), _files, _progress);
 
     /// <summary>The run file says: this process, in this window, transcribing the video's recording, its request the video's.</summary>
     [Test]

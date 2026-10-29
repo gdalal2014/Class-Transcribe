@@ -353,7 +353,7 @@ public class VideoBatchTests
 
         var line = world.Screen.Single(text => text.StartsWith("  01  A long lecture: ", StringComparison.Ordinal));
         Assert.That(line, Does.Contain("but stopped at the longest a video is recorded for (YouTube:LongestVideoHours), so it may be cut short"));
-        Assert.That(line, Does.Contain(CommandLine.YouTube(["https://www.youtube.com/watch?v=abcdefghijk&t=15000s"], "Risala", world.Recordings.Path)));
+        Assert.That(line, Does.Contain(Printed.YouTube(["https://www.youtube.com/watch?v=abcdefghijk&t=15000s"], "Risala", world.Recordings.Path)));
         Assert.That(world.Started.Single().Video!.StartSeconds, Is.EqualTo(600), "the window opened where the link starts");
     }
 

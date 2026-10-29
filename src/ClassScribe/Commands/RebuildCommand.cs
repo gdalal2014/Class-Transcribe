@@ -22,6 +22,7 @@ public sealed partial class RebuildCommand(
     IFileProbe probe,
     IRecordingFolder recordings,
     ITranscriptCopies copies,
+    CommandLine commandLine,
     IDesktop desktop,
     IDriveAutoUpload drive,
     IOptionsSnapshot<RecordingOptions> recording,
@@ -134,7 +135,7 @@ public sealed partial class RebuildCommand(
         if (folders.KeptAnswerOf(newer) is { } kept)
         {
             logger.LogWarning("{Newer} has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try, which has been paid for, is kept in {Answer}. {Rebuilt}, the newest recording here with a saved answer, is rebuilt instead", newer.BaseName, kept, rebuilt.BaseName);
-            logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", CommandLine.Rebuild(kept));
+            logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", commandLine.Rebuild(kept));
         }
         else if (recordings.HasTranscript(newer))
         {
@@ -199,7 +200,7 @@ public sealed partial class RebuildCommand(
         if (folders.KeptAnswerOf(files) is { } kept)
         {
             logger.LogError("{Recording} has no saved answer from ElevenLabs that became a transcript, but the answer to an earlier try, which has been paid for, is kept in {Answer}", files.BaseName, kept);
-            logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", CommandLine.Rebuild(kept));
+            logger.LogInformation("To lay that answer out as a transcript for free, run: {Command}", commandLine.Rebuild(kept));
         }
         else if (recordings.HasTranscript(files))
         {

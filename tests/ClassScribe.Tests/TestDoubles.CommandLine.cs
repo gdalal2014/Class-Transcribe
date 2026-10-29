@@ -31,7 +31,7 @@ public sealed class TestCommandLine
         var recording = TestOptions.Create(new RecordingOptions { OutputFolder = recordingsFolder });
         var folders = new ClassFolders(recording, Time, NullLogger<ClassFolders>.Instance);
         Menu = new MenuCommand(commands, ui, Gate, settings.File, TestOptions.Create(new ElevenLabsOptions { ApiKey = "test-key" }), folders, new RecordingFolder(), new TranscriptCopies(), new FakeCaptureProvider(),
-            new SourceChoice(recording), new RecordingNamePrompt(ui), Mock.Of<IDesktop>(), Time, NullLogger<MenuCommand>.Instance);
+            Printed.Program, new SourceChoice(recording), new RecordingNamePrompt(ui), Mock.Of<IDesktop>(), Time, NullLogger<MenuCommand>.Instance);
         Tree = new CommandLineTree(commands, Menu, ui, Time, Output, Errors, classes ?? new SavedClasses(new ConfigurationBuilder().Build()), recording);
     }
 

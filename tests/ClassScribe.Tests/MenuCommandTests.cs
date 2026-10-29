@@ -89,7 +89,7 @@ public class MenuCommandTests
     /// </summary>
     private Task<int> RunMenuAsync(string? recordings = null, ILoopbackCaptureProvider? devices = null, TimeProvider? time = null)
     {
-        var menu = new MenuCommand(_commands.Object, _report.Object, _ui, _settings.Gate(_gateLog), _settings.File, _elevenLabs, Folders(recordings), new RecordingFolder(), new TranscriptCopies(), devices ?? _devices, _choice,
+        var menu = new MenuCommand(_commands.Object, _report.Object, _ui, _settings.Gate(_gateLog), _settings.File, _elevenLabs, Folders(recordings), new RecordingFolder(), new TranscriptCopies(), devices ?? _devices, Printed.Program, _choice,
             new RecordingNamePrompt(_ui), _desktop.Object, time ?? TimeProvider.System, _log);
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
@@ -1536,11 +1536,11 @@ public class CommandRunnerTests
         {
             services.AddScoped<IRecordStarter>(provider => Noted(provider, new FakeRecordStarter(_played, provider)));
             services.AddScoped<IRunViewer>(provider => Noted(provider, new PlayedRunViewer(_played, provider)));
-            services.AddScoped(provider => new AttachCommand(_runtime.Journal, provider.GetRequiredService<IRunViewer>(), _runner!, new RecordingFolder(), _ui, new FakeWindowSignals(), _runtime.Time,
+            services.AddScoped(provider => new AttachCommand(_runtime.Journal, provider.GetRequiredService<IRunViewer>(), _runner!, new RecordingFolder(), Printed.Commands, _ui, new FakeWindowSignals(), _runtime.Time,
                 NullLogger<AttachCommand>.Instance) { TurnOnCtrlC = () => 0 });
             services.AddScoped(provider => Noted(provider, new ListCommand(Folders(), new TranscriptCopies(), _runtime.Journal, _ui, ZonedTimeProvider.EasternSummer)));
             services.AddScoped(provider => Noted(provider, new DevicesCommand(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => new FakeMicrophoneProvider()), new Lazy<IMicrophoneSessions>(() => new FakeMicrophoneSessions()),
-                new Lazy<Camera.ICameraProvider>(() => new FakeCameraProvider()), _ui, NullLogger<DevicesCommand>.Instance)));
+                new Lazy<Camera.ICameraProvider>(() => new FakeCameraProvider()), Printed.Program, _ui, NullLogger<DevicesCommand>.Instance)));
             services.AddScoped(provider => Noted(provider, CreateTranscribeCommand()));
             services.AddScoped(provider => Noted(provider, CreateMicrophoneMenu()));
             services.AddScoped<IMicCheckRun>(provider => Noted(provider, new FakeMicCheckRun(_checked) { ExitCode = micCheckExitCode }));
@@ -1588,7 +1588,7 @@ public class CommandRunnerTests
         var workflow = new TranscriptionWorkflow(Mocks.AudioPreparer().Object, _client.Object, TestGlossaries.Choice(elevenLabs),
             new TranscriptFormatter(TestOptions.Create(new TranscriptOptions())), folders, new ClassMarks(NullLogger<ClassMarks>.Instance), new TranscriptCopies(), new RecordingFolder(), new FileProbe(), new ElevenLabsAnswer(), new AudioFileFacts(), recording, elevenLabs,
             new TranscriptionProgress(), usage, NullLogger<TranscriptionWorkflow>.Instance);
-        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), recording, elevenLabs,
+        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), Printed.Commands, new FakeUserSignals(), _desktop.Object, new FakePowerRequests(), new FakePowerSource(), new FakeDriveAutoUpload(), recording, elevenLabs,
             ZonedTimeProvider.EasternSummer, _transcribeLog);
     }
 
@@ -1676,7 +1676,7 @@ public class CommandRunnerTests
                 scope => scope.GetRequiredService<IOptionsSnapshot<RecordingOptions>>().Value.OutputFolder))));
         var monitor = _container!.GetRequiredService<IOptionsMonitor<RecordingOptions>>();
         var menu = new MenuCommand(runner, new NoStartupReport(), _ui, settings.Gate(), settings.File, TestOptions.Create(new ElevenLabsOptions { ApiKey = "test-key" }),
-            new ClassFolders(monitor, TimeProvider.System, NullLogger<ClassFolders>.Instance), new RecordingFolder(), new TranscriptCopies(), _devices, new SourceChoice(monitor), new RecordingNamePrompt(_ui),
+            new ClassFolders(monitor, TimeProvider.System, NullLogger<ClassFolders>.Instance), new RecordingFolder(), new TranscriptCopies(), _devices, Printed.Program, new SourceChoice(monitor), new RecordingNamePrompt(_ui),
             _desktop.Object, TimeProvider.System, NullLogger<MenuCommand>.Instance);
         _ui.TypeLine("Kalam");
         _ui.TypeLine("Fiqh");

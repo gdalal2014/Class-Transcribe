@@ -58,7 +58,7 @@ public class DevicesCommandTests
     /// <summary>The command over the simulated devices, microphones and sessions, which it asks for only when it runs.</summary>
     private DevicesCommand CreateCommand() =>
         new(new Lazy<ILoopbackCaptureProvider>(() => _devices), new Lazy<IMicrophoneProvider>(() => _microphones), new Lazy<IMicrophoneSessions>(() => _sessions),
-            new Lazy<ICameraProvider>(() => _cameras), _ui, _log);
+            new Lazy<ICameraProvider>(() => _cameras), Printed.Program, _ui, _log);
 
     /// <summary>What the command wrote, line by line, with each run of spaces that lines up a column made two spaces.</summary>
     private string[] Lines => [.. _ui.Screen.Split(Environment.NewLine).Select(line => Regex.Replace(line, " {3,}", "  "))];
@@ -283,7 +283,7 @@ public class DevicesCommandTests
                 asked = true;
                 return _cameras;
             }),
-            _ui, _log);
+            Printed.Program, _ui, _log);
 
         Assert.That(asked, Is.False);
     }

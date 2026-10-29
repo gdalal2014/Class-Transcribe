@@ -169,6 +169,7 @@ public sealed class VideoBatch(
     IRunJournal journal,
     IClassFolders classFolders,
     IRecordingFolder recordings,
+    CommandLine commandLine,
     GlossaryChoice glossaries,
     IUserSignals signals,
     IConsoleUi ui,
@@ -544,9 +545,9 @@ public sealed class VideoBatch(
             if (video.Transcript is { Step: TranscriptStep.Transcribed, TranscriptPath: { } before }) return (true, $"made before; transcribed: {before}");
             if (video.Transcript is { } beforeFailed) return (false, $"made before; not transcribed: {beforeFailed.Problem}");
             if (video.Past is { Kind: PastKind.Whole, Recording: { KeptAnswer: { } kept } })
-                return (false, $"made before; ElevenLabs' answer, paid for, is kept in {kept}. To lay it out for free: {CommandLine.Rebuild(kept)}");
+                return (false, $"made before; ElevenLabs' answer, paid for, is kept in {kept}. To lay it out for free: {commandLine.Rebuild(kept)}");
             return video.Past.Kind == PastKind.Whole && request.Transcribe
-                ? (false, $"made before; not transcribed: {CommandLine.Transcribe(video.Past.Recording!.Files.Segment(1))}")
+                ? (false, $"made before; not transcribed: {commandLine.Transcribe(video.Past.Recording!.Files.Segment(1))}")
                 : (true, video.Past.Words);
         }
 
@@ -561,14 +562,14 @@ public sealed class VideoBatch(
         if (video.EndedBy is RunEndCause.VideoLimit or RunEndCause.SafetyStop)
         {
             var from = (video.Link.StartSeconds ?? 0) + (int)(video.Length ?? TimeSpan.Zero).TotalSeconds;
-            recorded += $". For the rest: {CommandLine.YouTube([YouTubeLinks.WatchUrl(video.Link.Id, from)], request.Name, request.OutputRoot)}";
+            recorded += $". For the rest: {commandLine.YouTube([YouTubeLinks.WatchUrl(video.Link.Id, from)], request.Name, request.OutputRoot)}";
         }
 
         if (video.Transcript is { Step: TranscriptStep.Transcribed, TranscriptPath: { } transcript }) return (whole, $"{recorded}; transcribed: {transcript}");
         if (video.Transcript is { } failed) return (false, $"{recorded}; not transcribed: {failed.Problem}");
         return request.Transcribe
-            ? (false, $"{recorded}; not transcribed yet: {CommandLine.Transcribe(files.Segment(1))}")
-            : (whole, $"{recorded}. To transcribe it: {CommandLine.Transcribe(files.Segment(1))}");
+            ? (false, $"{recorded}; not transcribed yet: {commandLine.Transcribe(files.Segment(1))}")
+            : (whole, $"{recorded}. To transcribe it: {commandLine.Transcribe(files.Segment(1))}");
     }
 
     /// <summary>

@@ -108,6 +108,7 @@ public class SettingsReloadTests
             app.Services.GetRequiredService<IRecordingFolder>(),
             app.Services.GetRequiredService<ITranscriptCopies>(),
             new FakeCaptureProvider(),
+            Printed.Program,
             app.Services.GetRequiredService<SourceChoice>(),
             new RecordingNamePrompt(ui),
             desktop.Object,

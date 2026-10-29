@@ -1,5 +1,6 @@
 using System.Globalization;
 using ClassScribe.Audio;
+using ClassScribe.Desktop.Windows;
 using ClassScribe.Link;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -378,7 +379,7 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     {
         var words = why.TrimEnd('.');
         if (kept && Recordings.FindCameraPieces(files).Count > 0) words += ". The camera's pieces are kept";
-        if (retry) words += $". To make it again, free: {Commands.CommandLine.FinishVideo(Recordings.FindSegments(files).FirstOrDefault() ?? Recordings.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder)}";
+        if (retry) words += $". To make it again, free: {new Commands.CommandLine(ThisProgram.Current).FinishVideo(Recordings.FindSegments(files).FirstOrDefault() ?? Recordings.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder)}";
         await SendAsync(CameraProtocol.Failed, new CameraFailed(words), CameraJson.Default.CameraFailed);
         return CameraProtocol.FailedExitCode;
     }

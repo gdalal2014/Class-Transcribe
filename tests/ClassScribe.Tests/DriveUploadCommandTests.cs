@@ -110,7 +110,7 @@ public class DriveUploadCommandTests
         Assert.That(Uploaded(), Is.EquivalentTo(new[] { _mantiq.BaseName, _mantiqLater.BaseName, _kalam.BaseName }));
         Assert.That(_world.Google.Uploaded.Select(file => file.Name), Has.None.EqualTo(Path.GetFileName(kept)));
         Assert.That(_world.Google.Files.Where(file => file.IsFolder).Select(file => file.Name), Has.None.EqualTo(Path.GetFileName(_world.Recordings.Path)));
-        Assert.That(_world.Lines, Has.Member($"{Path.GetFileName(kept)} lies in {_world.Recordings.Path} itself, not in a recording's folder, so it does not go up; to lay it out beside its recording, rebuild it: {ClassScribe.Commands.CommandLine.Rebuild(kept)}"));
+        Assert.That(_world.Lines, Has.Member($"{Path.GetFileName(kept)} lies in {_world.Recordings.Path} itself, not in a recording's folder, so it does not go up; to lay it out beside its recording, rebuild it: {Printed.Rebuild(kept)}"));
     }
 
     /// <summary>A file that is not a recording's, or a folder without one, is refused with exit code 1, and nothing is asked of Google.</summary>

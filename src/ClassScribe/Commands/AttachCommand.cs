@@ -33,11 +33,13 @@ namespace ClassScribe.Commands;
 /// <param name="viewer">Shows the run.</param>
 /// <param name="commands">Starts the run that continues a lost recorder's recording.</param>
 /// <param name="recordings">A recording's files on disk, for what a lesson's run has left to do.</param>
+/// <param name="commandLine">The commands printed for later: to transcribe a run's recording, or to make its lesson video.</param>
 /// <param name="ui">The window's screen.</param>
 /// <param name="window">The window's title, taskbar button and flash, for a run reported from its file.</param>
 /// <param name="time">The clock for the times written, and for the minutes a continued recording has left.</param>
 /// <param name="logger">Where the command notes what it found and did; what Gulzar needs to read, it writes to the window itself.</param>
-public sealed class AttachCommand(IRunJournal journal, IRunViewer viewer, ICommandRunner commands, IRecordingFolder recordings, IConsoleUi ui, IWindowSignals window, TimeProvider time, ILogger<AttachCommand> logger)
+public sealed class AttachCommand(IRunJournal journal, IRunViewer viewer, ICommandRunner commands, IRecordingFolder recordings, CommandLine commandLine, IConsoleUi ui, IWindowSignals window, TimeProvider time,
+    ILogger<AttachCommand> logger)
 {
     /// <summary>The exit code when there is nothing to show, the run ended without a saved result, or the recorder could not be reached.</summary>
     private const int Failed = 1;
@@ -273,13 +275,13 @@ public sealed class AttachCommand(IRunJournal journal, IRunViewer viewer, IComma
     /// <summary>That the transcript of <paramref name="run"/> was not finished, with the command that transcribes its recording; for a lesson with only its video left, its video.</summary>
     private string TranscriptNotFinished(RunRecord run)
     {
-        if (LessonRuns.OnlyItsVideoLeft(run, recordings)) return LessonRuns.VideoNotFinished(run, recordings);
+        if (LessonRuns.OnlyItsVideoLeft(run, recordings)) return LessonRuns.VideoNotFinished(run, recordings, commandLine);
 
         var said = $"The transcript of \"{run.Request.Name}\" was not finished; its audio is complete.";
         var recording = run is { Folder: { Length: > 0 } folder, BaseName: { Length: > 0 } baseName } ? new RecordingFiles(folder, baseName).Segment(1) : run.Folder;
         return recording is null
             ? said
-            : $"{said} To transcribe it (if the upload had finished, ElevenLabs may bill it again), run: {CommandLine.Transcribe(recording)}";
+            : $"{said} To transcribe it (if the upload had finished, ElevenLabs may bill it again), run: {commandLine.Transcribe(recording)}";
     }
 
     /// <summary>Writes a line as the log shows its lines, the time first, in the window.</summary>

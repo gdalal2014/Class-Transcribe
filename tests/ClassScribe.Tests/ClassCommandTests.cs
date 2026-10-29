@@ -40,7 +40,7 @@ public class ClassCommandTests
     /// <summary>Runs <paramref name="request"/> through the command and returns the exit code.</summary>
     private int Run(ClassRequest request) =>
         new ClassOutput(new ClassCommand(_files.Store, new FileProbe(), TestOptions.Create(new RecordingOptions { OutputFolder = _recordings.Path }),
-            Folders(_recordings.Path), NullLogger<ClassCommand>.Instance), new CommandOutput(_out, _error)).RunAsync(request).GetAwaiter().GetResult();
+            Folders(_recordings.Path), Printed.Commands, NullLogger<ClassCommand>.Instance), new CommandOutput(_out, _error)).RunAsync(request).GetAwaiter().GetResult();
 
     /// <summary>The recordings' library over <paramref name="recordings"/>, the real class folders.</summary>
     private static ClassFolders Folders(string recordings) =>
@@ -275,7 +275,7 @@ public class ClassCommandTests
         File.Delete(_files.UserFile);
         var places = new SettingsPlaces(_files.Program.Path, _files.User.Path, _files.State.Path);
         var store = new SettingsStore(places, new SettingsFile(places, NullLogger<SettingsFile>.Instance), _files.Reloader, _files.Writer);
-        var missing = new ClassOutput(new ClassCommand(store, new FileProbe(), TestOptions.Create(new RecordingOptions()), Folders(_recordings.Path), NullLogger<ClassCommand>.Instance),
+        var missing = new ClassOutput(new ClassCommand(store, new FileProbe(), TestOptions.Create(new RecordingOptions()), Folders(_recordings.Path), Printed.Commands, NullLogger<ClassCommand>.Instance),
             new CommandOutput(_out, _error));
         Assert.That(missing.RunAsync(new ClassRequest.Show("Mantiq", false)).Result, Is.EqualTo(2), "missing, with the marker");
         Assert.That(_error.ToString(), Does.Contain("is missing"));

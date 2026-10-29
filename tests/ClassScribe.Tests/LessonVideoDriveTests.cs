@@ -298,8 +298,8 @@ public sealed class LessonVideoDriveTests
             Assert.That(freed.Bytes, Is.Zero);
             Assert.That(OnDisk.FindCameraPieces(_lesson), Has.Count.EqualTo(3));
             Assert.That(File.Exists(_lesson.Segment(1)), Is.True, "the sound stays to make the video with");
-            Assert.That(freed.Problem, Is.EqualTo(LocalAudioFreer.VideoStillToMake(_lesson, new RecordingFolder())));
-            Assert.That(freed.Problem, Does.Contain(CommandLine.FinishVideo(_lesson.Segment(1))));
+            Assert.That(freed.Problem, Is.EqualTo(LocalAudioFreer.VideoStillToMake(_lesson, new RecordingFolder(), Printed.Commands)));
+            Assert.That(freed.Problem, Does.Contain(Printed.FinishVideo(_lesson.Segment(1))));
         }
     }
 
@@ -355,7 +355,7 @@ public sealed class LessonVideoDriveTests
         if (!setUp) _world.Store.Stored = null;
         LessonVideos(lessonVideos, upload);
 
-        Assert.That(new LessonVideoDrive(_world.Store, _world.Options).KeepsPieces, Is.EqualTo(kept));
+        Assert.That(new LessonVideoDrive(_world.Store, _world.Options, Printed.Commands).KeepsPieces, Is.EqualTo(kept));
     }
 
     /// <summary>
@@ -365,16 +365,16 @@ public sealed class LessonVideoDriveTests
     [Test]
     public void A_lesson_s_start_says_where_its_video_goes()
     {
-        Assert.That(new LessonVideoDrive(_world.Store, _world.Options).StartLine(), Is.EqualTo(LessonVideoDrive.StaysHereLine));
+        Assert.That(new LessonVideoDrive(_world.Store, _world.Options, Printed.Commands).StartLine(), Is.EqualTo(LessonVideoDrive.StaysHereLine(Printed.Commands)));
 
         LessonVideos(on: true);
-        Assert.That(new LessonVideoDrive(_world.Store, _world.Options).StartLine(), Is.EqualTo(LessonVideoDrive.GoesUpLine));
+        Assert.That(new LessonVideoDrive(_world.Store, _world.Options, Printed.Commands).StartLine(), Is.EqualTo(LessonVideoDrive.GoesUpLine));
 
         LessonVideos(on: true, DriveUploadScope.WithoutAudio);
-        Assert.That(new LessonVideoDrive(_world.Store, _world.Options).StartLine(), Is.EqualTo(LessonVideoDrive.WithoutAudioLine));
+        Assert.That(new LessonVideoDrive(_world.Store, _world.Options, Printed.Commands).StartLine(), Is.EqualTo(LessonVideoDrive.WithoutAudioLine));
 
         _world.Store.Stored = null;
-        Assert.That(new LessonVideoDrive(_world.Store, _world.Options).StartLine(), Is.Null);
-        Assert.That(LessonVideoDrive.StaysHereLine, Does.Contain("settings set Drive:LessonVideos \"true\""));
+        Assert.That(new LessonVideoDrive(_world.Store, _world.Options, Printed.Commands).StartLine(), Is.Null);
+        Assert.That(LessonVideoDrive.StaysHereLine(Printed.Commands), Does.Contain("settings set Drive:LessonVideos \"true\""));
     }
 }

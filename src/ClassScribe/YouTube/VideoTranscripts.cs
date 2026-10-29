@@ -61,6 +61,7 @@ public sealed class VideoTranscriptRun(
     UsageReport usage,
     IDriveAutoUpload drive,
     IRunLog log,
+    CommandLine commandLine,
     ILogger<VideoTranscriptRun> logger)
 {
     /// <summary>Transcribes <paramref name="video"/>'s recording (see <see cref="IVideoTranscriber.TranscribeAsync"/>).</summary>
@@ -82,12 +83,12 @@ public sealed class VideoTranscriptRun(
         catch (OperationCanceledException)
         {
             run.End(new RunOutcome(OutcomeKind.Cancelled, 130, $"The transcript of \"{video.Video.Title}\" was cancelled; its audio is kept.", TranscriptPath: null, files.Folder,
-                CommandLine.Transcribe(files.Segment(1))));
+                commandLine.Transcribe(files.Segment(1))));
             throw;
         }
         catch (Exception ex)
         {
-            run.End(new RunOutcome(OutcomeKind.TranscriptFailed, 1, ex.Message, TranscriptPath: null, files.Folder, CommandLine.Transcribe(files.Segment(1))));
+            run.End(new RunOutcome(OutcomeKind.TranscriptFailed, 1, ex.Message, TranscriptPath: null, files.Folder, commandLine.Transcribe(files.Segment(1))));
             throw;
         }
         finally
@@ -128,7 +129,8 @@ public sealed record TranscriptOutcome(VideoToTranscribe Video, TranscriptStep S
 /// in another window or by another command, one with an answer from ElevenLabs kept for it, one still being written, and one
 /// a live run records or transcribes, is not sent again, so that nothing is billed twice.
 /// </summary>
-public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wait, IClassFolders folders, IRecordingFolder recordings, ITranscriptCopies copies, IRunJournal journal, ILogger<BatchTranscripts> logger)
+public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wait, IClassFolders folders, IRecordingFolder recordings, ITranscriptCopies copies, IRunJournal journal,
+    CommandLine commandLine, ILogger<BatchTranscripts> logger)
 {
     /// <summary>The statuses at which ElevenLabs would refuse every transcript left.</summary>
     private static readonly HashSet<HttpStatusCode> StopsAll = [HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.PaymentRequired, HttpStatusCode.TooManyRequests];
@@ -204,7 +206,7 @@ public sealed class BatchTranscripts(IVideoTranscriber transcriber, ClassWait wa
 
         string? why = null;
         if (folders.KeptAnswerOf(files) is { } kept)
-            why = $"ElevenLabs' answer, paid for, was kept for it meanwhile in {kept}; it is not sent again. To lay it out for free: {CommandLine.Rebuild(kept)}";
+            why = $"ElevenLabs' answer, paid for, was kept for it meanwhile in {kept}; it is not sent again. To lay it out for free: {commandLine.Rebuild(kept)}";
         else if (folders.IsBeingWritten(files) || journal.List().Any(run => (run.IsRecordingNow || run.IsTranscribingNow) && RunView.IsRunOf(run.Record, files)))
             why = "it is being recorded or transcribed elsewhere now, so it is not sent from here";
         if (why is null) return null;

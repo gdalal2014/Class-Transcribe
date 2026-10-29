@@ -90,7 +90,7 @@ public class TranscribeCommandTests
             usage,
             NullLogger<TranscriptionWorkflow>.Instance);
 
-        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), _signals, _desktop.Object, _power, _powerSource, _drive, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
+        return new TranscribeCommand(workflow, usage, folders, new FileProbe(), new RecordingFolder(), new TranscriptCopies(), Printed.Commands, _signals, _desktop.Object, _power, _powerSource, _drive, recording, elevenLabs, ZonedTimeProvider.EasternSummer, _log);
     }
 
     /// <summary>
@@ -553,8 +553,8 @@ public class TranscribeCommandTests
         }));
         Assert.That(_log.Messages.TakeLast(2), Is.EqualTo(new[]
         {
-            $"To lay it out again for free, from ElevenLabs' saved answer, run: {CommandLine.Rebuild(recording.Segment(1))}",
-            $"To transcribe it again all the same, run: {CommandLine.Transcribe(recording.Segment(1), again: true)}"
+            $"To lay it out again for free, from ElevenLabs' saved answer, run: {Printed.Rebuild(recording.Segment(1))}",
+            $"To transcribe it again all the same, run: {Printed.Transcribe(recording.Segment(1), again: true)}"
         }));
     }
 
@@ -572,7 +572,7 @@ public class TranscribeCommandTests
 
         _client.Verify(Calls.AnyTranscription, Times.Never);
         Assert.That(_log.Messages, Has.None.Contains(" rebuild "));
-        Assert.That(_log.Messages[^1], Is.EqualTo($"To transcribe it again all the same, run: {CommandLine.Transcribe(recording.Segment(1), again: true)}"));
+        Assert.That(_log.Messages[^1], Is.EqualTo($"To transcribe it again all the same, run: {Printed.Transcribe(recording.Segment(1), again: true)}"));
     }
 
     /// <summary>
@@ -592,8 +592,8 @@ public class TranscribeCommandTests
         _client.Verify(Calls.AnyTranscription, Times.Never);
         Assert.That(_log.Messages.TakeLast(2), Is.EqualTo(new[]
         {
-            $"To make a new transcript for free from ElevenLabs' answer kept in {recording.UnreadAnswer()}, run: {CommandLine.Rebuild(recording.UnreadAnswer())}",
-            $"To transcribe it again all the same, run: {CommandLine.Transcribe(recording.Segment(1), again: true)}"
+            $"To make a new transcript for free from ElevenLabs' answer kept in {recording.UnreadAnswer()}, run: {Printed.Rebuild(recording.UnreadAnswer())}",
+            $"To transcribe it again all the same, run: {Printed.Transcribe(recording.Segment(1), again: true)}"
         }));
     }
 
@@ -656,8 +656,8 @@ public class TranscribeCommandTests
         }));
         Assert.That(_log.Messages.TakeLast(2), Is.EqualTo(new[]
         {
-            $"To lay that answer out as a transcript for free, run: {CommandLine.Rebuild(recording.UnreadAnswer())}",
-            $"To transcribe it again all the same, run: {CommandLine.Transcribe(recording.Segment(1), again: true)}"
+            $"To lay that answer out as a transcript for free, run: {Printed.Rebuild(recording.UnreadAnswer())}",
+            $"To transcribe it again all the same, run: {Printed.Transcribe(recording.Segment(1), again: true)}"
         }));
     }
 
@@ -713,7 +713,7 @@ public class TranscribeCommandTests
         var newest = WriteRecording("Kalam", new DateTimeOffset(2026, 10, 15, 0, 1, 0, TimeSpan.Zero));
         IReadOnlyList<string> loggedBeforeTheUpload = [];
         _client.Setup(Calls.AnyTranscription).Callback(() => loggedBeforeTheUpload = _log.Messages).ReturnsAsync(Mocks.Transcript);
-        var named = $"Also in this folder, without a transcript: Kalam_2026-10-14_23-00-05Z (00:47:10, 14 Oct 19:00 local). To transcribe it: {CommandLine.Transcribe(leftOut.Segment(1))}";
+        var named = $"Also in this folder, without a transcript: Kalam_2026-10-14_23-00-05Z (00:47:10, 14 Oct 19:00 local). To transcribe it: {Printed.Transcribe(leftOut.Segment(1))}";
 
         var exitCode = await CreateCommand().RunAsync(new TranscribeRequest(_folder.Path, FromCommandLine: true));
 
@@ -739,7 +739,7 @@ public class TranscribeCommandTests
         using (HoldForWriting(recordingNow.Segment(1)))
             Assert.That(await CreateCommand().RunAsync(new TranscribeRequest(_folder.Path, FromCommandLine: true)), Is.EqualTo(1));
 
-        Assert.That(_log.Messages, Has.One.EqualTo($"Also in this folder, without a transcript: {leftOut.BaseName} (00:00:00, 7 Oct 19:00 local). To transcribe it: {CommandLine.Transcribe(leftOut.Segment(1))}"));
+        Assert.That(_log.Messages, Has.One.EqualTo($"Also in this folder, without a transcript: {leftOut.BaseName} (00:00:00, 7 Oct 19:00 local). To transcribe it: {Printed.Transcribe(leftOut.Segment(1))}"));
     }
 
     /// <summary>
@@ -756,8 +756,8 @@ public class TranscribeCommandTests
         Assert.That(await CreateCommand().RunAsync(new TranscribeRequest(_folder.Path, FromCommandLine: true)), Is.EqualTo(0));
 
         Assert.That(_log.Messages, Has.Exactly(2).EqualTo(
-            $"Also in this folder, without a transcript: {kept.BaseName} (00:00:00, 7 Oct 19:00 local). ElevenLabs' answer to an earlier try, which has been paid for, is kept in {kept.UnreadAnswer()}. To lay it out as a transcript for free: {CommandLine.Rebuild(kept.UnreadAnswer())}"));
-        Assert.That(_log.Messages, Has.None.Contains(CommandLine.Transcribe(kept.Segment(1))));
+            $"Also in this folder, without a transcript: {kept.BaseName} (00:00:00, 7 Oct 19:00 local). ElevenLabs' answer to an earlier try, which has been paid for, is kept in {kept.UnreadAnswer()}. To lay it out as a transcript for free: {Printed.Rebuild(kept.UnreadAnswer())}"));
+        Assert.That(_log.Messages, Has.None.Contains(Printed.Transcribe(kept.Segment(1))));
     }
 
     /// <summary>

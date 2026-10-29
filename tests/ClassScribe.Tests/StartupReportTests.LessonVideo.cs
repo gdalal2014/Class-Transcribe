@@ -148,7 +148,7 @@ public partial class StartupReportTests
 
         await Report().ShowAsync(interactive: false);
 
-        Assert.That(_ui.Screen, Does.Contain($"To make its lesson video, free: {CommandLine.FinishVideo(files.Segment(1))}"));
+        Assert.That(_ui.Screen, Does.Contain($"To make its lesson video, free: {Printed.FinishVideo(files.Segment(1))}"));
         Assert.That(_ui.Screen, Does.Not.Contain("To transcribe"));
     }
 }
