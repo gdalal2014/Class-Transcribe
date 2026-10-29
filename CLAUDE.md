@@ -893,9 +893,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `IDriveUploadLock`, `IVideoTool`, `IVideoTitles`, `IVideoIndex`, `IVideoSources`, `IDownloadedAudio`, `IVideoWindowOpener`,
   `IToolLocator`, `IYouTubeLock`, `IYouTubeFolders`, `ICameraLink` and `IWebcamHolds`, each with its contract test over the
   real adapter in a temporary folder or the existing fakes, in `DrivePortTests`, `YouTubePortTests` and `CameraPortTests`)
-  bring it to 4,990, all passing. The trial move's 79 architecture tests (`ArchitectureTests`, `ArchitectureRulesTests` and
+  bring it to 4,990, all passing. The trial move's 80 architecture tests (`ArchitectureTests`, `ArchitectureRulesTests` and
   `RepositoryLayoutTests`' checks of the four project folders, in `design\final\architecture-analysis\trial`, where the move
-  and namespace scripts are) wait for slice 4 to commit them, which makes 5,069. The uploads by
+  and namespace scripts are) wait for slice 4 to commit them, which makes 5,070. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
