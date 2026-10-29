@@ -40,9 +40,6 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
     /// <summary>What a file with comments of its own is told: a change from ClassScribe would lose them.</summary>
     public const string CommentsOfItsOwn = "Your settings file has comments of your own, which a change from ClassScribe would lose. Change it in Notepad (ClassScribe settings open), or remove the comments.";
 
-    /// <summary>What a change of the ElevenLabs key is told: the ground rule, in words, and how to set the key where it lives.</summary>
-    public const string ApiKeyRefused =
-        "The ElevenLabs key is never kept in the settings: ClassScribe reads it from the ELEVENLABS_API_KEY environment variable alone. Set it there, for your Windows user, in PowerShell: [Environment]::SetEnvironmentVariable('ELEVENLABS_API_KEY', '<your key>', 'User'), then open a new window.";
 
     /// <summary>What a change says when it took out an ElevenLabs key a hand edit put in the user's file: from the file and from the copy before.</summary>
     public const string ApiKeyTakenOut =
@@ -216,7 +213,7 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
     /// </summary>
     public SettingsChange Reset(string name)
     {
-        if (IsTheKey(name)) return Refuse(2, ApiKeyRefused);
+        if (SettingsCatalog.IsTheKey(name)) return Refuse(2, SettingsCatalog.ApiKeyRefused);
 
         var (key, value, problem) = DefaultOf(name);
         if (problem is not null) return Refuse(2, problem);
@@ -472,8 +469,6 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
         return all;
     }
 
-    /// <summary>True when <paramref name="name"/> is ElevenLabs:ApiKey, in any case: never set, reset or listed.</summary>
-    public static bool IsTheKey(string name) => name.Trim().Equals(ElevenLabsOptions.ApiKeySetting, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The setting <paramref name="name"/> names and <paramref name="values"/> as its JSON value, or why it cannot be set, in
@@ -481,7 +476,7 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
     /// </summary>
     private static (string Name, JsonNode? Value, string? Problem)? Target(string name, string[] values)
     {
-        if (IsTheKey(name)) return (name, null, ApiKeyRefused);
+        if (SettingsCatalog.IsTheKey(name)) return (name, null, SettingsCatalog.ApiKeyRefused);
         if (values.Length == 0) return (name, null, $"settings set needs the value after the setting's name, such as ClassScribe settings set {name} \"...\"; settings reset {name} puts it back at its default.");
 
         if (SettingsCatalog.Find(name) is { } key)

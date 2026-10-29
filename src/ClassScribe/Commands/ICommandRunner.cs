@@ -317,18 +317,18 @@ public sealed class CommandRunner(IServiceScopeFactory scopes, IServiceProviderI
         return await scope.ServiceProvider.GetRequiredService<YouTubeMenu>().RunAsync();
     }
 
-    /// <summary>Runs the settings command (<see cref="SettingsCommand"/>) as <paramref name="request"/> asks, in a scope of its own. Returns its exit code.</summary>
+    /// <summary>Runs the settings command (<see cref="SettingsCommand"/>) as <paramref name="request"/> asks, in a scope of its own, and writes what it answers (<see cref="SettingsOutput"/>). Returns its exit code.</summary>
     public async Task<int> SettingsAsync(SettingsRequest request)
     {
         await using var scope = scopes.CreateAsyncScope();
-        return await scope.ServiceProvider.GetRequiredService<SettingsCommand>().RunAsync(request);
+        return await scope.ServiceProvider.GetRequiredService<SettingsOutput>().RunAsync(request);
     }
 
-    /// <summary>Runs the class command (<see cref="ClassCommand"/>) as <paramref name="request"/> asks, in a scope of its own. Returns its exit code.</summary>
+    /// <summary>Runs the class command (<see cref="ClassCommand"/>) as <paramref name="request"/> asks, in a scope of its own, and writes what it answers (<see cref="ClassOutput"/>). Returns its exit code.</summary>
     public async Task<int> ClassAsync(ClassRequest request)
     {
         await using var scope = scopes.CreateAsyncScope();
-        return await scope.ServiceProvider.GetRequiredService<ClassCommand>().RunAsync(request);
+        return await scope.ServiceProvider.GetRequiredService<ClassOutput>().RunAsync(request);
     }
 
     /// <summary>Shows menu choice C, the saved classes (<see cref="ClassesMenu"/>), in a scope of its own. Returns its exit code.</summary>

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using Microsoft.Extensions.Logging;
 
@@ -41,28 +42,45 @@ public abstract record SettingsRequest
     public sealed record Fill : SettingsRequest;
 }
 
-/// <summary>Where a command of its own kind, settings or class, writes what it answers: standard output and standard error.</summary>
-/// <param name="Out">Standard output: the answer itself, such as a path, a value or JSON.</param>
-/// <param name="Error">Standard error: warnings and refusals that are no part of the answer.</param>
-public sealed record CommandOutput(TextWriter Out, TextWriter Error);
+/// <summary>
+/// What the settings command answers: the exit code; what is said on standard error, refusals and warnings in order, which
+/// come before anything on standard output; and, for settings path, list and get, what is shown on standard output, as
+/// data, which the window writes as text or JSON (the Cli's SettingsOutput).
+/// </summary>
+/// <param name="ExitCode">0 done; 2 a mistake in what was asked; 1 a file that cannot be read or changed, or is missing.</param>
+/// <param name="Errors">The lines for standard error, in order; empty when nothing is wrong.</param>
+public sealed record SettingsAnswer(int ExitCode, IReadOnlyList<string> Errors)
+{
+    /// <summary>For settings path, the settings file's full path; for settings list, the path its header names. Null otherwise.</summary>
+    public string? Path { get; init; }
+
+    /// <summary>For settings list, every row; for settings get, the rows the setting matches (one, or a map's entries). Null when nothing is shown.</summary>
+    public IReadOnlyList<SettingRow>? Rows { get; init; }
+
+    /// <summary>For settings get, the setting's full name as the catalog knows it, which a map's entries are keyed under. Null otherwise.</summary>
+    public string? Key { get; init; }
+
+    /// <summary>An answer that says nothing: <paramref name="exitCode"/> alone, as set, reset, open and fill answer, whose lines the writer logs.</summary>
+    public static SettingsAnswer Done(int exitCode) => new(exitCode, []);
+
+    /// <summary>An answer that refuses with <paramref name="why"/> on standard error and <paramref name="exitCode"/>.</summary>
+    public static SettingsAnswer Refused(int exitCode, string why) => new(exitCode, [why]);
+}
 
 /// <summary>
 /// The settings command (layout-config 1.8, build-plan amendments 25, 38 and 51): path, list, get, set, reset, open and fill,
 /// run without the settings gate or the report at the start, since it must be able to fix a file the gate refuses. Changes
-/// go through the one writer (<see cref="SettingsWriter"/>), which logs them; answers go to standard output, JSON alone with
-/// --json, written with every character beyond ASCII escaped so that PowerShell's ConvertFrom-Json reads it whatever the code
-/// page. The ElevenLabs key is never listed, read or written. Exit codes: 0 done; 2 a mistake in what was asked, such as an
+/// go through the one writer (<see cref="ISettingsStore.Change"/>), which logs them; what it answers is data
+/// (<see cref="SettingsAnswer"/>), which the window writes on standard output, JSON alone with --json, written with every
+/// character beyond ASCII escaped so that PowerShell's ConvertFrom-Json reads it whatever the code page, and on standard
+/// error. The ElevenLabs key is never listed, read or written. Exit codes: 0 done; 2 a mistake in what was asked, such as an
 /// unknown setting, the key, or a value the check refuses; 1 a file that cannot be read or changed, or is missing.
 /// </summary>
-/// <param name="writer">The one writer of the user's file.</param>
-/// <param name="places">Where the settings are.</param>
-/// <param name="file">The settings file, read for list and get.</param>
-/// <param name="reloader">Stages the file's values as they would be used, for list and get.</param>
+/// <param name="store">The settings: where they are, the file, the staged values as they would be used, and the one writer of the user's file.</param>
+/// <param name="files">Whether the user's file is there, for open.</param>
 /// <param name="desktop">Opens the file in Notepad.</param>
-/// <param name="output">Standard output and standard error.</param>
 /// <param name="logger">Where a file that cannot be read is noted.</param>
-public sealed class SettingsCommand(SettingsWriter writer, SettingsPlaces places, SettingsFile file, SettingsReloader reloader, IDesktop desktop, CommandOutput output,
-    ILogger<SettingsCommand> logger)
+public sealed class SettingsCommand(ISettingsStore store, IFileProbe files, IDesktop desktop, ILogger<SettingsCommand> logger)
 {
     /// <summary>The exit code of a mistake in what was asked.</summary>
     private const int Mistake = 2;
@@ -70,49 +88,43 @@ public sealed class SettingsCommand(SettingsWriter writer, SettingsPlaces places
     /// <summary>The exit code of a file that cannot be read or changed.</summary>
     private const int Failed = 1;
 
-    /// <summary>Does what <paramref name="request"/> asks and returns the exit code.</summary>
-    public Task<int> RunAsync(SettingsRequest request) => Task.FromResult(request switch
+    /// <summary>Does what <paramref name="request"/> asks and returns what it answers, with the exit code.</summary>
+    public Task<SettingsAnswer> RunAsync(SettingsRequest request) => Task.FromResult(request switch
     {
-        SettingsRequest.ShowPath => ShowPath(),
-        SettingsRequest.List list => List(list.Json),
-        SettingsRequest.Get get => Get(get.Name, get.Json),
-        SettingsRequest.Set set => writer.Set(set.Name, [.. set.Values]).ExitCode,
-        SettingsRequest.Reset { Name: { } name } => writer.Reset(name).ExitCode,
-        SettingsRequest.Reset => writer.ResetAll().ExitCode,
+        SettingsRequest.ShowPath => new SettingsAnswer(0, []) { Path = store.SettingsPath },
+        SettingsRequest.List => List(),
+        SettingsRequest.Get get => Get(get.Name),
+        SettingsRequest.Set set => SettingsAnswer.Done(store.Set(set.Name, [.. set.Values]).ExitCode),
+        SettingsRequest.Reset { Name: { } name } => SettingsAnswer.Done(store.Reset(name).ExitCode),
+        SettingsRequest.Reset => SettingsAnswer.Done(store.ResetAll().ExitCode),
         SettingsRequest.Open => Open(),
-        SettingsRequest.Fill => writer.Fill().ExitCode,
+        SettingsRequest.Fill => SettingsAnswer.Done(store.Fill().ExitCode),
         _ => throw new ArgumentOutOfRangeException(nameof(request), request, "A settings request this build does not know.")
     });
 
     /// <summary>
     /// The rows of settings list: each setting of the catalog, a map's entries one by one, with its value in force, its
     /// default, where it comes from, and the newer default when the user's file holds an older one; read from the file the
-    /// places name now, with environment variables over it. Null, with the reason written to standard error, when the file
-    /// cannot be read.
+    /// places name now, with environment variables over it. Null rows, with the reason in the lines for standard error,
+    /// when the file cannot be read.
     /// </summary>
-    public IReadOnlyList<SettingRow>? Rows()
+    private (IReadOnlyList<SettingRow>? Rows, IReadOnlyList<string> Errors) Rows()
     {
-        var source = places.Current();
+        var source = store.Current();
         byte[]? bytes;
         try
         {
-            bytes = file.Read(source).Bytes;
+            bytes = store.Read(source).Bytes;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Deliberately not rethrown: a file that cannot be read is the answer, said on standard error with exit 1.
             logger.LogDebug(ex, "Could not read {Path} to list it", source.ReadPath);
-            output.Error.WriteLine($"{source.ReadPath} could not be read: {ex.Message}");
-            return null;
+            return (null, [$"{source.ReadPath} could not be read: {ex.Message}"]);
         }
 
-        using var staged = reloader.Stage(bytes);
-        if (staged.Configuration is not { } settings)
-        {
-            foreach (var line in staged.Unreadable) output.Error.WriteLine(line);
-            output.Error.WriteLine($"Nothing can be read from {source.ReadPath} until it is fixed.");
-            return null;
-        }
+        using var staged = store.Stage(bytes);
+        if (!staged.Readable) return (null, [.. staged.Unreadable, $"Nothing can be read from {source.ReadPath} until it is fixed."]);
 
         var older = source.Origin == SettingsOrigin.UserFolder ? DefaultChanges.HeldIn(staged.Values) : [];
         var rows = new List<SettingRow>();
@@ -122,128 +134,88 @@ public sealed class SettingsCommand(SettingsWriter writer, SettingsPlaces places
             {
                 var defaults = (JsonObject)key.Default!;
                 var entries = defaults.Select(entry => entry.Key)
-                    .Concat(settings.GetSection(key.Name).GetChildren().Select(child => child.Key))
+                    .Concat(staged.Children(key.Name).Select(child => child.Key))
                     .Distinct(StringComparer.OrdinalIgnoreCase);
                 foreach (var entry in entries)
                 {
                     var name = $"{key.Name}:{entry}";
                     var own = defaults.FirstOrDefault(pair => pair.Key.Equals(entry, StringComparison.OrdinalIgnoreCase)).Value;
-                    rows.Add(Row(name, Typed(key.EntryKind!.Value, settings[name]), own?.DeepClone(), staged, older));
+                    rows.Add(Row(name, Typed(key.EntryKind!.Value, staged[name]), own?.DeepClone(), staged, older));
                 }
 
                 continue;
             }
 
             JsonNode? value = key.Kind == SettingKind.List
-                ? new JsonArray([.. settings.GetSection(key.Name).GetChildren().Select(child => (JsonNode?)JsonValue.Create(child.Value))])
-                : Typed(key.Kind, settings[key.Name]);
+                ? new JsonArray([.. staged.Children(key.Name).Select(child => (JsonNode?)JsonValue.Create(child.Value))])
+                : Typed(key.Kind, staged[key.Name]);
             rows.Add(Row(key.Name, value, key.Default?.DeepClone(), staged, older));
         }
 
-        return rows;
+        return (rows, []);
     }
 
-    /// <summary>settings path: the settings file's full path, alone on the line.</summary>
-    private int ShowPath()
+    /// <summary>settings list: every row (see <see cref="Rows"/>) with the file's path, after the warning while the user's file is missing; exit 1 when the file cannot be read.</summary>
+    private SettingsAnswer List()
     {
-        output.Out.WriteLine(places.SettingsPath);
-        return 0;
-    }
+        var warnings = WhileMissing();
+        var (rows, errors) = Rows();
+        if (rows is null) return new SettingsAnswer(Failed, [.. warnings, .. errors]);
 
-    /// <summary>settings list: a line per setting, or JSON alone (see <see cref="Rows"/>).</summary>
-    private int List(bool json)
-    {
-        WarnWhileMissing();
-        if (Rows() is not { } rows) return Failed;
-
-        if (json)
-        {
-            output.Out.WriteLine(new JsonArray([.. rows.Select(row => (JsonNode?)row.ToJson())]).ToJsonString());
-            return 0;
-        }
-
-        output.Out.WriteLine($"Settings in {places.SettingsPath}:");
-        foreach (var row in rows) output.Out.WriteLine(row.Line());
-        return 0;
+        return new SettingsAnswer(0, warnings) { Path = store.SettingsPath, Rows = rows };
     }
 
     /// <summary>
-    /// settings get: the value of one setting alone (a list's items a line each, a map's entries as name=value a line each),
-    /// or as JSON. An unknown name and the key are mistakes, exit 2.
+    /// settings get: the rows of one setting alone (one, or a map's entries), under its name as the catalog knows it, after
+    /// the warning while the user's file is missing. An unknown name and the key are mistakes, exit 2.
     /// </summary>
-    private int Get(string name, bool json)
+    private SettingsAnswer Get(string name)
     {
-        if (SettingsWriter.IsTheKey(name)) return Refuse(Mistake, SettingsWriter.ApiKeyRefused);
+        if (SettingsCatalog.IsTheKey(name)) return SettingsAnswer.Refused(Mistake, SettingsCatalog.ApiKeyRefused);
 
         var known = SettingsCatalog.Find(name)?.Name ?? (SettingsCatalog.FindEntry(name) is { } entry ? $"{entry.Map.Name}:{entry.Entry}" : null);
         if (known is null)
-            return Refuse(Mistake, SettingsCatalog.DidYouMean(name) is { } near
+            return SettingsAnswer.Refused(Mistake, SettingsCatalog.DidYouMean(name) is { } near
                 ? $"{name.Trim()} is not a setting; did you mean {near}? ClassScribe settings list shows them all."
                 : $"{name.Trim()} is not a setting. ClassScribe settings list shows them all.");
 
-        WarnWhileMissing();
-        if (Rows() is not { } rows) return Failed;
+        var warnings = WhileMissing();
+        var (rows, errors) = Rows();
+        if (rows is null) return new SettingsAnswer(Failed, [.. warnings, .. errors]);
 
         var matching = rows.Where(row => row.Key.Equals(known, StringComparison.OrdinalIgnoreCase) || row.Key.StartsWith(known + ":", StringComparison.OrdinalIgnoreCase)).ToList();
-        IEnumerable<string> lines;
-        if (SettingsCatalog.Find(known) is { Kind: SettingKind.Map })
-        {
-            var entries = matching.Select(row => (Entry: row.Key[(known.Length + 1)..], row.Value)).ToList();
-            lines = json
-                ? [new JsonObject(entries.Select(entry => KeyValuePair.Create(entry.Entry, entry.Value?.DeepClone()))).ToJsonString()]
-                : entries.Select(entry => $"{entry.Entry}={SettingsCatalog.Show(entry.Value)}");
-        }
-        else
-        {
-            var value = matching.FirstOrDefault()?.Value;
-            lines = json ? [value?.ToJsonString() ?? "null"]
-                : value is JsonArray list ? list.Select(SettingsCatalog.Show)
-                : [SettingsCatalog.Show(value)];
-        }
-
-        foreach (var line in lines) output.Out.WriteLine(line);
-        return 0;
+        return new SettingsAnswer(0, warnings) { Key = known, Rows = matching };
     }
 
     /// <summary>
     /// settings open: the user's file in Notepad, made first as a full copy when there is none yet. Refused, exit 1, while
     /// the file is missing (a new one would hide the loss) or when there is no folder for it.
     /// </summary>
-    private int Open()
+    private SettingsAnswer Open()
     {
-        if (places.UserFile is not { } user) return Refuse(Failed, $"ClassScribe has no folder for your own settings on this computer; {places.ProgramFile} is the file it reads.");
-        if (places.DescribeMissing() is { } missing) return Refuse(Failed, missing);
+        if (store.UserFile is not { } user) return SettingsAnswer.Refused(Failed, $"ClassScribe has no folder for your own settings on this computer; {store.ProgramFile} is the file it reads.");
+        if (store.DescribeMissing() is { } missing) return SettingsAnswer.Refused(Failed, missing);
 
-        if (places.Origin != SettingsOrigin.UserFolder || !File.Exists(user))
+        if (store.Origin != SettingsOrigin.UserFolder || !files.FileExists(user))
         {
-            var made = writer.Change("make the file to open it", _ => SettingsEdit.Changed());
-            if (made.ExitCode != 0) return made.ExitCode;
+            var made = store.Change("make the file to open it", _ => SettingsEdit.Changed());
+            if (made.ExitCode != 0) return SettingsAnswer.Done(made.ExitCode);
         }
 
         desktop.OpenInNotepad(user);
-        return 0;
+        return SettingsAnswer.Done(0);
     }
 
-    /// <summary>While the user's file is missing, says so on standard error first: what is shown are the defaults.</summary>
-    private void WarnWhileMissing()
-    {
-        if (places.DescribeMissing() is { } missing) output.Error.WriteLine($"WARNING  {missing}");
-    }
-
-    /// <summary>Writes <paramref name="why"/> to standard error and returns <paramref name="exitCode"/>.</summary>
-    private int Refuse(int exitCode, string why)
-    {
-        output.Error.WriteLine(why);
-        return exitCode;
-    }
+    /// <summary>While the user's file is missing, the line that says so, first on standard error: what is shown are the defaults.</summary>
+    private IReadOnlyList<string> WhileMissing() => store.DescribeMissing() is { } missing ? [$"WARNING  {missing}"] : [];
 
     /// <summary>
     /// One row: the value in force, its default, where it comes from (an environment variable, the file read, or the default)
     /// and, for a value the user's file holds at an older default, the newer one.
     /// </summary>
-    private static SettingRow Row(string name, JsonNode? value, JsonNode? defaultValue, StagedSettings staged, IReadOnlyList<DefaultChange> older)
+    private SettingRow Row(string name, JsonNode? value, JsonNode? defaultValue, IStagedSettings staged, IReadOnlyList<DefaultChange> older)
     {
-        var variable = SettingsWriter.EnvironmentOverride(name);
+        var variable = store.EnvironmentOverride(name);
         var inFile = staged.Values.Keys.Any(key => key.Equals(name, StringComparison.OrdinalIgnoreCase) || key.StartsWith(name + ":", StringComparison.OrdinalIgnoreCase));
         var source = variable is not null ? SettingSource.Environment : inFile ? SettingSource.File : SettingSource.Default;
         var newer = older.FirstOrDefault(change => change.Key.Equals(name, StringComparison.OrdinalIgnoreCase));
@@ -273,38 +245,11 @@ public enum SettingSource
     Environment
 }
 
-/// <summary>One line of settings list.</summary>
+/// <summary>One row of settings list: a setting with its value in force, which the window writes as a line or as JSON (the Cli's SettingsOutput).</summary>
 /// <param name="Key">The setting's full name, a map's entry by its key path.</param>
 /// <param name="Value">Its value in force.</param>
 /// <param name="Default">Its default in code; null for a map's entry without one.</param>
 /// <param name="Source">Where the value comes from.</param>
 /// <param name="Variable">The environment variable that sets it, when one does.</param>
 /// <param name="NewerDefault">The change of default, when the user's file holds the older one.</param>
-public sealed record SettingRow(string Key, JsonNode? Value, JsonNode? Default, SettingSource Source, string? Variable, DefaultChange? NewerDefault)
-{
-    /// <summary>
-    /// The row as settings list --json writes it: key, value, default, source (default, file or environment), and
-    /// newerDefault, the newer default as text, or null.
-    /// </summary>
-    public JsonObject ToJson() => new()
-    {
-        ["key"] = Key,
-        ["value"] = Value?.DeepClone(),
-        ["default"] = Default?.DeepClone(),
-        ["source"] = Source.ToString().ToLowerInvariant(),
-        ["newerDefault"] = NewerDefault?.NewDefault
-    };
-
-    /// <summary>
-    /// The row as settings list writes it: the setting and its value, then in brackets what differs from the default: the
-    /// default, the environment variable that sets it, and a newer default the file holds an older one of.
-    /// </summary>
-    public string Line()
-    {
-        var notes = new List<string>();
-        if (Variable is not null) notes.Add($"from the environment variable {Variable}");
-        if (!JsonNode.DeepEquals(Value, Default)) notes.Add(Default is null ? "no default" : $"default {SettingsCatalog.Show(Default)}");
-        if (NewerDefault is { } newer) notes.Add(DefaultChanges.Describe(newer));
-        return notes.Count == 0 ? $"{Key} = {SettingsCatalog.Show(Value)}" : $"{Key} = {SettingsCatalog.Show(Value)}  ({string.Join("; ", notes)})";
-    }
-}
+public sealed record SettingRow(string Key, JsonNode? Value, JsonNode? Default, SettingSource Source, string? Variable, DefaultChange? NewerDefault);

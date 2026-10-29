@@ -7,7 +7,7 @@ namespace ClassScribe.Settings;
 /// included) and checked, without any of it being accepted (see <see cref="SettingsReloader.Stage(byte[])"/>). Disposing it lets
 /// the staged settings go.
 /// </summary>
-public sealed class StagedSettings : IDisposable
+public sealed class StagedSettings : IStagedSettings
 {
     /// <summary>Holds what the reloader staged and found.</summary>
     internal StagedSettings(IReadOnlyList<string> unreadable, IReadOnlyDictionary<string, string?> values, IConfigurationRoot? configuration,
@@ -44,6 +44,13 @@ public sealed class StagedSettings : IDisposable
     /// <summary>Why the saved class <paramref name="name"/> cannot be used, in any case; empty when it can, or is not there.</summary>
     public IReadOnlyList<string> ProblemsOf(string name) =>
         Classes.FirstOrDefault(entry => entry.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase))?.Problems ?? [];
+
+    /// <inheritdoc />
+    public string? this[string key] => Configuration?[key];
+
+    /// <inheritdoc />
+    public IReadOnlyList<KeyValuePair<string, string?>> Children(string key) =>
+        Configuration is { } settings ? [.. settings.GetSection(key).GetChildren().Select(child => KeyValuePair.Create(child.Key, child.Value))] : [];
 
     /// <summary>A file that cannot be read as a settings file, for <paramref name="why"/>.</summary>
     internal static StagedSettings Unusable(IReadOnlyList<string> why) =>

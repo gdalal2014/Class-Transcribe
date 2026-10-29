@@ -44,8 +44,11 @@ public static class CommandServices
         services.AddScoped<YouTubeMenu>();
 
         // What settings and class answer on standard output and say is wrong on standard error, read at the moment the
-        // output is made, so that a UTF-8 writer Program put in place for redirected output is the one used.
+        // output is made, so that a UTF-8 writer Program put in place for redirected output is the one used; and the two
+        // that write the use cases' answers there, as text or JSON (architecture question 4).
         services.AddSingleton(_ => new CommandOutput(Console.Out, Console.Error));
+        services.AddTransient<SettingsOutput>();
+        services.AddTransient<ClassOutput>();
         services.AddTransient<ClassesMenu>();
         services.AddTransient<SettingsMenu>();
 
@@ -58,7 +61,7 @@ public static class CommandServices
             provider.GetRequiredService<TimeProvider>(),
             Console.Out,
             Console.Error,
-            provider.GetRequiredService<Settings.SavedClasses>(),
+            provider.GetRequiredService<Settings.ISavedClasses>(),
             provider.GetRequiredService<IOptionsMonitor<Settings.RecordingOptions>>()));
         services.AddTransient<App>();
         return services;

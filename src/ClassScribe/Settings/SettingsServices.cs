@@ -23,15 +23,18 @@ public static class SettingsServices
         services.AddSingleton<IOutputFolderFacts>(_ => new OutputFolderFacts());
         services.AddSingleton<SettingsCheck>();
 
-        // The saved classes, read from the settings in force at each use, as the gate last accepted them.
+        // The saved classes, read from the settings in force at each use, as the gate last accepted them; the use cases and
+        // the window's menus take them through their port (architecture 4.3).
         services.AddSingleton<SavedClasses>();
+        services.AddSingleton<ISavedClasses>(provider => provider.GetRequiredService<SavedClasses>());
         return services;
     }
 
     /// <summary>
     /// Adds <paramref name="places"/>, the settings file they name, what reads it again into <paramref name="configuration"/>,
-    /// through <paramref name="accepted"/>, which must be one of its sources, and the one writer of the user's file, which
-    /// reloads through it. AppHost adds them, since it builds that configuration; a recorder never writes the settings.
+    /// through <paramref name="accepted"/>, which must be one of its sources, the one writer of the user's file, which
+    /// reloads through it, and the store that puts them behind one port for the use cases. AppHost adds them, since it
+    /// builds that configuration; a recorder never writes the settings.
     /// </summary>
     public static IServiceCollection AddSettingsReload(this IServiceCollection services, ConfigurationManager configuration, CheckedSettingsSource accepted, SettingsPlaces places)
     {
@@ -48,6 +51,9 @@ public static class SettingsServices
             provider.GetRequiredService<SettingsCheck>(),
             provider.GetRequiredService<ILogger<SettingsReloader>>()));
         services.AddSingleton<SettingsWriter>();
+
+        // The settings store the use cases take (architecture 4.3): the places, the file, the reloader and the writer behind one port.
+        services.AddSingleton<ISettingsStore, SettingsStore>();
         return services;
     }
 }

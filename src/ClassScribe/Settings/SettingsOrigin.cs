@@ -17,7 +17,7 @@ public enum SettingsOrigin
     Missing
 }
 
-/// <summary>The settings file read now, as <see cref="SettingsPlaces.Current"/> decides it.</summary>
+/// <summary>The settings file read now, as <see cref="ISettingsStore.Current"/> decides it.</summary>
 /// <param name="Origin">Which file it is.</param>
 /// <param name="Path">The file the person knows as theirs: the user's own file, even while it is missing, or the one beside the program.</param>
 /// <param name="ReadPath">The file whose values are read: the user's own, or the one beside the program, which stands in for a missing user file.</param>

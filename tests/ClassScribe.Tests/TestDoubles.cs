@@ -105,10 +105,14 @@ public sealed class TestSettings
         ((IConfigurationBuilder)Configuration).Add(accepted);
         Reloader = new SettingsReloader(Configuration, accepted, File, new SettingsCheck(), NullLogger<SettingsReloader>.Instance);
         Reloader.TryReload();
+        Store = new SettingsStore(places, File, Reloader, new SettingsWriter(places, File, Reloader, NullLogger<SettingsWriter>.Instance));
     }
 
     /// <summary>The file.</summary>
     public SettingsFile File { get; }
+
+    /// <summary>The store the use cases take: the places, the file, the reloader and a writer that logs to nobody, behind one port.</summary>
+    public SettingsStore Store { get; }
 
     /// <summary>The settings as the app holds them: what last passed the check.</summary>
     public ConfigurationManager Configuration { get; }

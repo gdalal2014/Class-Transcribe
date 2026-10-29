@@ -19,7 +19,7 @@ public class SavedClassesTests
 
     /// <summary>A class checked from <paramref name="fields"/> under the name Mantiq.</summary>
     private static SavedClassEntry Check(params (string Field, string Value)[] fields) =>
-        SavedClasses.Check("Mantiq", fields.ToDictionary(field => field.Field, field => (string?)field.Value, StringComparer.OrdinalIgnoreCase));
+        SavedClass.Check("Mantiq", fields.ToDictionary(field => field.Field, field => (string?)field.Value, StringComparer.OrdinalIgnoreCase));
 
     /// <summary>
     /// A class of the class alone from an app, of the class and the microphone following the app, and in person with a
@@ -58,7 +58,7 @@ public class SavedClassesTests
         var fields = given.Split(';').Select(pair => pair.Split('=')).ToDictionary(pair => pair[0], pair => (string?)pair[1], StringComparer.OrdinalIgnoreCase);
         fields.TryAdd("Course", "Mantiq");
 
-        var entry = SavedClasses.Check("Mantiq", fields);
+        var entry = SavedClass.Check("Mantiq", fields);
 
         Assert.That(entry.Usable, Is.False);
         Assert.That(entry.Problems, Has.Member(problem));
@@ -69,9 +69,9 @@ public class SavedClassesTests
     [Test]
     public void A_course_is_required_and_names_must_be_folder_names()
     {
-        Assert.That(SavedClasses.Check("Mantiq", new Dictionary<string, string?>()).Problems, Is.EqualTo(new[] { "Course is empty; it names the recording's folder and files, such as Mantiq." }));
-        Assert.That(SavedClasses.Check("Mantiq.", new Dictionary<string, string?> { ["Course"] = "Mantiq" }).Usable, Is.False);
-        Assert.That(SavedClasses.Check("Mantiq", new Dictionary<string, string?> { ["Course"] = new string('a', 81) }).Problems.Single(),
+        Assert.That(SavedClass.Check("Mantiq", new Dictionary<string, string?>()).Problems, Is.EqualTo(new[] { "Course is empty; it names the recording's folder and files, such as Mantiq." }));
+        Assert.That(SavedClass.Check("Mantiq.", new Dictionary<string, string?> { ["Course"] = "Mantiq" }).Usable, Is.False);
+        Assert.That(SavedClass.Check("Mantiq", new Dictionary<string, string?> { ["Course"] = new string('a', 81) }).Problems.Single(),
             Is.EqualTo("Course is 81 characters long; it may be at most 80."));
     }
 

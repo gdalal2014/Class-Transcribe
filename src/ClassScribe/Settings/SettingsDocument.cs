@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 namespace ClassScribe.Settings;
 
 /// <summary>
-/// The user's settings file as a tree the settings writer changes (see <see cref="SettingsWriter"/>): its values found by a
+/// The user's settings file as a tree the settings writer changes (see <see cref="ISettingsStore.Change"/>): its values found by a
 /// setting's full name, such as Recording:OutputFolder, in any case, as .NET reads the file; the saved classes under
 /// Classes; and keys the writer does not know, from a newer build, kept as they are.
 /// </summary>
