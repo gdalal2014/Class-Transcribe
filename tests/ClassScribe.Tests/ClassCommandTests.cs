@@ -135,6 +135,40 @@ public class ClassCommandTests
     }
 
     /// <summary>
+    /// A saved class whose glossary value is longer than any path can be (a hand edit; the check puts no limit on it) is
+    /// listed and shown as text all the same, with exit 0, which the launcher reads: the glossary's full path is worked out
+    /// only for the JSON forms, which show it, and those still throw the path's own exception for such a value, as they
+    /// did before the class command answered with data.
+    /// </summary>
+    [Test]
+    public void A_glossary_longer_than_any_path_still_lists_and_shows_the_class_as_text()
+    {
+        var longValue = new string('a', 40_000);
+        _files.WriteUser($$"""{ "Classes": { "Mantiq": { "Course": "Mantiq", "App": "chrome", "KeytermsFile": "{{longValue}}" } } }""");
+
+        var listed = Run(new ClassRequest.List(false));
+        var listLines = Lines;
+        _out.GetStringBuilder().Clear();
+        var shown = Run(new ClassRequest.Show("Mantiq", false));
+        var showLines = Lines;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(listed, Is.EqualTo(0));
+            Assert.That(listLines, Has.Length.EqualTo(2));
+            Assert.That(listLines[0], Is.EqualTo($"Saved classes in {_files.UserFile}:"));
+            Assert.That(listLines[1], Does.StartWith("  Mantiq  chrome").And.Contain(longValue));
+            Assert.That(shown, Is.EqualTo(0), "the class can be used");
+            Assert.That(showLines[0], Does.StartWith("Mantiq: chrome"));
+            Assert.That(showLines, Has.Member($"  KeytermsFile = {longValue}"));
+            Assert.That(showLines[^1], Does.StartWith("From PowerShell: "));
+            Assert.That(_error.ToString(), Is.Empty);
+            Assert.That(() => Run(new ClassRequest.List(true)), Throws.InstanceOf<PathTooLongException>(), "the JSON forms work the path out, as before");
+            Assert.That(() => Run(new ClassRequest.Show("Mantiq", true)), Throws.InstanceOf<PathTooLongException>());
+        });
+    }
+
+    /// <summary>
     /// A class that exists already, in any letter case, is refused with exit 2, since names that differ only in case are one
     /// name to the settings; so is a name that cannot be a folder's, and a mix the class cannot take.
     /// </summary>

@@ -288,7 +288,7 @@ public class RecorderPortTests
     /// <summary>
     /// The log port reads the last lines of a recorder's start-up log for a window: the last so many that are not empty,
     /// oldest first, only when the file was written since the recorder started; nothing for a file written before that or
-    /// not there; and a file it cannot read throws.
+    /// not there, or when no lines are asked for; and a file it cannot read throws.
     /// </summary>
     [Test]
     public void The_log_port_reads_the_last_lines_of_a_startup_log_written_since_a_time()
@@ -313,8 +313,56 @@ public class RecorderPortTests
             Assert.That(window.LastStartupLines(startup, written - TimeSpan.FromSeconds(2), 5), Is.EqualTo(new[] { "three", "four", "five", "six", "seven" }), "the last five that are not empty");
             Assert.That(window.LastStartupLines(startup, written + TimeSpan.FromSeconds(1), 5), Is.Empty, "written before the recorder started");
             Assert.That(window.LastStartupLines(_temp.File("none.log"), DateTimeOffset.MinValue, 5), Is.Empty, "no such file");
+            Assert.That(window.LastStartupLines(startup, written - TimeSpan.FromSeconds(2), 0), Is.Empty, "no lines asked for");
+            Assert.That(window.LastStartupLines(startup, written - TimeSpan.FromSeconds(2), -1), Is.Empty, "fewer than none asked for");
             Assert.That(() => window.LastStartupLines(held, DateTimeOffset.MinValue, 5), Throws.InstanceOf<IOException>(), "a file another program holds without sharing");
         });
+    }
+
+    /// <summary>
+    /// The log a recorder's host is given belongs to the host that made it (RecorderHost.RunAsync's using), which disposes
+    /// it after the container, so that what is logged while the container is disposed, and a failure after it, still reach
+    /// recorder.log: the container never disposes it, whether or not the port was asked for in a scope, as every run asks
+    /// for it.
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public void The_recorders_host_never_disposes_the_log_it_was_given(bool portAskedFor)
+    {
+        var startup = Path.Combine(_runtime.Folder.Root, IRunLog.StartupFileName);
+        File.WriteAllText(_temp.File(SettingsFile.FileName), "{}");
+        var places = new SettingsPlaces(_temp.Path, userFolder: null);
+        var runId = TestRuns.Id();
+        using var log = new RecorderLog(_runtime.Time, startup);
+        var recorder = AppHost.BuildRecorder(new RecorderStart(runId, TestRuns.Request(runId), new Dictionary<string, string?>()), "test-key", log, _runtime.Folder, places, _runtime.Time);
+        IRunLog? port = null;
+
+        log.Write(LogLevel.Information, "before the host is disposed");
+        if (portAskedFor)
+        {
+            using var scope = recorder.Services.CreateScope();
+            port = scope.ServiceProvider.GetRequiredService<IRunLog>();
+        }
+
+        recorder.Dispose();
+        log.Write(LogLevel.Error, "after the host is disposed");
+        log.Flush(TimeSpan.FromSeconds(10));
+
+        Assert.Multiple(() =>
+        {
+            if (portAskedFor) Assert.That(port, Is.SameAs(log), "the port is the log the host was given");
+            Assert.That(log.LostFileLines, Is.EqualTo(0), "no line was lost: the container did not dispose the log");
+            Assert.That(ReadSharing(startup), Does.Contain("before the host is disposed").And.Contain("after the host is disposed"), "both lines reached recorder.log");
+            Assert.That(() => log.WriteFileTo(_temp.File("Kalam_2026-10-15_23-00-02Z.log")), Throws.Nothing, "the log is still open");
+        });
+    }
+
+    /// <summary>Reads a file the log may still hold open for appending.</summary>
+    private static string ReadSharing(string path)
+    {
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(file);
+        return reader.ReadToEnd();
     }
 
     /// <summary>

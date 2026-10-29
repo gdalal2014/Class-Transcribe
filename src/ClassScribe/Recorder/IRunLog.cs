@@ -84,9 +84,9 @@ public interface IRunLog
     /// <summary>
     /// The last <paramref name="count"/> lines that are not empty of the start-up log at <paramref name="path"/>, oldest
     /// first, when the file was last written at <paramref name="writtenSince"/> or after, as a window reads the last lines of
-    /// a recorder that ended before it answered; empty when the file was written before that, or there is no such file. The
-    /// file is read while the recorder may still write it. A file that cannot be read throws its <see cref="IOException"/>
-    /// or <see cref="UnauthorizedAccessException"/>.
+    /// a recorder that ended before it answered; empty when the file was written before that, there is no such file, or no
+    /// lines are asked for (<paramref name="count"/> 0 or less). The file is read while the recorder may still write it. A
+    /// file that cannot be read throws its <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/>.
     /// </summary>
     IReadOnlyList<string> LastStartupLines(string path, DateTimeOffset writtenSince, int count);
 }

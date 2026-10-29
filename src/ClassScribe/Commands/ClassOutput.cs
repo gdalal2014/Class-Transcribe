@@ -78,6 +78,6 @@ public sealed class ClassOutput(ClassCommand command, CommandOutput output)
         ["fields"] = new JsonObject(shown.Fields.Select(field => KeyValuePair.Create(field.Key, (JsonNode?)field.Value))),
         ["records"] = shown.Entry.Class?.Describe(),
         ["command"] = shown.Command,
-        ["glossary"] = shown.Glossary
+        ["glossary"] = shown.Glossary.Value
     };
 }
