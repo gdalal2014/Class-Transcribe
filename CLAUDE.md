@@ -206,7 +206,7 @@ advice after a format error (10 A).
   `YouTubeUseCases`, and `Commands/CommandUseCases`, which also adds the stand-in `NoStartupReport`);
   `ApplicationServices.AddClassScribeApplication` and `InfrastructureServices.AddClassScribeInfrastructure` call them, and
   `ServiceCollectionExtensions.AddClassScribe` calls those, then `CommandServices` (the console, the menus, the command
-  line, `CommandOutput`, the window's status sink) and last `Commands/WindowServices.cs`, the window's side of a run in
+  line, `CommandOutput` with `SettingsOutput` and `ClassOutput`, the window's status sink) and last `Commands/WindowServices.cs`, the window's side of a run in
   the background, which replaces the stand-in report. A new registration goes to the class of its type's layer, and the
   order of a service's registrations is kept, since a later Add of the same service wins (the split of slice 3a was
   checked against a dump of every descriptor). The ports of slice 3b1 are registered beside their adapters, by
@@ -218,10 +218,15 @@ advice after a format error (10 A).
   after its adapter in `StorageServices`, and `IRunLog` as the same singleton as `RecorderLog` in
   `RecorderServices.AddRecorderLog`; each is resolved through its adapter's type, so the recorder's host's replacements
   (`AppHost.AddRecorder`) and a test's `AddSingleton(runtime.Folder)` or `AddSingleton(runtime.Journal)` are followed.
+  The ports of settings and classes of slice 3b3: `ISavedClasses` as the same singleton as `SavedClasses`, right after it in
+  `AddSettings` (both hosts); `ISettingsStore` as `SettingsStore`, the thin adapter over the places, the file, the reloader
+  and the writer, right after the writer in `AddSettingsReload` (the window alone, as the writer: a recorder never writes
+  the settings, and `RecordStarter`, which takes the port for the snapshot, is never resolved there).
   `AppHost` adds the settings reload (`SettingsServices.AddSettingsReload`: the places, the file, the
-  reloader and the one `SettingsWriter`), since it builds the configuration the reload works on;
-  `AddSettings` registers `SavedClasses` and `IOutputFolderFacts` beside `SettingsCheck`, `CommandUseCases`
-  the settings and class commands, and `CommandServices` `CommandOutput` and menus C and S
+  reloader, the one `SettingsWriter` and the `ISettingsStore` over them), since it builds the configuration the reload works on;
+  `AddSettings` registers `SavedClasses` (with `ISavedClasses`) and `IOutputFolderFacts` beside `SettingsCheck`, `CommandUseCases`
+  the settings and class commands, and `CommandServices` `CommandOutput` with `SettingsOutput` and `ClassOutput`, which
+  write what the two commands answer, and menus C and S
   (`ClassesMenu`, `SettingsMenu`, per run). `AppHost.Build` validates scopes and every registration
   (`ValidateScopes`, `ValidateOnBuild`), so a per-run service taken outside a run's scope, or one
   that cannot be made, fails at once. `AppHost.BuildRecorder(start, apiKey, log, folder, places,
@@ -633,7 +638,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   process group, no inherited handles, breakaway where the job allows it, working folder
   `%LOCALAPPDATA%\ClassScribe`, the environment inherited as it is), which closing the window does
   not stop; `Program` hands `--recorder` to `RecorderHost` before anything touches the console. The
-  recorder never reads appsettings.json: the window hands over `SettingsReloader.Snapshot()` in the
+  recorder never reads appsettings.json: the window hands over `ISettingsStore.Snapshot()` (the reloader's) in the
   request file, and the key comes from the recorder's own environment, so a stub
   `ElevenLabs__BaseUrl` reaches a recorder only through the window's snapshot. The window shows the
   run through a named pipe (`Link/`), and `attach --alert <run id>` is the minimized window the
@@ -655,7 +660,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `--app <process>` or `--in-person ["<microphone>"]`), or `--class "<saved class>"` with options over
   the class's own in groups (`RecordClassAsync`, `ClassChoices`); a saved class's name without a
   source is pointed at `--class` (N5; the validator runs before the gate's read for a recording, so
-  `SavedClasses.FindInFile` looks in the file as it is now when the settings in force hold no such
+  `ISavedClasses.FindInFile` looks in the file as it is now when the settings in force hold no such
   class). `--output` is optional for them and for `youtube` (N6:
   `OutputRoot`, the class's own folder, else `Recording:OutputFolder` as the settings in force say
   it). `--mic ["<microphone>"]`
@@ -715,7 +720,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `examples/glossary/keyterms-islamic-sciences.txt`, outside `src`, never built or published, which
   only the test project links (`RepositoryLayoutTests` checks that no glossary sits under `src` and no
   project there copies one). A relative glossary is taken from the folder of the settings in force and
-  from nowhere else (`SettingsPlaces.ResolveFile`): never beside the exe, where a 0.4 build's
+  from nowhere else (`SettingsPlaces.ResolveFile`, behind `IGlossaryFiles.Resolve` and `ISettingsStore.ResolveFile`): never beside the exe, where a 0.4 build's
   `keyterms.txt` may be left over. `GlossaryChoice` (scoped) is the one resolver, for every run, every
   later transcription and the YouTube plans (`TermsFor`): `transcribe --keyterms`, then the
   recording's own `<base>.glossary.json` (`GlossaryRecord`: `decided` once, at the start, and one `sent`
@@ -855,7 +860,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ITrackWriterFactory`, `IAudioFileFacts`, `ITranscriptAnswers`, `IFileProbe`'s new checks and `IAudioCapture.Processing`,
   each with its contract test over the real adapter in a temporary folder) bring it to 4,939; the ports of runs of slice
   3b2 (`feature/layers-runs`: `IRuntimeFolder`, `IRecordingLock`, `IRunJournal` with `IRunHandle` and `IRunLog`, each with
-  its contract test over the real adapter in a temporary folder, in `RecorderPortTests`) bring it to 4,949. The uploads by
+  its contract test over the real adapter in a temporary folder, in `RecorderPortTests`) bring it to 4,949; the ports of
+  settings and classes of slice 3b3 (`feature/layers-settings`: `ISettingsStore` with `IStagedSettings`, and `ISavedClasses`,
+  each with its contract test over the real adapter in temporary folders, in `SettingsPortTests`) bring it to 4,957. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -898,7 +905,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
   app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
   with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
-  4 min 28 s for 4,949 with slice 3b2's, plus the build).
+  4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1171,14 +1178,16 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   beside the exe, the template, under `dotnet run` the copy in `bin\Debug\net10.0-windows10.0.19041.0`,
   where the menu warns when the project's file is newer). `CLASSSCRIBE_SETTINGS_FOLDER` names another
   user folder, for dry runs, and the menu says so. `SettingsWriter` is the one writer of that file
-  (registered in `AddSettingsReload`): every change (menu S and C, S after choices 6 and 7, `settings
+  (registered in `AddSettingsReload`; the use cases reach it, the places, the file and the reloader's staging and snapshot
+  through `ISettingsStore`, whose adapter `SettingsStore` forwards to them, and the file's bytes staged come back as
+  `IStagedSettings`, which `StagedSettings` implements with a value by name and a section's children): every change (menu S and C, S after choices 6 and 7, `settings
   set|reset|open|fill`, `class add|set|rename|remove`) goes through `Change`, under
   `%LOCALAPPDATA%\ClassScribe\settings.lock` (`FileShare.None`, 2 s), from a fresh read, checked by the
   reloader's own staging before it is written (temp file and move, the file before kept as
   `appsettings.previous.json`), then reloaded. The first change writes a full copy of every setting
   (`SettingsCatalog`, by reflection over the options classes in declaration order, plus
   `Logging:LogLevel` as a map), under a three-line `//` header, and the marker; it never writes the
-  key (`ApiKeyRefused`; one a hand edit put in the file is taken out of it and of the copy before,
+  key (`SettingsCatalog.ApiKeyRefused` and `IsTheKey`; one a hand edit put in the file is taken out of it and of the copy before,
   `ApiKeyTakenOut`, and reset --all keeps no copy of a file that is not JSON and mentions one,
   `ApiKeyNotKept`) and refuses a file with comments of its own (`CommentsOfItsOwn`: any comment after
   the opening brace, and before it any that is not a line of a header in `KnownHeaders`, in order,
@@ -1191,8 +1200,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   first; `ElevenLabs:KeytermsFile`, `keyterms.txt` to `""`, the second, shown as `newer default: ""`). A vendor's default
   that moves needs one too: `DefaultChangesTests.A_vendors_default_that_moves_needs_a_row` holds the addresses, the API
   versions, the model, the prices and ElevenLabs' limits to the defaults they first shipped with, or to a row. Saved classes are `Classes:<name>:<field>` in the same file (`SavedClasses`, a singleton
-  reading `IConfiguration` at each use; `ClassFields.All` in order; unknown fields kept; each class
-  checked on its own, so an unusable one never holds up the rest or the file); `ClassChoices` applies
+  reading `IConfiguration` at each use, behind `ISavedClasses` for the use cases and the menus; `ClassFields.All` in order; unknown fields kept; each class
+  checked on its own by Core's `SavedClass.Check`, so an unusable one never holds up the rest or the file); `ClassChoices` applies
   the command line's or the menu's answers in groups. Menu C's E takes its Enter answers from the
   class, or for an unusable one from its raw fields (`ClassesMenu.Kept.FromFields`), so Enter through
   every question keeps them; a folder typed in menus S and C is resolved by `IClassFolders.RootFor`,
@@ -1218,7 +1227,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   video's limit held by the file limit (see the vendors' values below), and a
   recordings folder (`Recording:OutputFolder` or a class's `OutputFolder`) inside OneDrive, Google
   Drive for desktop or Dropbox, at a drive's root, the user folder itself, or holding `AppData` or
-  `Windows` (`SettingsCheck.FolderWarnings`, over `IOutputFolderFacts`). `SettingsReloader.Snapshot` gives the Recording, ElevenLabs (never the
+  `Windows` (`SettingsCheck.FolderWarnings`, over `IOutputFolderFacts`). `SettingsReloader.Snapshot` (`ISettingsStore.Snapshot`) gives the Recording, ElevenLabs (never the
   key), Transcript, Drive (no secret is ever a setting), YouTube and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
   the recorder in the request file, and `RunJournal.WriteRequest` leaves the key out should it ever
   be in it. A recording that is running keeps the settings it started with. The microphone's
@@ -1940,8 +1949,10 @@ each member's old and new call and each constructor that takes a port.
   folders' facts the warnings use), the places (`SettingsPlaces`: the user's folder, the program's,
   the marker, the Missing state), the reload (`SettingsFile`, `CheckedSettingsSource`,
   `SettingsReloader`, `StagedSettings`), the writer (`SettingsWriter`, `SettingsDocument`,
-  `SettingsCatalog`, `DefaultChanges`), the saved classes (`SavedClasses`, `ClassChoices`) and
-  `SettingsServices`.
+  `SettingsCatalog`, `DefaultChanges`), the ports of slice 3b3 (`ISettingsStore` with `IStagedSettings`, which
+  `StagedSettings` implements, and `SettingsStore`, the thin adapter over the places, the file, the reloader and the
+  writer; `ISavedClasses`, which `SavedClasses` implements), the saved classes (`SavedClasses`, `ClassChoices`; the check of
+  a class is `SavedClass.Check`) and `SettingsServices`.
 - `src/ClassScribe/Desktop`: keeping the laptop awake (`IPowerRequests`, `IPowerSource` and
   `StayAwake`, all in `IPowerRequests.cs`), the computer's clocks (`ISystemTimes`), the window's
   title, taskbar and flash (`IWindowSignals`, `TitleText`, `WindowStatusSink`), starting processes
@@ -2132,8 +2143,10 @@ each member's old and new call and each constructor that takes a port.
   and every run file records). `RunRecord.cs` and `RunView` stay in `Recorder` until the move.
 - `src/ClassScribe/Commands`: the menu, the command line (`CommandLineTree` on System.CommandLine,
   with `CommandLineTree.Settings.cs` and `CommandLineTree.Classes.cs`; `App`, `CommandLine` for the
-  commands printed for later), `settings` (`SettingsCommand`, `SettingsRequest`, `CommandOutput`,
-  `SettingRow`) and `class` (`ClassCommand`, `ClassRequest`), menus C (`ClassesMenu`) and S
+  commands printed for later), `settings` (`SettingsCommand`, `SettingsRequest`, `SettingsAnswer`,
+  `SettingRow`) and `class` (`ClassCommand`, `ClassRequest`, `ClassAnswer`, `ClassShown`), the use cases, which answer with
+  data that the window's `SettingsOutput` and `ClassOutput` write on `CommandOutput` as text or JSON (architecture
+  question 4), menus C (`ClassesMenu`) and S
   (`SettingsMenu`), the `record` run (`RecordCommand` as the
   `IRecordRun` in either home, `RecordingLoop` for the keys, states and heartbeat, `RecordingMonitor`
   for the once-a-second checks, `RunBookkeeping.cs` for the lock, the run file, the recording's log,
@@ -2211,7 +2224,11 @@ each member's old and new call and each constructor that takes a port.
   facts, the saved answers and the capture's processing); the ports of runs of slice 3b2 in `RecorderPortTests` (the folder,
   the lock, the journal and the handle with a run file pinned to `RecorderJson`'s bytes and the journal's retries, the log
   with the copy into the recording's log and the start-up log's last lines, and the ports' registrations in both hosts),
-  over a `TestRuntime` and a `TempFolder`. The cost line's
+  over a `TestRuntime` and a `TempFolder`; the ports of settings and classes of slice 3b3 in `SettingsPortTests` (the places'
+  facts before and after the first change and the missing-file state, the file read and staged with a value by name, a
+  section's children and the classes, bytes that are not a settings file, every change through the one writer, the
+  override, the snapshot and a file a setting names, the saved classes in force and in the file, and the ports'
+  registrations in both hosts), over a `SettingsFileFixtures`, which gains `Store` as `TestSettings` does. The cost line's
   tests are `TranscriptionCostTests`, `ElevenLabsAccountTests` (on `StubHttpHandler`),
   `UsageReportTests`, and the order checks in `TranscriptionWorkflowTests`, `RecordCommandTests`,
   `TranscribeCommandTests` and `EndToEndTests`; the Bluetooth watch's are
