@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ClassScribe.Recorder;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;
 
@@ -56,7 +57,7 @@ public class VideoRunRecordTests
         var id = TestRuns.Id();
         var video = YouTubeTestRuns.Video() with
         {
-            Obtained = YouTube.VideoSource.Recorded, BrowserProcessId = 7100, BrowserStartedUtc = TestRuns.Start, ChannelHandle = "@yourchannel",
+            Obtained = VideoSource.Recorded, BrowserProcessId = 7100, BrowserStartedUtc = TestRuns.Start, ChannelHandle = "@yourchannel",
             Tool = "Chrome 141.0.7390.108", StartSeconds = 754
         };
         runtime.Journal.Write(runtime.Journal.RunFile(id), TestRuns.Record(id) with { Request = TestRuns.Request(id) with { Video = video } });

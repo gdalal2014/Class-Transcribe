@@ -43,24 +43,31 @@ public static class DriveServices
             : throw new PlatformNotSupportedException("Keeping the Google sign-in encrypted for your account needs Windows."));
 
         // The access token of this process, one for the process; what reads and renews it, and everything that calls Drive,
-        // one per run, over that run's Refit clients and settings.
+        // one per run, over that run's Refit clients and settings. The sign-in's exchange and revoke go through the tokens,
+        // as the port of the account (architecture 4.3).
         services.AddSingleton<GoogleTokenCache>();
         services.AddTransient<GoogleTokens>();
+        services.AddTransient<IGoogleAccount>(provider => provider.GetRequiredService<GoogleTokens>());
         services.AddTransient<DriveClient>();
         services.AddTransient<DriveFolders>();
 
-        // The sign-in, in the window only: the listener for Google's answer and the browser.
+        // The sign-in, in the window only: the listener for Google's answer, the browser, and the reader of a client file.
         services.AddSingleton<ILoopbackReceiver, HttpListenerLoopbackReceiver>();
         services.AddSingleton<IBrowser, ShellBrowser>();
+        services.AddSingleton<IGoogleClientFiles, GoogleClientFile>();
 
-        // The uploads: what is remembered of each recording and the lock, one for the process; the resumable upload, one per
-        // run, over that run's Drive client and settings.
+        // The uploads: what is remembered of each recording and the lock, one for the process, each behind its port; the
+        // resumable upload, one per run, over that run's Drive client and settings; and Drive as the use cases use it, one
+        // per run over the three (architecture 4.3).
         services.AddSingleton<UploadManifests>();
+        services.AddSingleton<IUploadManifests>(provider => provider.GetRequiredService<UploadManifests>());
         services.AddSingleton<DriveUploadLock>();
+        services.AddSingleton<IDriveUploadLock>(provider => provider.GetRequiredService<DriveUploadLock>());
         services.AddTransient<ResumableUpload>();
+        services.AddTransient<IGoogleDrive, GoogleDrive>();
 
-        // Drive's room, for a YouTube batch's plan when the videos' audio goes up: the client is made only when Drive is asked.
-        services.AddTransient(provider => new Lazy<DriveClient>(provider.GetRequiredService<DriveClient>));
+        // Drive's room, for a YouTube batch's plan when the videos' audio goes up: Drive is made only when it is asked.
+        services.AddTransient(provider => new Lazy<IGoogleDrive>(provider.GetRequiredService<IGoogleDrive>));
         return services;
     }
 

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
 using ClassScribe.Settings;
@@ -9,6 +10,7 @@ using ClassScribe.Storage;
 using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ClassScribe.YouTube;
 using Condition = (string Name, ClassScribe.Runs.AttentionLevel Level, string Short, string Text);
 
 namespace ClassScribe.Commands;
@@ -106,7 +108,7 @@ public static class MicrophoneWords
 /// recording (see <see cref="TranscriptionLimits"/>); null for the default.
 /// </param>
 public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOptionsSnapshot<RecordingOptions> recording, MicrophoneAdvice advice,
-    ILoopbackCaptureProvider outputs, BluetoothMicrophoneWatch bluetooth, TimeProvider time, YouTube.VideoPlayback? video = null,
+    ILoopbackCaptureProvider outputs, BluetoothMicrophoneWatch bluetooth, TimeProvider time, VideoPlayback? video = null,
     IOptionsSnapshot<YouTubeOptions>? youTube = null, IOptionsSnapshot<ElevenLabsOptions>? elevenLabs = null)
 {
     /// <summary>How long nothing may be recorded, other than while paused, before it is an Alert. A device being replaced takes less.</summary>
@@ -369,7 +371,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         if (context.Camera?.Camera is not { Concern: { } concern } camera || snapshot.Paused && !camera.GivenUp) return null;
 
         var text = concern.Text;
-        if (concern.Alert && !camera.Capturing && camera.ContainerId is { } container && container != Camera.Cameras.ThisComputer
+        if (concern.Alert && !camera.Capturing && camera.ContainerId is { } container && container != Cameras.ThisComputer
             && context.Microphone?.Microphone?.ContainerId == container)
             text += ". Its microphone may be silent too while the camera is away or asleep";
         return ("Camera", concern.Alert ? AttentionLevel.Alert : AttentionLevel.Notice, concern.Short, text);
@@ -381,7 +383,7 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
         if (context.Camera?.Camera is not { } camera) return "";
         if (!camera.Capturing) return camera.GivenUp ? "; camera given up" : "; camera not recording";
 
-        var size = Camera.CameraSize.TryParse(camera.Size, out var parsed) ? parsed : Camera.CameraSize.Default;
+        var size = CameraSize.TryParse(camera.Size, out var parsed) ? parsed : CameraSize.Default;
         return string.Create(CultureInfo.InvariantCulture, $"; camera {size.Width}x{size.Height}, {camera.FramesPerSecond:0.0} frames a second, {camera.Dropped} dropped");
     }
 
@@ -583,8 +585,8 @@ public sealed class RecordingMonitor(FreezeWatch freezes, IFreeSpace space, IOpt
     {
         if (context.Request.Source.Camera is not { } choice || context.Camera?.Camera is { GivenUp: true }) return 0;
 
-        var size = Camera.CameraSize.TryParse(choice.Resolution, out var parsed) ? parsed : Camera.CameraSize.Default;
-        return 2L * Camera.PieceSettings.BitrateFor(size) / 8 * 3600;
+        var size = CameraSize.TryParse(choice.Resolution, out var parsed) ? parsed : CameraSize.Default;
+        return 2L * PieceSettings.BitrateFor(size) / 8 * 3600;
     }
 
     /// <summary>
@@ -1429,7 +1431,7 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
     /// <see cref="RecordingSession.WebcamZerosAfterSound"/>, said once a recording, never while the hold's frames arrive (the
     /// camera cannot be asleep), its Notice ending when sound returns. Each a Notice with the class, an Alert in person.
     /// </summary>
-    private void WatchWebcamZeros(TrackSnapshot track, MicrophoneGateState? state, bool paused, bool withClass, Camera.WebcamState webcam,
+    private void WatchWebcamZeros(TrackSnapshot track, MicrophoneGateState? state, bool paused, bool withClass, WebcamState webcam,
         List<(LogLevel Level, string Text)> lines, List<Condition> conditions)
     {
         _zerosSaid = false;
@@ -1470,7 +1472,7 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
         : ("WebcamSilent", AttentionLevel.Alert, "ONLY ZEROS FROM THE WEBCAM'S MICROPHONE", text);
 
     /// <summary>The webcam's hold has a problem (the picture stopped, or the camera cannot be opened): a Notice with the class, an Alert in person, while it lasts.</summary>
-    private static void WatchTheHold(Camera.WebcamState? webcam, bool withClass, List<Condition> conditions)
+    private static void WatchTheHold(WebcamState? webcam, bool withClass, List<Condition> conditions)
     {
         if (webcam is not { Problem: { } problem }) return;
 
@@ -1481,7 +1483,7 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
     }
 
     /// <summary>The start rule's words: what the light says, or, with the hold's frames arriving, what else to check.</summary>
-    public static string WebcamStartText(Camera.WebcamState webcam)
+    public static string WebcamStartText(WebcamState webcam)
     {
         var since = $"The microphone of the camera \"{webcam.CameraName}\" has sent only exact zeros since it opened, {RecordingMonitor.Count((long)RecordingSession.WebcamZerosAtStart.TotalMinutes, "minute")} ago";
         return webcam.Holding && webcam.HasFrames
@@ -1490,7 +1492,7 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
     }
 
     /// <summary>The later rule's words: the light tells a camera fallen asleep from a quiet room.</summary>
-    public static string WebcamLaterText(Camera.WebcamState webcam) =>
+    public static string WebcamLaterText(WebcamState webcam) =>
         $"The microphone of the camera \"{webcam.CameraName}\" has sent only exact zeros for {RecordingMonitor.Count((long)RecordingSession.WebcamZerosAfterSound.TotalMinutes, "minute")}. If its light is off, the camera has fallen asleep (an open microphone does not keep it awake) and your voice is not being recorded: turn off Device Auto Sleep in OBSBOT Center, or turn on Recording:WakeCameraMicrophone. If the light is on, the room is quiet and nothing is lost";
 
     /// <summary>The evidence the gate reported since the last look: each a warning and a Notice.</summary>

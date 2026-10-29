@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using ClassScribe.Drive;
 using ClassScribe.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -46,7 +47,7 @@ public static class TranscriptionServices
     /// Opens the connection to the service with TCP keep-alive switched on. After the upload the
     /// connection is silent for minutes while the transcript is made, and without a sign of life
     /// some routers and firewalls drop a connection that quiet. Google Drive's clients use it too
-    /// (see <see cref="Drive.DriveServices"/>).
+    /// (see <see cref="DriveServices"/>).
     /// </summary>
     internal static async ValueTask<Stream> ConnectWithKeepAliveAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
     {

@@ -1,8 +1,11 @@
+using ClassScribe.Audio;
+using ClassScribe.Camera.Windows;
+
 namespace ClassScribe.Camera;
 
 /// <summary>
 /// The media work of a lesson's video, the seam between the finish job and Media Foundation (see
-/// <see cref="Windows.MediaFoundationLessonVideo"/>), so that the job's rules are tested with a fake: what a source holds,
+/// <see cref="MediaFoundationLessonVideo"/>), so that the job's rules are tested with a fake: what a source holds,
 /// writing the video, and checking it. It opens no device.
 /// </summary>
 public interface ILessonVideoMedia
@@ -24,7 +27,7 @@ public interface ILessonVideoMedia
     /// it cannot be written, and an <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is
     /// cancelled; either leaves the file for the caller to delete.
     /// </summary>
-    void Write(LessonVideoPlan plan, Audio.MixedSound sound, string path, Action<double> progress, CancellationToken cancellationToken);
+    void Write(LessonVideoPlan plan, MixedSound sound, string path, Action<double> progress, CancellationToken cancellationToken);
 
     /// <summary>
     /// Checks the video at <paramref name="path"/> as <paramref name="check"/> asks: it opens, it has a picture and a sound,

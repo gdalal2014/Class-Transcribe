@@ -8,7 +8,7 @@ namespace ClassScribe.Recorder;
 /// <param name="ToUtc">When ClassScribe was first seen running again, by the time of day.</param>
 /// <param name="FromTimestamp">
 /// Where the stretch to leave out of a track that follows the clock starts, on the steady clock: the last tick before the
-/// freeze plus <see cref="FreezeWatch.Margin"/>, so that the audio Windows still held at its start is kept.
+/// freeze plus <c>FreezeWatch.Margin</c>, so that the audio Windows still held at its start is kept.
 /// </param>
 /// <param name="ToTimestamp">Where that stretch ends: the first tick after the freeze less the margin, so that the audio Windows held on waking is kept.</param>
 /// <param name="Slept">True when the laptop slept or hibernated; false when it stayed awake and only ClassScribe was held up.</param>

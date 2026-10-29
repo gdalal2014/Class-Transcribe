@@ -118,7 +118,7 @@ public class BrowserLocatorTests
     public void Found_nowhere_finds_nothing_and_says_what_to_do()
     {
         Assert.That(Locator().Find(), Is.Null);
-        Assert.That(BrowserLocator.NotFound,
+        Assert.That(IToolLocator.BrowserNotFound,
             Is.EqualTo("Chrome was not found (YouTube:BrowserPath, App Paths, Program Files, LOCALAPPDATA). Install it, or set YouTube:BrowserPath to its chrome.exe"));
     }
 

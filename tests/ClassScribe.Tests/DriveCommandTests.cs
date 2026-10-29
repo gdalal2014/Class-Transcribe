@@ -1,6 +1,7 @@
 using System.Net;
 using ClassScribe.Commands;
 using ClassScribe.Drive;
+using ClassScribe.Recorder;
 
 namespace ClassScribe.Tests;
 
@@ -138,7 +139,7 @@ public class DriveCommandTests
             LastTriedUtc = new DateTimeOffset(2026, 10, 18, 1, 40, 0, TimeSpan.Zero),
             LastError = "Google Drive could not be reached (No such host is known)."
         });
-        var command = new DriveCommand(_world.SignIn(), _world.Store, _world.Drive(), _world.Folders(), _world.QueueReport(), _world.Options, new FakeUserSignals(), _world.Ui,
+        var command = new DriveCommand(_world.SignIn(), _world.Store, _world.GoogleDrive(), _world.QueueReport(), _world.Manifests(), _world.Options, new FakeUserSignals(), _world.Ui,
             ZonedTimeProvider.EasternSummer, _world.Log<DriveCommand>());
 
         Assert.That(await command.StatusAsync(), Is.EqualTo(0));
@@ -159,7 +160,7 @@ public class DriveCommandTests
         var mantiq = _world.WriteRecording(@"Mantiq\2026-10-17", "Mantiq", new DateTimeOffset(2026, 10, 17, 14, 4, 42, TimeSpan.Zero), 2000, ".md");
         _world.Manifests().Queue(mantiq);
         _world.Runtime.Processes.Start(TestRuns.ProcessId, TestRuns.ProcessStart);
-        _world.Runtime.Journal.Begin(TestRuns.Record(TestRuns.Id(), ClassScribe.Recorder.RunState.Recording, name: "Mantiq") with { BaseName = mantiq.BaseName, Folder = mantiq.Folder });
+        _world.Runtime.Journal.Begin(TestRuns.Record(TestRuns.Id(), RunState.Recording, name: "Mantiq") with { BaseName = mantiq.BaseName, Folder = mantiq.Folder });
 
         Assert.That(await _world.Command().StatusAsync(), Is.EqualTo(0));
 
@@ -171,7 +172,7 @@ public class DriveCommandTests
     public async Task The_date_is_local()
     {
         await _world.SignInAsync();
-        var command = new DriveCommand(_world.SignIn(), _world.Store, _world.Drive(), _world.Folders(), _world.QueueReport(), _world.Options, new FakeUserSignals(), _world.Ui,
+        var command = new DriveCommand(_world.SignIn(), _world.Store, _world.GoogleDrive(), _world.QueueReport(), _world.Manifests(), _world.Options, new FakeUserSignals(), _world.Ui,
             ZonedTimeProvider.EasternSummer, _world.Log<DriveCommand>());
         _world.Store.Stored = _world.Store.Stored! with { SignedInUtc = new DateTimeOffset(2026, 10, 18, 1, 30, 0, TimeSpan.Zero) };
 

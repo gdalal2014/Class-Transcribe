@@ -31,6 +31,13 @@ public interface ILoopbackRequest
     /// <summary>The value of the query parameter <paramref name="name"/>, decoded; null when it is not there.</summary>
     string? Query(string name);
 
-    /// <summary>Answers the browser with <paramref name="status"/> and the HTML page <paramref name="html"/>, and ends the request.</summary>
+    /// <summary>
+    /// Answers the browser with <paramref name="status"/> and the HTML page <paramref name="html"/>, and ends the request.
+    /// A browser that has gone before the page arrived, as a tab closed early, is passed over or thrown as an
+    /// <see cref="IOException"/> or an <see cref="ObjectDisposedException"/> (the adapter let the request it could not
+    /// answer go), never as the listener's own exception type; a request answered already, or whose listener is closed,
+    /// throws an <see cref="ObjectDisposedException"/> or an <see cref="InvalidOperationException"/>. The sign-in catches
+    /// those three types and nothing else.
+    /// </summary>
     Task AnswerAsync(int status, string html);
 }

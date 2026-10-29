@@ -74,7 +74,7 @@ public class CameraProcessStarterTests
             Is.EqualTo($"\"C:\\Program Files\\dotnet\\dotnet.exe\" \"C:\\Users\\gdala\\AppData\\Local\\Programs\\ClassScribe\\ClassScribe.dll\" --camera-process {JobId}"));
     }
 
-    /// <summary>What the camera process writes to its standard output reaches the starter through the channel, as lines.</summary>
+    /// <summary>What the camera process writes to its standard output reaches the starter through the link, as lines read to their records.</summary>
     [Test]
     public async Task Its_lines_are_read_through_the_channel()
     {
@@ -84,9 +84,9 @@ public class CameraProcessStarterTests
         };
 
         await using var process = Starter(api).Start(JobId);
-        var line = await process.Channel.ReceiveAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        var line = await process.Link.ReceiveAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
-        Assert.That(CameraLines.Read(line!), Is.EqualTo(new CameraFailed("not built")));
+        Assert.That(line!.Message, Is.EqualTo(new CameraFailed("not built")));
     }
 
     /// <summary>A start Windows refuses is thrown with Windows' error; a job id that is not one is refused before anything starts.</summary>

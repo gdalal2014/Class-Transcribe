@@ -6,7 +6,7 @@ namespace ClassScribe.Drive;
 /// <summary>
 /// What ClassScribe keeps of Google: the client it signs in with, and, while it is signed in, the refresh token, the account's
 /// email, when it signed in and the scope Google granted. Kept encrypted for the Windows account (see
-/// <see cref="DpapiGoogleCredentialStore"/>), never in the settings, a log, a run file or a test. As text it shows the end of
+/// <c>DpapiGoogleCredentialStore</c>), never in the settings, a log, a run file or a test. As text it shows the end of
 /// the client id, whether it is signed in and as whom, never the secret or the token.
 /// </summary>
 /// <param name="ClientId">The client id.</param>

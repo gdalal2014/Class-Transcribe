@@ -1,3 +1,4 @@
+using ClassScribe.Settings;
 using ClassScribe.Storage;
 
 namespace ClassScribe.Tests;
@@ -63,7 +64,7 @@ public class ClassFoldersDriveTests
     {
         var dated = Directory.CreateDirectory(Path.Combine(_folder.Path, "Mantiq", "2026-10-17")).FullName;
         File.WriteAllText(Path.Combine(dated, "Mantiq_2026-10-17_14-04-42Z.md"), "#");
-        var folders = new ClassFolders(TestOptions.Create(new Settings.RecordingOptions { OutputFolder = _folder.Path }), TimeProvider.System,
+        var folders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _folder.Path }), TimeProvider.System,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<ClassFolders>.Instance);
 
         Assert.That(folders.ListAll(), Is.Empty);

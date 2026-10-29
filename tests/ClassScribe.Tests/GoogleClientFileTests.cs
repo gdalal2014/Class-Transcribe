@@ -24,7 +24,7 @@ public class GoogleClientFileTests
     /// <summary>The message of the refusal of the file at <paramref name="path"/>, which must be one about the client file.</summary>
     private static string Refusal(string path)
     {
-        var refusal = Assert.Throws<GoogleDriveException>(() => GoogleClientFile.Read(path))!;
+        var refusal = Assert.Throws<GoogleDriveException>(() => new GoogleClientFile().Read(path))!;
         Assert.That(refusal.Problem, Is.EqualTo(DriveProblem.ClientFile));
         Assert.That(refusal.Message, Does.Not.Contain(FakeGoogle.ClientSecret), "the secret is never repeated");
         return refusal.Message;
@@ -34,7 +34,7 @@ public class GoogleClientFileTests
     [Test]
     public void A_desktop_client_file_gives_its_id_and_secret()
     {
-        var client = GoogleClientFile.Read(_world.WriteClientFile());
+        var client = new GoogleClientFile().Read(_world.WriteClientFile());
 
         Assert.That(client, Is.EqualTo(new GoogleClient(FakeGoogle.ClientId, FakeGoogle.ClientSecret)));
     }
@@ -49,7 +49,7 @@ public class GoogleClientFileTests
             inner["client_secret"] = $"{FakeGoogle.ClientSecret}\n";
         });
 
-        Assert.That(GoogleClientFile.Read(path), Is.EqualTo(new GoogleClient(FakeGoogle.ClientId, FakeGoogle.ClientSecret)));
+        Assert.That(new GoogleClientFile().Read(path), Is.EqualTo(new GoogleClient(FakeGoogle.ClientId, FakeGoogle.ClientSecret)));
     }
 
     /// <summary>A Web application client's file is refused: ClassScribe signs in as a Desktop app, and the message says how to make one.</summary>

@@ -45,9 +45,9 @@ public sealed record RecordingResult(string Folder, IReadOnlyList<string> Segmen
 /// True while writing the segment files fails, as on a full disk or a drive that has gone: from a write that failed until
 /// a write works again, the pause given to a disk that keeps failing included.
 /// </param>
-/// <param name="Off">True while the track is switched off with V (see <see cref="RecordingSession.SetEnabled"/>): no capture is open, and none is opened.</param>
+/// <param name="Off">True while the track is switched off with V (see <c>RecordingSession.SetEnabled</c>): no capture is open, and none is opened.</param>
 /// <param name="OnlyZeros">
-/// True when the open capture has handed over nothing but exact zeros for <see cref="RecordingSession.OnlyZerosAfter"/>,
+/// True when the open capture has handed over nothing but exact zeros for <c>RecordingSession.OnlyZerosAfter</c>,
 /// since it was opened or since the last other sample, as a microphone muted in Windows or blocked by its privacy
 /// settings gives. False before its first packet, and while no capture is open.
 /// </param>

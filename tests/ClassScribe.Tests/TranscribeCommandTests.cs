@@ -1,4 +1,5 @@
 using ClassScribe.Audio;
+using ClassScribe.YouTube;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Settings;
@@ -83,6 +84,7 @@ public class TranscribeCommandTests
             new RecordingFolder(),
             new FileProbe(),
             new ElevenLabsAnswer(),
+            new VideoSourceFile(),
             new AudioFileFacts(),
             recording,
             elevenLabs,

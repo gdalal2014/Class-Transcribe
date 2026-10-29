@@ -841,7 +841,10 @@ public enum BrowserPlay
     Nothing,
 
     /// <summary>The browser cannot be opened at all.</summary>
-    CannotOpen
+    CannotOpen,
+
+    /// <summary>The person allows, then closes the tab before the page arrives: the answer to the redirect fails with an IOException, as the real listener says it.</summary>
+    ClosesTheTab
 }
 
 /// <summary>
@@ -877,7 +880,8 @@ public sealed class FakeBrowser(FakeGoogle google, FakeLoopbackReceiver receiver
         }
 
         var code = google.Authorize(address);
-        listener.Arrive("/", new() { ["code"] = code, ["scope"] = google.GrantedScope, ["state"] = state });
+        listener.Arrive("/", new() { ["code"] = code, ["scope"] = google.GrantedScope, ["state"] = state },
+            Play == BrowserPlay.ClosesTheTab ? new IOException("The specified network name is no longer available.") : null);
         return true;
     }
 }
@@ -920,9 +924,9 @@ public sealed class FakeLoopbackListener(Uri redirectUri) : ILoopbackListener
     /// <summary>The answers given, with the path each answered, in order.</summary>
     public IReadOnlyList<(string Path, int Status, string Html)> Answers => [.. _answers];
 
-    /// <summary>A request arrives for <paramref name="path"/> with <paramref name="query"/>.</summary>
-    public void Arrive(string path, Dictionary<string, string> query) =>
-        _arrived.Writer.TryWrite(new FakeLoopbackRequest(path, query, _answers));
+    /// <summary>A request arrives for <paramref name="path"/> with <paramref name="query"/>; its answer fails with <paramref name="answerFails"/> when that is given, as for a tab closed before the page.</summary>
+    public void Arrive(string path, Dictionary<string, string> query, Exception? answerFails = null) =>
+        _arrived.Writer.TryWrite(new FakeLoopbackRequest(path, query, _answers, answerFails));
 
     /// <inheritdoc />
     public async Task<ILoopbackRequest> NextAsync(CancellationToken cancellationToken)
@@ -935,8 +939,8 @@ public sealed class FakeLoopbackListener(Uri redirectUri) : ILoopbackListener
     public void Dispose() => Disposed = true;
 }
 
-/// <summary>One request to <see cref="FakeLoopbackListener"/>, which keeps its answer with the listener's.</summary>
-public sealed class FakeLoopbackRequest(string path, Dictionary<string, string> query, ConcurrentQueue<(string Path, int Status, string Html)> answers) : ILoopbackRequest
+/// <summary>One request to <see cref="FakeLoopbackListener"/>, which keeps its answer with the listener's, or fails it with <paramref name="answerFails"/> when the browser has gone.</summary>
+public sealed class FakeLoopbackRequest(string path, Dictionary<string, string> query, ConcurrentQueue<(string Path, int Status, string Html)> answers, Exception? answerFails = null) : ILoopbackRequest
 {
     /// <inheritdoc />
     public string Path => path;
@@ -947,6 +951,7 @@ public sealed class FakeLoopbackRequest(string path, Dictionary<string, string> 
     /// <inheritdoc />
     public Task AnswerAsync(int status, string html)
     {
+        if (answerFails is not null) return Task.FromException(answerFails);
         answers.Enqueue((path, status, html));
         return Task.CompletedTask;
     }
@@ -1233,16 +1238,19 @@ public sealed class GoogleWorld : IDisposable
     /// <summary>ClassScribe's folder on Drive, remembered in the temporary ClassScribe folder.</summary>
     public DriveFolders Folders() => new(Drive(), Options, Runtime.Folder, Log<DriveFolders>());
 
+    /// <summary>Drive as the use cases use it: the port's real adapter over the client, the folders and the resumable upload above, all through the fake Google.</summary>
+    public GoogleDrive GoogleDrive() => new(Drive(), Folders(), Resumable());
+
     /// <summary>The sign-in, with everything above, its local times in US Eastern time, so that a date it shows is the same on every machine.</summary>
     public GoogleSignIn SignIn(IBrowser? browser = null, ILoopbackReceiver? receiver = null) =>
-        new(OAuth, Tokens(), Store, Drive(), Folders(), receiver ?? Receiver, browser ?? Browser, Ui, Options, ZonedClock.Eastern(Time), Log<GoogleSignIn>());
+        new(Tokens(), Store, GoogleDrive(), new GoogleClientFile(), receiver ?? Receiver, browser ?? Browser, Ui, Options, ZonedClock.Eastern(Time), Log<GoogleSignIn>());
 
     /// <summary>
     /// The drive command, with everything above and Ctrl+C played by <paramref name="signals"/>, its local times in US Eastern
     /// time, so that the date of a sign-in it shows is the same on every machine.
     /// </summary>
     public DriveCommand Command(FakeUserSignals? signals = null) =>
-        new(SignIn(), Store, Drive(), Folders(), QueueReport(), Options, signals ?? new FakeUserSignals(), Ui, ZonedClock.Eastern(Time), Log<DriveCommand>());
+        new(SignIn(), Store, GoogleDrive(), QueueReport(), Manifests(), Options, signals ?? new FakeUserSignals(), Ui, ZonedClock.Eastern(Time), Log<DriveCommand>());
 
     /// <summary>
     /// Writes a client file as Google's Download JSON gives it, under <paramref name="kind"/> (installed for a Desktop app,
@@ -1310,8 +1318,9 @@ public sealed class GoogleWorld : IDisposable
 
     private RecorderLog? _recorderLog;
 
-    /// <summary>The upload of one recording.</summary>
-    public RecordingUpload RecordingUpload() => new(Drive(), Folders(), Resumable(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
+    /// <summary>The upload of one recording, looking at the disk through <paramref name="probe"/>, the real probe unless a test gives another.</summary>
+    public RecordingUpload RecordingUpload(IFileProbe? probe = null) =>
+        new(GoogleDrive(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), new RecordingFolder(), probe ?? new FileProbe(), RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
 
     /// <summary>The upload lock, in the temporary ClassScribe folder.</summary>
     public DriveUploadLock Lock() => new(Runtime.Folder, Log<DriveUploadLock>());
@@ -1327,14 +1336,14 @@ public sealed class GoogleWorld : IDisposable
     public DriveQueueReport QueueReport() => new(Store, Manifests(), Runtime.Journal, ClassFolders(), Options, ZonedClock.Eastern(Time));
 
     /// <summary>The freeing of room on the laptop.</summary>
-    public LocalAudioFreer Freer() => new(Drive(), Retry(), Manifests(), RecordingUpload(), ClassFolders(), new RecordingFolder(), Printed.Commands, Time, Log<LocalAudioFreer>());
+    public LocalAudioFreer Freer() => new(GoogleDrive(), Retry(), Manifests(), RecordingUpload(), ClassFolders(), new RecordingFolder(), new FileProbe(), Printed.Commands, Time, Log<LocalAudioFreer>());
 
     /// <summary>The drive upload and free-space command, with Ctrl+C played by <paramref name="signals"/>.</summary>
     public DriveUploadCommand UploadCommand(FakeUserSignals? signals = null) =>
         new(Pass(), Freer(), ClassFolders(), new RecordingFolder(), new FileProbe(), Printed.Commands, signals ?? new FakeUserSignals(), Log<DriveUploadCommand>());
 
     /// <summary>The class folders under <see cref="Recordings"/>, which know of the audio kept on Drive alone.</summary>
-    public ClassFolders ClassFolders() => new(Recording, Time, Log<ClassFolders>(), new DriveCopies(Manifests(), new RecordingFolder()));
+    public ClassFolders ClassFolders() => new(Recording, Time, Log<ClassFolders>(), new DriveCopies(Manifests(), new RecordingFolder(), new FileProbe()));
 
     /// <summary>The lines logged by every part, in order, as text.</summary>
     public IReadOnlyList<string> Lines => Logs.Messages;

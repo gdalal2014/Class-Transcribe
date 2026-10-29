@@ -28,6 +28,7 @@ public sealed class TranscriptionWorkflow(
     IRecordingFolder recordings,
     IFileProbe probe,
     ITranscriptAnswers answers,
+    IVideoSources sources,
     IAudioFileFacts facts,
     IOptionsSnapshot<RecordingOptions> recording,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
@@ -229,7 +230,7 @@ public sealed class TranscriptionWorkflow(
     {
         try
         {
-            return VideoSourceFile.Read(files.Source);
+            return sources.Read(files.Source);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
         {

@@ -174,7 +174,7 @@ public class DriveUploadCommandTests
         Assert.That(await _world.UploadCommand().FreeSpaceAsync(_mantiq.Folder), Is.EqualTo(1));
 
         Assert.That(File.Exists(_mantiq.Segment(1)), Is.True);
-        Assert.That(_world.Logs.Problems, Has.Member($"{GoogleTokens.NotSignedIn} Nothing more was deleted."));
+        Assert.That(_world.Logs.Problems, Has.Member($"{IGoogleAccount.NotSignedIn} Nothing more was deleted."));
     }
 
     /// <summary>The microphone's track is audio too: a recording with it frees both tracks, its .mic.wav included.</summary>

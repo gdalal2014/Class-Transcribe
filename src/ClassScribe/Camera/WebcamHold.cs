@@ -10,10 +10,13 @@ namespace ClassScribe.Camera;
 /// <param name="starter">Starts camera processes.</param>
 /// <param name="time">The clock everything is timed on.</param>
 /// <param name="loggers">Makes the log under the category Camera.</param>
-public sealed class WebcamHolds(ICameraProvider cameras, ICameraProcessStarter starter, TimeProvider time, ILoggerFactory loggers)
+public sealed class WebcamHolds(ICameraProvider cameras, ICameraProcessStarter starter, TimeProvider time, ILoggerFactory loggers) : IWebcamHolds
 {
     /// <summary>The log's category for the hold's lines.</summary>
     public const string LogCategory = "Camera";
+
+    /// <inheritdoc />
+    IWebcamHold IWebcamHolds.Create(bool wakeOn) => Create(wakeOn);
 
     /// <summary>A hold for one recording: it holds a webcam's picture only when <paramref name="wakeOn"/> (Recording:WakeCameraMicrophone).</summary>
     public WebcamHold Create(bool wakeOn) => new(cameras, starter, wakeOn, time, loggers.CreateLogger(LogCategory));
@@ -33,7 +36,7 @@ public sealed class WebcamHolds(ICameraProvider cameras, ICameraProcessStarter s
 /// <see cref="ListLimit"/>, is a pick not decided yet, said once per stretch and asked again at the next pick, and a camera
 /// process that cannot be started, for whatever cause, is a camera that could not be opened.
 /// </summary>
-public sealed class WebcamHold : IDisposable
+public sealed class WebcamHold : IWebcamHold
 {
     /// <summary>The longest the microphone's open waits for the held camera's first frame.</summary>
     public static readonly TimeSpan FirstFrameWait = TimeSpan.FromSeconds(5);
@@ -373,7 +376,7 @@ public sealed class WebcamHold : IDisposable
 
         try
         {
-            CameraLines.SendJobAsync(process.Channel, new CameraJob(CameraProtocol.Version, CameraJobKind.Hold, webcam.Id, webcam.Name), CancellationToken.None)
+            process.Link.SendJobAsync(new CameraJob(CameraProtocol.Version, CameraJobKind.Hold, webcam.Id, webcam.Name), CancellationToken.None)
                 .AsTask().GetAwaiter().GetResult();
         }
         catch (Exception ex)
@@ -430,9 +433,9 @@ public sealed class WebcamHold : IDisposable
     {
         try
         {
-            while (await process.Channel.ReceiveAsync(CancellationToken.None) is { } line)
+            while (await process.Link.ReceiveAsync(CancellationToken.None) is { } line)
             {
-                switch (CameraLines.Read(line))
+                switch (line.Message)
                 {
                     case CameraStatus status:
                         OnStatus(generation, status);
@@ -607,7 +610,7 @@ public sealed class WebcamHold : IDisposable
     {
         try
         {
-            process.Channel.SendAsync(CameraProtocol.Stop, new CameraStop(0), CameraJson.Default.CameraStop, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            process.Link.SendStopAsync(new CameraStop(0), CancellationToken.None).AsTask().GetAwaiter().GetResult();
             if (reading is not null && !reading.IsCompleted)
             {
                 using var waiting = new CancellationTokenSource();

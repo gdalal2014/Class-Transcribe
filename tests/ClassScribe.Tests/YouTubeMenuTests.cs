@@ -32,7 +32,7 @@ public class YouTubeMenuTests
 
     /// <summary>The menu over the world's batch, with the world's saved classes.</summary>
     private YouTubeMenu Menu() =>
-        new(new YouTubeCommand(_world.Batch(), null!, new FakeUserSignals(), _world.Ui, _world.YouTube, _world.Log<YouTubeCommand>()), _world.Ui, _world.ClassFolders,
+        new(new YouTubeCommand(_world.Batch(), _world.Tool(), new FakeUserSignals(), _world.Ui, _world.YouTube, _world.Log<YouTubeCommand>()), _world.Ui, _world.ClassFolders,
             _memory, TestGlossaries.Choice(_world.ElevenLabs, classes: TestGlossaries.Classes(_world.Classes)), _world.ElevenLabs);
 
     /// <summary>

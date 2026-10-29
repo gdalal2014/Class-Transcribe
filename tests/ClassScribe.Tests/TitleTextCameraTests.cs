@@ -1,5 +1,6 @@
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
+using ClassScribe.Link;
 using ClassScribe.Runs;
 
 namespace ClassScribe.Tests;
@@ -39,11 +40,11 @@ public sealed class TitleTextCameraTests
     public void The_camera_s_field_crosses_the_link_and_an_older_state_reads_without_it()
     {
         var state = Lesson(RecorderPhase.Recording, new CameraState("OBSBOT", true, null, "720p"));
-        var json = System.Text.Json.JsonSerializer.Serialize(state, Link.LinkJson.Default.RecorderState);
-        var older = System.Text.Json.JsonSerializer.Serialize(state with { Camera = null }, Link.LinkJson.Default.RecorderState).Replace(",\"camera\":null", "");
+        var json = System.Text.Json.JsonSerializer.Serialize(state, LinkJson.Default.RecorderState);
+        var older = System.Text.Json.JsonSerializer.Serialize(state with { Camera = null }, LinkJson.Default.RecorderState).Replace(",\"camera\":null", "");
 
-        Assert.That(System.Text.Json.JsonSerializer.Deserialize(json, Link.LinkJson.Default.RecorderState), Is.EqualTo(state));
+        Assert.That(System.Text.Json.JsonSerializer.Deserialize(json, LinkJson.Default.RecorderState), Is.EqualTo(state));
         Assert.That(older, Does.Not.Contain("camera\""));
-        Assert.That(System.Text.Json.JsonSerializer.Deserialize(older, Link.LinkJson.Default.RecorderState)!.Camera, Is.Null);
+        Assert.That(System.Text.Json.JsonSerializer.Deserialize(older, LinkJson.Default.RecorderState)!.Camera, Is.Null);
     }
 }

@@ -8,9 +8,9 @@ namespace ClassScribe.Drive;
 /// open without sharing while an upload runs, as recording.lock is while a class records. Windows closes the file when the
 /// process that holds it ends, however it ends, so a crash never leaves it taken. An upload that finds it held puts its
 /// recordings in the queue, which the holder takes before it lets go. It is never recording.lock, which an upload must not
-/// touch even for a moment, or a class starting at that instant would be refused.
+/// touch even for a moment, or a class starting at that instant would be refused. The adapter of <see cref="IDriveUploadLock"/>.
 /// </summary>
-public sealed class DriveUploadLock(RuntimeFolder folder, ILogger<DriveUploadLock> logger)
+public sealed class DriveUploadLock(RuntimeFolder folder, ILogger<DriveUploadLock> logger) : IDriveUploadLock
 {
     /// <summary>The name of the lock file, in ClassScribe's folder for Drive.</summary>
     public const string FileName = "upload.lock";

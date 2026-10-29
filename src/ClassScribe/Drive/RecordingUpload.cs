@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -29,7 +30,7 @@ public enum RecordingOutcome
 }
 
 /// <summary>
-/// The manifest of a recording could not be written while it went up (see <see cref="UploadManifests.Write"/>): an upload
+/// The manifest of a recording could not be written while it went up (see <see cref="IUploadManifests.Write"/>): an upload
 /// that cannot keep track of itself must not go on, so this ends it, in words of its own, rather than as a file of the
 /// recording that could not be read.
 /// </summary>
@@ -52,7 +53,7 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 /// recording's, such as the class's PDFs, are never touched. In this order: the transcripts, ElevenLabs' answers, the
 /// marks, the class's audio, the microphone's, the log, and last a lesson's finished video, only with Drive:LessonVideos on
 /// (see <see cref="SendsLessonVideo"/>), streamed as the audio is; never the camera's pieces. Each file's MD5 is worked out once and kept in the manifest
-/// (<see cref="UploadManifests"/>) with its size and the time it was last written, and after its last piece the copy on
+/// (<see cref="IUploadManifests"/>) with its size and the time it was last written, and after its last piece the copy on
 /// Drive is checked against Drive's own size and MD5; one that differs is sent again once, as a new revision. A file already
 /// checked goes up no more; a text file that has grown since (a log, the marks, an answer laid out anew), and a lesson's
 /// video made again since (teach-video 8), go up as a new revision of the same file on Drive; nothing else on Drive is ever
@@ -68,13 +69,13 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 /// up, so that Drive's copy of the log holds it (see <see cref="IRunLog.NamedFile"/>). One per run.
 /// </summary>
 public sealed partial class RecordingUpload(
-    DriveClient drive,
-    DriveFolders folders,
-    ResumableUpload upload,
+    IGoogleDrive drive,
     DriveRetry retry,
-    UploadManifests manifests,
+    IUploadManifests manifests,
     IRunJournal journal,
     IClassFolders classFolders,
+    IRecordingFolder recordings,
+    IFileProbe probe,
     IRunLog log,
     IOptionsSnapshot<DriveOptions> options,
     IOptionsSnapshot<YouTubeOptions> youTube,
@@ -90,14 +91,8 @@ public sealed partial class RecordingUpload(
     /// <summary>How much of a file is read at a time to work out its MD5.</summary>
     private const int Md5Buffer = 1024 * 1024;
 
-    /// <summary>The calls to Drive, for the steps of a run.</summary>
-    private DriveClient Drive => drive;
-
-    /// <summary>ClassScribe's folders on Drive, for the steps of a run.</summary>
-    private DriveFolders Folders => folders;
-
-    /// <summary>The resumable upload of one file, for the steps of a run.</summary>
-    private ResumableUpload Upload => upload;
+    /// <summary>Drive (its files, ClassScribe's folders there and the upload of one file), for the steps of a run.</summary>
+    private IGoogleDrive Drive => drive;
 
     /// <summary>How a step is asked again, for the steps of a run.</summary>
     private DriveRetry Retry => retry;
@@ -105,8 +100,14 @@ public sealed partial class RecordingUpload(
     /// <summary>The recordings' library, for a run of this upload.</summary>
     private IClassFolders Library => classFolders;
 
+    /// <summary>The recording's files on disk, for the steps of a run.</summary>
+    private IRecordingFolder Recordings => recordings;
+
+    /// <summary>What a file on disk is (there, its size, when it was written), for the steps of a run.</summary>
+    private IFileProbe Probe => probe;
+
     /// <summary>The manifests, for the steps of a run.</summary>
-    private UploadManifests Manifests => manifests;
+    private IUploadManifests Manifests => manifests;
 
     /// <summary>The clock, for the steps of a run.</summary>
     private TimeProvider Time => time;
@@ -119,7 +120,7 @@ public sealed partial class RecordingUpload(
 
     /// <summary>True when <paramref name="path"/> is the recording's log, and this process writes it now.</summary>
     private bool IsLogWrittenHere(string path) =>
-        log.NamedFile is { } named && string.Equals(Path.GetFullPath(named), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase);
+        log.NamedFile is { } named && string.Equals(probe.FullPath(named), probe.FullPath(path), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Waits a little for every line written so far to reach its file, so that the log read next holds them.</summary>
     private void FlushTheLog()
@@ -142,7 +143,7 @@ public sealed partial class RecordingUpload(
             return new RecordingUploadResult(files, RecordingOutcome.InProgress, $"{files.BaseName} {busy}");
         }
 
-        if (!Directory.Exists(files.Folder)) return FolderNotThere(files);
+        if (!probe.DirectoryExists(files.Folder)) return FolderNotThere(files);
 
         var run = new Run(this, files, manifests.Read(files) ?? new UploadManifest(files.Folder, files.BaseName) { QueuedUtc = time.GetUtcNow() }, beforePiece);
         try
@@ -172,8 +173,8 @@ public sealed partial class RecordingUpload(
     /// </summary>
     private RecordingUploadResult FolderNotThere(RecordingFiles files)
     {
-        var drive = Path.GetPathRoot(Path.GetFullPath(files.Folder));
-        if (string.IsNullOrEmpty(drive) || !Directory.Exists(drive))
+        var drive = Path.GetPathRoot(probe.FullPath(files.Folder));
+        if (string.IsNullOrEmpty(drive) || !probe.DirectoryExists(drive))
         {
             var away = $"The folder of {files.BaseName}, {files.Folder}, is not there now: its drive, {drive}, is not there either";
             manifests.KeepWaiting(files, away);
@@ -207,12 +208,12 @@ public sealed partial class RecordingUpload(
         manifests.Read(files) is { State: UploadState.Done } manifest
         && FilesToUpload(files).All(path => IsKnownInSync(manifest.File(Path.GetFileName(path)), path));
 
-    /// <summary>True when the file at <paramref name="path"/> is unchanged since its copy on Drive, <paramref name="entry"/>, was checked and found the same.</summary>
-    private static bool IsKnownInSync(ManifestFile? entry, string path)
-    {
-        var info = new FileInfo(path);
-        return entry is { InSync: true } && info.Exists && entry.Size == info.Length && entry.LastWriteUtc == new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero);
-    }
+    /// <summary>
+    /// True when the file at <paramref name="path"/> is unchanged since its copy on Drive, <paramref name="entry"/>, was
+    /// checked and found the same. The file is looked at once, so one deleted meanwhile is not in sync rather than an error.
+    /// </summary>
+    private bool IsKnownInSync(ManifestFile? entry, string path) =>
+        entry is { InSync: true } && probe.Describe(path) is { } file && entry.Size == file.Length && entry.LastWriteUtc == new DateTimeOffset(file.LastWriteUtc, TimeSpan.Zero);
 
     /// <summary>
     /// Why <paramref name="files"/> cannot go up now, as "is being recorded now"; null when it can. A run that records it,
@@ -255,14 +256,11 @@ public sealed partial class RecordingUpload(
     /// </summary>
     public IReadOnlyList<string> FilesToUpload(RecordingFiles files)
     {
-        if (!Directory.Exists(files.Folder)) return [];
-
         var withoutAudio = !SendsAudio(files);
         var withVideo = SendsLessonVideo(files);
         return
         [
-            .. Directory.EnumerateFiles(files.Folder, $"{files.BaseName}*")
-                .Where(path => string.Equals(RecordingFiles.TryParse(path)?.BaseName, files.BaseName, StringComparison.OrdinalIgnoreCase))
+            .. recordings.FilesOf(files)
                 .Where(path => !string.Equals(Path.GetFileName(path), Path.GetFileName(files.Upload), StringComparison.OrdinalIgnoreCase))
                 .Where(path => !RecordingFiles.IsCameraPiece(path) && !RecordingFiles.IsUnfinishedLessonVideo(path))
                 .Where(path => withVideo || !RecordingFiles.IsLessonVideo(path))
@@ -372,7 +370,7 @@ public sealed partial class RecordingUpload(
         private UploadManifest _manifest = started;
         private readonly int _queuedAtStart = started.TimesQueued;
         private readonly List<ManifestFile> _entries = [];
-        private IReadOnlyList<DriveFile>? _children;
+        private IReadOnlyList<DriveItem>? _children;
 
         /// <summary>The bytes this upload has sent so far, for the speed a lesson's video is said to go up at.</summary>
         private long _sentBytes;
@@ -407,12 +405,12 @@ public sealed partial class RecordingUpload(
             if (pending.Count == 0) return Finish(problem: null, alreadyThere: true);
 
             var levels = owner.Library.DriveLevelsOf(owner.Library.AsOnDisk(files.Folder));
-            var location = await owner.Retry.RunAsync(token => owner.Folders.FindOrCreatePathAsync(levels, token), "find the recording's folder", cancellationToken);
+            var location = await owner.Retry.RunAsync(token => owner.Drive.FindOrCreatePathAsync(levels, token), "find the recording's folder", cancellationToken);
             _manifest = _manifest with { DriveFolderId = location.Folder.Id, DrivePath = location.Path };
             Save();
 
             owner.Logger.LogInformation("Google Drive: uploading {Recording} ({Files} {FileWord}, {Size}) to {Path}", files.BaseName, pending.Count,
-                pending.Count == 1 ? "file" : "files", Sizes.Describe(pending.Sum(path => new FileInfo(path).Length)), location.Path);
+                pending.Count == 1 ? "file" : "files", Sizes.Describe(pending.Sum(path => owner.Probe.Length(path))), location.Path);
 
             string? problem = null;
             var said = false;
@@ -429,7 +427,7 @@ public sealed partial class RecordingUpload(
                     said = true;
                 }
 
-                if (RecordingFiles.IsLessonVideo(path)) owner.Logger.LogInformation("{Line}", SendingTheVideo(new FileInfo(path).Length, SpeedSoFar()));
+                if (RecordingFiles.IsLessonVideo(path)) owner.Logger.LogInformation("{Line}", SendingTheVideo(owner.Probe.Length(path), SpeedSoFar()));
 
                 try
                 {
@@ -506,7 +504,7 @@ public sealed partial class RecordingUpload(
             var verified = _entries.Where(entry => entry.IsVerified && (comingUp is null || !string.Equals(entry.Name, Path.GetFileName(comingUp), StringComparison.OrdinalIgnoreCase))).ToList();
             var number = verified.Count + (comingUp is null ? 0 : 1);
             var count = number == 1 ? "1 file" : $"{number} files";
-            var size = Sizes.Describe(verified.Sum(entry => entry.DriveSize ?? 0) + (comingUp is null ? 0 : new FileInfo(comingUp).Length));
+            var size = Sizes.Describe(verified.Sum(entry => entry.DriveSize ?? 0) + (comingUp is null ? 0 : owner.Probe.Length(comingUp)));
             var link = _manifest.DriveLink is { } address ? $": {address}" : "";
             owner.Logger.LogInformation("{Recording} is {Already}on Google Drive: {Location} ({Count}, {Size}, each checked against Drive's MD5){Link}", files.BaseName,
                 alreadyThere ? "already " : "", _manifest.DriveLocation, count, size, link);
@@ -523,7 +521,7 @@ public sealed partial class RecordingUpload(
             var audio = IsAudio(path);
             var media = IsMedia(path);
             var entry = Entry(name);
-            var lastWrite = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+            var lastWrite = new DateTimeOffset(owner.Probe.LastWriteUtc(path), TimeSpan.Zero);
             await using var content = await OpenAsync(path, name, media, cancellationToken);
             var size = content.Length;
             var md5 = entry.Md5 is { } known && entry.Size == size && entry.LastWriteUtc == lastWrite ? known : await Md5Async(content, cancellationToken);
@@ -536,24 +534,24 @@ public sealed partial class RecordingUpload(
             var source = new UploadSource(content, size, md5, ContentTypeOf(name));
             var watch = new FileWatch(this, name, size, beforePiece, owner.Time, owner.Logger);
             var sending = owner.Time.GetTimestamp();
-            var made = await owner.Upload.SendAsync(source, target, entry.Session, watch, cancellationToken);
+            var made = await owner.Drive.SendAsync(source, target, entry.Session, watch, cancellationToken);
             _sentBytes += size;
             _sendingTime += owner.Time.GetElapsedTime(sending);
-            var copy = await CheckAsync(made, name, cancellationToken);
+            var copy = await CheckAsync(made.Id, name, cancellationToken);
             if (!Matches(copy, size, md5))
             {
                 owner.Logger.LogWarning("{Name} does not match Drive's MD5 after it went up (here {Md5}, {Size} bytes; on Drive {DriveMd5}, {DriveSize} bytes); sending it again as a new revision",
-                    name, md5, size, copy?.Md5Checksum ?? "none", copy?.Size?.ToString(CultureInfo.InvariantCulture) ?? "no size");
-                made = await owner.Upload.SendAsync(source, new UploadTarget(name, null, made.Id), null, watch, cancellationToken);
-                copy = await CheckAsync(made, name, cancellationToken);
+                    name, md5, size, copy?.Md5 ?? "none", copy?.Size?.ToString(CultureInfo.InvariantCulture) ?? "no size");
+                made = await owner.Drive.SendAsync(source, new UploadTarget(name, null, made.Id), null, watch, cancellationToken);
+                copy = await CheckAsync(made.Id, name, cancellationToken);
                 if (!Matches(copy, size, md5))
                 {
-                    Put(Entry(name) with { DriveId = made.Id, DriveSize = copy?.Size, DriveMd5 = copy?.Md5Checksum, VerifiedUtc = null, Session = null });
+                    Put(Entry(name) with { DriveId = made.Id, DriveSize = copy?.Size, DriveMd5 = copy?.Md5, VerifiedUtc = null, Session = null });
                     throw new GoogleDriveException(DriveProblem.Refused, $"{name} still does not match Drive's MD5 after it was sent again; it goes up again with the next upload.");
                 }
             }
 
-            Put(Entry(name) with { DriveId = made.Id, DriveSize = copy!.Size, DriveMd5 = copy.Md5Checksum, VerifiedUtc = owner.Time.GetUtcNow(), Session = null });
+            Put(Entry(name) with { DriveId = made.Id, DriveSize = copy!.Size, DriveMd5 = copy.Md5, VerifiedUtc = owner.Time.GetUtcNow(), Session = null });
             owner.Logger.LogDebug("{Name} is on Google Drive, checked against its MD5", name);
             return FileOutcome.Sent;
         }
@@ -580,7 +578,7 @@ public sealed partial class RecordingUpload(
                     return null;
                 }
 
-                if (await CheckAsync(new DriveFile(entry.DriveId!, name, null, null, null, null, null), name, cancellationToken) is { Trashed: not true })
+                if (await CheckAsync(entry.DriveId, name, cancellationToken) is { Trashed: false })
                 {
                     if (lessonVideo) owner.Logger.LogInformation("{Name} was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy", name);
                     return new UploadTarget(name, null, entry.DriveId);
@@ -590,19 +588,19 @@ public sealed partial class RecordingUpload(
                 entry = Put(entry with { DriveId = null, DriveSize = null, DriveMd5 = null, VerifiedUtc = null, Session = null });
             }
 
-            if (entry.DriveId is { } ownId && await CheckAsync(new DriveFile(ownId, name, null, null, null, null, null), name, cancellationToken) is { Trashed: not true } own)
+            if (entry.DriveId is { } ownId && await CheckAsync(ownId, name, cancellationToken) is { Trashed: false } own)
             {
                 if (!Matches(own, entry.Size, entry.Md5!)) return new UploadTarget(name, null, ownId);
 
-                Put(entry with { DriveSize = own.Size, DriveMd5 = own.Md5Checksum, VerifiedUtc = owner.Time.GetUtcNow(), Session = null });
+                Put(entry with { DriveSize = own.Size, DriveMd5 = own.Md5, VerifiedUtc = owner.Time.GetUtcNow(), Session = null });
                 return null;
             }
 
-            _children ??= await owner.Retry.RunAsync(token => owner.Drive.ListAsync(DriveFolders.ChildrenQuery(location.Folder.Id), token), "look through a folder", cancellationToken);
-            var named = _children.Where(child => child.MimeType != DriveFolders.FolderType && string.Equals(child.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
+            _children ??= await owner.Retry.RunAsync(token => owner.Drive.ListChildrenAsync(location.Folder.Id, token), "look through a folder", cancellationToken);
+            var named = _children.Where(child => !child.IsFolder && string.Equals(child.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
             if (named.FirstOrDefault(child => Matches(child, entry.Size, entry.Md5!)) is { } same)
             {
-                Put(entry with { DriveId = same.Id, DriveSize = same.Size, DriveMd5 = same.Md5Checksum, VerifiedUtc = owner.Time.GetUtcNow(), Session = null });
+                Put(entry with { DriveId = same.Id, DriveSize = same.Size, DriveMd5 = same.Md5, VerifiedUtc = owner.Time.GetUtcNow(), Session = null });
                 return null;
             }
 
@@ -613,15 +611,15 @@ public sealed partial class RecordingUpload(
             return null;
         }
 
-        /// <summary>The copy of <paramref name="made"/> as Drive describes it now, asked again while Google is out of reach or busy.</summary>
-        private Task<DriveFile?> CheckAsync(DriveFile made, string name, CancellationToken cancellationToken) =>
-            string.IsNullOrEmpty(made.Id)
+        /// <summary>The copy of the file Drive took as <paramref name="id"/>, as Drive describes it now, asked again while Google is out of reach or busy.</summary>
+        private Task<DriveItem?> CheckAsync(string? id, string name, CancellationToken cancellationToken) =>
+            string.IsNullOrEmpty(id)
                 ? throw new GoogleDriveException(DriveProblem.Refused, $"Google Drive took {name} but did not say its id.")
-                : owner.Retry.RunAsync(token => owner.Drive.GetFileAsync(made.Id, token), "show a file", cancellationToken);
+                : owner.Retry.RunAsync(token => owner.Drive.GetItemAsync(id, token), "show a file", cancellationToken);
 
         /// <summary>True when <paramref name="copy"/> is a file outside the trash of <paramref name="size"/> bytes whose MD5 is <paramref name="md5"/>.</summary>
-        private static bool Matches(DriveFile? copy, long size, string md5) =>
-            copy is { Trashed: not true } && copy.Size == size && string.Equals(copy.Md5Checksum, md5, StringComparison.OrdinalIgnoreCase);
+        private static bool Matches(DriveItem? copy, long size, string md5) =>
+            copy is { Trashed: false } && copy.Size == size && string.Equals(copy.Md5, md5, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// The bytes of the file to send: media (audio, or a lesson's video of up to gigabytes) opened as it is and streamed
@@ -629,13 +627,13 @@ public sealed partial class RecordingUpload(
         /// read whole into memory at once, which never holds up the writer of a log or of the marks. Another program holding
         /// the file open for writing, as a recorder does, keeps it from being read now.
         /// </summary>
-        private static async Task<Stream> OpenAsync(string path, string name, bool media, CancellationToken cancellationToken)
+        private async Task<Stream> OpenAsync(string path, string name, bool media, CancellationToken cancellationToken)
         {
             try
             {
-                if (media) return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, bufferSize: 1, FileOptions.Asynchronous);
+                if (media) return owner.Recordings.OpenToRead(path, othersMayWrite: false);
 
-                await using var text = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1, FileOptions.Asynchronous);
+                await using var text = owner.Recordings.OpenToRead(path, othersMayWrite: true);
                 var snapshot = new MemoryStream();
                 await text.CopyToAsync(snapshot, cancellationToken);
                 snapshot.Position = 0;
@@ -648,7 +646,7 @@ public sealed partial class RecordingUpload(
         }
 
         /// <summary>True when the file at <paramref name="path"/> is unchanged since its copy on Drive was checked and found the same.</summary>
-        private bool IsKnownInSync(string path) => RecordingUpload.IsKnownInSync(Entry(Path.GetFileName(path)), path);
+        private bool IsKnownInSync(string path) => owner.IsKnownInSync(Entry(Path.GetFileName(path)), path);
 
         /// <summary>
         /// The entries for <paramref name="locals"/>, in their order, each the one known or a new one; then those of files

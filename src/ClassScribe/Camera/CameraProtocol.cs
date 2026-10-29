@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using ClassScribe.Audio.Timeline;
 using ClassScribe.Runs;
 
 namespace ClassScribe.Camera;
@@ -6,15 +7,15 @@ namespace ClassScribe.Camera;
 /// <summary>
 /// The camera process's role and the lines it speaks (teach-video 6.2, amendment 24): ClassScribe started as
 /// <c>ClassScribe.exe --camera-process &lt;job id&gt;</c>, by a window or a recorder, in a kill-on-close job of the starter's,
-/// talking over its standard input and output in lines of UTF-8 JSON of at most 64 KB, through the link's
-/// <see cref="Link.LineChannel"/>: no named pipe, so nothing to name or guard. Frames never cross, only control and status.
+/// talking over its standard input and output in lines of UTF-8 JSON of at most 64 KB, through the link's line channel
+/// (<c>LineChannel</c>): no named pipe, so nothing to name or guard. Frames never cross, only control and status.
 /// To the camera process: the job first, then for a record job <see cref="Clock"/>, <see cref="Off"/> and <see cref="On"/>
 /// (P), <see cref="Stop"/> and <see cref="Cancel"/>. From it: <see cref="Opened"/>, <see cref="Status"/> once a second,
 /// <see cref="Problem"/>, <see cref="Piece"/>, <see cref="Progress"/>, <see cref="Made"/> or <see cref="Failed"/>, and
 /// <see cref="Log"/> lines, which the starter writes into its own log under the category Camera. Its exit codes are
 /// internal: 0 done, 1 failed, 4 a job it cannot take, 130 cancelled. It takes the hold, check and record jobs, opening the
 /// camera only shared, and the finish job, which opens no camera. Version 2 defined the clock line's body
-/// (<see cref="Audio.Timeline.ClockState"/>) and took the record job; version 3 (slice 8) takes the finish job, with
+/// (<see cref="ClockState"/>) and took the record job; version 3 (slice 8) takes the finish job, with
 /// <see cref="CameraJob.KeepPieces"/>, its <see cref="Progress"/> lines at least every ten seconds, and <see cref="Made"/>.
 /// </summary>
 public static class CameraProtocol
@@ -40,7 +41,7 @@ public static class CameraProtocol
     /// <summary>The job, the first line to the camera process (see <see cref="CameraJob"/>).</summary>
     public const string Job = "job";
 
-    /// <summary>The recording clock's whole state (see <see cref="Audio.Timeline.ClockState"/>), sent whenever it changes; each replaces the one before it whole.</summary>
+    /// <summary>The recording clock's whole state (see <see cref="ClockState"/>), sent whenever it changes; each replaces the one before it whole.</summary>
     public const string Clock = "clock";
 
     /// <summary>Let the camera go during a pause (P), so that its light goes off; an empty body.</summary>

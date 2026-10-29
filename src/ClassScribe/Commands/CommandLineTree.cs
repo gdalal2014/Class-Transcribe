@@ -9,7 +9,9 @@ using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
 using ClassScribe.Desktop;
 using ClassScribe.Runs;
+using ClassScribe.Settings;
 using ClassScribe.Storage;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Commands;
 
@@ -97,7 +99,7 @@ public enum CommandKind
 /// recordings folder is the default.
 /// </summary>
 public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand menu, IConsoleUi ui, TimeProvider time, TextWriter output, TextWriter errors,
-    Settings.ISavedClasses? classes = null, Microsoft.Extensions.Options.IOptionsMonitor<Settings.RecordingOptions>? recording = null)
+    ISavedClasses? classes = null, Microsoft.Extensions.Options.IOptionsMonitor<RecordingOptions>? recording = null)
 {
     /// <summary>The exit code of a command line with a mistake in it.</summary>
     public const int Mistake = 2;
@@ -293,7 +295,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         root.Add(MicCheckCommand(optionNames, examples));
         root.Add(CameraCheckCommand(optionNames, examples));
         root.Add(DriveCommand(optionNames, examples));
-        root.Add(YouTubeCommand(optionNames, examples));
+        root.Add(YouTubeCommandTree(optionNames, examples));
         root.Add(SettingsCommandTree(examples));
         root.Add(ClassCommandTree(optionNames, examples));
         root.Add(AttachCommand(examples));
@@ -397,7 +399,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     /// by its number; a playlist's or a live stream's link, and more than 10 videos, need --download. youtube check takes
     /// nothing else.
     /// </summary>
-    private Command YouTubeCommand(HashSet<string> optionNames, Dictionary<Command, string> examples)
+    private Command YouTubeCommandTree(HashSet<string> optionNames, Dictionary<Command, string> examples)
     {
         var links = new Argument<string[]>("links")
         {
@@ -440,14 +442,14 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         command.SetAction(parsed =>
         {
             var words = Words(parsed.GetValue(links) ?? [], parsed.GetValue(list));
-            var reading = YouTube.LinkList.Read(words);
+            var reading = LinkList.Read(words);
             foreach (var note in reading.Notes) Invocation.Output.WriteLine(note);
-            return commands.YouTubeAsync(new YouTube.YouTubeRequest(
+            return commands.YouTubeAsync(new YouTubeRequest(
                 reading.Links,
                 FolderNames.SafeName(parsed.GetValue(name)!),
                 OutputRoot(parsed.GetValue(output), classFolder: null),
                 parsed.GetValue(download),
-                parsed.GetValue(plan) ? YouTube.BatchConfirmation.PlanOnly : YouTube.BatchConfirmation.Yes,
+                parsed.GetValue(plan) ? BatchConfirmation.PlanOnly : BatchConfirmation.Yes,
                 Transcribe: !parsed.GetValue(noTranscribe),
                 Open: !parsed.GetValue(noOpen),
                 Again: parsed.GetValue(again),
@@ -488,7 +490,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
         if (given.Count == 0 && result.GetResult(list) is null) yield return "youtube needs at least one YouTube link, or --list \"<file>\" of links";
 
-        IReadOnlyList<YouTube.LinkWord> words;
+        IReadOnlyList<LinkWord> words;
         string? unreadable = null;
         try
         {
@@ -502,7 +504,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         }
 
         if (unreadable is not null) yield return unreadable;
-        var reading = YouTube.LinkList.Read(words);
+        var reading = LinkList.Read(words);
         foreach (var problem in reading.Problems) yield return problem;
         if (listFile is not null && given.Count == 0 && words.Count == 0) yield return $"{Path.GetFileName(listFile)} holds no link";
 
@@ -511,29 +513,29 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         if (isYes == isPlan)
             yield return isYes ? "--yes and --plan cannot go together" : "youtube needs --yes to go ahead after the plan, or --plan to print the plan alone";
 
-        var videos = reading.Links.Count(link => link.Kind != YouTube.YouTubeLinkKind.Playlist);
+        var videos = reading.Links.Count(link => link.Kind != YouTubeLinkKind.Playlist);
         if (result.GetValue(download))
         {
-            if (videos > YouTube.DownloadBatch.MostVideos)
-                yield return $"youtube takes at most {YouTube.DownloadBatch.MostVideos} videos at a time; these links name {videos}";
+            if (videos > DownloadBatch.MostVideos)
+                yield return $"youtube takes at most {DownloadBatch.MostVideos} videos at a time; these links name {videos}";
             yield break;
         }
 
         // Recording as they play: one video's own link at a time, each for as long as it plays.
-        foreach (var playlist in reading.Links.Where(link => link.Kind == YouTube.YouTubeLinkKind.Playlist))
+        foreach (var playlist in reading.Links.Where(link => link.Kind == YouTubeLinkKind.Playlist))
             yield return $"{playlist.Url} is a playlist's link, which only --download takes; give each video's own link to record it as it plays";
-        foreach (var live in reading.Links.Where(link => link.Kind == YouTube.YouTubeLinkKind.Live))
+        foreach (var live in reading.Links.Where(link => link.Kind == YouTubeLinkKind.Live))
             yield return $"The live link of {live.Id} is taken only with --download, whose read tells a live stream from a video; give the video's watch link to record it as it plays";
-        if (videos > YouTube.VideoBatch.MostVideos)
-            yield return $"youtube records at most {YouTube.VideoBatch.MostVideos} videos at a time as they play, each for as long as it plays; these links name {videos}. Give fewer, or add --download";
-        if (result.GetValue(allowUnlisted)) yield return ClassScribe.Commands.YouTubeCommand.AllowUnlistedNeedsDownload;
+        if (videos > VideoBatch.MostVideos)
+            yield return $"youtube records at most {VideoBatch.MostVideos} videos at a time as they play, each for as long as it plays; these links name {videos}. Give fewer, or add --download";
+        if (result.GetValue(allowUnlisted)) yield return YouTubeCommand.AllowUnlistedNeedsDownload;
     }
 
     /// <summary>The words of the links on the command line, then of the list file, each with where it stands.</summary>
-    private static IReadOnlyList<YouTube.LinkWord> Words(IEnumerable<string> given, string? listFile) =>
+    private static IReadOnlyList<LinkWord> Words(IEnumerable<string> given, string? listFile) =>
     [
-        .. given.Select(word => new YouTube.LinkWord(word, "the command line")),
-        .. listFile is null ? [] : YouTube.LinkList.ReadFile(Path.GetFullPath(listFile))
+        .. given.Select(word => new LinkWord(word, "the command line")),
+        .. listFile is null ? [] : LinkList.ReadFile(Path.GetFullPath(listFile))
     ];
 
     /// <summary>What is wrong with <paramref name="value"/> as a path to upload or free: an empty one, or nothing there. Null for a file or a folder.</summary>
@@ -776,7 +778,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// record --class: the saved class named, matched exactly in any case, with the options given over it in groups (see
-    /// <see cref="Settings.ClassChoices"/>): a source replaces its whole source, --mic its microphone, --mic-follows what it
+    /// <see cref="ClassChoices"/>): a source replaces its whole source, --mic its microphone, --mic-follows what it
     /// follows, --camera and --resolution its camera; a name given replaces its course; --output, --minutes, --no-open,
     /// --continue and --new apply as to any run. An unknown class, a mix the class refuses, and a class that cannot be used
     /// are mistakes, exit 2, said on standard error with the help. The run is the class's own, and says so (ClassName).
@@ -788,11 +790,11 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         if (classes?.FieldsOf(name) is not { } fields || saved.FirstOrDefault(entry => entry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is not { } entry)
             return Refuse(parsed, ClassCommand.NoSuchClass(name, saved.Select(known => known.Name)));
 
-        var source = parsed.GetResult(symbols.InPerson) is not null ? new Settings.SourceGiven(Settings.SourceOption.InPerson, NamePart(parsed.GetValue(symbols.InPerson)))
-            : parsed.GetValue(symbols.App) is { } app ? new Settings.SourceGiven(Settings.SourceOption.App, ProcessName(app))
-            : parsed.GetValue(symbols.Device) is { } device ? new Settings.SourceGiven(Settings.SourceOption.Device, device)
+        var source = parsed.GetResult(symbols.InPerson) is not null ? new SourceGiven(SourceOption.InPerson, NamePart(parsed.GetValue(symbols.InPerson)))
+            : parsed.GetValue(symbols.App) is { } app ? new SourceGiven(SourceOption.App, ProcessName(app))
+            : parsed.GetValue(symbols.Device) is { } device ? new SourceGiven(SourceOption.Device, device)
             : null;
-        var choices = new Settings.ClassChoices
+        var choices = new ClassChoices
         {
             Course = parsed.GetValue(symbols.Name) is { } course && !string.IsNullOrWhiteSpace(course) ? FolderNames.SafeName(course) : null,
             Source = source,
@@ -805,7 +807,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         };
         if (choices.ApplyTo(fields) is { } mix) return Refuse(parsed, $"{mix}, over the saved class \"{entry.Name}\"");
 
-        var chosen = Settings.SavedClass.Check(entry.Name, fields);
+        var chosen = SavedClass.Check(entry.Name, fields);
         if (chosen.Class is not { } ready)
             return Refuse(parsed, $"The saved class \"{entry.Name}\" cannot be used{(entry.Usable ? " with these options" : "")}: {string.Join(" ", chosen.Problems)}");
 
@@ -882,7 +884,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         var keyterms = new Option<string>("--keyterms")
         {
             HelpName = "file",
-            Description = $"Send this glossary, one term per line, instead of the one decided when the recording started, or {Settings.SavedClass.NoGlossary} for no glossary; this transcript only, and its entry in the recording's .glossary.json says so."
+            Description = $"Send this glossary, one term per line, instead of the one decided when the recording started, or {SavedClass.NoGlossary} for no glossary; this transcript only, and its entry in the recording's .glossary.json says so."
         };
 
         var command = new Command("transcribe", "Transcribe a recording, named by its folder or one of its files, or any audio or video file.") { path, outputFolder, noOpen, again, keyterms };
@@ -911,7 +913,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     private static string GlossaryGiven(string value)
     {
         var given = value.Trim().Trim('"').Trim();
-        return Settings.SavedClass.MeansNoGlossary(given) ? Settings.SavedClass.NoGlossary : Path.GetFullPath(Environment.ExpandEnvironmentVariables(given));
+        return SavedClass.MeansNoGlossary(given) ? SavedClass.NoGlossary : Path.GetFullPath(Environment.ExpandEnvironmentVariables(given));
     }
 
     /// <summary>
@@ -924,7 +926,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         if (ValueProblem(value, KeytermsNeedsValue, optionNames) is { } missing) return missing;
 
         var given = value!.Trim().Trim('"').Trim();
-        if (Settings.SavedClass.MeansNoGlossary(given)) return null;
+        if (SavedClass.MeansNoGlossary(given)) return null;
         if (given.IndexOfAny(NotInPaths) >= 0 || given.Any(char.IsControl))
             return $"--keyterms takes a file; \"{given}\" has a character Windows does not allow in a path: < > \" | ? *";
 

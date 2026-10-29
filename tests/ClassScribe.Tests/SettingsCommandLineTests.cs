@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.Options;
 using Moq;
+using ClassScribe.Settings;
 
 namespace ClassScribe.Tests;
 
@@ -142,7 +143,7 @@ public class SettingsCommandLineTests
     public void With_json_every_log_line_goes_to_standard_error()
     {
         using var runtime = new TestRuntime();
-        using var host = AppHost.Build(new Settings.SettingsPlaces(_settingsFolder.Path, userFolder: null), "test-key", services =>
+        using var host = AppHost.Build(new SettingsPlaces(_settingsFolder.Path, userFolder: null), "test-key", services =>
         {
             services.AddSingleton(runtime.Folder);
             AppHost.LogToStandardError(services);

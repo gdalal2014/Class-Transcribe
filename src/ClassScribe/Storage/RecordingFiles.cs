@@ -1,6 +1,9 @@
 using System.Globalization;
+using System.IO;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
+using ClassScribe.Transcription;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Storage;
 
@@ -73,13 +76,13 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
 
     /// <summary>
     /// A YouTube video's source file: the video's title and link and how its audio was obtained (see
-    /// <see cref="YouTube.VideoSource"/>). Only a video's recording has one; it is never an answer or a transcript.
+    /// <see cref="VideoSource"/>). Only a video's recording has one; it is never an answer or a transcript.
     /// </summary>
     public string Source => Path.Combine(Folder, $"{BaseName}.source.json");
 
     /// <summary>
     /// The recording's glossary record (architecture 8.2): the glossary decided when the recording started, which every later
-    /// transcription of it reuses, and what each transcript sent (see <see cref="Transcription.GlossaryRecord"/>). Written as
+    /// transcription of it reuses, and what each transcript sent (see <see cref="GlossaryRecord"/>). Written as
     /// the recording starts; it is never an answer or a transcript.
     /// </summary>
     public string Glossary => Path.Combine(Folder, $"{BaseName}.glossary.json");

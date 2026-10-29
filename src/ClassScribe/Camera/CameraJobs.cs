@@ -251,7 +251,7 @@ public sealed class CameraHoldJob(LineChannel channel, CameraJob job, ICameraCap
 
 /// <summary>
 /// The check job (camera-first step 11, the camera check): the camera opened shared, its reader converting to the picture's
-/// size as a lesson will, for <see cref="CameraHost.CheckFor"/>, then let go. Every call on the route is sent as a log
+/// size as a lesson will, for <c>CameraHost.CheckFor</c>, then let go. Every call on the route is sent as a log
 /// line at Information, with its outcome and HRESULT, so the check says exactly which call failed; then a status line
 /// with the frames that came, and the job ends with 0 when frames came, else with failed and why, exit 1. Nothing is
 /// written.

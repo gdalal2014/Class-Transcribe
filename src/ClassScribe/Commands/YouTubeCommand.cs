@@ -12,13 +12,13 @@ namespace ClassScribe.Commands;
 /// records here, so the first Ctrl+C cancels at once.
 /// </summary>
 /// <param name="download">The download path's batch.</param>
-/// <param name="check">yt-dlp's check.</param>
+/// <param name="tool">yt-dlp, for its check.</param>
 /// <param name="signals">Ctrl+C, in this command's scope.</param>
 /// <param name="ui">The console.</param>
 /// <param name="youTube">The YouTube settings of the command's scope.</param>
 /// <param name="logger">Where the command says what it refuses.</param>
 /// <param name="record">The record path's batch; null, as for the download path's tests, when the record path is not given.</param>
-public sealed class YouTubeCommand(DownloadBatch download, YtDlpCheck check, IUserSignals signals, IConsoleUi ui, IOptionsSnapshot<YouTubeOptions> youTube,
+public sealed class YouTubeCommand(DownloadBatch download, IVideoTool tool, IUserSignals signals, IConsoleUi ui, IOptionsSnapshot<YouTubeOptions> youTube,
     ILogger<YouTubeCommand> logger, VideoBatch? record = null)
 {
     /// <summary>Why --allow-unlisted is refused without --download: recording a video as it plays needs no word, and downloads nothing.</summary>
@@ -73,7 +73,7 @@ public sealed class YouTubeCommand(DownloadBatch download, YtDlpCheck check, IUs
     public async Task<int> CheckAsync()
     {
         signals.RequestStop();
-        var found = await check.RunAsync(signals.Cancellation);
+        var found = await tool.CheckAsync(signals.Cancellation);
         foreach (var line in found.Lines) ui.WriteLine(line);
         foreach (var problem in found.Problems) logger.LogError("{Problem}", problem);
         if (found.Warning is { } old) logger.LogWarning("{Warning}", old);

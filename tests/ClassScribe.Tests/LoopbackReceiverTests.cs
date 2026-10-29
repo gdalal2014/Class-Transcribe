@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using ClassScribe.Drive;
 using ClassScribe.Drive.Windows;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -78,6 +79,41 @@ public class LoopbackReceiverTests
         var taken = new TcpListener(IPAddress.Loopback, port);
         Assert.That(() => taken.Start(), Throws.Nothing, "the port is free again");
         taken.Stop();
+    }
+
+    /// <summary>
+    /// A browser that has gone before the page is sent, as a tab closed early (here with a reset, the harder case), leaves
+    /// the sign-in nothing to catch but what the port allows: the listener passes the lost page over, or says so as an
+    /// <see cref="IOException"/> or an <see cref="ObjectDisposedException"/> (the request let go), never as its own type.
+    /// </summary>
+    [Test]
+    public async Task A_browser_gone_before_the_page_throws_nothing_the_sign_in_does_not_catch()
+    {
+        using var listener = Receiver().Open();
+        ILoopbackRequest request;
+        using (var tab = new TcpClient { LingerState = new LingerOption(true, 0) })
+        {
+            await tab.ConnectAsync(IPAddress.Loopback, listener.RedirectUri.Port);
+            var wire = tab.GetStream();
+            await wire.WriteAsync(Encoding.ASCII.GetBytes($"GET /?code=c&state=s HTTP/1.1\r\nHost: 127.0.0.1:{listener.RedirectUri.Port}\r\nConnection: close\r\n\r\n"));
+            request = await listener.NextAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+        }
+
+        var read = (request.Path, request.Query("code"));
+        var ended = "passed over";
+        try
+        {
+            await request.AnswerAsync(200, "<p>Signed in.</p>").WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+            // Deliberately not rethrown: these two types are what the port allows for a browser that has gone, and what the
+            // sign-in catches; any other type fails the test.
+            ended = ex.GetType().Name;
+        }
+
+        TestContext.Out.WriteLine($"The page for the browser that had gone was {ended}.");
+        Assert.That(read, Is.EqualTo(("/", "c")), "the query was read before the answer, as the sign-in reads it");
     }
 
     /// <summary>Two listeners open at once get two ports.</summary>

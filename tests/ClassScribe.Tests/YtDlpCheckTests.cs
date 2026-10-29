@@ -26,9 +26,9 @@ public class YtDlpCheckTests
         new(new ToolLocator(new FakeRegistryValues(), world.Files, world.YouTube, world.Log<ToolLocator>()) { LocalAppData = @"C:\Users\gdala\AppData\Local" },
             world.Tools, world.Folders, world.Runtime.Time, world.Log<YtDlpCheck>());
 
-    /// <summary>The command over <paramref name="world"/>'s check, for its lines and exit code.</summary>
+    /// <summary>The command over <paramref name="world"/>'s check, through the tool's port, for its lines and exit code.</summary>
     private static YouTubeCommand Command(YouTubeWorld world) =>
-        new(world.Batch(), Check(world), new FakeUserSignals(), world.Ui, world.YouTube, world.Log<YouTubeCommand>());
+        new(world.Batch(), new YtDlpTool(Check(world), world.Folders), new FakeUserSignals(), world.Ui, world.YouTube, world.Log<YouTubeCommand>());
 
     /// <summary>All four found, yt-dlp current: each line names the tool, its version and its path; exit code 0. Only --version and -version were asked.</summary>
     [Test]

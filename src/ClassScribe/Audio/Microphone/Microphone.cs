@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
+using ClassScribe.Camera;
 
 // The folder is Audio/Microphone; the namespace is Microphones, because a namespace named Microphone would hide the
 // Microphone record from every file in the Audio namespaces, where the name would find the namespace first.
@@ -30,7 +31,7 @@ public enum MicrophoneProcessing
 /// <param name="BluetoothEvidence">What showed the microphone to be Bluetooth: its enumerator, or the string property that mentions BTHENUM, BTHLE or Bluetooth; null when nothing did.</param>
 /// <param name="ContainerId">
 /// The physical device the microphone belongs to (PKEY_Device_ContainerId), which a webcam's camera shares, so that a
-/// webcam's microphone is known as its own (see <see cref="Camera.Cameras.CameraOf"/>); null when the store does not say.
+/// webcam's microphone is known as its own (see <see cref="Cameras.CameraOf"/>); null when the store does not say.
 /// </param>
 public sealed record Microphone(string Id, string Name, bool IsDefault, bool IsBuiltInArray, bool IsBluetooth, bool IsLoopbackInput,
     bool RawSupported, string Enumerator, string? BluetoothEvidence, Guid? ContainerId = null);

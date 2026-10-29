@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using ClassScribe.Drive;
+using ClassScribe.Transcription;
 
 namespace ClassScribe.Settings;
 
@@ -43,7 +44,7 @@ public sealed partial class YouTubeOptions
     /// <summary>
     /// The longest a video is recorded for as it plays, in hours, ads included: its recording stops there. From 0.25 to 24. One
     /// above an hour less than one file to ElevenLabs holds (ElevenLabs:LongestFileHours) is warned about and held there (see
-    /// <see cref="Transcription.TranscriptionLimits.VideoLimit"/>), and one above Recording:StopAfterHours is warned about, as
+    /// <see cref="TranscriptionLimits.VideoLimit"/>), and one above Recording:StopAfterHours is warned about, as
     /// the safety stop ends the video first.
     /// </summary>
     public double LongestVideoHours { get; init; } = 4;
@@ -68,9 +69,6 @@ public sealed partial class YouTubeOptions
     /// @handle, @ and 3 to 30 letters, digits, _, - or dots.
     /// </summary>
     public static bool IsChannel(string? entry) => entry is not null && ChannelShape().IsMatch(entry);
-
-    /// <summary>A path setting as it is used: environment variables such as %LOCALAPPDATA% expanded, and the quotes and spaces around it gone.</summary>
-    public static string Expanded(string? path) => Environment.ExpandEnvironmentVariables(path ?? "").Trim().Trim('"').Trim();
 
     /// <summary>A channel's UC id or @handle, and nothing else; \z ends the match at the very end.</summary>
     [GeneratedRegex(@"^(?:UC[A-Za-z0-9_-]{22}|@[\p{L}\p{N}_.-]{3,30})\z", RegexOptions.CultureInvariant)]

@@ -3,6 +3,7 @@ using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio.Timeline;
 using ClassScribe.Audio.Windows;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
@@ -107,9 +108,9 @@ public sealed class TrackSetTests
     {
         var lesson = InPersonPlan(null) with { Camera = new CameraChoice("OBSBOT", "720p") };
 
-        var refused = Assert.Throws<Camera.CameraNotBuiltException>(() => Factory().Create(lesson, _clock));
+        var refused = Assert.Throws<CameraNotBuiltException>(() => Factory().Create(lesson, _clock));
 
-        Assert.That(refused!.Message, Is.EqualTo(Camera.CameraRecorderNotBuilt.Words));
+        Assert.That(refused!.Message, Is.EqualTo(CameraRecorderNotBuilt.Words));
         Assert.That(_microphones.Opened, Is.Empty);
     }
 

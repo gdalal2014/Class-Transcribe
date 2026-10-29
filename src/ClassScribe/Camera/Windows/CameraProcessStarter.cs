@@ -95,12 +95,16 @@ public sealed class CameraProcessStarter : ICameraProcessStarter
         /// <summary>Where its standard error and its letting go are logged.</summary>
         private readonly ILogger _logger;
 
+        /// <summary>The lines to and from the process, over its input and output joined into one channel.</summary>
+        private readonly LineChannel _channel;
+
         /// <summary>Starts reading the process's standard error into <paramref name="logger"/>, and joins its input and output into one channel.</summary>
         public StartedCameraProcess(PipedProcess piped, ILogger logger)
         {
             _piped = piped;
             _logger = logger;
-            Channel = new LineChannel(new JoinedStream(piped.Output, piped.Input));
+            _channel = new LineChannel(new JoinedStream(piped.Output, piped.Input));
+            Link = new CameraLink(_channel);
             _errors = Task.Run(() => LogErrorsAsync(piped.Errors, logger));
         }
 
@@ -108,7 +112,7 @@ public sealed class CameraProcessStarter : ICameraProcessStarter
         public int ProcessId => _piped.Started.ProcessId;
 
         /// <inheritdoc />
-        public LineChannel Channel { get; }
+        public ICameraLink Link { get; }
 
         /// <inheritdoc />
         public int? ExitCode => _piped.Started.ExitCode();
@@ -123,7 +127,7 @@ public sealed class CameraProcessStarter : ICameraProcessStarter
         /// </summary>
         public async ValueTask DisposeAsync()
         {
-            await Channel.DisposeAsync();
+            await _channel.DisposeAsync();
             _piped.Dispose();
             try
             {

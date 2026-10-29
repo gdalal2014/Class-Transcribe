@@ -43,6 +43,7 @@ public sealed class RecordCommand(
     IClassMarks marks,
     IRecordingFolder recordingFolder,
     IFileProbe probe,
+    IVideoSources sources,
     CommandLine commandLine,
     RunBookkeeping bookkeeping,
     IResultShower results,
@@ -208,7 +209,7 @@ public sealed class RecordCommand(
     /// Steps 8 to 10, once the recording has stopped: nothing captured ends the run; record-only with nothing audible ends
     /// it as well, and otherwise says where the recording is; with a transcript to make and a key, the whole recording is
     /// transcribed from disk. What is sent follows the upload's own rule alone, as transcribe does: only exact zeros count as
-    /// silence there (see <see cref="AudioPreparer"/>), so a class that is merely quiet still goes up, and digital silence is
+    /// silence there (see <c>AudioPreparer</c>), so a class that is merely quiet still goes up, and digital silence is
     /// refused before anything is sent (<see cref="NoAudioException"/>). A continued recording whose new part heard nothing
     /// still has its earlier parts, so it goes on to them. With the class and your microphone, the main track is the
     /// class's: the microphone's numbers (<paramref name="microphone"/>, from the gate that follows <paramref name="follows"/>)
@@ -354,7 +355,7 @@ public sealed class RecordCommand(
     /// with its results opened, the last line says what the transcript cost the account (see <see cref="UsageReport"/>),
     /// so that nothing anyone waits for is held up by it: in this window the run says it, since the end has opened the
     /// results already; in a recorder the end has still to go to the windows once the run returns, so the recorder's host
-    /// says it after that (see <see cref="RecorderHost"/>).
+    /// says it after that (see <c>RecorderHost</c>).
     /// </summary>
     private async Task<int> TranscribeAsync(RecordRequest request, RecordingFiles files, RecorderState stopping, string source, string command)
     {
@@ -614,7 +615,7 @@ public sealed class RecordCommand(
             Confirmed: null, AcceptedBy: null, ended, confirmed);
         try
         {
-            VideoSourceFile.Write(files.Source, source);
+            sources.Write(files.Source, source);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -795,7 +796,7 @@ public sealed class RecordCommand(
         return source.Mode switch
         {
             RecordingMode.Microphone when source.Camera is { } camera =>
-                $"{microphone}, in person, and the camera {(camera.NamePart is { Length: > 0 } part ? $"\"{part}\"" : "of the lesson (a USB camera, else the built-in front camera)")} at {camera.Resolution ?? Camera.CameraSize.DefaultText}",
+                $"{microphone}, in person, and the camera {(camera.NamePart is { Length: > 0 } part ? $"\"{part}\"" : "of the lesson (a USB camera, else the built-in front camera)")} at {camera.Resolution ?? CameraSize.DefaultText}",
             RecordingMode.Microphone => microphone,
             RecordingMode.ClassAndMicrophone => $"{DescribeClass(source.Class)}, and {microphone}",
             _ => DescribeClass(source.Class)

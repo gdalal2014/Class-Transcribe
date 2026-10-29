@@ -1,4 +1,5 @@
 using ClassScribe.Commands;
+using ClassScribe.Settings;
 using ClassScribe.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -151,9 +152,9 @@ public class YouTubeCommandLineTests
     public async Task Allow_unlisted_needs_the_course_channels()
     {
         using var world = new YouTubeWorld();
-        world.YouTube.Set(new Settings.YouTubeOptions());
+        world.YouTube.Set(new YouTubeOptions());
         var log = new RecordingLogger<YouTubeCommand>();
-        var command = new YouTubeCommand(world.Batch(), null!, new FakeUserSignals(), world.Ui, world.YouTube, log);
+        var command = new YouTubeCommand(world.Batch(), world.Tool(), new FakeUserSignals(), world.Ui, world.YouTube, log);
 
         var exitCode = await command.RunAsync(world.Request(["https://youtu.be/abcdefghijk"], allowUnlisted: true));
 
@@ -184,7 +185,7 @@ public class YouTubeCommandLineTests
             if (call.Arguments.Contains("--newline")) signals.CtrlCPressed();
             return Task.CompletedTask;
         };
-        var command = new YouTubeCommand(world.Batch(), null!, signals, world.Ui, world.YouTube, new RecordingLogger<YouTubeCommand>());
+        var command = new YouTubeCommand(world.Batch(), world.Tool(), signals, world.Ui, world.YouTube, new RecordingLogger<YouTubeCommand>());
 
         Assert.That(async () => await command.RunAsync(world.Request(["https://youtu.be/abcdefghijk"])).WaitAsync(TimeSpan.FromMinutes(1)),
             Throws.InstanceOf<OperationCanceledException>());

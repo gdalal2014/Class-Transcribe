@@ -1,4 +1,4 @@
-using ClassScribe.Link;
+using ClassScribe.Runs;
 
 namespace ClassScribe.Camera;
 
@@ -8,8 +8,8 @@ public interface ICameraProcess : IAsyncDisposable
     /// <summary>Windows' id for the process.</summary>
     int ProcessId { get; }
 
-    /// <summary>The lines to and from the process (see <see cref="CameraProtocol"/>).</summary>
-    LineChannel Channel { get; }
+    /// <summary>The lines to and from the process, message by message (see <see cref="CameraProtocol"/>).</summary>
+    ICameraLink Link { get; }
 
     /// <summary>The process's exit code once it has ended; null while it runs.</summary>
     int? ExitCode { get; }
@@ -25,7 +25,7 @@ public interface ICameraProcess : IAsyncDisposable
 public interface ICameraProcessStarter
 {
     /// <summary>
-    /// Starts a camera process for the job <paramref name="jobId"/>, a well-formed id (<see cref="Runs.RunIds"/>); throws
+    /// Starts a camera process for the job <paramref name="jobId"/>, a well-formed id (<see cref="RunIds"/>); throws
     /// an <see cref="ArgumentException"/> for any other before anything starts, and a
     /// <see cref="System.ComponentModel.Win32Exception"/> when Windows does not start it.
     /// </summary>

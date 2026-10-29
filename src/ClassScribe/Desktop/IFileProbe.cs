@@ -25,6 +25,13 @@ public interface IFileProbe
     long Length(string path);
 
     /// <summary>
+    /// The length of the file at <paramref name="path"/>, in bytes, and when it was last written, in UTC, from one look at
+    /// the file, so that a file deleted meanwhile is simply not there; null when there is no file at the path, a folder
+    /// being there or not.
+    /// </summary>
+    (long Length, DateTime LastWriteUtc)? Describe(string path);
+
+    /// <summary>
     /// The full path of <paramref name="path"/>: a relative one resolved against the current folder, and <c>.</c>, <c>..</c>
     /// and doubled separators folded away.
     /// </summary>

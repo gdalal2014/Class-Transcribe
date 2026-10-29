@@ -1,4 +1,5 @@
 using System.Net;
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Drive;
@@ -257,7 +258,7 @@ public class DownloadBatchTests
     [Test]
     public async Task Without_a_key_a_batch_that_transcribes_is_refused_before_anything()
     {
-        _world.ElevenLabs.Set(new Settings.ElevenLabsOptions { ApiKey = "" });
+        _world.ElevenLabs.Set(new ElevenLabsOptions { ApiKey = "" });
 
         var exitCode = await _world.RunAsync(_world.Request([Link(First)]));
 
@@ -624,7 +625,7 @@ public class DownloadBatchTests
             if (classFiles is null && call.Arguments.Contains("--newline"))
             {
                 classFiles = _world.ClassFolders.CreateRecording("Risala", _world.Recordings.Path);
-                using var writer = new Audio.WavSegmentWriter(classFiles.Segment(1), 10);
+                using var writer = new WavSegmentWriter(classFiles.Segment(1), 10);
                 writer.Write(new byte[20]);
             }
 
@@ -703,7 +704,7 @@ public class DownloadBatchTests
     [Test]
     public async Task Without_the_course_channels_the_advice_says_to_list_them_before_allow_unlisted()
     {
-        _world.YouTube.Set(new Settings.YouTubeOptions());
+        _world.YouTube.Set(new YouTubeOptions());
         _world.Tools.With(Third, YtDlpReadTests.Info(Third, "Your own upload", duration: 3, availability: "unlisted"), 3);
 
         await _world.RunAsync(_world.Request([Link(Third)]));

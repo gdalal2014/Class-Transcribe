@@ -13,7 +13,7 @@ namespace ClassScribe.YouTube;
 /// twice, the wait while a class records, the transcripts, and the course folder opened once at the end.
 /// </summary>
 public sealed class YouTubeBatch(
-    YouTubeLock youTubeLock,
+    IYouTubeLock youTubeLock,
     ClassWait wait,
     BatchTranscripts transcripts,
     IElevenLabsAccount account,
@@ -22,6 +22,7 @@ public sealed class YouTubeBatch(
     IPowerSource powerSource,
     IConsoleUi ui,
     IDesktop desktop,
+    IFileProbe files,
     IOptionsSnapshot<RecordingOptions> recording,
     IOptionsSnapshot<ElevenLabsOptions> elevenLabs,
     TimeProvider time,
@@ -80,7 +81,7 @@ public sealed class YouTubeBatch(
     /// </summary>
     public void OpenCourse(string? courseFolder, bool open)
     {
-        if (!open || !recording.Value.OpenFolderWhenDone || courseFolder is null || !Directory.Exists(courseFolder)) return;
+        if (!open || !recording.Value.OpenFolderWhenDone || courseFolder is null || !files.DirectoryExists(courseFolder)) return;
 
         desktop.OpenFolder(courseFolder);
     }

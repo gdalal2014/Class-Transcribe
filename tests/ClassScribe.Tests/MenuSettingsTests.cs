@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
+using ClassScribe.Transcription;
 
 namespace ClassScribe.Tests;
 
@@ -74,7 +75,7 @@ public class MenuSettingsTests
         var folders = new ClassFolders(TestOptions.Create(new RecordingOptions { OutputFolder = _recordings.Path }), TimeProvider.System, NullLogger<ClassFolders>.Instance);
         var menu = new MenuCommand(_commands.Object, report.Object, _ui, new RunGate(_files.Reloader, _files.SettingsFile, NullLogger<RunGate>.Instance), _files.SettingsFile,
             TestOptions.Create(new ElevenLabsOptions { ApiKey = "test-key" }), folders, new RecordingFolder(), new TranscriptCopies(), _devices, Printed.Program, _choice, new RecordingNamePrompt(_ui), Mock.Of<IDesktop>(), TimeProvider.System,
-            NullLogger<MenuCommand>.Instance, new SavedClasses(_files.Configuration), _files.Writer, new Transcription.GlossaryFiles(_files.Places));
+            NullLogger<MenuCommand>.Instance, new SavedClasses(_files.Configuration), _files.Writer, new GlossaryFiles(_files.Places));
         return menu.RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
 

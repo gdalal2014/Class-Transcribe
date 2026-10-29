@@ -26,7 +26,7 @@ public interface IDriveRoom
 }
 
 /// <summary>Asks Google Drive's about call for its room, once Drive is set up and signed in (see <see cref="IDriveRoom"/>).</summary>
-public sealed class DriveRoom(IGoogleCredentialStore store, Lazy<DriveClient> drive, IOptionsSnapshot<DriveOptions> options, ILogger<DriveRoom> logger) : IDriveRoom
+public sealed class DriveRoom(IGoogleCredentialStore store, Lazy<IGoogleDrive> drive, IOptionsSnapshot<DriveOptions> options, ILogger<DriveRoom> logger) : IDriveRoom
 {
     /// <inheritdoc />
     public async Task<DriveSpace?> ReadAsync(CancellationToken cancellationToken)
@@ -35,8 +35,7 @@ public sealed class DriveRoom(IGoogleCredentialStore store, Lazy<DriveClient> dr
 
         try
         {
-            var about = await drive.Value.GetAboutAsync(cancellationToken);
-            return about.StorageQuota is { } quota ? new DriveSpace(quota.Usage ?? 0, quota.Limit) : null;
+            return (await drive.Value.GetAccountAsync(cancellationToken)).Storage;
         }
         catch (GoogleDriveException ex)
         {

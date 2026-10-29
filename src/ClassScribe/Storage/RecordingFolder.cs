@@ -73,4 +73,46 @@ public sealed class RecordingFolder : IRecordingFolder
 
     /// <inheritdoc />
     public void DeleteUploadCopy(RecordingFiles files) => File.Delete(files.Upload);
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> FilesOf(RecordingFiles files)
+    {
+        if (!Directory.Exists(files.Folder)) return [];
+
+        return
+        [
+            .. Directory.EnumerateFiles(files.Folder, $"{files.BaseName}*")
+                .Where(path => string.Equals(RecordingFiles.TryParse(path)?.BaseName, files.BaseName, StringComparison.OrdinalIgnoreCase))
+        ];
+    }
+
+    /// <inheritdoc />
+    public Stream OpenToRead(string path, bool othersMayWrite) =>
+        new FileStream(path, FileMode.Open, FileAccess.Read, (othersMayWrite ? FileShare.ReadWrite : FileShare.Read) | FileShare.Delete, bufferSize: 1, FileOptions.Asynchronous);
+
+    /// <inheritdoc />
+    public void Delete(string path) => File.Delete(path);
+
+    /// <inheritdoc />
+    public bool IsUploadCopyInUse(RecordingFiles files)
+    {
+        try
+        {
+            using var copy = new FileStream(files.Upload, FileMode.Open, FileAccess.Read, FileShare.Delete, bufferSize: 1);
+            return false;
+        }
+        catch (IOException ex) when (ex.HResult == SharingViolation)
+        {
+            // Deliberately not rethrown: a sharing violation is the answer this look is for, that a program has the copy open.
+            return true;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Deliberately not rethrown: without an upload copy, nothing transcribes the recording in a window now.
+            return false;
+        }
+    }
+
+    /// <summary>ERROR_SHARING_VIOLATION as an HRESULT: another program holds the file in a way that does not allow this open.</summary>
+    private const int SharingViolation = unchecked((int)0x80070020);
 }

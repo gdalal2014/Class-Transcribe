@@ -23,7 +23,9 @@ public static class YouTubeServices
     public static IServiceCollection AddYouTube(this IServiceCollection services)
     {
         services.AddSingleton<YouTubeFolders>();
+        services.AddSingleton<IYouTubeFolders>(provider => provider.GetRequiredService<YouTubeFolders>());
         services.AddSingleton<YouTubeLock>();
+        services.AddSingleton<IYouTubeLock>(provider => provider.GetRequiredService<YouTubeLock>());
         services.AddSingleton<IFileProbe, FileProbe>();
         services.AddSingleton<ToolLocator>();
         services.AddSingleton<IToolRunner>(provider => OperatingSystem.IsWindows()
@@ -50,14 +52,23 @@ public static class YouTubeServices
         // The record path: where Chrome is, one for the app, which reads the setting at each search; the yield of a video's
         // run to a class, through the run's own event; and the window the batch opens and closes.
         services.AddSingleton<BrowserLocator>();
+        services.AddSingleton<IToolLocator>(provider => provider.GetRequiredService<BrowserLocator>());
         services.AddSingleton<IVideoYield>(provider => OperatingSystem.IsWindows()
             ? new WindowsVideoYield(provider.GetRequiredService<ILogger<WindowsVideoYield>>())
             : throw new PlatformNotSupportedException("A video's run giving way to a class needs Windows."));
         services.AddTransient<VideoWindow>();
+        services.AddTransient<IVideoWindowOpener>(provider => provider.GetRequiredService<VideoWindow>());
 
+        // yt-dlp as a batch uses it, one per batch, over the check; a batch's conversions and titles, each per batch; the
+        // videos fetched before, read once per batch; and the source files, which hold nothing of their own.
         services.AddTransient<YtDlpCheck>();
+        services.AddScoped<IVideoTool, YtDlpTool>();
         services.AddScoped<DownloadedAudio>();
+        services.AddScoped<IDownloadedAudio>(provider => provider.GetRequiredService<DownloadedAudio>());
         services.AddScoped<OEmbedTitles>();
+        services.AddScoped<IVideoTitles>(provider => provider.GetRequiredService<OEmbedTitles>());
+        services.AddScoped<IVideoIndex, VideoIndex>();
+        services.AddSingleton<IVideoSources, VideoSourceFile>();
         return services;
     }
 }

@@ -4,7 +4,7 @@ namespace ClassScribe.Transcription;
 public sealed record TranscriptFiles(string TranscriptPath, string JsonPath);
 
 /// <summary>
-/// A recording is longer than ClassScribe sends in one file to ElevenLabs (see <see cref="TranscriptionLimits.Sends"/>), so
+/// A recording is longer than ClassScribe sends in one file to ElevenLabs (see <c>TranscriptionLimits.Sends</c>), so
 /// nothing of it was prepared or sent. Trying again would find the same length.
 /// </summary>
 public sealed class RecordingTooLongException(string message) : Exception(message);

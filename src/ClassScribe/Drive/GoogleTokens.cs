@@ -45,22 +45,16 @@ public sealed class GoogleTokenCache
 /// Drive refuses it ("refresh the access token using the long-lived refresh token", Google's guide to Drive's errors). One
 /// renewal at a time for the process. When Google ends the sign-in (invalid_grant), the dead refresh token is removed from
 /// the store and the client kept. The tokens, the client secret and Google's answer are never logged: only Google's error
-/// and its description. One per run, so each run's Refit client follows Drive:OAuthBaseUrl as the settings are then.
+/// and its description. The sign-in's code exchange and the sign-out's revoke go through here too, as the adapter of
+/// <see cref="IGoogleAccount"/>. One per run, so each run's Refit client follows Drive:OAuthBaseUrl as the settings are then.
 /// </summary>
-public sealed class GoogleTokens(GoogleTokenCache cache, IGoogleOAuthApi oauth, IGoogleCredentialStore store, TimeProvider time, ILogger<GoogleTokens> logger)
+public sealed class GoogleTokens(GoogleTokenCache cache, IGoogleOAuthApi oauth, IGoogleCredentialStore store, TimeProvider time, ILogger<GoogleTokens> logger) : IGoogleAccount
 {
     /// <summary>A token with less than this left is renewed before it is used.</summary>
     public static readonly TimeSpan RenewBefore = TimeSpan.FromMinutes(2);
 
     /// <summary>How long one request to Google's token endpoint may take, the answer included.</summary>
     public static readonly TimeSpan CallLimit = TimeSpan.FromSeconds(60);
-
-    /// <summary>What is said when ClassScribe has never been given a Google client.</summary>
-    public const string NotSetUp =
-        "Google Drive is not set up yet: ClassScribe has no Google client. Follow the README's \"Google Drive (set up once)\", then sign in with menu choice 9 > S, or ClassScribe drive signin --client \"<the client file you downloaded>\".";
-
-    /// <summary>What is said when the client is kept but there is no sign-in.</summary>
-    public const string NotSignedIn = "ClassScribe is not signed in to Google Drive. Sign in with menu choice 9 > S, or ClassScribe drive signin.";
 
     /// <summary>What is said when Google has ended the sign-in.</summary>
     public const string SignInEnded =
@@ -93,19 +87,49 @@ public sealed class GoogleTokens(GoogleTokenCache cache, IGoogleOAuthApi oauth, 
         }
     }
 
-    /// <summary>Holds the token a sign-in was just given, which lasts <paramref name="lifetime"/>, so its first requests to Drive use it.</summary>
+    /// <inheritdoc />
     public void Seed(string accessToken, TimeSpan lifetime) => cache.Hold(accessToken, lifetime, time);
 
-    /// <summary>Lets the token go, as at a sign-out.</summary>
+    /// <inheritdoc />
     public void Forget() => cache.Forget();
+
+    /// <inheritdoc />
+    public async Task<GoogleAnswer> ExchangeCodeAsync(GoogleClient client, string code, string verifier, string redirect, ILogger logger, CancellationToken cancellationToken)
+    {
+        Dictionary<string, string> form = new()
+        {
+            ["grant_type"] = "authorization_code",
+            ["code"] = code,
+            ["client_id"] = client.Id,
+            ["client_secret"] = client.Secret,
+            ["redirect_uri"] = redirect,
+            ["code_verifier"] = verifier
+        };
+
+        var (status, answer) = await SendFormAsync(limit => oauth.TokenAsync(form, limit), "finish the sign-in", " No sign-in was stored; sign in again when the connection is back.",
+            time, logger, cancellationToken);
+        return AnswerOf(status, answer);
+    }
+
+    /// <inheritdoc />
+    public async Task<GoogleAnswer> RevokeAsync(string refreshToken, ILogger logger, CancellationToken cancellationToken)
+    {
+        Dictionary<string, string> form = new() { ["token"] = refreshToken };
+        var (status, answer) = await SendFormAsync(limit => oauth.RevokeAsync(form, limit), "end ClassScribe's access", "", time, logger, cancellationToken);
+        return AnswerOf(status, answer);
+    }
+
+    /// <summary>Google's answer as the sign-in reads it: <paramref name="status"/>, what <paramref name="answer"/> holds, and its error described.</summary>
+    private static GoogleAnswer AnswerOf(HttpStatusCode status, GoogleTokenAnswer? answer) =>
+        new((int)status, answer?.AccessToken, answer?.ExpiresIn, answer?.RefreshToken, answer?.Scope, answer?.Error, Describe(answer));
 
     /// <summary>Asks Google for a new token with the stored client and refresh token, and holds it. Call with the renewal lock held.</summary>
     private async Task<string> RequestTokenAsync(CancellationToken cancellationToken)
     {
         var stored = store.Read();
         if (stored.Problem is { } problem) throw new GoogleDriveException(DriveProblem.StoreUnreadable, problem);
-        if (stored.Credentials is not { } credentials) throw new GoogleDriveException(DriveProblem.NotSetUp, NotSetUp);
-        if (!credentials.IsSignedIn) throw new GoogleDriveException(DriveProblem.NotSignedIn, NotSignedIn);
+        if (stored.Credentials is not { } credentials) throw new GoogleDriveException(DriveProblem.NotSetUp, IGoogleAccount.NotSetUp);
+        if (!credentials.IsSignedIn) throw new GoogleDriveException(DriveProblem.NotSignedIn, IGoogleAccount.NotSignedIn);
 
         Dictionary<string, string> form = new()
         {

@@ -56,7 +56,7 @@ public sealed class ToolLocator(IRegistryValues registry, IFileProbe files, IOpt
     internal ToolSearch Find()
     {
         List<string> elsewhere = [LinksFolder, .. PathFolders()];
-        var setting = YouTubeOptions.Expanded(options.CurrentValue.YtDlpPath);
+        var setting = SettingPaths.Expanded(options.CurrentValue.YtDlpPath);
         var ytDlp = setting.Length > 0
             ? files.FileExists(setting) ? setting : null
             : First(elsewhere, "yt-dlp.exe");

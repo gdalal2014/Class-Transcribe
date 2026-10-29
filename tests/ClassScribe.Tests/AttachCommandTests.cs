@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.Versioning;
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
@@ -441,7 +442,7 @@ public class AttachCommandTests
             Request = record.Request with
             {
                 Transcribe = false,
-                Source = new SourcePlan(Audio.RecordingMode.Microphone, Class: null, new MicrophoneChoice(null), new CameraChoice("OBSBOT", "720p"))
+                Source = new SourcePlan(RecordingMode.Microphone, Class: null, new MicrophoneChoice(null), new CameraChoice("OBSBOT", "720p"))
             }
         };
         _runtime.Journal.Begin(record).Dispose();
@@ -469,7 +470,7 @@ public class AttachCommandTests
             Request = record.Request with
             {
                 Transcribe = true,
-                Source = new SourcePlan(Audio.RecordingMode.Microphone, Class: null, new MicrophoneChoice(null), new CameraChoice("OBSBOT", "720p"))
+                Source = new SourcePlan(RecordingMode.Microphone, Class: null, new MicrophoneChoice(null), new CameraChoice("OBSBOT", "720p"))
             }
         };
         _runtime.Journal.Begin(record).Dispose();

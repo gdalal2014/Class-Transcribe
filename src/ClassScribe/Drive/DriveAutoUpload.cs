@@ -46,7 +46,7 @@ public interface IDriveAutoUpload
 /// </summary>
 public sealed class DriveAutoUpload(
     IGoogleCredentialStore store,
-    UploadManifests manifests,
+    IUploadManifests manifests,
     Lazy<DriveUploadPass> pass,
     IUserSignals signals,
     IOptionsSnapshot<DriveOptions> options,

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using ClassScribe.Audio;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -28,8 +29,8 @@ public sealed record FreedAudio(RecordingFiles Files, IReadOnlyList<string> Dele
 /// than its video, keeps everything while its sound is here: making the video needs both (see <see cref="VideoStillToMake"/>).
 /// One per run.
 /// </summary>
-public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadManifests manifests, RecordingUpload uploads, IClassFolders folders, IRecordingFolder recordings,
-    CommandLine commandLine, TimeProvider time, ILogger<LocalAudioFreer> logger)
+public sealed class LocalAudioFreer(IGoogleDrive drive, DriveRetry retry, IUploadManifests manifests, RecordingUpload uploads, IClassFolders folders, IRecordingFolder recordings,
+    IFileProbe probe, CommandLine commandLine, TimeProvider time, ILogger<LocalAudioFreer> logger)
 {
     /// <summary>ERROR_SHARING_VIOLATION as an HRESULT: another program holds the file in a way that does not allow this open.</summary>
     private const int SharingViolation = unchecked((int)0x80070020);
@@ -53,7 +54,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
     public async Task<FreedAudio> FreeAsync(RecordingFiles files, CancellationToken cancellationToken)
     {
         if (uploads.Busy(files) is { } busy) return Refuse(files, $"{files.BaseName} {busy}, so none of its audio was deleted.");
-        if (UploadCopyInUse(files)) return Refuse(files, $"{files.BaseName} is being transcribed now, so none of its audio was deleted.");
+        if (recordings.IsUploadCopyInUse(files)) return Refuse(files, $"{files.BaseName} is being transcribed now, so none of its audio was deleted.");
         if (folders.LessonVideoStateOf(files) == LessonVideoState.NotMade && (recordings.FindSegments(files).Count > 0 || recordings.FindSegments(files, Track.Microphone).Count > 0))
             return Refuse(files, VideoStillToMake(files, recordings, commandLine));
 
@@ -107,11 +108,11 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         Dictionary<string, ManifestFile> freed = new(StringComparer.OrdinalIgnoreCase);
         foreach (var (path, entry) in checkedFiles)
         {
-            var size = new FileInfo(path).Length;
+            var size = probe.Length(path);
             var seconds = entry.Seconds ?? folders.MeasureSegment(path).TotalSeconds;
             try
             {
-                File.Delete(path);
+                recordings.Delete(path);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -153,7 +154,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
 
         var video = Path.GetFileName(files.LessonVideo);
         var manifest = manifests.Read(files);
-        if (manifest?.File(video) is not { IsVerified: true } entry || !File.Exists(files.LessonVideo))
+        if (manifest?.File(video) is not { IsVerified: true } entry || !probe.FileExists(files.LessonVideo))
         {
             logger.LogDebug("The camera's pieces of {Recording} stay on this laptop: its lesson video is not on Google Drive", files.BaseName);
             return freed;
@@ -166,8 +167,8 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
             return freed with { Problem = freed.Problem ?? kept };
         }
 
-        var madeUtc = File.GetLastWriteTimeUtc(files.LessonVideo);
-        var pieces = all.Where(piece => File.GetLastWriteTimeUtc(piece) <= madeUtc).ToList();
+        var madeUtc = probe.LastWriteUtc(files.LessonVideo);
+        var pieces = all.Where(piece => probe.LastWriteUtc(piece) <= madeUtc).ToList();
         foreach (var piece in all.Except(pieces))
         {
             var newer = $"{Path.GetFileName(piece)} is newer than the lesson video of {files.BaseName}, which does not hold it, so it stays on this laptop";
@@ -180,10 +181,10 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         string? failure = null;
         foreach (var piece in pieces)
         {
-            var size = new FileInfo(piece).Length;
+            var size = probe.Length(piece);
             try
             {
-                File.Delete(piece);
+                recordings.Delete(piece);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -220,7 +221,7 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
         string md5;
         try
         {
-            await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, bufferSize: 1, FileOptions.Asynchronous);
+            await using var file = recordings.OpenToRead(path, othersMayWrite: false);
             size = file.Length;
             md5 = Convert.ToHexStringLower(await MD5.HashDataAsync(file, cancellationToken));
         }
@@ -231,32 +232,12 @@ public sealed class LocalAudioFreer(DriveClient drive, DriveRetry retry, UploadM
             return $"{name} is open in another program, as while it is being recorded.";
         }
 
-        var copy = await retry.RunAsync(token => drive.GetFileAsync(driveId, token), "show a file", cancellationToken);
-        if (copy is null || copy.Trashed == true) return $"{name}'s copy on Google Drive is no longer there, or is in the trash.";
-        if (copy.Size != size || !string.Equals(copy.Md5Checksum, md5, StringComparison.OrdinalIgnoreCase))
-            return $"{name} differs from its copy on Google Drive (here {size} bytes, MD5 {md5}; there {copy.Size?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "no size"}, MD5 {copy.Md5Checksum ?? "none"}).";
+        var copy = await retry.RunAsync(token => drive.GetItemAsync(driveId, token), "show a file", cancellationToken);
+        if (copy is null || copy.Trashed) return $"{name}'s copy on Google Drive is no longer there, or is in the trash.";
+        if (copy.Size != size || !string.Equals(copy.Md5, md5, StringComparison.OrdinalIgnoreCase))
+            return $"{name} differs from its copy on Google Drive (here {size} bytes, MD5 {md5}; there {copy.Size?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "no size"}, MD5 {copy.Md5 ?? "none"}).";
 
         return null;
-    }
-
-    /// <summary>True when the recording's upload copy is open in a program now, as while ElevenLabs is sent it.</summary>
-    private static bool UploadCopyInUse(RecordingFiles files)
-    {
-        try
-        {
-            using var copy = new FileStream(files.Upload, FileMode.Open, FileAccess.Read, FileShare.Delete, bufferSize: 1);
-            return false;
-        }
-        catch (IOException ex) when (ex.HResult == SharingViolation)
-        {
-            // Deliberately not rethrown: a sharing violation is the answer this look is for, that a program has the copy open.
-            return true;
-        }
-        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
-        {
-            // Deliberately not rethrown: without an upload copy, nothing transcribes the recording in a window now.
-            return false;
-        }
     }
 
     /// <summary>Says <paramref name="problem"/>, and returns that nothing of <paramref name="files"/> was deleted.</summary>

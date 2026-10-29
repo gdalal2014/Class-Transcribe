@@ -2,6 +2,9 @@ using System.Globalization;
 using System.Net;
 using System.Runtime.Versioning;
 using ClassScribe.Audio;
+using ClassScribe.Camera;
+using ClassScribe.Drive;
+using ClassScribe.YouTube;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
@@ -152,8 +155,8 @@ public partial class RecordCommandTests
     private RecordCommand CreateCommand(
         string apiKey = "test-key", TimeProvider? time = null, bool openWhenDone = false, string? outputFolder = null, KeepScreenOn keepScreenOn = KeepScreenOn.OnBattery,
         bool blockShutdown = true, IRecordingFactory? recordings = null, RuntimeFolder? runtimeFolder = null, ILogger<RecordCommand>? logger = null,
-        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown, YouTube.VideoPlayback? video = null,
-        IVideoYield? yield = null, Camera.LessonVideoMaker? lessonVideos = null, Drive.LessonVideoDrive? lessonDrive = null,
+        IRecorderStatusSink? status = null, TimeSpan? handlerLogPatience = null, ClassAppMute classAppMute = ClassAppMute.Unknown, VideoPlayback? video = null,
+        IVideoYield? yield = null, LessonVideoMaker? lessonVideos = null, LessonVideoDrive? lessonDrive = null,
         IGlossaryFiles? glossaryFiles = null, double? stopAfterHours = null, double? longestFileHours = null, IAudioPreparer? preparer = null)
     {
         time ??= TimeProvider.System;
@@ -188,6 +191,7 @@ public partial class RecordCommandTests
             new RecordingFolder(),
             new FileProbe(),
             new ElevenLabsAnswer(),
+            new VideoSourceFile(),
             new AudioFileFacts(),
             recording,
             elevenLabs,
@@ -219,7 +223,7 @@ public partial class RecordCommandTests
         return new RecordCommand(
             recordings ?? new ClassRecordingFactory(_provider, new WavTrackWriterFactory(), recording, time, NullLogger<RecordingSession>.Instance, NullLogger<CaptureChooser>.Instance,
                 NullLogger<ClassRecording>.Instance, video),
-            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new RecordingFolder(), new FileProbe(), Printed.Commands, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
+            loop, workflow, glossaries, _progress, usage, _signals, folders, marks, new RecordingFolder(), new FileProbe(), new VideoSourceFile(), Printed.Commands, _bookkeeping, _results, status, _choice, _drive, recording, elevenLabs, time, logger ?? _log, video, yield, lessonVideos, lessonDrive);
     }
 
     /// <summary>

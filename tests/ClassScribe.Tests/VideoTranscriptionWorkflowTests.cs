@@ -57,6 +57,7 @@ public class VideoTranscriptionWorkflowTests
             new RecordingFolder(),
             new FileProbe(),
             new ElevenLabsAnswer(),
+            new VideoSourceFile(),
             new AudioFileFacts(),
             recording,
             TestOptions.Create(new ElevenLabsOptions()),

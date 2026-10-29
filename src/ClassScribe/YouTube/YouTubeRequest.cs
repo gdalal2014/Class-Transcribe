@@ -14,7 +14,7 @@ public enum BatchConfirmation
 }
 
 /// <summary>One batch of YouTube videos, as the youtube command or menu choice Y asks for it (design 1).</summary>
-/// <param name="Links">The links, read and each taken once (see <see cref="LinkList"/>).</param>
+/// <param name="Links">The links, read and each taken once (see <c>LinkList</c>).</param>
 /// <param name="Name">The course the videos belong to: the folder they go to, as a class's name names it.</param>
 /// <param name="OutputRoot">The recordings folder, as a full path: --output, or Recording:OutputFolder in the menu.</param>
 /// <param name="Download">True to download the audio with yt-dlp (--download, or D in the menu).</param>

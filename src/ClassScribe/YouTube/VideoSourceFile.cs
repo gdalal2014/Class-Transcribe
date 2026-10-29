@@ -23,9 +23,15 @@ internal sealed partial class YouTubeJson : JsonSerializerContext
     });
 }
 
-/// <summary>Reads and writes a video's source file (see <see cref="VideoSource"/>).</summary>
-public static class VideoSourceFile
+/// <summary>Reads and writes a video's source file (see <see cref="VideoSource"/>): the adapter of <see cref="IVideoSources"/>, which holds nothing of its own, over the statics the adapters and the tests call.</summary>
+public sealed class VideoSourceFile : IVideoSources
 {
+    /// <inheritdoc />
+    void IVideoSources.Write(string path, VideoSource source) => Write(path, source);
+
+    /// <inheritdoc />
+    VideoSource? IVideoSources.Read(string path) => Read(path);
+
     /// <summary>
     /// Writes <paramref name="source"/> whole as the file at <paramref name="path"/>: into a file of its own in the same folder,
     /// flushed to the disk, then moved into its place in one step, so that a reader finds the whole old file or the whole new

@@ -5,11 +5,33 @@ namespace ClassScribe.Storage;
 /// <summary>
 /// A recording's files on disk (architecture 4.3), as its names give them (see <see cref="RecordingFiles"/>): whether it
 /// has a transcript, its segments per track, its camera pieces, its kept answers, the next free name for an unread answer,
-/// and the removal of its upload copy. The naming is the record's; what is there is this port's, so that the use cases
-/// reach the recording's folder through it alone.
+/// every file of its own, a file of it opened to read or deleted, whether its upload copy is open elsewhere, and the
+/// removal of its upload copy. The naming is the record's; what is there is this port's, so that the use cases reach the
+/// recording's folder through it alone.
 /// </summary>
 public interface IRecordingFolder
 {
+    /// <summary>
+    /// Every file in the recording's folder that <see cref="RecordingFiles.TryParse"/> takes for one of the recording's own,
+    /// by its base name, in no particular order: its audio, transcripts, answers, marks, log, source file, pieces and
+    /// upload copy alike, never a file beside them. Empty when the folder is not there.
+    /// </summary>
+    IReadOnlyList<string> FilesOf(RecordingFiles files);
+
+    /// <summary>
+    /// Opens the file at <paramref name="path"/> to read it, asynchronously, letting others read and delete it meanwhile, and
+    /// write to it too when <paramref name="othersMayWrite"/>: as an upload reads a text file a recorder may still write, or
+    /// a segment nobody may write while it is read whole. The file system's own exceptions, so a caller can tell a file
+    /// another program holds (a sharing violation) from one that is not there.
+    /// </summary>
+    Stream OpenToRead(string path, bool othersMayWrite);
+
+    /// <summary>Deletes the file at <paramref name="path"/>; a file another program holds, or one that may not be deleted, is the file system's error.</summary>
+    void Delete(string path);
+
+    /// <summary>True when the recording's upload copy (see <see cref="RecordingFiles.Upload"/>) is open in a program now, as while ElevenLabs is sent it; false when it is not, or there is none.</summary>
+    bool IsUploadCopyInUse(RecordingFiles files);
+
     /// <summary>
     /// True when the recording has been transcribed at least once: any copy of its transcript is there, not only the
     /// first, which may have been deleted while a later one was kept.

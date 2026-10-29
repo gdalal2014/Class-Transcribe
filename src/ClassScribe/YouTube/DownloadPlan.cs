@@ -1,4 +1,5 @@
 using System.Globalization;
+using ClassScribe.Audio;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
 using ClassScribe.Transcription;
@@ -21,7 +22,7 @@ public sealed class BatchVideo(int Number, string VideoId, VideoPlaylist? Playli
     public VideoPlaylist? Playlist { get; } = Playlist;
 
     /// <summary>What its read gave; null when it was not read.</summary>
-    public YtDlpInfo? Info { get; set; }
+    public VideoInfo? Info { get; set; }
 
     /// <summary>When it was read, on the steady clock; its information file is reused by its download for 5 hours.</summary>
     public long? ReadAt { get; set; }
@@ -29,7 +30,7 @@ public sealed class BatchVideo(int Number, string VideoId, VideoPlaylist? Playli
     /// <summary>Why it was not read, in words; null when it was.</summary>
     public string? NotRead { get; set; }
 
-    /// <summary>What was done with it before (see <see cref="VideoIndex"/>).</summary>
+    /// <summary>What was done with it before (see <see cref="IVideoIndex"/>).</summary>
     public PastVerdict Past { get; set; } = new(PastKind.None, null, "");
 
     /// <summary>The guard's verdict on it; null when it was not read.</summary>
@@ -39,7 +40,7 @@ public sealed class BatchVideo(int Number, string VideoId, VideoPlaylist? Playli
     public string? Confirmed { get; set; }
 
     /// <summary>The recording of it this batch made, once made.</summary>
-    public Storage.RecordingFiles? Recording { get; set; }
+    public RecordingFiles? Recording { get; set; }
 
     /// <summary>The length of its audio, once downloaded whole.</summary>
     public TimeSpan? Downloaded { get; set; }
@@ -182,7 +183,7 @@ public static class DownloadPlan
         }
 
         var before = videos.Where(video => video.Past.Kind == PastKind.Whole && video.Past.Recording?.KeptAnswer is null).ToList();
-        var beforeLength = Sum(before.Select(video => video.Past.Recording is { } past ? folders.TrackLength(past.Files, Audio.Track.Main) : TimeSpan.Zero));
+        var beforeLength = Sum(before.Select(video => video.Past.Recording is { } past ? folders.TrackLength(past.Files, Track.Main) : TimeSpan.Zero));
 
         lines.AddRange(ReadyLines(videos, transcribe, keyterms, prices));
         if (transcribe && before.Count > 0)
@@ -276,7 +277,7 @@ public static class DownloadPlan
     }
 
     /// <summary>
-    /// The room the ready videos' audio takes: each at its own rate (see <see cref="YtDlpInfo.SourceRate"/>), mono 16-bit, with
+    /// The room the ready videos' audio takes: each at its own rate (see <see cref="VideoInfo.SourceRate"/>), mono 16-bit, with
     /// the most one download takes in staging beside it, its WAV and its compressed audio, reckoned at 160 kbps.
     /// </summary>
     public static (long Audio, long Staging) BytesOf(IReadOnlyList<BatchVideo> ready)
@@ -285,7 +286,7 @@ public static class DownloadPlan
         foreach (var video in ready)
         {
             var seconds = (video.Length ?? TimeSpan.Zero).TotalSeconds;
-            var wav = (long)(seconds * (video.Info?.SourceRate ?? YtDlpInfo.HighestRate) * 2) + Audio.WavHeader.Size;
+            var wav = (long)(seconds * (video.Info?.SourceRate ?? VideoInfo.HighestRate) * 2) + WavHeader.Size;
             audio += wav;
             staging = Math.Max(staging, wav + (long)(seconds * 20_000));
         }

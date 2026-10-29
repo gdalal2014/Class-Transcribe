@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Refit;
+using ClassScribe.Settings;
 
 namespace ClassScribe.YouTube;
 
@@ -31,9 +32,10 @@ public sealed record OEmbedAnswer(
 /// one request a second, counted on the steady clock from the start of the one before, each with a limit of 10 seconds of
 /// its own. A video it does not answer for (private, removed, or not embeddable), an answer that cannot be read, a connection
 /// that fails and a read that runs out of time each give no title, said at Debug: the video keeps its ID as its title and is
-/// tried all the same. The caller's own cancel goes on. One per batch, which paces its reads.
+/// tried all the same. The caller's own cancel goes on. The adapter of <see cref="IVideoTitles"/>. One per batch, which
+/// paces its reads.
 /// </summary>
-public sealed class OEmbedTitles(IYouTubeOEmbedApi api, TimeProvider time, ILogger<OEmbedTitles> logger)
+public sealed class OEmbedTitles(IYouTubeOEmbedApi api, TimeProvider time, ILogger<OEmbedTitles> logger) : IVideoTitles
 {
     /// <summary>How long one read may take, the answer included.</summary>
     public static readonly TimeSpan Limit = TimeSpan.FromSeconds(10);
@@ -51,7 +53,7 @@ public sealed class OEmbedTitles(IYouTubeOEmbedApi api, TimeProvider time, ILogg
     /// </summary>
     public static RefitSettings RefitSettings() => new() { TransportExceptionFactory = (_, error, _) => error };
 
-    /// <summary>The title of video <paramref name="videoId"/>; null when YouTube gave none (see the class).</summary>
+    /// <inheritdoc />
     public async Task<VideoTitle?> ReadAsync(string videoId, CancellationToken cancellationToken)
     {
         if (_lastStart is { } last && Every - time.GetElapsedTime(last) is var left && left > TimeSpan.Zero)
@@ -118,7 +120,7 @@ public sealed class OEmbedTitles(IYouTubeOEmbedApi api, TimeProvider time, ILogg
     internal static string? HandleOf(string? channelUrl) =>
         Uri.TryCreate(channelUrl, UriKind.Absolute, out var address)
         && address.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries) is [var first, ..]
-        && Uri.UnescapeDataString(first) is { } handle && Settings.YouTubeOptions.IsChannel(handle) && handle.StartsWith('@')
+        && Uri.UnescapeDataString(first) is { } handle && YouTubeOptions.IsChannel(handle) && handle.StartsWith('@')
             ? handle
             : null;
 }

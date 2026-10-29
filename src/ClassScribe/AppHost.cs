@@ -20,7 +20,7 @@ namespace ClassScribe;
 /// Puts the app together and starts it: the settings from appsettings.json, the user's own copy when there is one and
 /// else the one in the app's folder (see <see cref="SettingsPlaces"/>), once they have passed the check, with environment
 /// overrides; the API key from ELEVENLABS_API_KEY alone; the console log format; the services. The settings are read again
-/// and checked before each menu choice and each command (see <see cref="Commands.RunGate"/>). The recorder, started by a
+/// and checked before each menu choice and each command (see <see cref="RunGate"/>). The recorder, started by a
 /// window to record one class in the background, is put together from the settings that window handed over instead (see
 /// <see cref="BuildRecorder"/>).
 /// </summary>

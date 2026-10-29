@@ -2,6 +2,7 @@ using ClassScribe.Desktop;
 using ClassScribe.Runs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using ClassScribe.Settings;
 
 namespace ClassScribe.Commands;
 
@@ -64,8 +65,8 @@ public static class CommandServices
             provider.GetRequiredService<TimeProvider>(),
             Console.Out,
             Console.Error,
-            provider.GetRequiredService<Settings.ISavedClasses>(),
-            provider.GetRequiredService<IOptionsMonitor<Settings.RecordingOptions>>()));
+            provider.GetRequiredService<ISavedClasses>(),
+            provider.GetRequiredService<IOptionsMonitor<RecordingOptions>>()));
         services.AddTransient<App>();
         return services;
     }

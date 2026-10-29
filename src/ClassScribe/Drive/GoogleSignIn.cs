@@ -37,7 +37,7 @@ public enum SignOutOutcome
 /// The address goes to the window only, and no secret (the client secret, the code, the verifier, the state, a token) is
 /// ever logged. Google's sign-in page is Drive:AuthorizationUrl, of the run's settings (architecture 7.2). One per run.
 /// </summary>
-public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGoogleCredentialStore store, DriveClient drive, DriveFolders folders,
+public sealed class GoogleSignIn(IGoogleAccount account, IGoogleCredentialStore store, IGoogleDrive drive, IGoogleClientFiles clientFiles,
     ILoopbackReceiver receiver, IBrowser browser, IConsoleUi ui, IOptionsSnapshot<DriveOptions> options, TimeProvider time, ILogger<GoogleSignIn> logger)
 {
     /// <summary>The only scope ClassScribe asks for: the files and folders it makes itself, nothing else in the Drive.</summary>
@@ -142,12 +142,11 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
         string? failure = null;
         try
         {
-            Dictionary<string, string> form = new() { ["token"] = credentials.RefreshToken! };
-            var (status, answer) = await GoogleTokens.SendFormAsync(limit => oauth.RevokeAsync(form, limit), "end ClassScribe's access", "", time, logger, cancellationToken);
-            outcome = status == HttpStatusCode.OK ? SignOutOutcome.Revoked
-                : answer?.Error is "invalid_token" or "invalid_grant" ? SignOutOutcome.AlreadyEnded
+            var answer = await account.RevokeAsync(credentials.RefreshToken!, logger, cancellationToken);
+            outcome = answer.Status == (int)HttpStatusCode.OK ? SignOutOutcome.Revoked
+                : answer.Error is "invalid_token" or "invalid_grant" ? SignOutOutcome.AlreadyEnded
                 : SignOutOutcome.NotRevoked;
-            if (outcome == SignOutOutcome.NotRevoked) failure = $"Google refused to end ClassScribe's access (HTTP {(int)status}, {GoogleTokens.Describe(answer)}).";
+            if (outcome == SignOutOutcome.NotRevoked) failure = $"Google refused to end ClassScribe's access (HTTP {answer.Status}, {answer.Described}).";
         }
         catch (GoogleDriveException ex) when (ex.Problem == DriveProblem.Unreachable)
         {
@@ -158,7 +157,7 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
         }
 
         store.Write(credentials.SignedOut());
-        tokens.Forget();
+        account.Forget();
 
         switch (outcome)
         {
@@ -193,7 +192,7 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
         GoogleClient client;
         try
         {
-            client = GoogleClientFile.Read(clientFile);
+            client = clientFiles.Read(clientFile);
         }
         catch (GoogleDriveException ex)
         {
@@ -322,10 +321,11 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
         {
             await request.AnswerAsync(status, Page(text));
         }
-        catch (Exception ex) when (ex is HttpListenerException or IOException or ObjectDisposedException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
         {
-            // Deliberately not rethrown: the tab was closed before the page arrived; the page only says to go back to
-            // ClassScribe, whose window says how the sign-in ended.
+            // Deliberately not rethrown: the tab was closed before the page arrived (the listener's adapter says so as an
+            // IOException, or as an ObjectDisposedException once it has let the request go); the page only says to go back
+            // to ClassScribe, whose window says how the sign-in ended.
             logger.LogDebug(ex, "The browser did not take the page");
         }
     }
@@ -334,31 +334,20 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
     /// Exchanges <paramref name="code"/> for tokens, with the verifier and <paramref name="redirect"/> exactly as sent, and
     /// returns Google's answer once it holds an access token; Google's refusal is thrown in words.
     /// </summary>
-    private async Task<GoogleTokenAnswer> ExchangeAsync(GoogleClient client, string code, string verifier, string redirect, CancellationToken cancellationToken)
+    private async Task<GoogleAnswer> ExchangeAsync(GoogleClient client, string code, string verifier, string redirect, CancellationToken cancellationToken)
     {
-        Dictionary<string, string> form = new()
-        {
-            ["grant_type"] = "authorization_code",
-            ["code"] = code,
-            ["client_id"] = client.Id,
-            ["client_secret"] = client.Secret,
-            ["redirect_uri"] = redirect,
-            ["code_verifier"] = verifier
-        };
+        var answer = await account.ExchangeCodeAsync(client, code, verifier, redirect, logger, cancellationToken);
+        if (answer.Status == (int)HttpStatusCode.OK && answer.AccessToken is { Length: > 0 }) return answer;
 
-        var (status, answer) = await GoogleTokens.SendFormAsync(limit => oauth.TokenAsync(form, limit), "finish the sign-in", " No sign-in was stored; sign in again when the connection is back.",
-            time, logger, cancellationToken);
-        if (status == HttpStatusCode.OK && answer is { AccessToken.Length: > 0 }) return answer;
-
-        var error = GoogleTokens.Describe(answer);
-        logger.LogDebug("Google refused the sign-in (HTTP {Status}, {Error})", (int)status, error);
-        if (answer?.Error == "invalid_client")
+        var error = answer.Described;
+        logger.LogDebug("Google refused the sign-in (HTTP {Status}, {Error})", answer.Status, error);
+        if (answer.Error == "invalid_client")
         {
             throw new GoogleDriveException(DriveProblem.ClientRefused,
                 $"Google does not accept the client in that file ({error}): it was deleted, or its secret was replaced. Download the client's JSON again from Google Auth platform > Clients (Add secret, if the secret is gone), and sign in with it.");
         }
 
-        throw new GoogleDriveException(DriveProblem.Refused, $"Google refused the sign-in (HTTP {(int)status}, {error}); no sign-in was stored. Sign in again.");
+        throw new GoogleDriveException(DriveProblem.Refused, $"Google refused the sign-in (HTTP {answer.Status}, {error}); no sign-in was stored. Sign in again.");
     }
 
     /// <summary>
@@ -366,17 +355,17 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
     /// first, so that a renewal on the way uses its own refresh token; should Drive fail, what was kept before is put back and
     /// the sign-in's token let go.
     /// </summary>
-    private async Task<SignedIn> KeepAsync(GoogleClient client, GoogleTokenAnswer answer, string refreshToken, CancellationToken cancellationToken)
+    private async Task<SignedIn> KeepAsync(GoogleClient client, GoogleAnswer answer, string refreshToken, CancellationToken cancellationToken)
     {
         var before = store.Read().Credentials ?? new GoogleCredentials(client.Id, client.Secret);
         var signedIn = new GoogleCredentials(client.Id, client.Secret) { RefreshToken = refreshToken, SignedInUtc = time.GetUtcNow(), Scope = answer.Scope };
-        tokens.Seed(answer.AccessToken!, TimeSpan.FromSeconds(Math.Max(0, answer.ExpiresIn ?? 3600)));
+        account.Seed(answer.AccessToken!, TimeSpan.FromSeconds(Math.Max(0, answer.ExpiresIn ?? 3600)));
         store.Write(signedIn);
         try
         {
-            var about = await drive.GetAboutAsync(cancellationToken);
-            var folder = await folders.FindOrCreateRootAsync(cancellationToken);
-            var email = about.User?.EmailAddress ?? about.User?.DisplayName ?? "your Google account";
+            var about = await drive.GetAccountAsync(cancellationToken);
+            var folder = await drive.FindOrCreateRootAsync(cancellationToken);
+            var email = about.EmailAddress ?? about.DisplayName ?? "your Google account";
             store.Write(signedIn with { Email = email });
             logger.LogInformation("Signed in to Google Drive as {Email}. Uploads go to My Drive > {Folder} ({Link}).", email, folder.Name, folder.Link);
             return new SignedIn(email, folder);
@@ -384,7 +373,7 @@ public sealed class GoogleSignIn(IGoogleOAuthApi oauth, GoogleTokens tokens, IGo
         catch (Exception ex)
         {
             logger.LogDebug("Google Drive could not be checked after the sign-in, so it was not kept: {Reason}", ex.Message);
-            tokens.Forget();
+            account.Forget();
             store.Write(before);
             throw;
         }

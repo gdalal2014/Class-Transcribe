@@ -1,3 +1,4 @@
+using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
@@ -54,7 +55,7 @@ public sealed class VideoPlayback(IProcessLiveness liveness, IVideoWindows windo
 
     /// <summary>
     /// The video's title as the window showed it while the video played, once it had stood with sound heard (see
-    /// <see cref="Commands.VideoEndWatch"/>); null until then. The video's source file takes it over the title read before.
+    /// <see cref="VideoEndWatch"/>); null until then. The video's source file takes it over the title read before.
     /// </summary>
     public string? PlayedTitle { get; private set; }
 

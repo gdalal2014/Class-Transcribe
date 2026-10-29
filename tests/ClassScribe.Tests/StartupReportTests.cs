@@ -7,6 +7,7 @@ using ClassScribe.Settings;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;
 
@@ -906,7 +907,7 @@ public partial class StartupReportTests
         var lesson = WriteRecording();
         WriteRun(lesson);
         var video = WriteRecording(startedUtc: TestRuns.Start.AddMinutes(48), lastWrittenUtc: LastAudio.AddMinutes(1));
-        YouTube.VideoSourceFile.Write(video.Source, VideoSourceFileTests.Downloaded());
+        VideoSourceFile.Write(video.Source, VideoSourceFileTests.Downloaded());
         _ui.Type('\r');
 
         await Report().ShowAsync(interactive: true);

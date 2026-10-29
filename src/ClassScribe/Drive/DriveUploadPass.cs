@@ -26,7 +26,7 @@ public sealed record PassResult(IReadOnlyList<RecordingUploadResult> Recordings,
 /// so that a class whose run ends meanwhile goes up with it. Before anything, the recordings asked for go into the queue,
 /// once ClassScribe has a Google client: before the first sign-in nothing is queued, and one done and unchanged since stays
 /// done (<see cref="RecordingUpload.IsUpToDate"/>). Without a sign-in they wait, which is said. One pass at a time, across
-/// processes, under the upload lock (<see cref="DriveUploadLock"/>): a pass that finds it held leaves its recordings in the
+/// processes, under the upload lock (<see cref="IDriveUploadLock"/>): a pass that finds it held leaves its recordings in the
 /// queue, which the holder takes before it lets go, even one it was uploading as they were queued, which it takes once more
 /// (see <see cref="UploadManifest.TimesQueued"/>). The laptop is kept awake while the
 /// pass runs (<see cref="StayAwake.UploadingReason"/>), and while a class records, or is transcribed or has its lesson video
@@ -38,8 +38,8 @@ public sealed record PassResult(IReadOnlyList<RecordingUploadResult> Recordings,
 /// </summary>
 public sealed class DriveUploadPass(
     RecordingUpload upload,
-    UploadManifests manifests,
-    DriveUploadLock uploadLock,
+    IUploadManifests manifests,
+    IDriveUploadLock uploadLock,
     IGoogleCredentialStore store,
     IRunJournal journal,
     IPowerRequests power,
@@ -70,15 +70,15 @@ public sealed class DriveUploadPass(
         var stored = store.Read();
         if (stored is { Credentials: null, Problem: null })
         {
-            logger.LogError("{Problem}", GoogleTokens.NotSetUp);
-            return new PassResult([], GoogleTokens.NotSetUp);
+            logger.LogError("{Problem}", IGoogleAccount.NotSetUp);
+            return new PassResult([], IGoogleAccount.NotSetUp);
         }
 
         var queued = recordings.Where(files => !upload.IsUpToDate(files)).ToList();
         foreach (var files in queued) manifests.Queue(files);
 
         if (stored.Problem is { } unreadable) return Stop(unreadable, recordings);
-        if (stored.Credentials is not { IsSignedIn: true }) return Stop(GoogleTokens.NotSignedIn, recordings);
+        if (stored.Credentials is not { IsSignedIn: true }) return Stop(IGoogleAccount.NotSignedIn, recordings);
 
         using var held = uploadLock.TryTake();
         if (held is null)
@@ -220,7 +220,7 @@ public sealed class DriveUploadPass(
     /// another ClassScribe that found the lock held; or one being recorded or transcribed, which may be taken once more once
     /// it has stopped.
     /// </summary>
-    private sealed class Taken(UploadManifests manifests)
+    private sealed class Taken(IUploadManifests manifests)
     {
         private readonly HashSet<string> _doneWith = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _busy = new(StringComparer.OrdinalIgnoreCase);

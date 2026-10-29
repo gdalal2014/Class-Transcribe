@@ -1,5 +1,6 @@
 using ClassScribe.Commands;
 using ClassScribe.Drive;
+using ClassScribe.Recorder;
 using ClassScribe.Storage;
 using Moq;
 
@@ -94,7 +95,7 @@ public class DriveMenuTests
         var mantiq = Mantiq();
         _world.Manifests().Queue(mantiq);
         _world.Runtime.Processes.Start(TestRuns.ProcessId, TestRuns.ProcessStart);
-        _world.Runtime.Journal.Begin(TestRuns.Record(TestRuns.Id(), ClassScribe.Recorder.RunState.Recording, name: "Mantiq") with { BaseName = mantiq.BaseName, Folder = mantiq.Folder });
+        _world.Runtime.Journal.Begin(TestRuns.Record(TestRuns.Id(), RunState.Recording, name: "Mantiq") with { BaseName = mantiq.BaseName, Folder = mantiq.Folder });
         _ui.Type('\u001b');
 
         await RunAsync();

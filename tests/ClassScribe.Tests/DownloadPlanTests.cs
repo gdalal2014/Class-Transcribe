@@ -20,7 +20,7 @@ public class DownloadPlanTests
         var info = YtDlpRead.Info(
             $$"""{"id":"abcdefghijk","title":"Part {{number}}","duration":{{(hours * 3600).ToString(System.Globalization.CultureInfo.InvariantCulture)}},"availability":"public","channel":"Your Channel","formats":[{"ext":"m4a","acodec":"mp4a.40.2","vcodec":"none","asr":{{rate}}}]}""",
             "x");
-        return new BatchVideo(number, "abcdefghijk", null) { Info = info, Verdict = new GuardVerdict(GuardVerdictKind.Ready, "ready", VideoSource.ByYes) };
+        return new BatchVideo(number, "abcdefghijk", null) { Info = YtDlpTool.InfoOf(info), Verdict = new GuardVerdict(GuardVerdictKind.Ready, "ready", VideoSource.ByYes) };
     }
 
     /// <summary>The cost is the batch's length at the API price plus the glossary's, worded beside the line after each transcript.</summary>

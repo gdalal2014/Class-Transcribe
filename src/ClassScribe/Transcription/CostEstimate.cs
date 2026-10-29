@@ -2,7 +2,7 @@ namespace ClassScribe.Transcription;
 
 /// <summary>
 /// What one transcript is estimated to have cost, from the audio ElevenLabs counted and the published API price (see
-/// <see cref="TranscriptionCost"/>).
+/// <c>TranscriptionCost</c>).
 /// </summary>
 /// <param name="Audio">The audio the price is reckoned on: what ElevenLabs said it counted, or else the upload file's length; null when neither is known.</param>
 /// <param name="FileLength">The upload file's length, when ClassScribe wrote it; null for a file uploaded as it was.</param>

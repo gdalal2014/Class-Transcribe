@@ -19,7 +19,7 @@ public sealed record DriveWaiting(string Line, int Count, bool SignedIn);
 /// <see cref="UploadManifest.IsBeingUploaded"/>), which the header shows with how far it is. The settings are read each time,
 /// and the local times are those of the clock's time zone. One for the process.
 /// </summary>
-public sealed class DriveQueueReport(IGoogleCredentialStore store, UploadManifests manifests, IRunJournal journal, IClassFolders folders, IOptionsMonitor<DriveOptions> options, TimeProvider time)
+public sealed class DriveQueueReport(IGoogleCredentialStore store, IUploadManifests manifests, IRunJournal journal, IClassFolders folders, IOptionsMonitor<DriveOptions> options, TimeProvider time)
 {
     /// <summary>How the time of a last try is written, in local time: 17 Oct 21:40.</summary>
     private const string TryFormat = "d MMM HH:mm";
@@ -107,9 +107,9 @@ public sealed class DriveQueueReport(IGoogleCredentialStore store, UploadManifes
 
     /// <summary>
     /// How many files of <paramref name="files"/> wait on this laptop to go up and their size (see
-    /// <see cref="UploadManifests.OnDisk"/>), a lesson's finished video counted only with Drive:LessonVideos on, as it is now.
+    /// <see cref="IUploadManifests.OnDisk"/>), a lesson's finished video counted only with Drive:LessonVideos on, as it is now.
     /// </summary>
-    public (int Count, long Bytes) OnDisk(Storage.RecordingFiles files) => UploadManifests.OnDisk(files, options.CurrentValue.LessonVideos);
+    public (int Count, long Bytes) OnDisk(RecordingFiles files) => manifests.OnDisk(files, options.CurrentValue.LessonVideos);
 
     /// <summary>
     /// " (41%)": how much of the recording uploading now Drive has, against its files on this laptop, never 100% before it is

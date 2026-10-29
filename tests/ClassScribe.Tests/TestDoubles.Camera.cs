@@ -1,4 +1,10 @@
+using ClassScribe.Audio;
+using ClassScribe.Audio.Microphones;
+using ClassScribe.Audio.Timeline;
 using ClassScribe.Camera;
+using ClassScribe.Link;
+using ClassScribe.Runs;
+using ClassScribe.Storage;
 
 namespace ClassScribe.Tests;
 
@@ -75,10 +81,10 @@ public sealed class FakeCameraSystem : ICameraSystem
 public sealed class FakeCameraUsageRecord : ICameraUsageRecord
 {
     /// <summary>The record a read gives.</summary>
-    public Audio.Microphones.UsageRecordListing Listing { get; set; } = new(null, null, [], null);
+    public UsageRecordListing Listing { get; set; } = new(null, null, [], null);
 
     /// <inheritdoc />
-    public Audio.Microphones.UsageRecordListing Read() => Listing;
+    public UsageRecordListing Read() => Listing;
 }
 
 /// <summary>
@@ -131,14 +137,18 @@ public sealed class FakeCameraProcess : ICameraProcess
     private readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>The process's end of the lines, made when the test first speaks as the process.</summary>
-    private Link.LineChannel? _processEnd;
+    private LineChannel? _processEnd;
 
     /// <summary>A process with the id <paramref name="processId"/>.</summary>
     public FakeCameraProcess(int processId = 7001)
     {
         ProcessId = processId;
-        Channel = new Link.LineChannel(new StickingInput(_pipe.WindowEnd, this));
+        Channel = new LineChannel(new StickingInput(_pipe.WindowEnd, this));
+        Link = new CameraLink(Channel);
     }
+
+    /// <inheritdoc />
+    public ICameraLink Link { get; }
 
     /// <summary>
     /// True once the process stopped reading its input: each write of the starter's from then on hangs, whatever its
@@ -156,11 +166,11 @@ public sealed class FakeCameraProcess : ICameraProcess
     /// <inheritdoc />
     public int ProcessId { get; }
 
-    /// <inheritdoc />
-    public Link.LineChannel Channel { get; }
+    /// <summary>The starter's end of the lines, which the real link speaks over; the tests speak over it by hand too.</summary>
+    public LineChannel Channel { get; }
 
     /// <summary>The process's own end of the lines, which the test reads the job from and writes the process's lines to.</summary>
-    public Link.LineChannel ProcessEnd => _processEnd ??= new Link.LineChannel(_pipe.RecorderEnd);
+    public LineChannel ProcessEnd => _processEnd ??= new LineChannel(_pipe.RecorderEnd);
 
     /// <summary>The process's own end of the pipe, as a stream, for the real <see cref="CameraHost"/> to run over in place of the test.</summary>
     public Stream ProcessStream => _pipe.RecorderEnd;
@@ -648,7 +658,7 @@ public sealed class FakePieceWriterFactory : IPieceWriterFactory
 /// </summary>
 /// <param name="start">Where the track begins.</param>
 /// <param name="clock">The clock it was given.</param>
-public sealed class FakeCameraTrack(CameraTrackStart start, Audio.Timeline.RecordingClock clock) : ICameraTrack
+public sealed class FakeCameraTrack(CameraTrackStart start, RecordingClock clock) : ICameraTrack
 {
     private readonly Lock _gate = new();
     private readonly List<string> _calls = [];
@@ -662,7 +672,7 @@ public sealed class FakeCameraTrack(CameraTrackStart start, Audio.Timeline.Recor
     /// <inheritdoc />
     public void EndAt(TimeSpan endPosition)
     {
-        SoundBeingWrittenAtEnd = Storage.ClassFolders.IsBeingWritten(new Storage.RecordingFiles(start.Folder, start.BaseName));
+        SoundBeingWrittenAtEnd = ClassFolders.IsBeingWritten(new RecordingFiles(start.Folder, start.BaseName));
         Note($"end at {endPosition}");
     }
 
@@ -670,7 +680,7 @@ public sealed class FakeCameraTrack(CameraTrackStart start, Audio.Timeline.Recor
     public CameraTrackStart Start => start;
 
     /// <summary>The clock it was given.</summary>
-    public Audio.Timeline.RecordingClock Clock => clock;
+    public RecordingClock Clock => clock;
 
     /// <summary>The calls so far, in order.</summary>
     public IReadOnlyList<string> Calls
@@ -702,7 +712,7 @@ public sealed class FakeCameraTrack(CameraTrackStart start, Audio.Timeline.Recor
     /// <inheritdoc />
     public Task StopAsync(TimeSpan endPosition, CancellationToken cancellationToken)
     {
-        SoundBeingWrittenAtStop = Storage.ClassFolders.IsBeingWritten(new Storage.RecordingFiles(start.Folder, start.BaseName));
+        SoundBeingWrittenAtStop = ClassFolders.IsBeingWritten(new RecordingFiles(start.Folder, start.BaseName));
         Note($"stop at {endPosition}");
         if (StopHangs) return new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
         return StopFailure is { } failure ? Task.FromException(failure) : Task.CompletedTask;
@@ -723,7 +733,7 @@ public sealed class FakeCameraTrack(CameraTrackStart start, Audio.Timeline.Recor
 }
 
 /// <summary>What a recording with the camera says about it, as a test sets it: the OBSBOT recording at 720p unless the test says otherwise; letting it go is noted and given up.</summary>
-public sealed class FakeCameraRecording : Audio.ICameraRecording
+public sealed class FakeCameraRecording : ICameraRecording
 {
     private readonly Lock _gate = new();
     private readonly List<string> _letGo = [];
@@ -764,7 +774,7 @@ public sealed class FakeCameraRecorder : ICameraRecorder
     public string? NotReady { get; set; }
 
     /// <inheritdoc />
-    public ICameraTrack Start(CameraTrackStart start, Audio.Timeline.RecordingClock clock)
+    public ICameraTrack Start(CameraTrackStart start, RecordingClock clock)
     {
         if (StartFailure is { } failure) throw failure;
 
@@ -821,7 +831,7 @@ public sealed class CameraLinesSeen
     private readonly List<object> _lines = [];
 
     /// <summary>Starts reading <paramref name="channel"/>, the starter's end, on the thread pool.</summary>
-    public CameraLinesSeen(Link.LineChannel channel) => Reading = Task.Run(async () =>
+    public CameraLinesSeen(LineChannel channel) => Reading = Task.Run(async () =>
     {
         try
         {
@@ -899,7 +909,7 @@ public sealed class FakeCameraProcessStarter : ICameraProcessStarter
     /// <inheritdoc />
     public ICameraProcess Start(string jobId)
     {
-        if (!Runs.RunIds.IsWellFormed(jobId)) throw new ArgumentException($"\"{jobId}\" is not a job id.", nameof(jobId));
+        if (!RunIds.IsWellFormed(jobId)) throw new ArgumentException($"\"{jobId}\" is not a job id.", nameof(jobId));
         var number = Interlocked.Increment(ref _entered) - 1;
         if (_held.TryRemove(number, out var held)) held.Wait();
         if (StartFailure is { } failure) throw failure;
@@ -925,7 +935,7 @@ public sealed class PlayedCameraProcess
 {
     private readonly Lock _gate = new();
     private readonly List<string> _received = [];
-    private readonly List<Audio.Timeline.ClockState> _clocks = [];
+    private readonly List<ClockState> _clocks = [];
     private volatile CameraJob? _job;
     private volatile bool _stopReceived;
     private volatile CameraStop? _stop;
@@ -938,7 +948,7 @@ public sealed class PlayedCameraProcess
     }
 
     /// <summary>The clock's states the starter sent, in order.</summary>
-    public IReadOnlyList<Audio.Timeline.ClockState> Clocks
+    public IReadOnlyList<ClockState> Clocks
     {
         get { lock (_gate) return [.. _clocks]; }
     }
@@ -1027,7 +1037,7 @@ public sealed class PlayedCameraProcess
 
                 if (_job is { Kind: CameraJobKind.Record } job)
                 {
-                    var path = new Storage.RecordingFiles(job.Folder!, job.BaseName!).CameraPiece(TimeSpan.FromSeconds(job.StartSeconds));
+                    var path = new RecordingFiles(job.Folder!, job.BaseName!).CameraPiece(TimeSpan.FromSeconds(job.StartSeconds));
                     await Process.ProcessEnd.SendAsync(CameraProtocol.Piece, new CameraPiece(path, job.StartSeconds, _stop?.EndSeconds ?? 0), CameraJson.Default.CameraPiece,
                         CancellationToken.None);
                     await Process.EndAsync(CameraProtocol.DoneExitCode);

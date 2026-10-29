@@ -19,7 +19,7 @@ namespace ClassScribe.Commands;
 /// and the stop, it publishes the run's state, for the window's title and taskbar or for the windows that show the run,
 /// with your microphone's state and the words of the gate that follows the class app when the recording has one (see
 /// <see cref="IMicrophoneRecording"/>); every 10 seconds it writes the run file's heartbeat. Ctrl+C is the signals' to act on (see
-/// <see cref="ConsoleUserSignals"/>), which apply the same two presses as Q. The loop ends when the stop is asked for,
+/// <c>ConsoleUserSignals</c>), which apply the same two presses as Q. The loop ends when the stop is asked for,
 /// whoever asks, and the run file then says what ended the recording. Each run has a loop of its own.
 /// </summary>
 /// <remarks>
@@ -34,7 +34,7 @@ public sealed class RecordingLoop(IConsoleUi ui, IUserSignals signals, IClassMar
 {
     /// <summary>
     /// How soon after a first Q a second one stops the recording, and likewise for Ctrl+C (see
-    /// <see cref="ConsoleUserSignals"/>). A single press, made by mistake, does not.
+    /// <c>ConsoleUserSignals</c>). A single press, made by mistake, does not.
     /// </summary>
     public static readonly TimeSpan SecondPressWithin = TimeSpan.FromSeconds(5);
 

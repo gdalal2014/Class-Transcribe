@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio.Timeline;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Storage;
@@ -16,7 +17,7 @@ namespace ClassScribe.Audio;
 /// <param name="inner">The app's provider.</param>
 /// <param name="beforeOpen">
 /// Called before each capture is opened, with its microphone, on the thread that opens it: the webcam hold waits there for
-/// the held camera's first frame (see <see cref="Camera.WebcamHold.BeforeOpen"/>); null for nothing to wait for.
+/// the held camera's first frame (see <see cref="IWebcamHold.BeforeOpen"/>); null for nothing to wait for.
 /// </param>
 public sealed class MicrophoneProviderTap(IMicrophoneProvider inner, Action<Microphone>? beforeOpen = null) : IMicrophoneProvider
 {
@@ -83,10 +84,10 @@ public sealed class MicrophoneProviderTap(IMicrophoneProvider inner, Action<Micr
 /// <param name="Follows">The app the track follows, as the recording was built to follow it; null in person.</param>
 /// <param name="Webcam">
 /// The webcam the picked microphone belongs to, which the hold keeps awake with Recording:WakeCameraMicrophone on (see
-/// <see cref="Camera.WebcamHold"/>); null when no camera list is at hand, as for the tests that need none.
+/// <see cref="IWebcamHold"/>); null when no camera list is at hand, as for the tests that need none.
 /// </param>
 public sealed record MicrophoneTrack(RecordingSession Session, MicrophoneSource Source, MicrophoneProviderTap Tap, MicrophoneGate Gate,
-    ClassMicrophoneWatch? Watch, FollowRule? Follows, Camera.WebcamHold? Webcam = null);
+    ClassMicrophoneWatch? Watch, FollowRule? Follows, IWebcamHold? Webcam = null);
 
 /// <summary>
 /// A recording of the class and your microphone together, or of your microphone alone in person, as the record command
@@ -121,7 +122,7 @@ public sealed record MicrophoneTrack(RecordingSession Session, MicrophoneSource 
 /// </param>
 /// <param name="time">The clock the wait for the camera's stop is timed on; the system's when none is given.</param>
 public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack, MicrophoneTrack? microphone, FreezeWatch freezes, IClassFolders folders, ILogger<TrackSet> logger,
-    Func<RecordingFiles, TimeSpan, RecordingClock, Camera.ICameraTrack>? camera = null, TimeProvider? time = null)
+    Func<RecordingFiles, TimeSpan, RecordingClock, ICameraTrack>? camera = null, TimeProvider? time = null)
     : IRecording, IMicrophoneRecording, ICameraRecording
 {
     /// <summary>The clock the wait for the camera's stop is timed on.</summary>
@@ -131,13 +132,13 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
     /// The longest the stop waits for the camera's picture to stop, after the sound is saved: the camera track's own wait for
     /// its piece, and ten seconds more for its lines and letting its process go. A camera that takes longer is left behind.
     /// </summary>
-    public static readonly TimeSpan CameraStopLimit = ClassScribe.Camera.CameraTrack.StopWait + TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan CameraStopLimit = CameraTrack.StopWait + TimeSpan.FromSeconds(10);
 
     /// <summary>The lesson's camera track once started; null without a camera, or before the start.</summary>
-    private Camera.ICameraTrack? _camera;
+    private ICameraTrack? _camera;
 
     /// <inheritdoc />
-    public Camera.CameraTrackState? Camera => Volatile.Read(ref _camera)?.State;
+    public CameraTrackState? Camera => Volatile.Read(ref _camera)?.State;
 
     /// <inheritdoc />
     public void LetGoOfTheCamera(string why) => Volatile.Read(ref _camera)?.GiveUp(why);
@@ -198,7 +199,7 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
     /// The webcam the picked microphone belongs to, and its hold; null for a microphone of no webcam, when the recording
     /// has no camera list, and once the microphone's track was left out.
     /// </summary>
-    public Camera.WebcamState? Webcam => MicrophoneLeftOut ? null : microphone?.Webcam?.State;
+    public WebcamState? Webcam => MicrophoneLeftOut ? null : microphone?.Webcam?.State;
 
     /// <summary>The watch on the class app's microphone sessions; null when no app is followed. For the tests.</summary>
     internal ClassMicrophoneWatch? Watch => microphone?.Watch;

@@ -6,6 +6,10 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
+using ClassScribe.Recorder;
+using ClassScribe.Transcription;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Runs;
 
@@ -51,10 +55,10 @@ public sealed record MicrophoneChoice(string? NamePart, FollowRule? Follows = nu
 /// <summary>Which camera records a lesson's picture, in person (teach-video 6.4), and at which size (amendment 39).</summary>
 /// <param name="NamePart">
 /// Part of the camera's name, in any case, virtual cameras included; null for a USB camera when one is plugged in, else the
-/// built-in front camera (see <see cref="Camera.Cameras.Choose"/>).
+/// built-in front camera (see <see cref="Cameras.Choose"/>).
 /// </param>
 /// <param name="Resolution">
-/// The picture's size as <see cref="Camera.CameraSize.Text"/> writes it, such as 720p or 1024x576: --resolution, else menu
+/// The picture's size as <see cref="CameraSize.Text"/> writes it, such as 720p or 1024x576: --resolution, else menu
 /// choice 7's pick, else Recording:CameraResolution, else 720p, resolved by the window before the run starts, so that the
 /// recorder and the camera process never read the settings and the run file keeps the size the run used; null until then.
 /// </param>
@@ -130,7 +134,7 @@ public enum StartOrigin
 
 /// <summary>
 /// One run, decided before it starts: everything its recorder needs but the settings, which travel with it (see
-/// <see cref="Recorder.RunRequestFile"/>), and the API key, which only the environment carries.
+/// <see cref="RunRequestFile"/>), and the API key, which only the environment carries.
 /// </summary>
 /// <param name="RunId">The run's id (see <see cref="RunIds"/>).</param>
 /// <param name="Name">The recording's name, such as Kalam.</param>
@@ -157,7 +161,7 @@ public enum StartOrigin
 /// </param>
 /// <param name="Glossary">
 /// The glossary the window decided for the run (architecture 8.2, item 7): the run's class, a saved class of its course, or
-/// ElevenLabs:KeytermsFile, resolved to a full path, its <see cref="Transcription.GlossaryPick.Path"/> empty for none. The
+/// ElevenLabs:KeytermsFile, resolved to a full path, its <see cref="GlossaryPick.Path"/> empty for none. The
 /// recorder's settings hold no saved classes, so the window decides and the recorder writes the recording's record from it.
 /// Null for the recorder's own ElevenLabs:KeytermsFile, as a request of an older window reads. Last, with a default, and
 /// written only when set, as <paramref name="ClassName"/> is.
@@ -166,7 +170,7 @@ public sealed record RecordRequest(string RunId, string Name, bool Transcribe, S
     ContinueChoice Continue, string? ContinueBaseName, double? Minutes, bool Open,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VideoRequest? Video = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassName = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Transcription.GlossaryPick? Glossary = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GlossaryPick? Glossary = null)
 {
     /// <summary>
     /// Fields of the request this build does not know, as a later build wrote them, kept so that a run file this build writes
@@ -187,7 +191,7 @@ public sealed record RecordRequest(string RunId, string Name, bool Transcribe, S
 /// <param name="VideoId">The video's ID.</param>
 /// <param name="Title">Its title, or its ID when none is known.</param>
 /// <param name="Channel">Its channel's name, when known.</param>
-/// <param name="Obtained">How its audio is obtained: downloaded or recorded (see <see cref="YouTube.VideoSource"/>).</param>
+/// <param name="Obtained">How its audio is obtained: downloaded or recorded (see <see cref="VideoSource"/>).</param>
 /// <param name="Folder">The batch's date folder, where its recordings go; null for the batch's first, which takes its date folder as a class does.</param>
 /// <param name="BrowserProcessId">The process of ClassScribe's video window, on the record path; null on the download path.</param>
 /// <param name="BrowserStartedUtc">When that process started, so that a reused process id is never taken for it; null on the download path.</param>

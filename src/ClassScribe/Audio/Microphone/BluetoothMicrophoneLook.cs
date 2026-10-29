@@ -5,7 +5,7 @@ namespace ClassScribe.Audio.Microphones;
 /// <param name="Microphone">The microphone's name, as Windows shows it, such as Headset (2- Pixel Buds Pro 2).</param>
 public sealed record BluetoothMicrophoneUse(string App, string Microphone);
 
-/// <summary>What one look of <see cref="BluetoothMicrophoneWatch"/> found.</summary>
+/// <summary>What one look of <c>BluetoothMicrophoneWatch</c> found.</summary>
 /// <param name="Began">The uses that were not there at the look before: each to be warned about, once.</param>
 /// <param name="Ended">The uses of the look before that are gone: each to be said once.</param>
 /// <param name="Current">Every use found now.</param>

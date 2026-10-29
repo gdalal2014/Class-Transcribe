@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Globalization;
+using System.IO;
 using System.Text.RegularExpressions;
 
 namespace ClassScribe.Storage;

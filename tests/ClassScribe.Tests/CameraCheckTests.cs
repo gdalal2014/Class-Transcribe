@@ -1,3 +1,4 @@
+using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
@@ -48,11 +49,11 @@ public class CameraCheckTests
 
     /// <summary>The check over the fakes, on the computer's clock unless <paramref name="time"/> gives another.</summary>
     private CameraCheckCommand Command(TimeProvider? time = null) =>
-        new(_cameras, _microphones, _usage, new CameraSetupFacts(_system, _usage, _registry), _choice ??= new Audio.SourceChoice(_recording), _recording, _ui, _starter,
+        new(_cameras, _microphones, _usage, new CameraSetupFacts(_system, _usage, _registry), _choice ??= new SourceChoice(_recording), _recording, _ui, _starter,
             time ?? TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<CameraCheckCommand>.Instance);
 
     /// <summary>What is chosen for the session, made with the settings on first use.</summary>
-    private Audio.SourceChoice? _choice;
+    private SourceChoice? _choice;
 
     /// <summary>The set-up lines over the fakes, with the wake as <paramref name="wakeOn"/> says.</summary>
     private Task<IReadOnlyList<CameraSetupLine>> SetupAsync(bool wakeOn = false) =>
@@ -107,8 +108,8 @@ public class CameraCheckTests
     public async Task Menu_choice_7s_size_comes_before_the_setting_and_after_resolution()
     {
         _recording.Set(new RecordingOptions { CameraResolution = "480p" });
-        _choice = new Audio.SourceChoice(_recording);
-        _choice.PickMicrophone(Audio.RecordingMode.Microphone, null, null, "OBSBOT", CameraSize.P1080);
+        _choice = new SourceChoice(_recording);
+        _choice.PickMicrophone(RecordingMode.Microphone, null, null, "OBSBOT", CameraSize.P1080);
 
         await Command().RunAsync(new CameraCheckRequest());
         await Command().RunAsync(new CameraCheckRequest(null, "720p"));

@@ -1,3 +1,5 @@
+using ClassScribe.Transcription;
+
 namespace ClassScribe.Settings;
 
 /// <summary>Settings for the ElevenLabs speech-to-text call.</summary>
@@ -9,12 +11,12 @@ public sealed class ElevenLabsOptions
     /// <summary>Environment variable that holds the API key. It is the name ElevenLabs' own samples use.</summary>
     public const string ApiKeyVariable = "ELEVENLABS_API_KEY";
 
-    /// <summary>The setting the API key is bound from. Only <see cref="ApiKeyFromEnvironment"/> fills it.</summary>
+    /// <summary>The setting the API key is bound from. Only <c>ApiKeyFromEnvironment</c> fills it.</summary>
     public const string ApiKeySetting = $"{SectionName}:{nameof(ApiKey)}";
 
     /// <summary>
     /// API key, taken from the <see cref="ApiKeyVariable"/> environment variable and nowhere else (see
-    /// <see cref="ApiKeyFromEnvironment"/>). A key written into appsettings.json is ignored, with a warning.
+    /// <c>ApiKeyFromEnvironment</c>). A key written into appsettings.json is ignored, with a warning.
     /// </summary>
     public string ApiKey { get; init; } = "";
 
@@ -55,8 +57,8 @@ public sealed class ElevenLabsOptions
     /// The glossary of every recording no saved class names one for, one term per line: none by default, as ClassScribe ships
     /// none (architecture 8.2). Environment variables such as %APPDATA% are expanded, quotes around the path are ignored, and
     /// a relative path is taken from the folder of the settings in force and from nowhere else (see
-    /// <see cref="Transcription.IGlossaryFiles.Resolve"/>). Empty, or none, sends no glossary. A recording's glossary is decided
-    /// as it starts and kept with it (see <see cref="Transcription.GlossaryChoice"/>).
+    /// <see cref="IGlossaryFiles.Resolve"/>). Empty, or none, sends no glossary. A recording's glossary is decided
+    /// as it starts and kept with it (see <see cref="GlossaryChoice"/>).
     /// </summary>
     public string KeytermsFile { get; init; } = "";
 
@@ -82,13 +84,13 @@ public sealed class ElevenLabsOptions
     /// The most audio one file to ElevenLabs may hold, in hours: ElevenLabs takes 10. ClassScribe sends at most half an hour
     /// less, refusing a longer recording before anything is prepared; the safety stop (Recording:StopAfterHours) comes there
     /// at the latest, and a YouTube video's recording (YouTube:LongestVideoHours) an hour less (see
-    /// <see cref="Transcription.TranscriptionLimits"/>). From 1 to 24: one above ElevenLabs' own is warned about.
+    /// <see cref="TranscriptionLimits"/>). From 1 to 24: one above ElevenLabs' own is warned about.
     /// </summary>
     public double LongestFileHours { get; init; } = 10;
 
     /// <summary>
     /// The least time one request is given, covering the upload and the wait for the transcript. A longer upload gets
-    /// more, as <see cref="SlowestUploadMbps"/> allows (see <see cref="Transcription.UploadTimeLimit"/>). From 1 to 1440.
+    /// more, as <see cref="SlowestUploadMbps"/> allows (see <see cref="UploadTimeLimit"/>). From 1 to 1440.
     /// </summary>
     public int TimeoutMinutes { get; init; } = 60;
 

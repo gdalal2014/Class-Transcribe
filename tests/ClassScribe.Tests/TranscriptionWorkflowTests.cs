@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Net;
 using System.Text;
 using ClassScribe.Audio;
+using ClassScribe.YouTube;
 using ClassScribe.Desktop;
 using ClassScribe.Settings;
 using ClassScribe.Storage;
@@ -103,6 +104,7 @@ public class TranscriptionWorkflowTests
             new RecordingFolder(),
             new FileProbe(),
             new ElevenLabsAnswer(),
+            new VideoSourceFile(),
             new AudioFileFacts(),
             recording,
             elevenLabs,

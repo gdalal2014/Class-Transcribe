@@ -162,7 +162,7 @@ public sealed class RecordingClock(TimeProvider time)
 
     /// <summary>
     /// Cuts the stretch from <paramref name="from100ns"/> up to <paramref name="to100ns"/> out of the positions, as a time
-    /// the laptop slept or ClassScribe was held up is cut (see <see cref="FreezeWatch"/>). A stretch that overlaps an
+    /// the laptop slept or ClassScribe was held up is cut (see <c>FreezeWatch</c>). A stretch that overlaps an
     /// earlier cut merges with it, so whichever caller sees a freeze first, its time is left out once; a stretch inside the
     /// open pause is left out by the pause already; and an empty stretch is no cut.
     /// </summary>

@@ -1,3 +1,4 @@
+using ClassScribe.Audio;
 using ClassScribe.Commands;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
@@ -447,7 +448,7 @@ public class VideoBatchTests
         world.YouTube.Set(new YouTubeOptions { BrowserPath = @"D:\Gone\chrome.exe" });
 
         Assert.That(await world.RunAsync(world.Request([First])), Is.EqualTo(1));
-        Assert.That(world.Lines, Has.Some.EqualTo(BrowserLocator.NotFound));
+        Assert.That(world.Lines, Has.Some.EqualTo(IToolLocator.BrowserNotFound));
         Assert.That(world.Http.Requests, Is.Empty);
     }
 
@@ -594,7 +595,7 @@ public class VideoBatchTests
     private RecordingFiles RecordedBefore(string videoId, bool confirmed, bool transcribed)
     {
         var files = _world.ClassFolders.CreateRecording("Risala", _world.Recordings.Path);
-        using (var writer = new Audio.WavSegmentWriter(files.Segment(1), 10)) writer.Write(new byte[600 * 2]);
+        using (var writer = new WavSegmentWriter(files.Segment(1), 10)) writer.Write(new byte[600 * 2]);
         VideoSourceFile.Write(files.Source, new VideoSource(VideoSource.YouTubeKind, YouTubeLinks.WatchUrl(videoId), videoId, videoId, null, null, null, null, null, null, null,
             VideoSource.Recorded, "Chrome", TestRuns.Start, null, null, confirmed ? "the video window was closed" : "ended after 2 minutes of silence", confirmed));
         if (transcribed) File.WriteAllText(files.Transcript(), "# done\n");

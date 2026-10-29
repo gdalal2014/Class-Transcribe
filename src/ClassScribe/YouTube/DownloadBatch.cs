@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
@@ -26,11 +27,14 @@ namespace ClassScribe.YouTube;
 /// </summary>
 public sealed class DownloadBatch(
     YouTubeBatch batch,
-    YtDlpCheck check,
-    YouTubeFolders folders,
+    IVideoTool tool,
+    IYouTubeFolders folders,
     IToolRunner tools,
     IBatchPace pace,
-    DownloadedAudio audio,
+    IDownloadedAudio audio,
+    IVideoIndex index,
+    IVideoSources sources,
+    IFileProbe probe,
     IClassFolders classFolders,
     CommandLine commandLine,
     IRunLog log,
@@ -55,9 +59,6 @@ public sealed class DownloadBatch(
 
     /// <summary>The exit code of a mistake on the command line, such as a batch of more videos than it takes.</summary>
     private const int Mistake = 2;
-
-    /// <summary>The tools' paths, once the check found them.</summary>
-    private ToolPaths? _paths;
 
     /// <summary>The batch's id, which each transcript's run file carries (see <see cref="VideoRequest.BatchId"/>).</summary>
     private string _batchId = "";
@@ -88,16 +89,14 @@ public sealed class DownloadBatch(
         _batchId = RunIds.New(time.GetUtcNow());
         audio.CleanUp();
 
-        var found = await check.RunAsync(cancellationToken);
+        var found = await tool.CheckAsync(cancellationToken);
         foreach (var line in found.Lines) logger.LogDebug("{Tool}", line);
         foreach (var problem in found.Problems) logger.LogError("{Problem}", problem);
         if (found.Warning is { } old) logger.LogWarning("{Warning}", old);
-        if (found.Paths is not { } paths) return 1;
+        if (found.Paths is null) return 1;
 
-        _paths = paths;
-        var arguments = new YtDlpArguments(paths, folders);
-        var index = VideoIndex.Read(request.OutputRoot, classFolders, logger);
-        var (videos, playlists, stopped) = await ReadAsync(request, arguments, index, cancellationToken);
+        index.Read(request.OutputRoot, logger);
+        var (videos, playlists, stopped) = await ReadAsync(request, cancellationToken);
         if (videos is null)
         {
             logger.LogError("This batch holds more than {Most} videos; give fewer links, or a shorter playlist, at a time", MostVideos);
@@ -131,7 +130,7 @@ public sealed class DownloadBatch(
 
         using var keys = batch.WatchKeys(cancellationToken);
         if (videos.Any(video => video.IsReady)) logger.LogInformation("{Keys}", YouTubeBatch.KeysLine);
-        var batchFolder = await FetchAsync(request, videos, arguments, found.YtDlpVersion, stopped, keys);
+        var batchFolder = await FetchAsync(request, videos, found.YtDlpVersion, stopped, keys);
 
         var toTranscribe = videos.Select(video => ToTranscribe(request, video, videos.Count)).OfType<VideoToTranscribe>().ToList();
         if (request.Transcribe && toTranscribe.Count > 0)
@@ -154,18 +153,17 @@ public sealed class DownloadBatch(
 
     /// <summary>
     /// Reads the batch's videos: each playlist from its flat listing, then each video still to fetch, paced, its information
-    /// into its staging folder. A video done before, as <paramref name="index"/> finds it (transcribed, or fetched whole,
+    /// into its staging folder. A video done before, as the index of the videos fetched before finds it (transcribed, or fetched whole,
     /// without --again), is not read again: the plan shows it from its source file. A link copied from an embedded player is
     /// never read: the download path never takes it. The first failure that stops the fetching, such as a bot check, stops the
     /// reads too: what is left is not read, and nothing is downloaded. Null videos for more than <see cref="MostVideos"/>.
     /// </summary>
-    private async Task<(List<BatchVideo>? Videos, IReadOnlyList<string> Playlists, string? Stopped)> ReadAsync(YouTubeRequest request, YtDlpArguments arguments,
-        VideoIndex index, CancellationToken cancellationToken)
+    private async Task<(List<BatchVideo>? Videos, IReadOnlyList<string> Playlists, string? Stopped)> ReadAsync(YouTubeRequest request, CancellationToken cancellationToken)
     {
         List<(string Id, VideoPlaylist? Playlist, string? Title, bool Embedded)> wanted = [];
         List<string> playlists = [];
         string? stopped = null;
-        Directory.CreateDirectory(folders.Root);
+        folders.MakeRoot();
         foreach (var link in request.Links)
         {
             if (link.Kind != YouTubeLinkKind.Playlist)
@@ -182,16 +180,16 @@ public sealed class DownloadBatch(
 
             await pace.BeforeReadAsync(cancellationToken);
             logger.LogInformation("Reading the playlist {Playlist}", link.Id);
-            var run = await RunAsync(arguments.ReadPlaylist(link.Id), folders.Root, null, cancellationToken);
+            var run = await RunAsync(tool.ReadPlaylist(link.Id), null, cancellationToken);
             foreach (var hidden in run.Result.Errors.Where(line => line.Contains("unavailable video", StringComparison.OrdinalIgnoreCase)))
                 logger.LogWarning("Playlist {Playlist}: {Warning}", link.Id, hidden.Replace("WARNING:", "", StringComparison.Ordinal).Trim());
 
-            YtDlpPlaylist? playlist = null;
+            ListedPlaylist? playlist = null;
             if (run.NotStarted is null && run.Result.ExitCode == 0)
             {
                 try
                 {
-                    playlist = YtDlpRead.Playlist(string.Join('\n', run.Result.Output), link.Id);
+                    playlist = tool.Playlist(run.Result.Output, link.Id);
                 }
                 catch (InvalidDataException ex)
                 {
@@ -212,7 +210,7 @@ public sealed class DownloadBatch(
 
             playlists.Add(playlist.Title ?? link.Id);
             for (var i = 0; i < playlist.Entries.Count; i++)
-                wanted.Add((playlist.Entries[i].Id!, new VideoPlaylist(playlist.Id ?? link.Id, playlist.Title, i + 1), playlist.Entries[i].Title, false));
+                wanted.Add((playlist.Entries[i].Id, new VideoPlaylist(playlist.Id ?? link.Id, playlist.Title, i + 1), playlist.Entries[i].Title, false));
         }
 
         var unique = wanted.DistinctBy(item => item.Id).ToList();
@@ -245,29 +243,25 @@ public sealed class DownloadBatch(
                 continue;
             }
 
-            if (await ReadVideoAsync(video, arguments, cancellationToken) is { StopsFetching: true } failure) stopped = failure.Said;
+            if (await ReadVideoAsync(video, cancellationToken) is { StopsFetching: true } failure) stopped = failure.Said;
         }
 
         return (videos, playlists, stopped);
     }
 
     /// <summary>Reads one video, paced, into its staging folder, and keeps what it gave; returns the failure when it failed.</summary>
-    private async Task<DownloadFailure?> ReadVideoAsync(BatchVideo video, YtDlpArguments arguments, CancellationToken cancellationToken)
+    private async Task<DownloadFailure?> ReadVideoAsync(BatchVideo video, CancellationToken cancellationToken)
     {
-        var staging = folders.StagingOf(video.VideoId);
-        Directory.CreateDirectory(staging);
+        folders.MakeStaging(video.VideoId);
         await pace.BeforeReadAsync(cancellationToken);
         logger.LogInformation("Reading {Number}: {VideoId}", Number(video), video.VideoId);
-        var run = await RunAsync(arguments.ReadVideo(video.VideoId), staging, null, cancellationToken);
-        var infoFile = arguments.InfoFile(video.VideoId);
-        if (run.NotStarted is null && run.Result.ExitCode == 0 && File.Exists(infoFile))
+        var run = await RunAsync(tool.ReadVideo(video.VideoId), null, cancellationToken);
+        if (run.NotStarted is null && run.Result.ExitCode == 0)
         {
+            VideoInfo? info;
             try
             {
-                video.Info = YtDlpRead.Info(await File.ReadAllTextAsync(infoFile, cancellationToken), infoFile);
-                video.ReadAt = time.GetTimestamp();
-                video.NotRead = null;
-                return null;
+                info = await tool.ReadInfoAsync(video.VideoId, cancellationToken);
             }
             catch (InvalidDataException ex)
             {
@@ -276,6 +270,14 @@ public sealed class DownloadBatch(
                 video.NotRead = ex.Message;
                 logger.LogError("{Problem}", ex.Message);
                 return new DownloadFailure(DownloadFailureKind.Other, ex.Message, StopsFetching: false);
+            }
+
+            if (info is not null)
+            {
+                video.Info = info;
+                video.ReadAt = time.GetTimestamp();
+                video.NotRead = null;
+                return null;
             }
         }
 
@@ -383,8 +385,7 @@ public sealed class DownloadBatch(
     /// row, or Q, stops the downloads; what was fetched is transcribed all the same. Returns the batch's date folder, once a
     /// recording is whole in it.
     /// </summary>
-    private async Task<string?> FetchAsync(YouTubeRequest request, IReadOnlyList<BatchVideo> videos, YtDlpArguments arguments, string? version,
-        string? stopped, BatchKeys keys)
+    private async Task<string?> FetchAsync(YouTubeRequest request, IReadOnlyList<BatchVideo> videos, string? version, string? stopped, BatchKeys keys)
     {
         string? batchFolder = null;
         var networkInARow = 0;
@@ -405,7 +406,7 @@ public sealed class DownloadBatch(
             try
             {
                 logger.LogInformation("Downloading {Number} of {Count}: \"{Title}\" ({Length})", i + 1, ready.Count, video.Title, Durations.Format(video.Length!.Value));
-                var failure = await DownloadAsync(video, arguments, keys.Token);
+                var failure = await DownloadAsync(video, keys.Token);
                 if (failure is not null)
                 {
                     networkInARow = failure.Kind == DownloadFailureKind.Network ? networkInARow + 1 : 0;
@@ -417,14 +418,14 @@ public sealed class DownloadBatch(
                 }
 
                 networkInARow = 0;
-                var staged = StagedWav(video, arguments);
+                var staged = StagedWav(video);
                 var files = batchFolder is null ? classFolders.CreateRecording(request.Name, request.OutputRoot) : classFolders.CreateRecordingIn(batchFolder, request.Name);
                 video.Recording = files;
                 log.WriteFileTo(files.Log);
-                VideoSourceFile.Write(files.Source, SourceOf(video, version, ended: "Downloading", endConfirmed: false));
+                sources.Write(files.Source, SourceOf(video, version, ended: "Downloading", endConfirmed: false));
                 logger.LogDebug("Turning \"{Title}\" into {Recording}", video.Title, files.BaseName);
                 video.Downloaded = audio.Convert(staged, files, video.Length!.Value, video.Title, keys.Token);
-                VideoSourceFile.Write(files.Source, SourceOf(video, version, VideoSource.DownloadedEnd, endConfirmed: true));
+                sources.Write(files.Source, SourceOf(video, version, VideoSource.DownloadedEnd, endConfirmed: true));
                 batchFolder ??= files.Folder;
                 DeleteStaging(video);
                 logger.LogInformation("Downloaded \"{Title}\": {Recording} ({Length})", video.Title, files.BaseName, Durations.Format(video.Downloaded.Value));
@@ -452,16 +453,16 @@ public sealed class DownloadBatch(
     /// otherwise after reading it again, once; a download that YouTube refuses with HTTP 403 reads it again and tries once
     /// more. Progress is said every tenth. Returns the failure, or null once yt-dlp has done.
     /// </summary>
-    private async Task<DownloadFailure?> DownloadAsync(BatchVideo video, YtDlpArguments arguments, CancellationToken cancellationToken)
+    private async Task<DownloadFailure?> DownloadAsync(BatchVideo video, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
-            var fresh = video.ReadAt is { } readAt && time.GetElapsedTime(readAt) < ReadKeptFor && File.Exists(arguments.InfoFile(video.VideoId));
-            if (!fresh && await ReadVideoAsync(video, arguments, cancellationToken) is { } readFailure) return readFailure;
+            var fresh = video.ReadAt is { } readAt && time.GetElapsedTime(readAt) < ReadKeptFor && tool.HasInfo(video.VideoId);
+            if (!fresh && await ReadVideoAsync(video, cancellationToken) is { } readFailure) return readFailure;
 
             await pace.BeforeDownloadAsync(cancellationToken);
             var tenth = 0;
-            var run = await RunAsync(arguments.Download(video.VideoId, fromInfoFile: true), folders.StagingOf(video.VideoId), line =>
+            var run = await RunAsync(tool.Download(video.VideoId, fromInfoFile: true), line =>
             {
                 if (!line.IsError && Percent(line.Text) is { } percent && (int)(percent / 10) > tenth)
                 {
@@ -492,7 +493,7 @@ public sealed class DownloadBatch(
         var staging = folders.StagingOf(video.VideoId);
         try
         {
-            Directory.Delete(staging, recursive: true);
+            folders.DeleteStaging(video.VideoId);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -503,28 +504,20 @@ public sealed class DownloadBatch(
     }
 
     /// <summary>The WAV yt-dlp finished, as done.txt names it: a .wav in the video's own staging folder; otherwise an <see cref="InvalidDataException"/>.</summary>
-    private string StagedWav(BatchVideo video, YtDlpArguments arguments)
-    {
-        var done = arguments.DoneFile(video.VideoId);
-        var named = File.Exists(done) ? File.ReadAllLines(done).LastOrDefault(line => line.Trim().Length > 0)?.Trim() : null;
-        var staging = folders.StagingOf(video.VideoId);
-        if (named is not null && Path.IsPathFullyQualified(named) && string.Equals(Path.GetDirectoryName(Path.GetFullPath(named)), staging, StringComparison.OrdinalIgnoreCase)
-            && named.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) && File.Exists(named))
-            return named;
-
-        throw new InvalidDataException($"yt-dlp finished \"{video.Title}\", but did not say where its WAV is, or it is not in {staging}; run the same command again");
-    }
+    private string StagedWav(BatchVideo video) =>
+        tool.StagedWav(video.VideoId)
+        ?? throw new InvalidDataException($"yt-dlp finished \"{video.Title}\", but did not say where its WAV is, or it is not in {folders.StagingOf(video.VideoId)}; run the same command again");
 
     /// <summary>
-    /// Runs yt-dlp with <paramref name="arguments"/> in <paramref name="folder"/>, each of its lines logged at Debug as it was,
-    /// and handed to <paramref name="onLine"/>. A yt-dlp that Windows will not start is a run of its own kind
+    /// Runs yt-dlp as <paramref name="call"/> says, each of its lines logged at Debug as it was, and handed to
+    /// <paramref name="onLine"/>. A yt-dlp that Windows will not start is a run of its own kind
     /// (<see cref="ToolRun.NotStarted"/>), with Windows' reason, which stops the fetching.
     /// </summary>
-    private async Task<ToolRun> RunAsync(IReadOnlyList<string> arguments, string folder, Action<ToolLine>? onLine, CancellationToken cancellationToken)
+    private async Task<ToolRun> RunAsync(ToolCall call, Action<ToolLine>? onLine, CancellationToken cancellationToken)
     {
         try
         {
-            return new ToolRun(await tools.RunAsync(new ToolCall(Program, arguments, folder), line =>
+            return new ToolRun(await tools.RunAsync(call, line =>
             {
                 logger.LogDebug("yt-dlp: {Line}", line.Text);
                 onLine?.Invoke(line);
@@ -545,10 +538,7 @@ public sealed class DownloadBatch(
         $"Windows did not start yt-dlp ({reason.TrimEnd('.')}). Bitdefender may have blocked it (README, Set up once); ClassScribe youtube check says more.";
 
     /// <summary>The failure <paramref name="run"/> ended with: Windows' refusal to start yt-dlp, or what yt-dlp's lines say.</summary>
-    private static DownloadFailure FailureOf(ToolRun run) => run.NotStarted ?? YtDlpErrors.Classify(run.Result.ExitCode, run.Result.Errors);
-
-    /// <summary>yt-dlp's program, as the check found it.</summary>
-    private string Program => _paths?.YtDlp ?? throw new InvalidOperationException("yt-dlp's path is known only once the check has found it.");
+    private DownloadFailure FailureOf(ToolRun run) => run.NotStarted ?? tool.Classify(run.Result.ExitCode, run.Result.Errors);
 
     /// <summary>
     /// The room the audio needs, on the recordings folder's drive and on ClassScribe's own folder's, with room kept on the
@@ -556,7 +546,7 @@ public sealed class DownloadBatch(
     /// </summary>
     private PlanRoom Room(string outputRoot, long audioBytes, long stagingBytes)
     {
-        var recordings = Path.GetPathRoot(Path.GetFullPath(outputRoot)) ?? outputRoot;
+        var recordings = Path.GetPathRoot(probe.FullPath(outputRoot)) ?? outputRoot;
         var staging = Path.GetPathRoot(folders.Root) ?? folders.Root;
         return new PlanRoom(audioBytes, stagingBytes, recordings, freeSpace.AvailableBytes(recordings), staging, freeSpace.AvailableBytes(staging),
             DownloadPlan.ClassReserveBytes);
@@ -589,7 +579,7 @@ public sealed class DownloadBatch(
     }
 
     /// <summary>The recording of <paramref name="video"/> to transcribe: the one this batch downloaded, or the one fetched whole before; null for none.</summary>
-    private static Storage.RecordingFiles? Recording(BatchVideo video) =>
+    private static RecordingFiles? Recording(BatchVideo video) =>
         video.Downloaded is not null ? video.Recording : video.Past is { Kind: PastKind.Whole, Recording: { KeptAnswer: null } past } ? past.Files : null;
 
     /// <summary>What of <paramref name="video"/> is transcribed: its recording, as the request's video; null when none is to be.</summary>

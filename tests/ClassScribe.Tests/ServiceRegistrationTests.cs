@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using ClassScribe.Audio;
 using ClassScribe.Audio.Microphones;
 using ClassScribe.Audio.Windows;
+using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Desktop;
 using ClassScribe.Desktop.Windows;
@@ -19,6 +20,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Refit;
+using ClassScribe.YouTube;
 
 namespace ClassScribe.Tests;
 
@@ -327,7 +329,7 @@ public class ServiceRegistrationTests
         var run = scope.ServiceProvider;
 
         Assert.That(run.GetRequiredService<FinishVideoCommand>(), Is.Not.Null);
-        Assert.That(run.GetRequiredService<Camera.LessonVideoMaker>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<LessonVideoMaker>(), Is.Not.Null);
         Assert.That(run.GetRequiredService<LessonVideoDrive>(), Is.SameAs(run.GetRequiredService<LessonVideoDrive>()), "one per run");
         Assert.That(run.GetRequiredService<LessonVideoDrive>().KeepsPieces, Is.False, "Drive not set up, and lesson videos off by default");
     }
@@ -441,9 +443,9 @@ public class ServiceRegistrationTests
         using var app = BuildApp([], replace: services =>
         {
             services.Replace(ServiceDescriptor.Singleton<IConsoleUi>(ui));
-            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraProvider>(new FakeCameraProvider()));
-            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraSystem>(new FakeCameraSystem()));
-            services.Replace(ServiceDescriptor.Singleton<Camera.ICameraUsageRecord>(new FakeCameraUsageRecord()));
+            services.Replace(ServiceDescriptor.Singleton<ICameraProvider>(new FakeCameraProvider()));
+            services.Replace(ServiceDescriptor.Singleton<ICameraSystem>(new FakeCameraSystem()));
+            services.Replace(ServiceDescriptor.Singleton<ICameraUsageRecord>(new FakeCameraUsageRecord()));
             services.Replace(ServiceDescriptor.Singleton<IRegistryValues>(new FakeRegistryValues()));
         });
         using var scope = app.Services.CreateScope();
@@ -458,8 +460,8 @@ public class ServiceRegistrationTests
         Assert.That(exitCode, Is.Zero, "nobody typed, so the question went back");
         Assert.That(ui.Screen, Does.Contain(CameraStart.Prompt));
         Assert.That(ui.Screen, Does.Not.Contain(ICameraPrompt.NothingStarted));
-        Assert.That(app.Services.GetRequiredService<Camera.ICameraRecorder>(), Is.InstanceOf<Camera.CameraRecorder>());
-        Assert.That(scope.ServiceProvider.GetRequiredService<TrackSetFactory>().CameraRecorder, Is.InstanceOf<Camera.CameraRecorder>());
+        Assert.That(app.Services.GetRequiredService<ICameraRecorder>(), Is.InstanceOf<CameraRecorder>());
+        Assert.That(scope.ServiceProvider.GetRequiredService<TrackSetFactory>().CameraRecorder, Is.InstanceOf<CameraRecorder>());
     }
 
     /// <summary>
@@ -750,16 +752,16 @@ public class ServiceRegistrationTests
 
         Assert.That(scope.ServiceProvider.GetRequiredService<YouTubeCommand>(), Is.Not.Null);
         Assert.That(scope.ServiceProvider.GetRequiredService<YouTubeMenu>(), Is.Not.Null);
-        Assert.That(scope.ServiceProvider.GetRequiredService<YouTube.DownloadBatch>(), Is.Not.Null);
-        Assert.That(scope.ServiceProvider.GetRequiredService<YouTube.IVideoTranscriber>(), Is.InstanceOf<YouTube.ScopedVideoTranscriber>());
+        Assert.That(scope.ServiceProvider.GetRequiredService<DownloadBatch>(), Is.Not.Null);
+        Assert.That(scope.ServiceProvider.GetRequiredService<IVideoTranscriber>(), Is.InstanceOf<ScopedVideoTranscriber>());
         var youTube = scope.ServiceProvider.GetRequiredService<IOptionsSnapshot<YouTubeOptions>>().Value;
         Assert.That(youTube.MayDownloadChannels, Is.EqualTo(["@yourchannel"]));
         Assert.That(youTube.DriveUpload, Is.EqualTo(DriveUploadScope.Everything));
-        Assert.That(app.Services.GetRequiredService<YouTube.YouTubeFolders>().Root, Is.EqualTo(Path.Combine(_runtime.Folder.Root, "youtube")));
+        Assert.That(app.Services.GetRequiredService<YouTubeFolders>().Root, Is.EqualTo(Path.Combine(_runtime.Folder.Root, "youtube")));
 
-        var runner = app.Services.GetRequiredService<YouTube.IToolRunner>();
-        Assert.That(runner, Is.InstanceOf<YouTube.ProcessToolRunner>());
-        Assert.That(async () => await runner.RunAsync(new YouTube.ToolCall(@"C:\Tools\yt-dlp.exe", ["--version"], _folder.Path), null, CancellationToken.None),
+        var runner = app.Services.GetRequiredService<IToolRunner>();
+        Assert.That(runner, Is.InstanceOf<ProcessToolRunner>());
+        Assert.That(async () => await runner.RunAsync(new ToolCall(@"C:\Tools\yt-dlp.exe", ["--version"], _folder.Path), null, CancellationToken.None),
             Throws.InvalidOperationException.With.Message.Contains("FakeToolRunner"));
     }
 
@@ -771,10 +773,10 @@ public class ServiceRegistrationTests
         using var first = app.Services.CreateScope();
         using var second = app.Services.CreateScope();
 
-        var one = first.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>();
+        var one = first.ServiceProvider.GetRequiredService<VideoTranscriptRun>();
 
-        Assert.That(one, Is.SameAs(first.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>()));
-        Assert.That(one, Is.Not.SameAs(second.ServiceProvider.GetRequiredService<YouTube.VideoTranscriptRun>()));
+        Assert.That(one, Is.SameAs(first.ServiceProvider.GetRequiredService<VideoTranscriptRun>()));
+        Assert.That(one, Is.Not.SameAs(second.ServiceProvider.GetRequiredService<VideoTranscriptRun>()));
     }
 
     /// <summary>
@@ -792,11 +794,11 @@ public class ServiceRegistrationTests
         using var other = app.Services.CreateScope();
         var run = scope.ServiceProvider;
 
-        Assert.That(run.GetRequiredService<YouTube.VideoBatch>(), Is.Not.Null);
-        Assert.That(run.GetRequiredService<YouTube.VideoWindow>(), Is.Not.Null);
-        Assert.That(run.GetRequiredService<YouTube.OEmbedTitles>(), Is.Not.Null);
-        Assert.That(run.GetRequiredService<YouTube.VideoPlayback>(), Is.SameAs(run.GetRequiredService<YouTube.VideoPlayback>()), "one per run");
-        Assert.That(run.GetRequiredService<YouTube.VideoPlayback>(), Is.Not.SameAs(other.ServiceProvider.GetRequiredService<YouTube.VideoPlayback>()));
+        Assert.That(run.GetRequiredService<VideoBatch>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<VideoWindow>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<OEmbedTitles>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<VideoPlayback>(), Is.SameAs(run.GetRequiredService<VideoPlayback>()), "one per run");
+        Assert.That(run.GetRequiredService<VideoPlayback>(), Is.Not.SameAs(other.ServiceProvider.GetRequiredService<VideoPlayback>()));
         Assert.That(app.Services.GetRequiredService<IVideoYield>(), Is.InstanceOf<WindowsVideoYield>());
         Assert.That(app.Services.GetRequiredService<IProcessFamily>(), Is.InstanceOf<ProcessFamily>());
         Assert.That(() => app.Services.GetRequiredService<IVideoWindows>().TitlesOf(Environment.ProcessId), Throws.InvalidOperationException.With.Message.Contains("FakeVideoWindows"));
@@ -825,7 +827,7 @@ public class ServiceRegistrationTests
         var run = scope.ServiceProvider;
 
         Assert.That(run.GetRequiredService<IRecordRun>(), Is.InstanceOf<RecordCommand>());
-        Assert.That(run.GetRequiredService<YouTube.VideoPlayback>(), Is.Not.Null);
+        Assert.That(run.GetRequiredService<VideoPlayback>(), Is.Not.Null);
         Assert.That(run.GetRequiredService<RecordingMonitor>(), Is.Not.Null);
         Assert.That(host.Services.GetRequiredService<IVideoYield>(), Is.InstanceOf<WindowsVideoYield>());
     }

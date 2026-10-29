@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ClassScribe.Audio.Timeline;
 using ClassScribe.Link;
 
 namespace ClassScribe.Camera;
@@ -19,7 +20,7 @@ public static class CameraLines
         channel.SendAsync(CameraProtocol.End, end, CameraJson.Default.CameraStop, cancellationToken);
 
     /// <summary>Sends the recording clock's whole state to a record job (see <see cref="CameraProtocol.Clock"/>).</summary>
-    public static ValueTask SendClockAsync(LineChannel channel, Audio.Timeline.ClockState clock, CancellationToken cancellationToken) =>
+    public static ValueTask SendClockAsync(LineChannel channel, ClockState clock, CancellationToken cancellationToken) =>
         channel.SendAsync(CameraProtocol.Clock, clock, CameraJson.Default.ClockState, cancellationToken);
 
     /// <summary>Sends a line that needs no body: <see cref="CameraProtocol.Off"/>, <see cref="CameraProtocol.On"/> or <see cref="CameraProtocol.Cancel"/>.</summary>

@@ -4,7 +4,8 @@ namespace ClassScribe.Tests;
 
 /// <summary>
 /// The contract of <see cref="IFileProbe"/> over its real adapter, in a temporary folder: whether a file or a folder is
-/// there, when a file was last written, how long it is, and a full path, each as the file system answers it.
+/// there, when a file was last written, how long it is, both from one look, and a full path, each as the file system
+/// answers it.
 /// </summary>
 [TestFixture]
 public class FileProbeTests
@@ -74,6 +75,27 @@ public class FileProbeTests
             Assert.That(_probe.Length(file), Is.EqualTo(123));
             Assert.Throws<FileNotFoundException>(() => _probe.Length(_folder.File("missing.wav")));
             Assert.Throws<FileNotFoundException>(() => _probe.Length(_folder.File(Path.Combine("missing", "missing.wav"))), "a file whose folder is not there is a missing file too");
+        });
+    }
+
+    /// <summary>One look gives a file's length and last write together, in UTC; and null for a file that is not there, for a folder, and for a file whose folder is not there.</summary>
+    [Test]
+    public void Describes_a_file_in_one_look()
+    {
+        var file = _folder.File("Kalam_2026-10-15_20-55-27Z.wav");
+        File.WriteAllBytes(file, new byte[123]);
+        var written = new DateTime(2026, 10, 15, 21, 30, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(file, written);
+        var inner = _folder.File("Slides");
+        Directory.CreateDirectory(inner);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_probe.Describe(file), Is.EqualTo((123L, written)));
+            Assert.That(_probe.Describe(file)!.Value.LastWriteUtc.Kind, Is.EqualTo(DateTimeKind.Utc));
+            Assert.That(_probe.Describe(inner), Is.Null, "a folder is no file");
+            Assert.That(_probe.Describe(_folder.File("missing.wav")), Is.Null);
+            Assert.That(_probe.Describe(_folder.File(Path.Combine("missing", "missing.wav"))), Is.Null, "a file whose folder is not there is not there either");
         });
     }
 

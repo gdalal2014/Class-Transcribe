@@ -1,4 +1,5 @@
 using ClassScribe.Audio.Microphones;
+using ClassScribe.Camera;
 
 namespace ClassScribe.Audio;
 
@@ -50,7 +51,7 @@ public interface IMicrophoneRecording
     /// the warning about only silence for such a microphone. It has no default body, so that every recording with the
     /// microphone must say, and one that stopped saying would not build rather than fall silent in a class.
     /// </summary>
-    Camera.WebcamState? Webcam { get; }
+    WebcamState? Webcam { get; }
 }
 
 /// <summary>
@@ -61,7 +62,7 @@ public interface IMicrophoneRecording
 public interface ICameraRecording
 {
     /// <summary>The lesson's camera now; null when the recording records no picture.</summary>
-    Camera.CameraTrackState? Camera { get; }
+    CameraTrackState? Camera { get; }
 
     /// <summary>Lets the camera go for the rest of the run, saying <paramref name="why"/>; the sound records on.</summary>
     void LetGoOfTheCamera(string why);
