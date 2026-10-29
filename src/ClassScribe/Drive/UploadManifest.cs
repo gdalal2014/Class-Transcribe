@@ -126,7 +126,7 @@ public sealed record UploadManifest(string Folder, string BaseName)
     public DateTimeOffset QueuedUtc { get; init; }
 
     /// <summary>
-    /// How many times it has been put in the queue (see <see cref="UploadManifests.Queue"/>). An upload that began before the
+    /// How many times it has been put in the queue (see <see cref="IUploadManifests.Queue"/>). An upload that began before the
     /// last of them, as when a transcript made in another window while this one goes up adds a (2).md, does not leave it done:
     /// it stays waiting, to be taken once more, so that nothing new is left behind.
     /// </summary>
