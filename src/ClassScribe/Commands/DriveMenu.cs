@@ -14,7 +14,7 @@ namespace ClassScribe.Commands;
 /// I to check with Google (the account, the storage and ClassScribe's folder) and O to sign out. Each goes to the runner,
 /// which runs the drive command in a scope of its own. Esc, Q or Ctrl+C goes back to the menu.
 /// </summary>
-public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore store, IClassFolders folders, IRecordingFolder recordings, UploadManifests manifests, DriveQueueReport queue, IConsoleUi ui, TimeProvider time)
+public sealed class DriveMenu(ICommandRunner commands, IGoogleCredentialStore store, IClassFolders folders, IRecordingFolder recordings, IUploadManifests manifests, DriveQueueReport queue, IConsoleUi ui, TimeProvider time)
 {
     /// <summary>How the date of a sign-in is written, in local time: 17 Oct 2026.</summary>
     private const string DateFormat = "d MMM yyyy";

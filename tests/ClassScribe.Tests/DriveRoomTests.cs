@@ -23,7 +23,7 @@ public class DriveRoomTests
     public void TearDown() => _world.Dispose();
 
     /// <summary>The room's reader over the world's store, Drive and settings.</summary>
-    private DriveRoom Room() => new(_world.Store, new Lazy<DriveClient>(_world.Drive), _world.Options, _world.Log<DriveRoom>());
+    private DriveRoom Room() => new(_world.Store, new Lazy<IGoogleDrive>(_world.GoogleDrive), _world.Options, _world.Log<DriveRoom>());
 
     /// <summary>Not signed in, or with Drive off, there is no room to read, and Google is asked nothing.</summary>
     [Test]

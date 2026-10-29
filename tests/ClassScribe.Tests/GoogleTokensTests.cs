@@ -218,10 +218,10 @@ public class GoogleTokensTests
     public void Without_a_sign_in_nothing_is_asked_and_the_message_says_what_to_do()
     {
         _world.Store.Stored = null;
-        Assert.That(FailsWith(DriveProblem.NotSetUp, () => _world.Tokens().GetAccessTokenAsync(CancellationToken.None)), Is.EqualTo(GoogleTokens.NotSetUp));
+        Assert.That(FailsWith(DriveProblem.NotSetUp, () => _world.Tokens().GetAccessTokenAsync(CancellationToken.None)), Is.EqualTo(IGoogleAccount.NotSetUp));
 
         _world.Store.Stored = FakeCredentialStore.With(null).Stored;
-        Assert.That(FailsWith(DriveProblem.NotSignedIn, () => _world.Tokens().GetAccessTokenAsync(CancellationToken.None)), Is.EqualTo(GoogleTokens.NotSignedIn));
+        Assert.That(FailsWith(DriveProblem.NotSignedIn, () => _world.Tokens().GetAccessTokenAsync(CancellationToken.None)), Is.EqualTo(IGoogleAccount.NotSignedIn));
 
         _world.Store.MakeUnreadable("google-drive.dat cannot be opened by this Windows account.");
         Assert.That(FailsWith(DriveProblem.StoreUnreadable, () => _world.Tokens().GetAccessTokenAsync(CancellationToken.None)),

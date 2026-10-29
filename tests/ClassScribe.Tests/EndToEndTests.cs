@@ -731,6 +731,7 @@ public class EndToEndTests
         var links = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify), "Microsoft", "WinGet", "Links");
         var disk = new FakeFileProbe();
         disk.Add(Path.Combine(links, "yt-dlp.exe"), Path.Combine(links, "deno.exe"), Path.Combine(links, "ffmpeg.exe"), Path.Combine(links, "ffprobe.exe"));
+        disk.ReadsTheDiskUnder(_recordings.Path, _runtime.Folder.Root);
         using var app = BuildWindow(extra: services => services
             .AddSingleton<YouTube.IToolRunner>(tools)
             .AddSingleton<IFileProbe>(disk)
@@ -784,6 +785,7 @@ public class EndToEndTests
         var disk = new FakeFileProbe();
         disk.Add(chrome);
         disk.Versions[chrome] = "141.0.7390.108";
+        disk.ReadsTheDiskUnder(_recordings.Path, _runtime.Folder.Root);
 
         // Each window's browser process plays through process loopback, its capture ready and kept alive as Windows' is.
         List<FakeAudioCapture> windows = [];

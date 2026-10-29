@@ -138,7 +138,7 @@ public class DriveCommandTests
             LastTriedUtc = new DateTimeOffset(2026, 10, 18, 1, 40, 0, TimeSpan.Zero),
             LastError = "Google Drive could not be reached (No such host is known)."
         });
-        var command = new DriveCommand(_world.SignIn(), _world.Store, _world.Drive(), _world.Folders(), _world.QueueReport(), _world.Options, new FakeUserSignals(), _world.Ui,
+        var command = new DriveCommand(_world.SignIn(), _world.Store, _world.GoogleDrive(), _world.QueueReport(), _world.Manifests(), _world.Options, new FakeUserSignals(), _world.Ui,
             ZonedTimeProvider.EasternSummer, _world.Log<DriveCommand>());
 
         Assert.That(await command.StatusAsync(), Is.EqualTo(0));
@@ -171,7 +171,7 @@ public class DriveCommandTests
     public async Task The_date_is_local()
     {
         await _world.SignInAsync();
-        var command = new DriveCommand(_world.SignIn(), _world.Store, _world.Drive(), _world.Folders(), _world.QueueReport(), _world.Options, new FakeUserSignals(), _world.Ui,
+        var command = new DriveCommand(_world.SignIn(), _world.Store, _world.GoogleDrive(), _world.QueueReport(), _world.Manifests(), _world.Options, new FakeUserSignals(), _world.Ui,
             ZonedTimeProvider.EasternSummer, _world.Log<DriveCommand>());
         _world.Store.Stored = _world.Store.Stored! with { SignedInUtc = new DateTimeOffset(2026, 10, 18, 1, 30, 0, TimeSpan.Zero) };
 

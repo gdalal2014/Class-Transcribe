@@ -6,9 +6,10 @@ namespace ClassScribe.Drive;
 /// <summary>
 /// Reads the client file Google offers when a client is made (Google Auth platform > Clients > Download JSON): a Desktop app
 /// client's file has the client under "installed", with "client_id" and "client_secret". Any other file is refused with
-/// what to do instead, and nothing the file holds is repeated in the message, since it may be the secret.
+/// what to do instead, and nothing the file holds is repeated in the message, since it may be the secret. The adapter of
+/// <see cref="IGoogleClientFiles"/>; it holds nothing of its own.
 /// </summary>
-public static class GoogleClientFile
+public sealed class GoogleClientFile : IGoogleClientFiles
 {
     /// <summary>The largest file read: a client file is well under a kilobyte, and a recording dragged in by mistake is not read at all.</summary>
     public const long LargestFile = 64 * 1024;
@@ -16,12 +17,8 @@ public static class GoogleClientFile
     /// <summary>Where Google's console keeps the clients, for the messages.</summary>
     private const string ClientsPage = "Google Auth platform > Clients";
 
-    /// <summary>
-    /// The client in the file at <paramref name="path"/>. Throws a <see cref="GoogleDriveException"/> of
-    /// <see cref="DriveProblem.ClientFile"/> when there is no file there, or one that is not a Desktop app client's file
-    /// from Google, saying what to do instead.
-    /// </summary>
-    public static GoogleClient Read(string path)
+    /// <inheritdoc />
+    public GoogleClient Read(string path)
     {
         if (Directory.Exists(path)) throw Refused($"{path} is a folder; give the client file itself, such as client_secret_....json in your Downloads folder.");
 

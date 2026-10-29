@@ -22,10 +22,13 @@ public sealed partial class UploadJson : JsonSerializerContext;
 /// name and 8 hexadecimal digits of a SHA-256 of its folder's full path (in capitals, as Windows takes paths in any case), so
 /// that recordings of the same base name in two folders never share one. Each is written whole or not at all, through a
 /// temporary file, and tried again three times, 100 ms apart, when another program holds the file for a moment, as the run
-/// files are. The queue is the manifests that wait. One for the process.
+/// files are. The queue is the manifests that wait. The adapter of <see cref="IUploadManifests"/>. One for the process.
 /// </summary>
-public sealed class UploadManifests(RuntimeFolder runtime, TimeProvider time, ILogger<UploadManifests> logger)
+public sealed class UploadManifests(RuntimeFolder runtime, TimeProvider time, ILogger<UploadManifests> logger) : IUploadManifests
 {
+    /// <inheritdoc />
+    (int Count, long Bytes) IUploadManifests.OnDisk(RecordingFiles files, bool withLessonVideo) => OnDisk(files, withLessonVideo);
+
     /// <summary>The name of the folder of the manifests, under ClassScribe's folder for Drive.</summary>
     public const string RecordingsFolderName = "recordings";
 

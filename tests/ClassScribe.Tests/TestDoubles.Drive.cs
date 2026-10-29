@@ -1233,16 +1233,19 @@ public sealed class GoogleWorld : IDisposable
     /// <summary>ClassScribe's folder on Drive, remembered in the temporary ClassScribe folder.</summary>
     public DriveFolders Folders() => new(Drive(), Options, Runtime.Folder, Log<DriveFolders>());
 
+    /// <summary>Drive as the use cases use it: the port's real adapter over the client, the folders and the resumable upload above, all through the fake Google.</summary>
+    public GoogleDrive GoogleDrive() => new(Drive(), Folders(), Resumable());
+
     /// <summary>The sign-in, with everything above, its local times in US Eastern time, so that a date it shows is the same on every machine.</summary>
     public GoogleSignIn SignIn(IBrowser? browser = null, ILoopbackReceiver? receiver = null) =>
-        new(OAuth, Tokens(), Store, Drive(), Folders(), receiver ?? Receiver, browser ?? Browser, Ui, Options, ZonedClock.Eastern(Time), Log<GoogleSignIn>());
+        new(Tokens(), Store, GoogleDrive(), new GoogleClientFile(), receiver ?? Receiver, browser ?? Browser, Ui, Options, ZonedClock.Eastern(Time), Log<GoogleSignIn>());
 
     /// <summary>
     /// The drive command, with everything above and Ctrl+C played by <paramref name="signals"/>, its local times in US Eastern
     /// time, so that the date of a sign-in it shows is the same on every machine.
     /// </summary>
     public DriveCommand Command(FakeUserSignals? signals = null) =>
-        new(SignIn(), Store, Drive(), Folders(), QueueReport(), Options, signals ?? new FakeUserSignals(), Ui, ZonedClock.Eastern(Time), Log<DriveCommand>());
+        new(SignIn(), Store, GoogleDrive(), QueueReport(), Manifests(), Options, signals ?? new FakeUserSignals(), Ui, ZonedClock.Eastern(Time), Log<DriveCommand>());
 
     /// <summary>
     /// Writes a client file as Google's Download JSON gives it, under <paramref name="kind"/> (installed for a Desktop app,
@@ -1311,7 +1314,7 @@ public sealed class GoogleWorld : IDisposable
     private RecorderLog? _recorderLog;
 
     /// <summary>The upload of one recording.</summary>
-    public RecordingUpload RecordingUpload() => new(Drive(), Folders(), Resumable(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
+    public RecordingUpload RecordingUpload() => new(GoogleDrive(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), new RecordingFolder(), new FileProbe(), RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
 
     /// <summary>The upload lock, in the temporary ClassScribe folder.</summary>
     public DriveUploadLock Lock() => new(Runtime.Folder, Log<DriveUploadLock>());
@@ -1327,14 +1330,14 @@ public sealed class GoogleWorld : IDisposable
     public DriveQueueReport QueueReport() => new(Store, Manifests(), Runtime.Journal, ClassFolders(), Options, ZonedClock.Eastern(Time));
 
     /// <summary>The freeing of room on the laptop.</summary>
-    public LocalAudioFreer Freer() => new(Drive(), Retry(), Manifests(), RecordingUpload(), ClassFolders(), new RecordingFolder(), Printed.Commands, Time, Log<LocalAudioFreer>());
+    public LocalAudioFreer Freer() => new(GoogleDrive(), Retry(), Manifests(), RecordingUpload(), ClassFolders(), new RecordingFolder(), new FileProbe(), Printed.Commands, Time, Log<LocalAudioFreer>());
 
     /// <summary>The drive upload and free-space command, with Ctrl+C played by <paramref name="signals"/>.</summary>
     public DriveUploadCommand UploadCommand(FakeUserSignals? signals = null) =>
         new(Pass(), Freer(), ClassFolders(), new RecordingFolder(), new FileProbe(), Printed.Commands, signals ?? new FakeUserSignals(), Log<DriveUploadCommand>());
 
     /// <summary>The class folders under <see cref="Recordings"/>, which know of the audio kept on Drive alone.</summary>
-    public ClassFolders ClassFolders() => new(Recording, Time, Log<ClassFolders>(), new DriveCopies(Manifests(), new RecordingFolder()));
+    public ClassFolders ClassFolders() => new(Recording, Time, Log<ClassFolders>(), new DriveCopies(Manifests(), new RecordingFolder(), new FileProbe()));
 
     /// <summary>The lines logged by every part, in order, as text.</summary>
     public IReadOnlyList<string> Lines => Logs.Messages;

@@ -55,7 +55,7 @@ public class DriveUploadPassTests
 
         var result = await RunAsync([_mantiq]);
 
-        Assert.That(result.Stopped, Is.EqualTo(GoogleTokens.NotSetUp));
+        Assert.That(result.Stopped, Is.EqualTo(IGoogleAccount.NotSetUp));
         Assert.That(_world.Manifests().All(), Is.Empty);
         Assert.That(_world.Google.Requests, Is.Empty);
     }
@@ -68,7 +68,7 @@ public class DriveUploadPassTests
 
         var result = await RunAsync([_mantiq]);
 
-        Assert.That(result.Stopped, Is.EqualTo($"{GoogleTokens.NotSignedIn} 1 recording waits to go up to Google Drive after the next class, or with menu choice 9 > U, or ClassScribe drive upload."));
+        Assert.That(result.Stopped, Is.EqualTo($"{IGoogleAccount.NotSignedIn} 1 recording waits to go up to Google Drive after the next class, or with menu choice 9 > U, or ClassScribe drive upload."));
         Assert.That(result.AllDone, Is.False);
         Assert.That(_world.Manifests().Waiting().Single().BaseName, Is.EqualTo(_mantiq.BaseName));
         Assert.That(_world.Google.Requests, Is.Empty);
@@ -185,7 +185,7 @@ public class DriveUploadPassTests
         {
             _world.Store.Stored = FakeCredentialStore.With(null).Stored;
             result = await RunAsync([_mantiq]);
-            Assert.That(result.Stopped, Is.EqualTo(GoogleTokens.NotSignedIn));
+            Assert.That(result.Stopped, Is.EqualTo(IGoogleAccount.NotSignedIn));
         }
         else
         {
@@ -324,7 +324,7 @@ public class DriveUploadPassTests
 
         var result = await RunAsync([_mantiq]);
 
-        Assert.That(result.Stopped, Is.EqualTo($"{GoogleTokens.NotSignedIn} 1 recording waits to go up to Google Drive with menu choice 9 > U, or ClassScribe drive upload."));
+        Assert.That(result.Stopped, Is.EqualTo($"{IGoogleAccount.NotSignedIn} 1 recording waits to go up to Google Drive with menu choice 9 > U, or ClassScribe drive upload."));
     }
 
     /// <summary>

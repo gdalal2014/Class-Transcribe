@@ -102,15 +102,24 @@ public sealed class HttpListenerLoopbackReceiver(ILogger<HttpListenerLoopbackRec
         /// <inheritdoc />
         public async Task AnswerAsync(int status, string html)
         {
-            var bytes = Encoding.UTF8.GetBytes(html);
-            var response = context.Response;
-            response.StatusCode = status;
-            response.ContentType = "text/html; charset=utf-8";
-            response.ContentLength64 = bytes.Length;
-            response.KeepAlive = false;
-            response.Headers["Cache-Control"] = "no-store";
-            await response.OutputStream.WriteAsync(bytes);
-            response.Close();
+            try
+            {
+                var bytes = Encoding.UTF8.GetBytes(html);
+                var response = context.Response;
+                response.StatusCode = status;
+                response.ContentType = "text/html; charset=utf-8";
+                response.ContentLength64 = bytes.Length;
+                response.KeepAlive = false;
+                response.Headers["Cache-Control"] = "no-store";
+                await response.OutputStream.WriteAsync(bytes);
+                response.Close();
+            }
+            catch (HttpListenerException ex)
+            {
+                // Handed on as the port says it: a browser that has gone is an IOException to the sign-in, which names no
+                // listener of its own.
+                throw new IOException(ex.Message, ex);
+            }
         }
     }
 }

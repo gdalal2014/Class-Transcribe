@@ -11,7 +11,7 @@ namespace ClassScribe.Commands;
 /// once, and gives the exit code: 0 done; 1 failed, or not signed in; a cancel (Esc, Ctrl+C) is let through, for App to turn
 /// into 130. Nothing records here, so a first Ctrl+C cancels. One per run. The uploads are <see cref="DriveUploadCommand"/>'s.
 /// </summary>
-public sealed class DriveCommand(GoogleSignIn signIn, IGoogleCredentialStore store, DriveClient drive, DriveFolders folders, DriveQueueReport queue,
+public sealed class DriveCommand(GoogleSignIn signIn, IGoogleCredentialStore store, IGoogleDrive drive, DriveQueueReport queue, IUploadManifests manifests,
     IOptionsSnapshot<DriveOptions> options, IUserSignals signals, IConsoleUi ui, TimeProvider time, ILogger<DriveCommand> logger)
 {
     /// <summary>How the time of a last try is written, in local time: 17 Oct 21:40.</summary>
@@ -82,9 +82,9 @@ public sealed class DriveCommand(GoogleSignIn signIn, IGoogleCredentialStore sto
         ui.WriteLine($"Google Drive: signed in as {credentials.Email}{Since(credentials.SignedInUtc)} (client {credentials.Client.ShortId})");
         try
         {
-            var about = await drive.GetAboutAsync(signals.Cancellation);
-            ui.WriteLine(StorageLine(about.StorageQuota));
-            var root = await folders.FindRootAsync(signals.Cancellation);
+            var about = await drive.GetAccountAsync(signals.Cancellation);
+            ui.WriteLine(StorageLine(about.Storage));
+            var root = await drive.FindRootAsync(signals.Cancellation);
             ui.WriteLine(root is null
                 ? $"The {options.Value.FolderName.Trim()} folder is not in My Drive now: it is in the trash, or was deleted. Signing in again makes a new one; the trash is left as it is."
                 : $"Uploads go to My Drive > {root.Name}: {root.Link}");
@@ -117,7 +117,7 @@ public sealed class DriveCommand(GoogleSignIn signIn, IGoogleCredentialStore sto
 
         foreach (var manifest in waiting)
         {
-            var (count, bytes) = UploadManifests.OnDisk(manifest.Recording, options.Value.LessonVideos);
+            var (count, bytes) = manifests.OnDisk(manifest.Recording, options.Value.LessonVideos);
             var tried = manifest.LastTriedUtc is { } last
                 ? $"last try {TimeZoneInfo.ConvertTime(last, time.LocalTimeZone).ToString(TryFormat, CultureInfo.InvariantCulture)}{(manifest.LastError is { } error ? $": {error}" : "")}"
                 : "not tried yet";
@@ -130,9 +130,9 @@ public sealed class DriveCommand(GoogleSignIn signIn, IGoogleCredentialStore sto
         signedInUtc is { } utc ? $" since {TimeZoneInfo.ConvertTime(utc, time.LocalTimeZone).ToString(DateFormat, CultureInfo.InvariantCulture)}" : "";
 
     /// <summary>The storage line: "Storage: 1.2 TB of 30 TB used", or for an account without a limit, "Storage: 1.2 TB used; the account has no limit".</summary>
-    private static string StorageLine(DriveStorageQuota? quota)
+    private static string StorageLine(DriveSpace? storage)
     {
-        var usage = Sizes.Describe(quota?.Usage ?? 0);
-        return quota?.Limit is { } limit ? $"Storage: {usage} of {Sizes.Describe(limit)} used" : $"Storage: {usage} used; the account has no limit";
+        var usage = Sizes.Describe(storage?.Usage ?? 0);
+        return storage?.Limit is { } limit ? $"Storage: {usage} of {Sizes.Describe(limit)} used" : $"Storage: {usage} used; the account has no limit";
     }
 }

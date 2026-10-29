@@ -108,7 +108,7 @@ public sealed class StartupReport(IRunJournal journal, IClassFolders folders, IR
         {
             ui.WriteLine(waiting.SignedIn
                 ? $"To upload {it}: {commandLine.DriveUpload(null)}"
-                : $"{GoogleTokens.NotSignedIn} Then, to upload {it}: {commandLine.DriveUpload(null)}");
+                : $"{IGoogleAccount.NotSignedIn} Then, to upload {it}: {commandLine.DriveUpload(null)}");
             return null;
         }
 

@@ -30,8 +30,10 @@ public static class YouTubeTestRuns
 }
 
 /// <summary>
-/// Files and folders a test says are there, with their versions, last write times and lengths; any other path is not.
-/// Paths compare without regard to case, as Windows compares them. A full path is worked out as the file system would.
+/// Files and folders a test says are there, with their versions, last write times and lengths; any other path is not, unless
+/// it is under a folder the test lets the fake read the disk for (<see cref="ReadsTheDiskUnder"/>), as the recordings folder
+/// of a run through the whole app, whose uploads ask the probe about the recording's own files. Paths compare without regard
+/// to case, as Windows compares them. A full path is worked out as the file system would.
 /// </summary>
 public sealed class FakeFileProbe : IFileProbe
 {
@@ -62,17 +64,29 @@ public sealed class FakeFileProbe : IFileProbe
     /// <inheritdoc />
     public string? VersionOf(string path) => Versions.TryGetValue(path, out var version) ? version : null;
 
-    /// <inheritdoc />
-    public bool FileExists(string path) => _files.Contains(path);
+    /// <summary>The folders under which the fake answers from the disk itself, as the real probe would.</summary>
+    private readonly List<string> _real = [];
+
+    /// <summary>Lets the fake answer from the disk for every path under <paramref name="folders"/>, as the real probe would; every other path stays the fake's.</summary>
+    public void ReadsTheDiskUnder(params string[] folders) => _real.AddRange(folders.Select(folder => Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder))));
+
+    /// <summary>True when <paramref name="path"/> is under a folder the fake reads the disk for.</summary>
+    private bool OnDisk(string path) =>
+        _real.Any(folder => Path.GetFullPath(path) is var full && (full.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || string.Equals(full, folder, StringComparison.OrdinalIgnoreCase)));
 
     /// <inheritdoc />
-    public bool DirectoryExists(string path) => _folders.Contains(path);
+    public bool FileExists(string path) => _files.Contains(path) || (OnDisk(path) && File.Exists(path));
 
     /// <inheritdoc />
-    public DateTime LastWriteUtc(string path) => LastWrites.TryGetValue(path, out var written) ? written : DateTime.FromFileTimeUtc(0);
+    public bool DirectoryExists(string path) => _folders.Contains(path) || (OnDisk(path) && Directory.Exists(path));
 
     /// <inheritdoc />
-    public long Length(string path) => _files.Contains(path) ? Lengths.GetValueOrDefault(path) : throw new FileNotFoundException("The fake has no such file.", path);
+    public DateTime LastWriteUtc(string path) =>
+        LastWrites.TryGetValue(path, out var written) ? written : OnDisk(path) ? File.GetLastWriteTimeUtc(path) : DateTime.FromFileTimeUtc(0);
+
+    /// <inheritdoc />
+    public long Length(string path) =>
+        _files.Contains(path) ? Lengths.GetValueOrDefault(path) : OnDisk(path) ? new FileInfo(path).Length : throw new FileNotFoundException("The fake has no such file.", path);
 
     /// <inheritdoc />
     public string FullPath(string path) => Path.GetFullPath(path);

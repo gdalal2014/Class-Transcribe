@@ -182,7 +182,7 @@ public class DriveAutoUploadTests
         Assert.That(_world.Google.Requests, Is.Empty);
         Assert.That(_world.Logs.Problems, Is.EqualTo(new[]
         {
-            $"{GoogleTokens.NotSignedIn} 1 recording waits to go up to Google Drive after the next class, or with menu choice 9 > U, or ClassScribe drive upload."
+            $"{IGoogleAccount.NotSignedIn} 1 recording waits to go up to Google Drive after the next class, or with menu choice 9 > U, or ClassScribe drive upload."
         }));
     }
 
