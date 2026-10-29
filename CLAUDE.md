@@ -218,6 +218,10 @@ advice after a format error (10 A).
   after its adapter in `StorageServices`, and `IRunLog` as the same singleton as `RecorderLog` in
   `RecorderServices.AddRecorderLog`; each is resolved through its adapter's type, so the recorder's host's replacements
   (`AppHost.AddRecorder`) and a test's `AddSingleton(runtime.Folder)` or `AddSingleton(runtime.Journal)` are followed.
+  The recorder's host replaces `IRunLog` as the very instance it was given too, beside its `RecorderLog` replacement: the
+  container disposes what a forwarding factory returns, and that log is `RecorderHost.RunAsync`'s own, disposed after the
+  container, so that what is logged while the container is disposed, and a failure after it, still reach recorder.log. A
+  port over an adapter the recorder's host owns is always replaced that way (stop point S3's fix).
   The ports of settings and classes of slice 3b3: `ISavedClasses` as the same singleton as `SavedClasses`, right after it in
   `AddSettings` (both hosts); `ISettingsStore` as `SettingsStore`, the thin adapter over the places, the file, the reloader
   and the writer, right after the writer in `AddSettingsReload` (the window alone, as the writer: a recorder never writes
@@ -236,7 +240,8 @@ advice after a format error (10 A).
   (`ValidateScopes`, `ValidateOnBuild`), so a per-run service taken outside a run's scope, or one
   that cannot be made, fails at once. `AppHost.BuildRecorder(start, apiKey, log, folder, places,
   time, configureServices)` builds the recorder's host from the same registrations plus `AddRecorder`
-  (the link's console, no window signals, `LinkStatusSink`, `RecorderResultShower`, the server, the
+  (the clock, the log it was given as `RecorderLog` and as `IRunLog`, ClassScribe's own folder, the link's console, no
+  window signals, `LinkStatusSink`, `RecorderResultShower`, the server, the
   alerts and the process starter in place of the window's), from the request's settings snapshot and
   the key alone: no appsettings.json, no environment source, no console logger, scopes validated but
   not the whole container. There is no `Link/LinkServices.cs`: the view makes its own client, the
@@ -874,7 +879,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   each with its contract test over the real adapter in temporary folders, in `SettingsPortTests`) bring it to 4,957; the ports
   of the program and the prompts of slice 3b4 (`feature/layers-program`: `IThisProgram`, `IContinuePrompt`, `ICameraPrompt`
   and `IRunStarter`, each with its contract test over the real adapter, in `ProgramPortTests` and `PromptPortTests`) bring
-  it to 4,966. The uploads by
+  it to 4,966, and stop point S3's fixes (the recorder's log left to its host, the start-up log's last lines for a count of
+  0 or less, a class's glossary path worked out only for the JSON forms) to 4,969. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -918,7 +924,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
   with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
   4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, 4 min 24 s for 4,966 with slice 3b4's,
-  plus the build).
+  4 min 27 s for 4,969 with stop point S3's fixes, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -2257,7 +2263,8 @@ call and each constructor that takes a port.
   `StoragePortTests` (the marks, the copies and the check's log), `WavTrackWriterFactoryTests` and `AudioPortTests` (the file
   facts, the saved answers and the capture's processing); the ports of runs of slice 3b2 in `RecorderPortTests` (the folder,
   the lock, the journal and the handle with a run file pinned to `RecorderJson`'s bytes and the journal's retries, the log
-  with the copy into the recording's log and the start-up log's last lines, and the ports' registrations in both hosts),
+  with the copy into the recording's log and the start-up log's last lines (none for a count of 0 or less), the log the
+  recorder's host is given left to that host, never disposed by the container, and the ports' registrations in both hosts),
   over a `TestRuntime` and a `TempFolder`; the ports of settings and classes of slice 3b3 in `SettingsPortTests` (the places'
   facts before and after the first change and the missing-file state, the file read and staged with a value by name, a
   section's children and the classes, bytes that are not a settings file, every change through the one writer, the

@@ -398,12 +398,13 @@ public sealed class RecorderLog(TimeProvider time, string? startupFile = null) :
     /// <summary>
     /// The last <paramref name="count"/> lines that are not empty of the start-up log at <paramref name="path"/>, oldest
     /// first, when the file was last written at <paramref name="writtenSince"/> or after; empty when it was written before
-    /// that, or there is no such file. The file is read sharing everything, as the recorder may still write it. A file that
-    /// cannot be read throws its failure (see <see cref="IRunLog.LastStartupLines"/>).
+    /// that, there is no such file, or no lines are asked for (<paramref name="count"/> 0 or less). The file is read sharing
+    /// everything, as the recorder may still write it. A file that cannot be read throws its failure (see
+    /// <see cref="IRunLog.LastStartupLines"/>).
     /// </summary>
     public IReadOnlyList<string> LastStartupLines(string path, DateTimeOffset writtenSince, int count)
     {
-        if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < writtenSince.UtcDateTime) return [];
+        if (count <= 0 || !File.Exists(path) || File.GetLastWriteTimeUtc(path) < writtenSince.UtcDateTime) return [];
 
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(file);

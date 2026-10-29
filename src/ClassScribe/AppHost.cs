@@ -156,16 +156,21 @@ public static class AppHost
         services.Configure<ConsoleLoggerOptions>(console => console.LogToStandardErrorThreshold = LogLevel.Trace);
 
     /// <summary>
-    /// Puts the recorder's own services in place of the window's: the clock, the log every logger writes to, ClassScribe's
-    /// own folder and the places of the settings and the glossary as given; the link's console, whose keys come from the
-    /// windows; no window signals, since a recorder has no window; for each run, the link's status sink, which sends the
-    /// states to the windows and the alerts, and the recorder's result shower; and, for the process, the server, the alerts
-    /// that bring a window back, and the starter of that window.
+    /// Puts the recorder's own services in place of the window's: the clock, the log every logger writes to (behind its port
+    /// too), ClassScribe's own folder and the places of the settings and the glossary as given; the link's console, whose
+    /// keys come from the windows; no window signals, since a recorder has no window; for each run, the link's status sink,
+    /// which sends the states to the windows and the alerts, and the recorder's result shower; and, for the process, the
+    /// server, the alerts that bring a window back, and the starter of that window.
     /// </summary>
     private static IServiceCollection AddRecorder(this IServiceCollection services, RecorderLog log, RuntimeFolder folder, SettingsPlaces places, TimeProvider time)
     {
         services.Replace(ServiceDescriptor.Singleton(time));
         services.Replace(ServiceDescriptor.Singleton(log));
+
+        // The port over the same log, as an instance too: the container disposes what a factory returns, and this log is
+        // the host's, disposed after the container (RecorderHost.RunAsync's using), so that what is logged while the
+        // container is disposed, and a failure after it, still reach recorder.log.
+        services.Replace(ServiceDescriptor.Singleton<IRunLog>(log));
         services.Replace(ServiceDescriptor.Singleton(folder));
         services.AddSingleton(places);
         services.Replace(ServiceDescriptor.Singleton<IConsoleUi, LinkConsoleUi>());

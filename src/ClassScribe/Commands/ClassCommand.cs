@@ -51,9 +51,9 @@ public abstract record ClassRequest
 /// </summary>
 /// <param name="Entry">The class, checked on its own.</param>
 /// <param name="Fields">Its fields as the file holds them, by name, in the settings' order.</param>
-/// <param name="Glossary">Its own glossary as a full path; "" for none, or for a value no path can hold; null for ElevenLabs:KeytermsFile, and for a class that cannot be used.</param>
+/// <param name="Glossary">Its own glossary as a full path, worked out when first asked for, since only the JSON forms show it: "" for none, or for a value no path can hold; null for ElevenLabs:KeytermsFile, and for a class that cannot be used.</param>
 /// <param name="Command">The launcher's line that records it, from PowerShell; null for a class that cannot be used.</param>
-public sealed record ClassShown(SavedClassEntry Entry, IReadOnlyDictionary<string, string?> Fields, string? Glossary, string? Command);
+public sealed record ClassShown(SavedClassEntry Entry, IReadOnlyDictionary<string, string?> Fields, Lazy<string?> Glossary, string? Command);
 
 /// <summary>
 /// What the class command answers: the exit code; what is said on standard error, refusals and the reasons a file cannot be
@@ -277,10 +277,12 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
 
     /// <summary>
     /// A class as class list and class show give it: its fields as the file holds them, its own glossary as a full path ("" for
-    /// none, null for ElevenLabs:KeytermsFile), and its command.
+    /// none, null for ElevenLabs:KeytermsFile), worked out only when the JSON forms, which show it, ask for it, as the text
+    /// forms never did, and its command.
     /// </summary>
     private ClassShown Shown(SavedClassEntry entry, IReadOnlyDictionary<string, string?> fields) =>
-        new(entry, fields, entry.Class?.KeytermsFile is { } glossary ? GlossaryPath(glossary, store.Folder) : null, entry.Class is { } usable ? commandLine.RecordClass(usable.Name) : null);
+        new(entry, fields, new Lazy<string?>(() => entry.Class?.KeytermsFile is { } glossary ? GlossaryPath(glossary, store.Folder) : null),
+            entry.Class is { } usable ? commandLine.RecordClass(usable.Name) : null);
 
     /// <summary>
     /// The file a class's glossary value names, as a full path, a relative one taken from <paramref name="folder"/>; "" for
