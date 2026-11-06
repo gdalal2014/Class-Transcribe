@@ -3376,59 +3376,98 @@ in its `.log` too.
 ## Layout
 
 ```
-src/ClassScribe.Core/, src/ClassScribe.Application/, src/ClassScribe.Infrastructure/, src/ClassScribe.Cli/
-                  the four projects, which share src/Directory.Build.props (the version among its lines): the
-                  records and rules in Core, the use cases in Application, Windows, the vendors and the files in
-                  Infrastructure, and the menu, the command line and the hosts in Cli, whose exe is still
-                  ClassScribe.exe. The folders below are each split among them by what they hold.
-    Program.cs, AppHost.cs, App.cs    start-up: the settings read and checked, then a command or the menu
-    Settings/         the settings, where they live (your own folder, the defaults beside the program),
-                      the one writer of your file, the saved classes, the API key from the environment,
-                      the warnings about a recordings folder, and the file read again and checked
-                      before each choice and command
-    Audio/            capture, the recording as one or two tracks on one clock, WAV writing, the
-                      upload copy (the two tracks mixed)
-    Audio/Microphone/ choosing the microphone, the advice about it, the watch on the class app's
-                      microphone use and the gate that follows it, the watch for the class app on a
-                      Bluetooth microphone, the microphone check's lines
-    Audio/Timeline/   the recording clock and where each packet goes on a track
-    Audio/Windows/    WASAPI loopback through NAudio, the once-a-second device check, the
-                      microphone listing and capture, and the reader of the apps' microphone sessions
-    Desktop/          keeping the laptop awake, the computer's clocks, the window's title, taskbar and
-                      flash, starting processes (the recorder, yt-dlp in a job of its own, and
-                      Chrome for a video), the job check, Windows' end of the session, the registry,
-                      process names, the windows of ClassScribe's own Chrome, and Windows'
-                      microphone usage record (Windows' own calls in Desktop/Windows/)
-    Recorder/         the background recorder: its host, run files, lock, logs, the watch for times
-                      when ClassScribe did not run, and the window it brings back by itself
-    Link/             the named pipe between the recorder and the windows that show its run
-    Transcription/    ElevenLabs client (Refit), the glossary (its term rules, its files, the one resolver
-                      that decides a recording's glossary, and the recording's .glossary.json), transcript
-                      layout, the upload's time limit, the cost estimate and the account's credits after a transcript
-    Drive/            Google Drive: the sign-in (PKCE, the listener on 127.0.0.1, the browser), the
-                      client file, the encrypted store, the access tokens, Google's OAuth and Drive
-                      clients (Refit), ClassScribe's folders in My Drive, the resumable uploads, the
-                      record of what went up and the queue, the upload after each class, and freeing
-                      room on the laptop
-    Storage/          recording folders (course and date folders, the old flat ones read too), file
-                      names, what of a recording's audio is on Google Drive alone, numbered
-                      transcript copies, marks, the microphone check's log, and the roaming folder
-                      that holds the Google sign-in
-    YouTube/          YouTube videos: the links and list files, the batch both ways share (the lock,
-                      the wait for a class, the transcripts, the source files), the download path
-                      (finding and running yt-dlp, its fixed arguments, the reads, the guard, the
-                      plan, the conversion to ClassScribe's own .wav) and the record path (finding
-                      Chrome, the titles from YouTube's oEmbed address, the video's window, how a
-                      video's recording ends)
-    Commands/         the menu, the microphone menu, Google Drive's menu, menu choice Y, the command
-                      line (record, transcribe, rebuild, list, devices, mic-check, drive, youtube,
-                      settings, class), the saved classes' and the settings' menus (C and S), the
-                      report at the start, the view of a recording, the microphone check, and the
-                      settings check before each
-tests/ClassScribe.Tests/    NUnit and Moq
+src/                        the four projects, which share src/Directory.Build.props (the version among its
+                            lines); each may use only the ones above it in this list, never one below
+  ClassScribe.Core/         ClassScribe's own records and rules, with nothing of Windows, the vendors or
+                            the disk: the recording clock and where each packet goes on a track
+                            (Audio/Timeline/), the audio packets, tracks and modes (Audio/), the
+                            microphone's records and the gate's verdicts (Audio/Microphone/), the
+                            camera's frames, pieces and the camera process's messages (Camera/), a run's
+                            requests, states and records (Runs/, Recorder/), recording file names and the
+                            folders' names (Storage/), the transcript's records and the glossary's term
+                            rules (Transcription/), a saved class (Settings/), a video's source record
+                            (YouTube/), and the words for durations and sizes
+  ClassScribe.Application/  what ClassScribe does, as use cases and the services they drive, over ports
+                            (interfaces) for everything it needs from the machine, the person or a
+                            vendor: the recording as one or two tracks on one clock, choosing the
+                            microphone, the advice about it, the watch on the class app's microphone use
+                            and the gate that follows it, the watch for the class app on a Bluetooth
+                            microphone, the microphone check's lines (Audio/, Audio/Microphone/), the
+                            recorder of a lesson's picture and the maker of its video (Camera/), the
+                            commands (record, transcribe, rebuild, finish-video, list, devices,
+                            mic-check, camera-check, drive, youtube, settings, class) and the run in
+                            this window or in the background recorder (Commands/), the desktop's ports
+                            (Desktop/), Google Drive's sign-in, the resumable uploads, the record of what
+                            went up and the queue, the upload after each class, and freeing room on the
+                            laptop (Drive/), the ports of runs and the watch for times when ClassScribe
+                            did not run (Recorder/, Runs/), the settings' classes and their catalog
+                            (Settings/), what the lists know of audio on Drive alone (Storage/), the
+                            glossary's one resolver, transcript layout, the upload's time limit, the
+                            cost estimate and the account's credits after a transcript (Transcription/),
+                            and YouTube's two paths: the links, the batch, the guard, the plan, the
+                            transcripts (YouTube/)
+  ClassScribe.Infrastructure/  Windows, the vendors and the files, behind those ports: WASAPI loopback
+                            through NAudio, the once-a-second device check, the microphone listing and
+                            capture, the reader of the apps' microphone sessions, WAV writing and the
+                            upload copy with the two tracks mixed (Audio/, Audio/Windows/), the camera
+                            process's jobs, the camera through Windows' camera API, the pieces and the
+                            finished video through Media Foundation (Camera/), keeping the laptop awake,
+                            the computer's clocks, the window's title, taskbar and flash, starting
+                            processes (the recorder, the camera process, yt-dlp in a job of its own, and
+                            Chrome for a video), the job check, Windows' end of the session, the
+                            registry, process names, the windows of ClassScribe's own Chrome, and
+                            Windows' microphone and camera usage records (Desktop/), the sign-in's
+                            listener on 127.0.0.1 and the browser, the client file, the encrypted store,
+                            the access tokens, Google's OAuth and Drive clients (Refit) and ClassScribe's
+                            folders in My Drive (Drive/), the named pipe between the recorder and the
+                            windows that show its run (Link/), the background recorder's run files, lock
+                            and logs (Recorder/), the settings, where they live (your own folder, the
+                            defaults beside the program), the one writer of your file, the saved
+                            classes, the API key from the environment, the warnings about a recordings
+                            folder, and the file read again and checked before each choice and command
+                            (Settings/), recording folders (course and date folders, the old flat ones
+                            read too), numbered transcript copies, marks, the microphone check's log,
+                            and the roaming folder that holds the Google sign-in (Storage/), the
+                            ElevenLabs client (Refit) and the glossary's files and the recording's
+                            .glossary.json (Transcription/), and the list files, finding and running
+                            yt-dlp with its fixed arguments, the reads, the conversion to ClassScribe's
+                            own .wav, the source files, finding Chrome, the titles from YouTube's oEmbed
+                            address and the video's window (YouTube/)
+  ClassScribe.Cli/          the program you run, ClassScribe.exe: start-up (Program.cs, AppHost.cs,
+                            App.cs: the settings read and checked, then a command or the menu), the
+                            menu, the microphone menu, Google Drive's menu, menu choice Y, the saved
+                            classes' and the settings' menus (C and S), the command line, the report at
+                            the start, the view of a recording and the settings check before each
+                            (Commands/), the window's title and taskbar (Desktop/), the background
+                            recorder's host and the window it brings back by itself (Hosts/Recorder/),
+                            the camera process's host (Hosts/Camera/), and appsettings.json, the
+                            defaults beside the program
+tests/ClassScribe.Tests/    NUnit and Moq, one project for all four
 tools/dry-run/      the dry-run kit: Start-DryRun.cmd, the stand-in for ElevenLabs, the test player
 examples/glossary/  an example glossary of the Islamic sciences, never built or published
 ```
+
+For developers. The four projects reference each other in one direction only: `ClassScribe.Cli` uses
+`ClassScribe.Infrastructure`, which uses `ClassScribe.Application`, which uses `ClassScribe.Core`, and
+never the other way. Core knows nothing outside itself; Application declares as an interface, a port,
+everything it needs from the machine, the person or a vendor; Infrastructure implements those ports with
+Windows, files, processes, pipes and web APIs; and the Cli talks to you and puts the rest together. The
+project references enforce the direction, and an architecture test in `tests/ClassScribe.Tests/Architecture`
+checks on every run what they cannot: that Core and Application make no call of their own to the disk,
+the network, a process or Windows, that no package such as NAudio or Refit has crept into them, that
+every type sits in its project's namespace, and that the four assemblies carry one version. `dotnet
+build` builds the solution and must report no warning; `dotnet test` runs the suite; `dotnet run
+--project src/ClassScribe.Cli` starts the menu (a recording then runs in the window, since `dotnet run`
+ends every program it started); and the publish line of [Set up once](#set-up-once),
+`dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"`,
+makes the folder you start classes from, with `ClassScribe.Core.dll`, `ClassScribe.Application.dll` and
+`ClassScribe.Infrastructure.dll` beside `ClassScribe.exe`. Your class launcher, `Start-Class.ps1` (outside
+this repository), builds whichever project file it finds (`src\ClassScribe.Cli\ClassScribe.Cli.csproj`,
+or the older `src\ClassScribe\ClassScribe.csproj` of a version from before the four projects), publishes
+beside the install, checks that every file `ClassScribe.deps.json` names is there (Bitdefender may have
+taken one), starts the copy once with `--version`, and only then swaps the whole folder into place,
+keeping the one before as `ClassScribe.previous`; a build that fails any of these leaves the install as
+it was and says why. The dry-run kit in `tools\dry-run` holds and tests the same three checks.
 
 In the tests, the transcription service, the upload preparation, the command runner and the desktop
 are Moq mocks. The audio device, the microphones, the apps' microphone sessions, the keyboard, the
@@ -3464,5 +3503,5 @@ a stand-in `ClassScribe.exe` that records nothing and runs the whole dry run wit
 folders. No test ever starts ClassScribe itself, records, opens a device or a microphone, plays a
 sound, opens a browser, runs yt-dlp, or sends anything to ElevenLabs, Google or YouTube, and none
 reads or writes the real `%APPDATA%\ClassScribe`, `%LOCALAPPDATA%\ClassScribe` or
-`%USERPROFILE%\ClassScribe`. The suite holds 4,880 tests and takes about four minutes; a test
+`%USERPROFILE%\ClassScribe`. The suite holds 5,141 tests and takes about four and a half minutes; a test
 run that hangs is stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).

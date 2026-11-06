@@ -1,7 +1,10 @@
 # ClassScribe
 
-A .NET 10 console app for personal study. During an online class it records whatever the laptop
-plays, by WASAPI loopback: the output device the class plays on, a device pinned by name, or one
+A .NET 10 console app for personal study, built as four projects under `src`: `ClassScribe.Core` (the records and
+rules), `ClassScribe.Application` (the use cases and the ports), `ClassScribe.Infrastructure` (Windows, the vendors and the
+files) and `ClassScribe.Cli` (the menu, the command line and the hosts, whose exe is still `ClassScribe.exe`), each using
+only those named before it (see the rule of dependencies under Conventions, and Layout). During an online class it records
+whatever the laptop plays, by WASAPI loopback: the output device the class plays on, a device pinned by name, or one
 app's sound through process loopback. It can record the user's microphone beside the class, as a
 second track on the same clock, written only while the class app is listening on that microphone
 and Windows is not muting it, and mixed into the class's track at upload; or the microphone alone,
@@ -183,14 +186,81 @@ advice after a format error (10 A).
 
 - .NET 10 and C# 14, nullable on, file-scoped namespaces, primary constructors, records and
   `init` for immutable data, target-typed `new`, collection expressions, LINQ where it reads
-  well, async/await, the built-in DI container. Both projects target `net10.0-windows10.0.19041.0`
+  well, async/await, the built-in DI container. `ClassScribe.Core` and `ClassScribe.Application` are plain `net10.0`
+  (architecture 1.2): they hold nothing of Windows, which every build proves, and a Windows-only call added to them
+  without an `OperatingSystem.IsWindows()` guard gives CA1416, which the 0-warnings rule turns into a stop.
+  `ClassScribe.Infrastructure`, `ClassScribe.Cli` and the test project target `net10.0-windows10.0.19041.0`
   (teach-video 6.3; Windows 10 version 2004 or later), for Windows' camera API (WinRT: the device lists and
-  `MediaCapture`, both in 0.5.0, which holds the camera's steps 12, 1 and 13); the test project must follow or NuGet
-  refuses the reference (NU1201). NAudio still takes its
+  `MediaCapture`, both in 0.5.0, which holds the camera's steps 12, 1 and 13); a plain `net10.0` project cannot reference a
+  Windows one, since NuGet refuses the reference (NU1201), which is why the Cli and the tests follow Infrastructure and not
+  the other way round. NAudio still takes its
   `netstandard2.0` library, and CsWinRT's `ComWrappers` sits beside NAudio's and ClassScribe's built-in COM. The
   published folder grew from about 7 to 33 MB (`Microsoft.Windows.SDK.NET.dll` is 25 MB); trimming and Native AOT stay off.
   In a namespace that ends in `Windows` (`ClassScribe.Infrastructure.Audio.Windows`, `ClassScribe.Infrastructure.Desktop.Windows`
   and Infrastructure's `Camera.Windows` and `Drive.Windows`), WinRT's own namespaces need `global::Windows`.
+- The rule of dependencies (architecture 2): `ClassScribe.Cli -> ClassScribe.Infrastructure -> ClassScribe.Application ->
+  ClassScribe.Core`, each project using only the ones to its right. Core is ClassScribe's own domain (architecture 1.1): a
+  record or rule it would have whichever vendor or operating system it ran on (the timeline; the audio packets, tracks,
+  modes and snapshots; the microphone's records, looks and the gate's verdicts; the camera's frames, pieces and the camera
+  process's messages; the recording, run and request records, file naming and the WAV header; the transcript records and
+  the keyterm rules; the saved classes' records; the words for durations and sizes), with no I/O, no logging, no services
+  and no vendor's records, and `TimeProvider` as the one port it shares with everything. Application holds the use cases,
+  the services they drive, the options and the catalog, the ports and the records the ports exchange, and uses .NET's own
+  abstractions as they are: `ILogger<T>`, `IOptionsSnapshot<T>`, `IOptionsMonitor<T>` and `IServiceScopeFactory`
+  (architecture question 5: `RecordStarter` and `ScopedVideoTranscriber` open a run's scope with it). Infrastructure
+  implements the ports with Windows, files, processes, pipes and web APIs, and holds the vendors' records and protocols,
+  the JSON contexts and Refit's generated clients, and the helpers only adapters use (`WindowsCommandLine`, `ToolSearch`,
+  `ChildEnvironment`, `DeviceGuards`), `internal` where nothing outside needs them. Cli talks to the person and composes
+  the rest: it may use Infrastructure directly, as the composition root must; its menus and commands go through
+  Application's use cases and ports. A port (architecture 4.1) is an interface in Application, in the folder of the area
+  whose use cases need it, named `I...`; its adapter sits in Infrastructure under the same area name, or in Cli for the few
+  that talk to the person (`IConsoleUi`, `IUserSignals`, `IContinuePrompt`, `ICameraPrompt`, `IRecorderStatusSink`,
+  `IRunStarter`); what it takes and gives are Core records, records declared beside it in Application when they exist only
+  for it (`DriveItem`, `VideoInfo`, `StartedProcess`, `AccountReading`) or .NET's own types (`Stream`, `TimeSpan`,
+  `CancellationToken`), never an Infrastructure type; where a use case only passed a vendor's answer along, an Application
+  record replaced the vendor's DTO and the adapter maps it, and a static helper that read the disk became a member of a port.
+  The project references enforce the order (a backward reference closes a cycle and restore stops with MSB4006; a plain
+  project referencing a Windows one is refused with NU1201), and the architecture test in
+  `tests/ClassScribe.Tests/Architecture` (architecture 2.4; question 7: no analyzer package) checks what the build cannot.
+  `ArchitectureFacts` reads the four built assemblies from the test's output folder with `System.Reflection.Metadata` (the
+  assembly references, the type and member references, each method's IL), and the pure `ArchitectureRules.Check` judges
+  seven checks, each with its test in `ArchitectureTests` and planted cases in `ArchitectureRulesTests`: (1) the
+  references, Core the framework alone, Application Core and `Microsoft.Extensions.Logging.Abstractions`, `Options`,
+  `DependencyInjection.Abstractions` and `Primitives` (`ApplicationPackages`), Infrastructure never the Cli, none the
+  tests, so a package such as NAudio or Refit added to an inner project fails here; (2) banned in Core and Application:
+  `System.IO.File`, `Directory`, `FileInfo`, `DirectoryInfo`, `FileSystemInfo`, `FileStream`, `RandomAccess`, `DriveInfo`
+  and `FileSystemWatcher`, a `StreamReader` or `StreamWriter` opened by a path, every member of `Path` but the string work
+  in `AllowedPathMembers` (`Combine`, `Join`, `GetFileName`, `GetFileNameWithoutExtension`, `GetExtension`,
+  `ChangeExtension`, `HasExtension`, `GetDirectoryName`, `GetPathRoot`, `IsPathRooted`, `IsPathFullyQualified`,
+  `TrimEndingDirectorySeparator`, `EndsInDirectorySeparator`, `GetInvalidFileNameChars`, `GetInvalidPathChars` and the
+  separator fields, so `Path.Exists`, `GetFullPath`, `GetRelativePath`, `GetTempPath` and `GetTempFileName` are banned),
+  `Process` and `ProcessStartInfo`, every member of `Environment` but `NewLine`, `AppContext.BaseDirectory`, `AppDomain`,
+  a named `EventWaitHandle`, `Mutex` or `Semaphore` (the unnamed ones and `SemaphoreSlim` stay allowed), `Console`,
+  `Marshal`, any method with a P/Invoke import or type with `ComImport`, and the prefixes `Microsoft.Win32.`,
+  `System.Net.Http.`, `System.Net.HttpListener`, `System.Net.Sockets.`, `System.IO.Pipes.`, `NAudio.`, `Windows.`,
+  `Refit.`, `System.CommandLine.`, `Microsoft.Extensions.Configuration.`, `Microsoft.Extensions.Hosting.` and
+  `Microsoft.Extensions.Http.`; (3) banned in Core alone: `Microsoft.Extensions.*`, `JsonSerializer` and
+  `JsonSerializerContext`, `Thread` and `Timer`; (4) allowed in Core by not being banned: the `System.Text.Json.Serialization`
+  attributes and `JsonElement` (`RecordRequest`, `SourcePlan` and `RunRecord` keep `[JsonExtensionData]`, `ClassSource`
+  and `FollowRule` their `[JsonPolymorphic]` `kind` names, since the run files outlive versions); (5) every type sits in
+  its assembly's root namespace or below (`ClassScribe.Core`, `ClassScribe.Application`, `ClassScribe.Infrastructure`,
+  `ClassScribe.Cli`), which catches a file merged into the wrong project with its old namespace, passing over the
+  compiler's embedded attributes, Refit's generated namespaces and the exe's `Program` (`GeneratedNamespaces`); (6) the
+  four assemblies carry one informational version (`BuildInfo` reads Application's; the kit reads the exe's product
+  version, the same string); (7) the Cli assembly is named `ClassScribe` and `ProgramFiles.Dll` in Core is
+  `ClassScribe.dll`, which a recorder or camera process under dotnet starts. The allow-list `AllowedInner` gives a reason
+  for each entry, as `// Deliberately not rethrown:` does for catches; it holds one, `Environment.CurrentManagedThreadId`,
+  which the compiler's iterator state machines use. `RepositoryLayoutTests` checks the folders with
+  `Directory.EnumerateFiles` (never `git ls-files`, so it starts no process and catches an untracked file a merge left
+  behind), skipping every `bin` and `obj`: every `.cs` file under `src` sits in one of the four project folders, each of
+  them holds its project file, no glossary sits under `src`, and no project file under `src` copies one to its output.
+  `AppAssemblies.All` lists the four assemblies, innermost first, for the architecture test and for `SettingsReloadTests`'
+  guard on `IOptions<T>`, which scans all four (architecture 6.4). Namespaces follow the projects (question 3:
+  `ClassScribe.Core.Audio`, `ClassScribe.Application.Audio.Microphones`, `ClassScribe.Infrastructure.Desktop.Windows`,
+  `ClassScribe.Cli.Commands`, `ClassScribe.Cli.Hosts.Recorder`; the tests keep `ClassScribe.Tests`), and so do the log
+  categories of every `ILogger<T>` (`ClassScribe.Infrastructure.Drive.DriveClient` and the like), which no written line
+  carries: `DriveSecretsTests` matches Drive's by `.Drive.`, and the one example of a `Logging:LogLevel` entry, in the
+  settings command's help and the README, names `ClassScribe.Infrastructure.Drive`.
 - HTTP APIs are called through Refit interfaces registered with `AddRefitGeneratedClient` (Refit's
   source-generated client, given the `ElevenLabsJson` System.Text.Json context), not requests built
   by hand with `HttpClient`. Google's are `IGoogleOAuthApi` (`GoogleOAuthJson`, snake_case: token and
@@ -221,16 +291,24 @@ advice after a format error (10 A).
   name is named apart (`CommandLineTree.YouTubeCommandTree`, as `ClassCommandTree` and `SettingsCommandTree`). A Core file
   that uses `System.IO` writes `using System.IO;` itself (architecture 1.4), so the move commit alone builds.
 - No `ArgumentNullException` guards on DI-injected parameters.
-- Registration, by layer (architecture slice 3a and 5.2): each area's `<Area>Services.cs` registers what it owns of
-  Infrastructure, the options bound to their sections, the Refit clients and every adapter (`SettingsServices`,
-  `StorageServices`, `AudioServices`, `MicrophoneServices`, `CameraServices`, `TranscriptionServices`, `DriveServices`,
-  `YouTube/YouTubeServices`, `DesktopServices`, and `Recorder/RecorderServices.AddRecorderLog`), and its `<Area>UseCases.cs`
-  beside it what it owns of the use cases (`AudioUseCases`, `CameraUseCases`, `TranscriptionUseCases`, `DriveUseCases`,
-  `YouTubeUseCases`, and `Commands/CommandUseCases`, which also adds the stand-in `NoStartupReport`);
-  `ApplicationServices.AddClassScribeApplication` and `InfrastructureServices.AddClassScribeInfrastructure` call them, and
-  `ServiceCollectionExtensions.AddClassScribe` calls those, then `CommandServices` (the console, the menus, the command
-  line, `CommandOutput` with `SettingsOutput` and `ClassOutput`, the window's status sink) and last `Commands/WindowServices.cs`, the window's side of a run in
-  the background, which replaces the stand-in report. A new registration goes to the class of its type's layer, and the
+- Registration, by project (architecture 5.2): Application's `ApplicationServices.AddClassScribeApplication`
+  (`src/ClassScribe.Application/ApplicationServices.cs`) calls each area's `<Area>UseCases.cs`, beside its use cases
+  (`Audio/AudioUseCases`, `Camera/CameraUseCases`, `Transcription/TranscriptionUseCases`, `Drive/DriveUseCases`,
+  `YouTube/YouTubeUseCases` and `Commands/CommandUseCases`, which also adds the stand-in `NoStartupReport`): the use cases
+  and the services they drive, scoped or one for the process as each needs. Infrastructure's
+  `InfrastructureServices.AddClassScribeInfrastructure(configuration)` (`src/ClassScribe.Infrastructure/InfrastructureServices.cs`)
+  calls each area's `<Area>Services.cs`, beside its adapters, in this order: `Settings/SettingsServices.AddSettings(configuration)`
+  (the options bound to their sections, the check, the saved classes), `Storage/StorageServices.AddStorage`,
+  `Audio/AudioServices.AddAudio`, `Audio/Microphone/MicrophoneServices.AddMicrophone`, `Camera/CameraServices.AddCamera`,
+  `Transcription/TranscriptionServices.AddTranscription`, `Drive/DriveServices.AddDrive`, `YouTube/YouTubeServices.AddYouTube`,
+  `Desktop/DesktopServices.AddDesktop` and `Recorder/RecorderServices.AddRecorderLog`: the Refit clients and every adapter,
+  its internal types included (`LazyLoopbackCaptureProvider`, `LazyMicrophoneProvider`, `ProcessFamily`,
+  `NativeProcessTree`), so Cli needs no access to Infrastructure's internals. Cli's
+  `ServiceCollectionExtensions.AddClassScribe(configuration)` (`src/ClassScribe.Cli/ServiceCollectionExtensions.cs`) adds
+  `TimeProvider.System`, then Application, then Infrastructure, then `Commands/CommandServices.AddCommands` (the console,
+  the menus, the command line, `CommandOutput` with `SettingsOutput` and `ClassOutput`, the window's status sink) and last
+  `Commands/WindowServices.AddWindow`, the window's side of a run in the background, which replaces the stand-in report. A
+  new registration goes to the registration class of its type's project and area, and the
   order of a service's registrations is kept, since a later Add of the same service wins (the split of slice 3a was
   checked against a dump of every descriptor). The ports of slice 3b1 are registered beside their adapters, by
   Infrastructure's own area: `IClassFolders` and `IClassMarks` as the same singletons as `ClassFolders` and `ClassMarks`,
@@ -269,8 +347,8 @@ advice after a format error (10 A).
   the key alone: no appsettings.json, no environment source, no console logger, scopes validated but
   not the whole container. There is no `Link/LinkServices.cs`: the view makes its own client, the
   server is the recorder host's.
-- Every start of a recording is a `RecordRequest` with a `StartOrigin` (`Runs/Requests.cs`),
-  through `IRunStarter.RecordAsync` (`Runs/IRunStarter.cs`, the one call `ICommandRunner` extends and `CommandRunner`
+- Every start of a recording is a `RecordRequest` with a `StartOrigin` (`src/ClassScribe.Core/Runs/Requests.cs`),
+  through `IRunStarter.RecordAsync` (`src/ClassScribe.Application/Runs/IRunStarter.cs`, the one call `ICommandRunner` extends and `CommandRunner`
   answers) to `IRecordStarter` in a scope of its own; `ICommandRunner` no longer has `RecordAsync(string, bool)`. Run ids are made only by `RunIds.New` and checked with
   `RunIds.IsWellFormed` (`ProcessArguments.IsRunId` is the same rule) before they name a file, a
   pipe, an event or a command line. Run and request files go through `RecorderJson`, which writes
@@ -289,7 +367,7 @@ advice after a format error (10 A).
   enum value reaches a run file. `StartOrigin.VideoBatch` (never stored) is a batch's start of one of
   its videos: a new recording without a question, its run shown as the batch's own, another run
   explained, never shown.
-- The link (`Link/`): one named pipe per run, `ClassScribe-<run id>` (`LinkProtocol.PipeNameFor`),
+- The link (`src/ClassScribe.Infrastructure/Link`): one named pipe per run, `ClassScribe-<run id>` (`LinkProtocol.PipeNameFor`),
   `CurrentUserOnly`, the first instance, up to 4 windows, lines of UTF-8 JSON of at most 64 KB; the
   server never logs, waits or raises events inside its `RecorderLog.Written` handler, and drops a
   stalled window on the thread pool. `RecorderLog` (the adapter of `IRunLog`; `Written`, `Since` and
@@ -299,7 +377,17 @@ advice after a format error (10 A).
 - No sound, ever: never write BEL anywhere; terminal sequences end with ST (`ESC \`). The session
   window (`SessionWindow`) keeps its title `ClassScribe`, which Windows' shutdown screen shows;
   `ShutdownBlockReasonCreate`, `Destroy` and `Query` run only on the window's own thread.
-- Settings in code: singletons read `IOptionsMonitor<T>.CurrentValue` each time they use it
+- Settings in code: the options classes (`RecordingOptions`, `ElevenLabsOptions`, `TranscriptOptions` and `YouTubeOptions`
+  in `src/ClassScribe.Application/Settings`, `DriveOptions` in `src/ClassScribe.Application/Drive`), plain classes with
+  defaults, and the catalog that reflects over them and does no I/O (`SettingsCatalog` with `SettingKey` and `SettingKind`,
+  `DefaultSettings`, `DefaultChanges`, `ClassChoices`, and a settings file as the use cases see it: `SettingsText`,
+  `SettingsOrigin`, `SettingsVerdict`, `SettingsEdit`, and `SettingsDocument`, the tree the writer changes) are
+  Application's, behind the ports `ISettingsStore`, `IStagedSettings`, `ISavedClasses` and `IOutputFolderFacts`; binding
+  them to their sections (`SettingsServices.AddSettings`), checking them (`SettingsCheck`, which reflects over every options
+  type), and reading, staging and writing the files (`SettingsPlaces`, `SettingsFile`, `CheckedSettingsSource`,
+  `SettingsReloader`, `StagedSettings`, `SettingsWriter`, `SettingsStore`, `SavedClasses`, `OutputFolderFacts`,
+  `ApiKeyFromEnvironment` and `SettingPaths`, whose `Expanded` expands environment variables) are Infrastructure's, in
+  `src/ClassScribe.Infrastructure/Settings`. Singletons read `IOptionsMonitor<T>.CurrentValue` each time they use it
   (`ClassFolders`, `TranscriptFormatter`, `SourceChoice`, the Refit client's `ConfigureHttpClient`);
   per-run services, scoped or transient (the commands, `TranscriptionWorkflow`, `GlossaryChoice`, `ElevenLabsClient`,
   `RecordingSession`, `TrackSetFactory`, `MicrophoneAdvice`, `MicrophoneMenu`, `RecordingMonitor`,
@@ -316,7 +404,10 @@ advice after a format error (10 A).
   `PublishDocumentationFile` is off). Keep the build at 0 warnings. A `using` line nothing needs is a warning too
   (IDE0005, from the root `.editorconfig`, run in the build through `EnforceCodeStyleInBuild`), so each file keeps only
   the `using` lines it needs. The compiler does not check private or internal members, so check those yourself; a local
-  function cannot take a summary (CS1587), so give it a `//` comment.
+  function cannot take a summary (CS1587), so give it a `//` comment. The same `src\Directory.Build.props` sets
+  `InternalsVisibleTo` once, for all four projects (architecture 1.4 and 6.2): `ClassScribe.Tests` sees every project's
+  internals (the COM and P/Invoke declarations it drives through fakes, the constructors that take those fakes, the helpers
+  only the adapters use), and no project sees another's; no `[assembly: InternalsVisibleTo]` line is in the code.
 - Errors: log at each layer with the existing logger; rethrow with `throw;` (never `throw ex;`);
   never swallow exceptions. Google Drive's parts throw `GoogleDriveException` (a `DriveProblem` and a
   message in plain words that says what to do, never a secret) and log the details at Debug; the
@@ -363,7 +454,7 @@ advice after a format error (10 A).
   the command line, said with the others).
 - Windows audio objects: the device check (`WasapiLoopbackCaptureProvider`'s two listings, once a
   second for the whole class) goes through ClassScribe's own declarations in
-  `Audio/Windows/CoreAudioInterop.cs` and releases every COM object it receives in a `finally` block
+  `src/ClassScribe.Infrastructure/Audio/Windows/CoreAudioInterop.cs` and releases every COM object it receives in a `finally` block
   (`CoreAudio.Release`). Never make Windows' device enumerator with `new` of a `[ComImport]` class or
   through a cached wrapper; use `CoreAudio.CreateEnumerator`. Windows hands out one enumerator per
   process, and a second wrapper type for it makes NAudio's `new MMDeviceEnumerator()` throw
@@ -411,7 +502,7 @@ advice after a format error (10 A).
   `ManualTimeProvider.Advance` moves both clocks and `StepWallClock` only the time of day; a test that
   checks that nothing happened yet reads `UntilNextTimer` (the limit still to come) or waits for
   `TimersMade` to grow (the code's next wait), never a fixed delay.
-- The QPC timeline (`Audio/Timeline`, design section 3): a packet carries the performance-counter
+- The QPC timeline (`src/ClassScribe.Core/Audio/Timeline`, design section 3): a packet carries the performance-counter
   stamp of its first frame in 100-ns units (`AudioDataEventArgs.Qpc100ns`, null when Windows flags
   `TimestampError`, which places it by its arrival). `MediaTime` converts without overflow,
   `RecordingClock` is one per run (origin at the first packet of any track, the offset when
@@ -899,78 +990,8 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   `mic-check --seconds 1`, a download batch of two videos over `FakeToolRunner`, `StubHttpHandler` and
   `GoogleWorld`, and a batch of two videos recorded as they play through the real `RecorderHost`
   (the window's settings point `YouTube:OEmbedBaseUrl` at the stub; the recorder gets
-  `FakeVideoWindows` and a `VideoPlayback` over the test's processes). Nothing is played or recorded. The suite had 887 tests at the end of
-  increment 1, 2,134 at the end of increment 2, 2,822 at the end of increment 3, 2,893 after the
-  cost line and the Bluetooth warning, with the review's fixes, 3,046 after the Google Drive
-  sign-in, 3,111 after the course and date folders, 3,270 after the uploads and free-space,
-  3,333 after the uploads by themselves, and 3,357 after the review's fixes to them (a recording
-  queued again during its upload, a folder moved or deleted by hand, a done recording asked for
-  again, a grown log whose copy is gone or trashed, a manifest that cannot be written, the recordings
-  folder with a kept answer at its top, choice 4 on a freed class, the queue counted without a class
-  being recorded, the real `%LOCALAPPDATA%\ClassScribe` refused in tests), 3,370 after a false
-  start stopped taking its date folder. From there two branches grew apart: the dry-run kit (step 0a)
-  reached 3,387, and 3,395 after the review's fixes to it (the refusal while a run waits for its
-  report, the prune by heartbeat, the run files and log lines made by the app's own writers, the
-  windows left open named, the stand-in tied to the script; its 25 tests take about 10 seconds, and
-  its 3 Explicit `DryRunKit` tests about half a minute); YouTube reached 3,670 after its slice 1 (the
-  download path), 3,819 after slice 2 (recording as it plays), and 3,875 after the review's repairs
-  to them. With both merged into `develop` (step 0) the count is 3,900, all passing, in about
-  three minutes; 3,901 with 0.4.0's microphone timing fix, and 3,960 with the Zoom fix (step 0b)
-  merged on 22 October. From YouTube's 3,875 the camera's basics grew on `feature/camera-basics` to
-  4,001 (camera-first step 11 without the probe's parts: the target framework, the device guard, the
-  camera list, its settings, the camera check, the camera's choice and refusal, and the camera
-  process's role), 4,012 after the review's fixes to them (a camera job or line without a body, a
-  tool start that throws, and the tests that pin the microphone guard's wiring and the camera start's
-  order and registration), and 4,068 after the camera's shared open (the probe fix's order), the
-  camera process's hold and check jobs, the webcam hold, the webcam zeros rules and the camera
-  check's open after a typed Y, and 4,095 with the fixes that keep a camera failure from the
-  microphone and pin the camera's rules; merged into `develop` on 22 October, 4,180. From the
-  camera's basics, the camera recorded grew on `feature/camera-record` to 4,194 (slice 7: `ClockState`,
-  the pieces' files, the record job and the sink writer, the camera track, the run's camera, its soak
-  and the end-to-end lesson), and 4,218 after the review's ten fixes to it; merged into `develop` on
-  22 October, 4,303. From the camera's basics at 4,012 (`2b64a66`), settings and saved classes grew on
-  `feature/settings-classes` to 4,228 (the build shown everywhere, the user's own settings folder, the
-  writer and its full copy, `settings` and `class`, `record --class`, `--output` optional, the
-  recording that drops refused settings, menus C and S, the folder warnings), and 4,245 at its head
-  (the review's fixes and the soak's check by its stamps). Merged into `develop` on 22 October, with
-  `Recording:CameraOffsets` made a map of the catalog, the count is 4,538, all passing (4,542 at
-  `af7be41`). From there the lesson's video
-  (step 13, slice 8) grew on `feature/lesson-video` to 4,651, all passing, in about four minutes, and its review's fixes
-  (free-space and a video still to be made, a remade video as a revision, the rename guard, pieces in no video kept, the
-  wording once a transcript is saved, the camera's restart race) to 4,667, all passing. From `af7be41` the glossary out of
-  the app (architecture slice 1) grew on `feature/glossary-out` to 4,610, all passing, with 4 Explicit `DryRunKit` tests
-  (one a whole dry run with a named glossary), and on with its review's repairs; rebased on `develop` with the lesson's
-  video, the count is 4,751, all passing, in about four minutes. The vendors' values in the settings
-  (architecture slice 2, `feature/vendor-settings`) bring it to 4,849, and the review's repairs to them
-  (a recording the held safety stop ended still sent, the file limit's wiring proved, the sign-in page
-  without a query, a kept upload's version named) to 4,880, all passing; the cuts of architecture slice 3a
-  (`feature/layers-cut`: every file one layer's types, the run's contracts in `Runs`, the constants and helpers moved
-  inward with tests of their new homes) bring it to 4,914; the ports of the recording's files and storage of slice 3b1
-  (`feature/layers-storage`: `IClassFolders`, `IRecordingFolder`, `ITranscriptCopies`, `IClassMarks`, `IMicCheckLog`,
-  `ITrackWriterFactory`, `IAudioFileFacts`, `ITranscriptAnswers`, `IFileProbe`'s new checks and `IAudioCapture.Processing`,
-  each with its contract test over the real adapter in a temporary folder) bring it to 4,939; the ports of runs of slice
-  3b2 (`feature/layers-runs`: `IRuntimeFolder`, `IRecordingLock`, `IRunJournal` with `IRunHandle` and `IRunLog`, each with
-  its contract test over the real adapter in a temporary folder, in `RecorderPortTests`) bring it to 4,949; the ports of
-  settings and classes of slice 3b3 (`feature/layers-settings`: `ISettingsStore` with `IStagedSettings`, and `ISavedClasses`,
-  each with its contract test over the real adapter in temporary folders, in `SettingsPortTests`) bring it to 4,957; the ports
-  of the program and the prompts of slice 3b4 (`feature/layers-program`: `IThisProgram`, `IContinuePrompt`, `ICameraPrompt`
-  and `IRunStarter`, each with its contract test over the real adapter, in `ProgramPortTests` and `PromptPortTests`) bring
-  it to 4,966, and stop point S3's fixes (the recorder's log left to its host, the start-up log's last lines for a count of
-  0 or less, a class's glossary path worked out only for the JSON forms) to 4,969; the ports of Drive, YouTube and the
-  camera of slice 3c (`feature/layers-vendors`: `IGoogleDrive`, `IGoogleAccount`, `IGoogleClientFiles`, `IUploadManifests`,
-  `IDriveUploadLock`, `IVideoTool`, `IVideoTitles`, `IVideoIndex`, `IVideoSources`, `IDownloadedAudio`, `IVideoWindowOpener`,
-  `IToolLocator`, `IYouTubeLock`, `IYouTubeFolders`, `ICameraLink` and `IWebcamHolds`, each with its contract test over the
-  real adapter in a temporary folder or the existing fakes, in `DrivePortTests`, `YouTubePortTests` and `CameraPortTests`)
-  bring it to 4,990, and stop point S4's fixes (`IFileProbe.Describe`, one look at a file for `RecordingUpload.IsKnownInSync`;
-  the loopback answer's contract pinned on both sides; in `FileProbeTests`, `RecordingUploadTests`, `LoopbackReceiverTests`
-  and `GoogleSignInTests`) to 4,994, all passing, and 5,056 after 0.5.0's merge-back and the review's fixes (the records
-  and the tests' guard on the recordings folder, the camera's, and the lesson's video's, merged into `develop` on
-  5 November), all passing. The move of architecture slice 4 (`feature/layers-move`: the source in four projects, every
-  file an exact rename, then each project's namespaces given its name) adds the trial move's architecture tests
-  (`ArchitectureTests` with its seven checks, check 5 on the namespaces among them; `ArchitectureRulesTests`;
-  `RepositoryLayoutTests`' checks of the four project folders; the move script, its map `move-map.tsv` and the namespace
-  script are in `design\final\architecture-analysis\move`), which makes 5,136, all passing, and 5,141 with the kit's
-  tests of the launcher's functions and of the project file of either layout (slice 4's step 4). The uploads by
+  `FakeVideoWindows` and a `VideoPlayback` over the test's processes). Nothing is played or recorded. The suite holds
+  5,141 tests after the move into four projects (architecture slices 4 and 5), all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -1006,17 +1027,8 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
-  four minutes (2 min 9 s for 3,357 tests on 17 October 2026, 2 min 16 s for 3,387 on 20 October,
-  2 min 17 s for 3,395 later that day, 3 min 55 s for YouTube's 3,875 on 18 October, 3 min 7 s for
-  3,900 with both merged on 22 October, 2 min 55 s for 3,960 with the Zoom fix, 3 min 4 s for 4,180
-  with the camera's basics, 3 min 34 s for 4,303 with the camera recorded, 3 min 32 s for 4,538 with
-  settings and saved classes, 4 min 20 s for 4,751 with the lesson's video and the glossary out of the
-  app on 28 October, 4 min 21 s for 4,849 with the vendors' values the same day, 4 min 28 s for 4,880
-  with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
-  4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, 4 min 24 s for 4,966 with slice 3b4's,
-  4 min 27 s for 4,969 with stop point S3's fixes, 4 min 28 s for 4,990 with slice 3c's ports, 4 min 27 s for 4,994 with
-  stop point S4's fixes, 4 min 23 s for 5,056 after 0.5.0's merge-back and the review's fixes on 5 November, plus the
-  build).
+  four and a half minutes (4 min 33 s for 5,141 tests after the move into four projects, architecture slices 4
+  and 5, on 6 November 2026, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -2112,12 +2124,35 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
 
 ## Layout
 
-Since architecture slice 3a (`feature/layers-cut`), every file holds one layer's types (Core, Application,
-Infrastructure or Cli, as `architecture.md` section 3 places them): where this section names a file with the types it
-declares, a type of another layer may now have a file of its own beside it, in the same folder and namespace, named
-after its main type. `design\final\layers-cut-map.md` (beside the design, outside the repository) lists every such
-move, the members moved inward (`Sizes`, `FolderNames`, `WavHeader`, `Room`, `RunTimings`, `LinkVersion`,
-`ProgramFiles`, `RunView.IsRunOf`) and the visibility changed; slice 5 rewrites this section for the four projects.
+The source is four projects under `src` (architecture 1.1 and 1.3; the move is slice 4, `feature/layers-move`: every moved
+file an exact rename along `design\final\architecture-analysis\move\move-map.tsv`, then each project's namespaces given
+its name): `ClassScribe.Core` (`ClassScribe.Core.dll`, plain `net10.0`, no package), `ClassScribe.Application`
+(`ClassScribe.Application.dll`, plain `net10.0`; `Microsoft.Extensions.Logging.Abstractions`, `Options` and
+`DependencyInjection.Abstractions`), `ClassScribe.Infrastructure` (`ClassScribe.Infrastructure.dll`,
+`net10.0-windows10.0.19041.0`; `NAudio.Core` and `NAudio.Wasapi`, `Refit.HttpClientFactory`, the configuration, HTTP,
+console logging and options binding packages, and `System.Security.Cryptography.ProtectedData`) and `ClassScribe.Cli`
+(`ClassScribe.exe` and `ClassScribe.dll`: its `AssemblyName` is `ClassScribe`; `net10.0-windows10.0.19041.0`;
+`Microsoft.Extensions.Hosting` and `System.CommandLine`). Each area keeps its folder name inside each project, and its
+namespace is the project's name followed by the folder (`src/ClassScribe.Core/Audio/Timeline` is
+`ClassScribe.Core.Audio.Timeline`), so a path given by its area alone elsewhere in this file
+(`Audio/Windows/CoreAudioInterop.cs`, `Desktop/DeviceGuards.cs`, `Drive/DriveServices.cs`) is under the project this
+section places that file in. The four share `src/Directory.Build.props` (the `<Version>` line, nullable, implicit usings,
+`SatelliteResourceLanguages`, `GenerateDocumentationFile` with `PublishDocumentationFile` off, `EnforceCodeStyleInBuild`,
+and the one `InternalsVisibleTo` for `ClassScribe.Tests`; it lives in `src`, not at the repository's root, so that
+`tools/dry-run/TestPlayer` and the file-based `ElevenLabsStub.cs`, which would read a root props file too, stay as they
+are), the root `.editorconfig` (IDE0005 as a warning) and `ClassScribe.sln` (the four projects under its `src` solution
+folder, the tests under `tests`). Core and Application take back the implicit `System.Net.Http` using, and Core `System.IO`
+too, so a file there that reaches for a file or the network shows its own `using` line. The Cli project sets
+`PublishReferencesDocumentationFiles` false, so no XML file is published, and copies `appsettings.json` to its output
+(`PreserveNewest`). The old `src/ClassScribe` folder is gone: a worktree that checks out the move from an older commit
+keeps its ignored `bin` and `obj` there, which `RepositoryLayoutTests` skips.
+
+Since architecture slice 3a (`feature/layers-cut`), every file holds one layer's types (Core, Application, Infrastructure or
+Cli, as `architecture.md` section 3 places them), which the move then put into the project of that layer: where this
+section names a file with the types it declares, a type of another layer has a file of its own, in the same area folder of
+its own project, named after its main type. `design\final\layers-cut-map.md` (beside the design, outside the repository)
+lists every such move, the members moved inward (`Sizes`, `FolderNames`, `WavHeader`, `Room`, `RunTimings`, `LinkVersion`,
+`ProgramFiles`, `RunView.IsRunOf`) and the visibility changed.
 Slice 3b1 (`feature/layers-storage`) put the recording's files and storage behind ports, interfaces in Application whose
 adapters are the classes that held the code (architecture 4): `IClassFolders` over `ClassFolders` (its disk statics stay
 static for Infrastructure's own callers and are the port's members too, implemented explicitly over them), `IRecordingFolder`
@@ -2155,21 +2190,21 @@ in a scope of the run's own, and `VideoBatch` takes. `IServiceScopeFactory` stay
 call and each constructor that takes a port.
 Slice 3c (`feature/layers-vendors`) put Drive, YouTube and the camera behind ports the same way, and ran the trial move
 (architecture 11.6; `design\final\trial-move.md`, with the move and namespace scripts and the architecture tests in
-`design\final\architecture-analysis\trial`, for slice 4 to commit). Drive (`Drive`): `IGoogleDrive` (with `DriveItem` and
-`DriveAccount`, Google's answers mapped: the account, an item, a folder's children, the root and the path, `SendAsync` for
-one file) over the thin adapter `GoogleDrive`, which forwards to `DriveClient`, `DriveFolders` and `ResumableUpload`;
-`IGoogleAccount` (with `GoogleAnswer`: the sign-in's exchange and revoke, `Seed`, `Forget`, `NotSetUp`, `NotSignedIn`) over
-`GoogleTokens`, whose `SendFormAsync`, `Parse` and `Describe` stay internal; `IGoogleClientFiles` (`Read(path)`) over
-`GoogleClientFile`, an instance now; `IUploadManifests` (its `OnDisk` explicit over the kept static) and `IDriveUploadLock`;
-the disk calls of `RecordingUpload`, `LocalAudioFreer` and `DriveCopies` through `IRecordingFolder` (`FilesOf`,
-`OpenToRead`, `Delete`, `IsUploadCopyInUse`) and `IFileProbe` (with `Describe`, one look at a file's length and last write,
-for `RecordingUpload.IsKnownInSync`, so that a file deleted between two looks is not in sync rather than an error);
-`ILoopbackRequest.AnswerAsync` passes a browser that has gone over or throws an `IOException` (the listener's adapter wraps
-its `HttpListenerException`) or an `ObjectDisposedException`, never the listener's own type, which `LoopbackReceiverTests`
-and `GoogleSignInTests` (`BrowserPlay.ClosesTheTab`) pin. YouTube (`YouTube`): `IVideoTool` (with `VideoInfo`,
-`ListedPlaylist`, `ListedVideo`: `CheckAsync`, the `ToolCall`s `ReadPlaylist`, `ReadVideo` and `Download`, `Playlist`,
-`HasInfo`, `ReadInfoAsync`, `StagedWav`, `Classify`) over `YtDlpTool`, scoped, which holds `YtDlpCheck`'s paths and builds
-and checks every argument list through `YtDlpArguments` as before, while the batch still runs the tool through
+`design\final\architecture-analysis\trial`, which slice 4 committed from its copy in `...\move`). Drive (`Drive`):
+`IGoogleDrive` (with `DriveItem` and `DriveAccount`, Google's answers mapped: the account, an item, a folder's children,
+the root and the path, `SendAsync` for one file) over the thin adapter `GoogleDrive`, which forwards to `DriveClient`,
+`DriveFolders` and `ResumableUpload`; `IGoogleAccount` (with `GoogleAnswer`: the sign-in's exchange and revoke, `Seed`,
+`Forget`, `NotSetUp`, `NotSignedIn`) over `GoogleTokens`, whose `SendFormAsync`, `Parse` and `Describe` stay internal;
+`IGoogleClientFiles` (`Read(path)`) over `GoogleClientFile`, an instance now; `IUploadManifests` (its `OnDisk` explicit over
+the kept static) and `IDriveUploadLock`; the disk calls of `RecordingUpload`, `LocalAudioFreer` and `DriveCopies` through
+`IRecordingFolder` (`FilesOf`, `OpenToRead`, `Delete`, `IsUploadCopyInUse`) and `IFileProbe` (with `Describe`, one look at a
+file's length and last write, for `RecordingUpload.IsKnownInSync`, so that a file deleted between two looks is not in sync
+rather than an error); `ILoopbackRequest.AnswerAsync` passes a browser that has gone over or throws an `IOException` (the
+listener's adapter wraps its `HttpListenerException`) or an `ObjectDisposedException`, never the listener's own type, which
+`LoopbackReceiverTests` and `GoogleSignInTests` (`BrowserPlay.ClosesTheTab`) pin. YouTube (`YouTube`): `IVideoTool` (with
+`VideoInfo`, `ListedPlaylist`, `ListedVideo`: `CheckAsync`, the `ToolCall`s `ReadPlaylist`, `ReadVideo` and `Download`,
+`Playlist`, `HasInfo`, `ReadInfoAsync`, `StagedWav`, `Classify`) over `YtDlpTool`, scoped, which holds `YtDlpCheck`'s paths
+and builds and checks every argument list through `YtDlpArguments` as before, while the batch still runs the tool through
 `IToolRunner`; `IVideoTitles` over `OEmbedTitles`; `IVideoIndex` (the index itself, scoped: `Read(root, logger)`, `Judge`,
 `Of`) over `VideoIndex`; `IVideoSources` over `VideoSourceFile`'s statics; `IDownloadedAudio`; `IVideoWindowOpener` over
 `VideoWindow`; `IToolLocator` (`FindBrowser`, `BrowserVersionOf`, `BrowserNotFound`) over `BrowserLocator`; `IYouTubeLock`;
@@ -2181,264 +2216,435 @@ and `ReceiveAsync`) over `CameraLink`, an adapter over `CameraLines` and a `Line
 `Lazy<DriveClient>` became `Lazy<IGoogleDrive>`. `design\final\layers-vendors-map.md` lists each member's old and new call,
 each constructor that takes a port, and what the trial move made the one-project tree change (its section 6).
 
-- `src/ClassScribe`: `Program.cs` (the console set to UTF-16, a start-up failure printed plainly,
-  the close prompt), `AppHost` (builds the host: the checked settings source and a first checked
-  read, the key from the environment, the plain log format, scopes and registrations validated),
-  `App` (the command line, with the gate before each command), `ServiceCollectionExtensions` (calls
-  `ApplicationServices` and `InfrastructureServices`, which call each area's `<Area>UseCases.cs` and `<Area>Services.cs`,
-  then `CommandServices` and `WindowServices`), `Durations` (with `Hours`), `Sizes` (the sizes in Google One's units),
-  `PlainConsoleFormatter`.
-- `src/ClassScribe/Settings`: the options classes (`YouTubeOptions` among them, with `IsChannel` and
-  `Expanded`), `ApiKeyFromEnvironment`, `SettingsCheck` (types, enums, ranges and paths, lists, the
-  Logging section, the warnings, keyed problems for the recording's drop), `OutputFolderFacts` (the
-  folders' facts the warnings use), the places (`SettingsPlaces`: the user's folder, the program's,
-  the marker, the Missing state), the reload (`SettingsFile`, `CheckedSettingsSource`,
-  `SettingsReloader`, `StagedSettings`), the writer (`SettingsWriter`, `SettingsDocument`,
-  `SettingsCatalog`, `DefaultChanges`), the ports of slice 3b3 (`ISettingsStore` with `IStagedSettings`, which
-  `StagedSettings` implements, and `SettingsStore`, the thin adapter over the places, the file, the reloader and the
-  writer; `ISavedClasses`, which `SavedClasses` implements), the saved classes (`SavedClasses`, `ClassChoices`; the check of
-  a class is `SavedClass.Check`) and `SettingsServices`.
-- `src/ClassScribe/Desktop`: keeping the laptop awake (`IPowerRequests`, `IPowerSource` and
-  `StayAwake`, all in `IPowerRequests.cs`), the computer's clocks (`ISystemTimes`), the window's
-  title, taskbar and flash (`IWindowSignals`, `TitleText`, `WindowStatusSink`), starting processes
-  (`IProcessStarter`), the job check (`IJobInspector`), Windows' end of the session
-  (`ISessionEvents`), the registry read only (`IRegistryValues`, HKEY_CURRENT_USER, for the
-  microphone advice), the program behind a process id (`IProcessNames`, a limited query) and
-  ClassScribe's own processes (`IOwnProcesses`, by pid and by `ProgramFiles.Name`; `ProgramFiles` names the program, its exe and its dll),
-  this program as the process that runs it (`IThisProgram`: its path, the folder of its files, this process's id and
-  start; the record `ThisProgram` in `Desktop/Windows` is the adapter); for YouTube,
-  `IRegistryValues.ReadLocalMachineString` (the machine's PATH, Chrome's App Paths), `IFileProbe` (a
-  file or a folder there, when a file was last written, how long it is, its full path, a program's version: the checks the
-  commands make with `File`, `Directory` and `Path.GetFullPath`), `ChildEnvironment.WithoutTheKey`, `IProcessStarter.StartBrowser`,
-  `IVideoWindows` (a process's Chrome windows: titles and `WM_CLOSE`) and `IProcessFamily`
-  (`ProcessFamily`, a process's tree by pid and start time over `IProcessTree`);
-  `Desktop/Windows` holds the Windows calls, `MicrophoneUsageRecord` (the ConsentStore key: which
-  apps used the microphone and when) among them, `ChromeWindows` (`EnumWindows` by process, class
-  `Chrome_WidgetWin_1`, `GetWindowTextW`, `WM_CLOSE`; refused in tests) and `ToolProcesses.cs` (the
-  tool and browser start on `NativeProcessCreationApi`: environment block, handle list, suspended
-  start into `ToolJob`; any program but `cmd.exe` refused in tests). `DesktopServices` registers them,
-  the usage record, the process names, the own processes, `IProcessFamily`, `IVideoWindows`, the desktop, the exit and
-  crash warnings, the process starter and the job inspector; `FreezeWatch` goes with a run's use cases (`CommandUseCases`).
-- `src/ClassScribe/Recorder`: the separate recorder, with the ports of runs (Application, architecture 3.9 and 4.3, beside
-  `IProcessLiveness` and `IVideoYield`): `RecorderHost.cs` (`RecorderStart` and
-  `RecorderHost`: the recorder process from the request to the end, with `IsRecorderStart` for
-  `Program`), `RuntimeFolder` (`%LOCALAPPDATA%\ClassScribe`; the `IRuntimeFolder`), `RecordingLock` (the `IRecordingLock`),
-  `RunJournal` with `RunView` and `RunHandle` (the `IRunJournal` and `IRunHandle`: run and request files, `MarkSeen`,
-  `MarkSeenIfOver`, prune; the port's `Begin` is explicit over the adapter's, which gives a `RunHandle`),
-  `RunRecord.cs` (run file, request file, `RunEndCause`, the video causes among them), `RecorderJson`,
-  `ProcessLiveness`, `StopSignal` (with the yield event: `YieldPrefix`, `ListenForYield`, `TrySetYield`,
-  `YieldNameFor`, and `IVideoYield` with `WindowsVideoYield`), `RecorderLog.cs` (`LogEntry` and `RecorderLog`, the `IRunLog`:
-  the ring of 20,000 lines, `Written`, the files, and `LastStartupLines`, the start-up log's last lines a window reads;
-  `IRunLog.StartupFileName` is `recorder.log`) and `RecorderLogProvider`, `LinkConsoleUi` (the windows' keys as the recorder's
-  console), `LinkStatusSink` (states to the windows and the alerts, repeated once a second),
-  `RecorderResultShower`, `UnattendedAlerts` (the minimized window brought back by itself; a window
-  that left with Esc counts as no close) and `FreezeWatch`.
-- `src/ClassScribe/Link`: one named pipe per run (`LinkProtocol`, `LinkTypes` and `LinkKeys` in
-  `LinkMessages.cs`, `LineChannel`, `RecorderServer`, `RecorderClient`); messages are lines of JSON
-  (`LinkJson`), and a field added to a record that travels on it needs a default.
-- `src/ClassScribe/Audio`: capture (`Windows/` holds the WASAPI code), `RecordingSession` (which
-  also declares `TrackSpec` and `TrackPlacement`, places `ClockAligned` tracks through
-  `Audio/Timeline`, holds packets for a gate, pads to the clock on its own one-second timer, and
-  reports `Off`, `OnlyZeros` and `Corrections`), WAV writing (each packet goes to Windows at once;
-  the header is rewritten and flushed to disk every `Recording:FlushSeconds`), upload preparation
-  (`AudioPreparer`, `UploadTracks`: the microphone's track mixed in); `RecordingMode`, `Track`,
-  `IRecording` (the recording a run drives, and its factory), `ICaptureSource` and `LoopbackSource`
-  (what the computer plays, through `CaptureChooser`, which follows the run's `ClassSource`),
-  `ClassRecording` (an `IRecording` over one session of the class alone), `TrackSet.cs` (`TrackSet`:
-  the class and the microphone on one clock, or the microphone in person; owns the gate and the
-  watch; `MicrophoneTrack`, and `MicrophoneProviderTap`, the provider as a recording sees it, noting
-  each capture opened with the processing it reports through `IAudioCapture.Processing`), `TrackSetFactory.cs` (the
-  registered `IRecordingFactory`: the recording per mode, and which app is followed), `SourceChoice` (the picks of menu
-  choices 6 and 7, or the settings, as a `SourcePlan`), `ITrackWriterFactory.cs` (`ITrackWriterFactory` and `ITrackWriter`:
-  the write path a recording session reaches the disk by, its folder, next part, delete and length) with
-  `WavTrackWriterFactory` over `WavSegmentWriter`, an `ITrackWriter`, and `IAudioFileFacts.cs` with `AudioFileFacts` (a WAV
-  file's length from its header). `AudioServices.cs` holds `LazyLoopbackCaptureProvider`:
-  `ILoopbackCaptureProvider` is made on first use, so the app, `transcribe`, `rebuild` and `list`
-  never touch Windows audio, and `Lazy<ILoopbackCaptureProvider>` (for `devices`) resolves the
-  registered provider.
-- `src/ClassScribe/Audio/Timeline`: the QPC timeline of design section 3: `MediaTime` (positions in
-  100-ns units, conversions without overflow), `RecordingClock` (origin, offset, pauses and cuts,
-  positions, the paused and cut totals, `Snapshot()`), `ClockState` (the clock's whole state, immutable, placing by the
-  clock's own code; `ClockExclusion`) and `TrackPlacer` (where a packet goes on a track, the
-  padding target, the drift corrections).
-- `Audio/Microphone` in each project (the namespaces `ClassScribe.Core.Audio.Microphones`,
-  `ClassScribe.Application.Audio.Microphones` and `ClassScribe.Infrastructure.Audio.Microphones`, plural on purpose: a
-  `Microphone` namespace would hide the `Microphone` record): `Microphone.cs` (the contracts:
-  `Microphone`, `IMicrophoneProvider`, `IMicrophoneCaptureFactory`, `MicrophoneProcessing`,
-  `ClassAppMute`, `FollowRule` with `TryParse`, `Word` and `Named.Matches`, `MicrophoneGateState`),
-  `MicrophoneChooser.cs` (which microphone, pinned by id), `MicrophoneAdvice.cs` (the start lines,
-  the echo check, the Vantage poll; `MicrophoneStart`), `MicrophoneSource.cs` (the microphone as a
-  capture source: chooser plus provider, `Picked`, `FollowApp`), `MicrophoneWatch.cs`
-  (`ClassMicrophoneWatch`, `WatchLook`, and the readers' contracts `IMicrophoneSessions`,
-  `MicrophoneListings`, `MicrophoneSessionListing`, `CaptureSession`, `IMicrophoneUsageRecord`,
-  `UsageRecordListing`, `UsageEntry`), `MicrophoneGate.cs` (`MicrophoneGate`, `IPacketGate`,
-  `GateVerdict`, `GateSummary`), `MicrophoneChangeTracker.cs` (the check's lines, `MicCheckLine`)
-  `BluetoothMicrophoneWatch.cs` (the class app on a Bluetooth microphone, registered scoped in
-  `AudioUseCases` beside the advice) and `MicrophoneServices.cs` (`AddMicrophone`, called from
-  `InfrastructureServices.AddClassScribeInfrastructure`: the capture factory `MicrophoneActivation`, the provider behind
-  `LazyMicrophoneProvider`, the sessions reader, and the `Lazy<>`s for `devices`).
-- `src/ClassScribe/Camera` (namespace `ClassScribe.Camera`; teach-video section 6 and camera-first step 11, built to the
-  part that needs no probe): `CameraDevice.cs` (`CameraDevice`, `CameraPlace`, `CameraPanel`, `VideoDeviceFacts`,
-  `CameraList`, `ICameraProvider`, and `Cameras`: the list's rules, colour cameras only, so Windows Hello's infrared camera
-  never shows, built in by the enclosure panel first since a laptop's own camera sits on an internal USB bus too, then USB
-  or virtual by the id; `Choose`, a name part first, virtual ones included, else USB, else the built-in front camera,
-  never a virtual one unnamed; `CameraOf` and `MicrophoneOf`, a webcam's microphone by the container it shares with its
-  camera, never a built-in camera and never by the computer's own container `Cameras.ThisComputer`; `WebcamOf`, never a
-  virtual camera either, for the hold and the zeros rules), `CameraRoute.cs` (the shared open and its call log),
-  `CameraThread.cs`, `CameraJobs.cs` (the hold and check jobs, `CameraProblems`), `CameraRecordJob.cs` (the record job),
-  `CameraFinishJob.cs` (the finish job: the lesson's video), `LessonVideo.cs` (`VideoSourceFacts`, `LessonVideoPlan`,
-  `LessonVideoCheck`, `ILessonVideoMedia`), `LessonVideoMaker.cs` (the starter's side of the finish job),
-  `CameraPieces.cs` (`PieceSettings`, `IPieceWriter`, `IPieceWriterFactory`, `ICameraFrame`, `CameraPicture`,
-  `FramePlacer`, `FrameQueue`), `CameraRecorder.cs` (`ICameraRecorder`, `CameraRecorder`, `ICameraTrack`,
-  `CameraTrackStart`, `CameraTrackState`, `CameraConcern`, `CameraOffsets`, `CameraRecorderNotBuilt`), `CameraTrack.cs`
-  (the recorder's side of a lesson's picture), `ICameraLink.cs` (`ICameraLink`, `CameraLine`: the camera process's lines
-  as the use cases speak them) with `CameraLink.cs` (the adapter over `CameraLines` and a `LineChannel`), `IWebcamHolds.cs`
-  (`IWebcamHolds`, `IWebcamHold`) with `WebcamHold.cs` (`WebcamHold`,
-  `WebcamHolds`, `WebcamState`), `Windows/WindowsCameraCapture.cs` (the real MediaCapture),
-  `Windows/WindowsCameraFrame.cs` (a frame's pixels copied out, `MemoryBufferBytes`), `Windows/MediaFoundationPieceWriter.cs`
-  (the piece writer and its factory, `VideoGuids`, `FileStreamAsIStream`),
-  `Windows/MediaFoundationLessonVideo.cs` (the lesson video's media work, `H264Pictures`, `LessonVideoGuids`),
-  `Windows/WindowsCameraProvider.cs` (WinRT's `DeviceInformation.FindAllAsync` with `System.Devices.ContainerId` and
-  `MediaFrameSourceGroup.FindAllAsync`, which open nothing; Windows older than 10.0.19041 and a list Windows will not give,
-  whatever exception WinRT maps its HRESULT to, answer with a `CameraList` that says why, and only the caller's own cancel
-  is thrown; an internal constructor takes a stand-in read, `WindowsCameraProviderFailureTests`) and `CameraServices`
-  (`AddCamera`, after `AddMicrophone`). The microphone's
-  container is read by `EndpointFacts` (`PropertyKeys.ContainerId`, PKEY_Device_ContainerId) and carried as
-  `Microphone.ContainerId`, a last field with a default. `devices` lists the cameras after the microphones. The fakes are
-  `LaptopCameras` and `FakeCameraProvider` (`TestDoubles.Camera.cs`); the real list is the category `WindowsCamera`
-  (`WindowsCameraProviderTests`, run with the suite, listing only, no light).
-- `src/ClassScribe/Audio/Windows`: `CoreAudioInterop.cs` holds ClassScribe's own Core Audio
-  declarations (the property store and its readers, `PropertyKeys`, `EndpointFormFactor`, the
-  endpoint volume and session interfaces) and `CoreAudio` (`CreateEnumerator`, `OpenPropertyStore`,
-  `Check`, `Release`): the device check and the microphone listing go through them, and NAudio does
-  the notifications, the output device names and the captures. `WasapiAudioCapture.cs` is the one
-  capture class for devices, apps and microphones (`ForOutputDevice`, `ForApp`, `ForMicrophone`;
-  the capture thread is "ClassScribe capture" or "ClassScribe microphone"; packets through an
-  internal `IPacketSource` seam, stamped with their QPC position); `AudioClient2Interop.cs`
-  (ClassScribe's `IAudioClient2`) and `MicrophoneActivation.cs` (the microphone capture factory and
-  Windows' activator, RAW with the fallback); `WasapiMicrophoneProvider.cs` (the microphone listing,
-  notifications, mute) and `EndpointFacts.cs` (what a capture endpoint's property store says: the
-  array, Bluetooth and loopback rules); `WasapiMicrophoneSessions.cs` (the sessions and mute per
-  capture endpoint, with `IAudioSessionControl2WholeRaw`); `WasapiLoopbackCaptureProvider.cs`,
-  `ProcessLoopback.cs` and `CaptureGapWatch.cs` as before.
-- `src/ClassScribe/Transcription`: ElevenLabs client (a Refit interface plus `ElevenLabsClient`
-  around it), the shared answer parser (`ElevenLabsAnswer`, the `ITranscriptAnswers` of the saved answers), the upload's
-  time limit (`UploadTimeLimit`, pure: the audio's length comes from `IAudioFileFacts`), what one file holds (`TranscriptionLimits`), the glossary (`KeytermRules` and `KeytermLimits`, `IGlossaryFiles` and
-  `GlossaryFiles` with `GlossaryJson`, `GlossaryRecord`, and `GlossaryChoice` with `GlossaryPick` and
-  `GlossaryUse`), transcript formatter, workflow (rebuild included),
-  `TranscriptionProgress` (scoped: the workflow and the client report preparing, uploading at a
-  percent and waiting; `RecordCommand` shows it as UPLOADING 40% and writes it into the run file's
-  heartbeat, which the menu header and `list` read), and what a transcript cost: `TranscriptionCost`
-  (the estimate), `ElevenLabsAccount.cs` (`IElevenLabsAccount`, `AccountReading`, the reader of
-  `GET /v1/user/subscription`) and `UsageReport` (scoped: the read before the upload and the line after;
-  `Describe` for a YouTube plan, `Charged` and `UsageCharge` for its projection), and `MarkdownText`
-  (a video's title escaped for the transcript).
-- `src/ClassScribe/Drive`: Google Drive (design `drive.md`, slices 1 to 3): `DriveOptions` (with `DriveUploadScope`),
-  `IGoogleOAuthApi.cs` and `IDriveApi.cs` (the Refit interfaces, `DriveApiSettings`), `GoogleJson.cs`
-  (`GoogleOAuthJson`, `DriveJson`, `DriveStoreJson` and their records, which print no token),
-  `GoogleDriveException.cs` (`DriveProblem`), `GoogleClientFile.cs` (`GoogleClient`, the import) with its port
-  `IGoogleClientFiles.cs`, `Pkce`, `ILoopbackReceiver.cs` and `Windows/HttpListenerLoopbackReceiver.cs`, `IBrowser.cs`
-  (`ShellBrowser`), `GoogleCredentialStore.cs` (`GoogleCredentials`, `StoredCredentials`,
-  `IGoogleCredentialStore`, `DpapiGoogleCredentialStore`), `GoogleTokens.cs` (`GoogleTokenCache`,
-  `GoogleTokens`) with its port `IGoogleAccount.cs` (`IGoogleAccount`, `GoogleAnswer`), `DriveClient` (the calls, the 401
-  renewal, Google's refusals in words and kinds, `PieceAnswer`), `DriveFolders` (the root folder and the levels under it,
-  `DriveFolderPath`), `IGoogleDrive.cs` (`IGoogleDrive`, `DriveItem`, `DriveAccount`) with `GoogleDrive` (the adapter over
-  `DriveClient`, `DriveFolders` and `ResumableUpload`), `GoogleSignIn` (`SignedIn`, `SignOutOutcome`), and the uploads:
-  `DriveRetry`, `PieceContent`, `ResumableUpload.cs` (`UploadAddress`, `UploadSource`, `UploadTarget`, `IUploadWatch`,
-  `ResumableUpload`), `UploadManifest.cs` (`UploadState`, `UploadSession`, `ManifestFile`,
-  `UploadManifest`, `UploadJson`, `UploadManifests`) with `IUploadManifests.cs`, `DriveUploadLock` with `IDriveUploadLock.cs`,
-  `RecordingUpload`
-  (`RecordingOutcome`, `RecordingUploadResult`), `DriveUploadPass` (`PassResult`),
-  `LocalAudioFreer` (`FreedAudio`), `LessonVideoDrive` (whether a lesson's video goes to Drive, the start line),
-  `DriveCopies` (the `IAudioOnDrive` of `Storage`),
-  `DriveAutoUpload.cs` (`IDriveAutoUpload`, `DriveAutoUpload`: the queue at a run's start and the
-  upload after it, and after a transcript made later), `DriveQueueReport.cs` (`DriveWaiting`,
-  `DriveQueueReport`: the menu's header line and the report's), `DriveRoom.cs` (`IDriveRoom`,
-  `DriveRoom`, `DriveSpace`: Drive's room from the about call, `ReadAsync` for a YouTube plan, null with `Drive:Enabled`
-  off, and `ReadForUploadAsync` before a lesson's video goes up, whatever `Drive:Enabled` says; both null when not set up,
-  signed out or Drive out of reach), and `DriveServices` (`AddDrive`, Google's clients and the
-  adapters, called from `InfrastructureServices` after the transcription's) with `DriveUseCases` (`AddDriveUseCases`, the
-  use cases, called from `ApplicationServices`).
-- `src/ClassScribe/YouTube` (registered by `YouTubeServices.AddYouTube`, its adapters, and `YouTubeUseCases.AddYouTubeUseCases`,
-  its use cases): shared parts `YouTubeLink.cs`
-  (`YouTubeLink`, `YouTubeLinkKind`, `LinkReading`, `YouTubeLinks`), `LinkWord.cs`, `LinkList.cs`
-  (`LinkListReading`, `LinkList`), `VideoSource.cs` (`VideoPlaylist`, `VideoSource`), `VideoSourceFile.cs` (`YouTubeJson`,
-  `VideoSourceFile`) with its port `IVideoSources.cs`, `YouTubeFolders` with `IYouTubeFolders.cs`, `YouTubeGuards`,
-  `YouTubeLock` with `IYouTubeLock.cs`, `YouTubeRequest.cs`
-  (`YouTubeRequest`, `BatchConfirmation`), `YouTubeBatch.cs` (`YouTubeBatch`, `BatchKeys`),
-  `BatchPace.cs` (`IBatchPace`, `BatchPace`, `ClassWait`), `PastVideo.cs` (`PastVideo`, `PastKind`, `PastVerdict`),
-  `VideoIndex.cs` (`VideoIndex`) with `IVideoIndex.cs`, `VideoTranscripts.cs` (`VideoToTranscribe`, `IVideoTranscriber`,
-  `ScopedVideoTranscriber`, `VideoTranscriptRun`, `TranscriptOutcome`, `BatchTranscripts`) and
-  `TranscriptionRuns.cs` (`TranscriptionRuns`, `TranscriptionRun`); the download path `IVideoTool.cs` (`IVideoTool`,
-  `VideoInfo`, `ListedPlaylist`, `ListedVideo`) with `YtDlpTool` (the adapter over `YtDlpCheck`, `YtDlpArguments`,
-  `YtDlpRead` and `YtDlpErrors`), `IToolLocator.cs`, `ToolPaths.cs`, `ToolLocator.cs`
-  (`ToolSearch`, `ToolLocator`), `IToolRunner.cs` (`ToolCall`, `ToolLine`, `ToolResult`,
-  `IToolRunner`), `WindowsCommandLine.cs`, `ProcessToolRunner`, `YtDlpArguments`, `YtDlpRead.cs`
-  (`YtDlpInfo`, `YtDlpPlaylist`, `YtDlpRead` and their JSON context), `DownloadFailure.cs`
-  (`DownloadFailureKind`, `DownloadFailure`), `YtDlpErrors.cs` (`YtDlpErrors`), `ToolCheck.cs`, `YtDlpCheck.cs` (`YtDlpCheck`),
-  `DownloadGuard.cs` (`GuardVerdictKind`, `GuardVerdict`, `DownloadGuard`), `DownloadPlan.cs`
-  (`BatchVideo`, `PlanRoom`, `DownloadPlan`), `IncompleteAudioException.cs`, `DownloadedAudio.cs`
-  (`ConversionNote`, `DownloadedAudio`) with `IDownloadedAudio.cs`, and `DownloadBatch`; the record path `BrowserLocator`
-  (the `IToolLocator` of the browser's search), `VideoTitle.cs`, `OEmbedTitles.cs` (`IYouTubeOEmbedApi`, `OEmbedAnswer`,
-  `OEmbedTitles`, `YouTubeHostGuard`) with `IVideoTitles.cs`, `OpenedWindow.cs` (`OpenedWindow`, `WindowOpening`),
-  `VideoTitles.cs`, `VideoWindow.cs` (`VideoWindow`) with `IVideoWindowOpener.cs`, `VideoPlayback`, `VideoEnds.cs`
-  (`VideoEnds`, `VideoWindowClosedException`) and `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`).
-- `src/ClassScribe/Storage`: class folders under the output folder (`ClassFolders`, the `IClassFolders` of the use cases: course and date folders, the old flat layout read too; `CreateRecordingIn` and `IsVideo` for YouTube; `TrackLength`, `FilesIn` and `FoldersIn` for the use cases), recording file names (`RecordingFiles`: both
-  tracks, and a lesson's camera pieces, `CameraPieceFile`) with what is on disk of a recording (`IRecordingFolder`, `RecordingFolder`), numbered transcript copies (`ITranscriptCopies`, `TranscriptCopies`, never overwritten), marks (`IClassMarks`, `ClassMarks`; `ClassMark.PartsIn`), the
-  microphone check's log file (`IMicCheckLog` and `IMicCheckLogFile`, `MicCheckLog` and `MicCheckLogFile`: the header, the cost line, flushed per line), and
-  `RoamingFolder` (`%APPDATA%\ClassScribe`, where `google-drive.dat` is kept; tests give a temporary one),
-  and `IAudioOnDrive.cs` (`AudioOnDrive`, `IAudioOnDrive`, `NoAudioOnDrive`: what the lists and commands
-  know of audio kept on Drive alone; `ClassFolders` takes it as an optional last argument).
-- `src/ClassScribe/Runs` (namespace `ClassScribe.Runs`, out of `Commands` in slice 3a): the run's contracts, which
-  every area describes a run with: `Requests.cs` (`RecordRequest`, `SourcePlan`, `ClassSource`, `MicrophoneChoice`,
-  `CameraChoice`, `VideoRequest`, `ContinueChoice`, `StartOrigin`, `RunIds`), `RecorderState.cs` (`RecorderState`,
-  `RecorderPhase`, `Attention`, `MicrophoneState`, `CameraState`) and `IRecorderStatusSink.cs`, `StarterContracts.cs`
-  (`IRunViewer`, `IRecordStarter`, `IRecordRun`, `IStartupReport`, `NoStartupReport`, `IResultShower`), the ports of slice
-  3b4 that the window answers (`IContinuePrompt.cs` with `ContinueAnswer`, `ICameraPrompt.cs` with `NothingStarted`, and
-  `IRunStarter.cs`: `ContinueQuestion`, `CameraStart` and `CommandRunner` implement them),
-  `ViewResult.cs` (`ViewMode`, `ViewEnd`, `ViewResult`), `StartupChoice.cs` (`StartupAction`, `StartupChoice`),
-  `RunTimings` (the heartbeat's interval, and `KeepSeenRunsFor`, how long a seen run's file is kept) and `LinkVersion` (the link's version, which `LinkProtocol.Version` names
-  and every run file records). `RunRecord.cs` and `RunView` stay in `Recorder` until the move.
-- `src/ClassScribe/Commands`: the menu, the command line (`CommandLineTree` on System.CommandLine,
-  with `CommandLineTree.Settings.cs` and `CommandLineTree.Classes.cs`; `App`, `CommandLine`, over `IThisProgram`, for the
-  commands printed for later), `settings` (`SettingsCommand`, `SettingsRequest`, `SettingsAnswer`,
-  `SettingRow`) and `class` (`ClassCommand`, `ClassRequest`, `ClassAnswer`, `ClassShown`), the use cases, which answer with
-  data that the window's `SettingsOutput` and `ClassOutput` write on `CommandOutput` as text or JSON (architecture
-  question 4), menus C (`ClassesMenu`) and S
-  (`SettingsMenu`), the `record` run (`RecordCommand` as the
-  `IRecordRun` in either home, `RecordingLoop` for the keys, states and heartbeat, `RecordingMonitor`
-  for the once-a-second checks, `RunBookkeeping.cs` for the lock, the run file, the recording's log,
-  keep-awake and the end handlers, with `RunContext`, `RunContextSlot` and `ICrashWarnings`,
-  `WindowResultShower`), the starter (`RecordStarter`, `RecorderLauncher`, and the window's prompts `ContinueQuestion` and
-  `CameraStart`, the `IContinuePrompt` and `ICameraPrompt` of `Runs`), the
-  view of a background run (`RecorderView`, `AttachCommand`), the report at the start
-  (`StartupReport`, with `LessonRuns` for a lesson's video), `transcribe`, `rebuild`, `finish-video`
-  (`FinishVideoCommand`), `list` and `devices` (output devices, apps with sound,
-  then the microphones with which apps hold them, from `Lazy<IMicrophoneProvider>` and
-  `Lazy<IMicrophoneSessions>`), `MicrophoneMenu.cs` (menu choice 7: W, I or N, the microphone, the
-  follow question), `MicCheckCommand.cs` (the microphone check's loop), `YouTubeCommand.cs`
-  (`YouTubeCommand`) and `YouTubeMenu.cs` (`YouTubeMenu` for menu choice Y, `YouTubeMenuMemory`), `VideoEndWatch.cs`
-  (internal: how a video's recording ends by itself, for `RecordingMonitor`), Google Drive's commands
-  (`DriveMenu`, menu choice 9; `DriveCommand`, `drive signin`, `signout` and `status`;
-  `DriveUploadCommand`, `drive upload` and `drive free-space`, and what a path names), the gate
-  (`RunGate`), the console and desktop abstractions, the name prompt, the close prompt and the exit
-  warnings, `CommandUseCases.cs` (the registration of the commands' use cases), and `CommandServices.cs` and
-  `WindowServices.cs` (the registration of the window's side). `RecordingMonitor.cs` also declares
-  `MicrophoneWords` and `MicrophoneChecks` (the microphone's checks beside the class's); `IMicrophoneRecording` (what a
-  recording with the microphone tells the run beyond its snapshot) and `ICameraRecording`, which `TrackSet` implements,
-  are in `Audio/IMicrophoneRecording.cs`; `IMicCheckRun.cs` declares `MicCheckRequest` and the `IMicCheckRun` seam. Each command runs in
-  its own DI scope (`ICommandRunner`: record through `IRecordStarter`, attach through
-  `AttachCommand`, list, devices, the microphone menu and the check through their commands;
-  `TranscribeAsync` refuses a recording a live run records or transcribes). A start from the window
-  the recorder opened by itself is `StartOrigin.AutoContinueFromAlert`: shown with the keys locked,
-  never recorded in that window, never marked seen.
-- `src/ClassScribe/Desktop/Windows`: `ProcessStarter` (`CreateProcessW` behind `IProcessCreationApi`),
-  `JobInspector` (`IsProcessInJob` and `QueryInformationJobObject` behind `IJobApi`),
-  `SessionWindow` (with `IShutdownReasonApi`), `ConsoleWindowSignals` (`IConsoleWindowApi`:
-  `WindowsTerminalVariableSet`, `ClassOf`, `HasTaskbarButton`), `TaskbarList` (`ITaskbarList3`
-  declared with `ITaskbarList`'s and `ITaskbarList2`'s methods first, since COM interop ignores
-  interface inheritance), `WindowFinder` (`NativeProcessTree`), `WindowsPowerRequests` and
-  `WindowsSystemTimes`.
+- `src/ClassScribe.Core` (namespace `ClassScribe.Core`; architecture 1.1: ClassScribe's own domain, with nothing of
+  Windows, the vendors, the disk or the services; what it may not use is checks 2 and 3 of the architecture test, and what
+  it keeps of System.Text.Json is check 4). At its root `Durations` (with `Hours`) and `Sizes` (the sizes in Google One's
+  units, `Sizes.Describe`), the words for durations and sizes ClassScribe prints everywhere.
+  - `Core/Audio`: the audio packets, tracks, modes and snapshots: `AudioDataEventArgs.cs` (`AudioDataEventArgs` with
+    `Qpc100ns`, `CaptureStoppedEventArgs`, `PacketFlags`), `AudioFormat`, `PcmConverter`, `MicrophoneOpened`,
+    `OutputDevice.cs` (`OutputDevice`, `CaptureTarget`, `PlayingApp`, `PlayingAppsListing` with its `UnreadAudioSession`s),
+    `RecordingMode`, `Track`, `TrackSpec.cs` (`TrackSpec`, `Contiguous` or `ClockAligned`, and `TrackPlacement`),
+    `RecordingResult.cs` (`RecordingResult`, `RecordingStatus` with `SinceLastPacket`, `DeliversContinuously`,
+    `RecordedLevel` and `HeardSound`), `RecordingSnapshot.cs` (`RecordingSnapshot`, `RecordingSummary`, `TimelineNote`,
+    `TrackSnapshot` with `HeardSound`), `SourceWording`, `UploadTracks.cs` (`UploadTracks`, the tracks the upload copy is
+    mixed from, and `NoAudioException`) and `WavHeader` (the header ClassScribe writes: its size and its parse from bytes;
+    `AudioFileFacts` reads a file's length through it).
+  - `Core/Audio/Timeline`: the QPC timeline of design section 3: `MediaTime` (positions in 100-ns units, conversions
+    without overflow), `RecordingClock` (origin, offset, pauses and cuts, positions, the paused and cut totals,
+    `Snapshot()`), `ClockState.cs` (`ClockState`, the clock's whole state, immutable, placing by the clock's own code, which
+    the camera process places a lesson's frames by; `ClockExclusion`) and `TrackPlacer.cs` (`TrackPlacer`: where a packet
+    goes on a track, the padding target, the drift corrections; `Placement`, `PlacementKind`). Moved as they were: nothing
+    in them looks outside.
+  - `Core/Audio/Microphone` (namespace `ClassScribe.Core.Audio.Microphones`, plural on purpose, in each of the three
+    projects that have the folder: a `Microphone` namespace would hide the `Microphone` record): the microphone's records,
+    looks and the gate's verdicts: `Microphone.cs` (`Microphone`, with `ContainerId`, a last field with a default, read by
+    `EndpointFacts` and carried for a webcam's microphone; `MicrophoneProcessing`; `ClassAppMute`; `FollowRule` with
+    `TryParse`, `Word` and `Named.Matches`, and its `[JsonPolymorphic]` `kind` names; `MicrophoneGateState`),
+    `CaptureSession.cs` (the readers' listings: `CaptureSession`, `CaptureSessionState`, `MicrophoneListings`,
+    `MicrophoneSessionListing`, `UnreadCaptureSession`, `AppListening`, `MicrophoneRoles`), `UsageRecordListing.cs`
+    (`UsageRecordListing`, `UsageEntry`), `WatchLook`, `GateVerdict.cs` (`GateVerdict`, `GateSummary`, `IPacketGate`),
+    `MicCheckLine` (the check's lines), `MicrophoneAdviceLine.cs` (`MicrophoneAdviceLine`, `MicrophoneStart`),
+    `MicrophonePick` and `BluetoothMicrophoneLook.cs` (`BluetoothMicrophoneLook`, `BluetoothMicrophoneUse`).
+  - `Core/Camera` (teach-video section 6 and camera-first step 11): the camera's frames, pieces and the camera process's
+    messages: `CameraDevice.cs` (`CameraDevice`, `CameraPlace`, `CameraPanel`, `VideoDeviceFacts`, `CameraList`, and
+    `Cameras`: the list's rules, colour cameras only, so Windows Hello's infrared camera never shows, built in by the
+    enclosure panel first since a laptop's own camera sits on an internal USB bus too, then USB or virtual by the id;
+    `Choose`, a name part first, virtual ones included, else USB, else the built-in front camera, never a virtual one
+    unnamed; `CameraOf` and `MicrophoneOf`, a webcam's microphone by the container it shares with its camera, never a
+    built-in camera and never by the computer's own container `Cameras.ThisComputer`; `WebcamOf`, never a virtual camera
+    either, for the hold and the zeros rules), `CameraPieces.cs` (`PieceSettings`, `ICameraFrame`, moved here by hand since
+    it only describes a frame, its stamp, its size and a copy of its pixels, which Windows' frame implements in
+    Infrastructure; `CameraPicture`, `FramePlacer`, `FrameQueue`, `FrameFate`, `FramePlacement`, `FrameRefusal`,
+    `QueuedFrame`), `CameraProtocol.cs` (the camera process's lines: `CameraProtocol` with `IsCameraProcessStart`, which
+    `Program` asks; `CameraJob`, `CameraJobKind`, `CameraOpened`, `CameraProgress`, `CameraProblem`, `CameraProblemKind`,
+    `CameraPiece`, `CameraStop`, `CameraStatus`, `CameraLog`, `CameraMade`, `CameraFailed`, `CameraEmpty`),
+    `CameraSetupLine.cs` (`CameraSetupLine`, `CameraSetupState`), `CameraSize`, `CameraTrackStart.cs` (`CameraTrackStart`,
+    `CameraTrackState`, `CameraConcern`, `CameraOffsets`, `CameraNotBuiltException`), `LessonVideo.cs` (`VideoSourceFacts`,
+    `LessonVideoPlan`, `LessonVideoCheck`, `LessonVideoSource`, `PlannedSlice`) and `LessonVideoResult.cs`
+    (`LessonVideoResult`, `LessonVideoOutcome`).
+  - `Core/Desktop`: `ProcessArguments` (the `--recorder` and `--camera-process` rule, the same as `RunIds`'; `IsRunId`)
+    and `ProgramFiles` (`Name`, `Exe`, `Dll`: the program, its exe and its dll, the same however it was started; check 7
+    of the architecture test ties `Dll` to the Cli assembly's name, since a recorder or camera process under dotnet starts
+    it; `IOwnProcesses` finds ClassScribe's processes by `ProgramFiles.Name`).
+  - `Core/Recorder`: `RunRecord.cs` (run file, request file: `RunRecord`, `RunRequestFile`, `RunState`, `RunHome`,
+    `RunOutcome`, `OutcomeKind`, `RunEndCause`, the video causes among them), `RunView` (a run as the window, the report at
+    the start and the kit read it: `IsRunOf`, `IsVideo`, `NeedsReport`) and `Freeze` (a time when ClassScribe did not run:
+    the laptop slept, or Windows held it up).
+  - `Core/Runs` (namespace `ClassScribe.Core.Runs`, out of `Commands` in slice 3a): the run's contracts, which every area
+    describes a run with: `Requests.cs` (`RecordRequest`, `SourcePlan`, `ClassSource`, `MicrophoneChoice`, `CameraChoice`,
+    `VideoRequest`, `ContinueChoice`, `StartOrigin`, `RunIds`; `RecordRequest`, `SourcePlan` and `RunRecord` keep
+    `[JsonExtensionData]`, `ClassSource` its `kind` names), `RecorderState.cs` (`RecorderState`, `RecorderPhase`,
+    `Attention`, `AttentionLevel`, `MicrophoneState`, `CameraState`), `ViewResult.cs` (`ViewMode`, `ViewEnd`,
+    `ViewResult`), `StartupChoice.cs` (`StartupAction`, `StartupChoice`), `RunTimings` (the heartbeat's interval, and
+    `KeepSeenRunsFor`, how long a seen run's file is kept) and `LinkVersion` (the link's version, which
+    `LinkProtocol.Version` names and every run file records).
+  - `Core/Settings`: `SavedClass.cs` (`SavedClass`, `SavedClassEntry`, `ClassFields`; the check of a class is
+    `SavedClass.Check`) and `SettingsProblem` (keyed problems, for the recording's drop of refused settings).
+  - `Core/Storage`: `RecordingFiles` (the naming alone: both tracks, `_partN`, `.mic.wav`, `.marks.txt`, `.log`, `.md`,
+    `.json`, `.upload.wav`, `.unread.json`, `.source.json`, `.glossary.json`, `.mp4`, a lesson's camera pieces, and
+    `TryParse`), `CameraPieceFile`, `ClassMark` (a mark or note of `.marks.txt`; `ClassMark.PartsIn` counts the parts),
+    `AudioOnDrive` (what is known of a recording's audio kept on Drive alone), `FolderNames` (the recordings' folders as
+    pure rules: a name made safe for a Windows folder, the date folders of a course, `2026-10-17` and `2026-10-17 (2)`, and
+    the folder of the microphone check's logs; nothing here reads the disk) and `RecordedClass.cs` (`RecordedClass`, a
+    recording as the lists see it, with `OnDrive` and `Video`; `ContinueCandidate`; `LessonVideoState`).
+  - `Core/Transcription`: the transcript records and the glossary's rules: `TranscriptionResult.cs` (`TranscriptionResult`,
+    `TranscriptWord`), `TranscriptFiles.cs` (`TranscriptFiles`, `RecordingTooLongException`), `ChargedAnswer`,
+    `CostEstimate`, `UsageCharge`, `MarkdownText` (a video's title escaped for the transcript), `KeytermRules.cs`
+    (`KeytermRules`, `KeytermLimits`, `KeytermList`, `SkippedKeyterm`: one term per line, `#` for comments, the limits and
+    what is skipped), `GlossaryRecord.cs` (`GlossaryRecord`, what `<base>.glossary.json` holds, `GlossaryDecision`,
+    `GlossarySent`) and `GlossaryPick.cs` (`GlossaryPick`, the glossary a run or a transcript takes before it is read, which
+    `RecordRequest.Glossary` carries to the recorder; `GlossaryUse`).
+  - `Core/YouTube`: `VideoSource.cs` (`VideoPlaylist`, `VideoSource`: what a video's recording keeps beside it in
+    `<base>.source.json`, which the transcript formatter and the recordings' library read like any recording's files).
+- `src/ClassScribe.Application` (namespace `ClassScribe.Application`): the use cases, the services they drive, the options
+  and the catalog, the ports and the records the ports exchange. At its root `ApplicationServices`
+  (`AddClassScribeApplication`: each area's `<Area>UseCases`, see Conventions) and `BuildInfo` (the version and commit from
+  its own assembly's informational version, the same in all four: the menu's header, `--version`, the run files, the logs,
+  the microphone check's log and the link's hello and welcome name the build through it, so that a window and a recorder
+  of different builds can be told apart).
+  - `Application/Audio`: `RecordingSession` (one track's capture: it places `ClockAligned` tracks through Core's
+    `Audio/Timeline`, holds packets for a gate, pads to the clock on its own one-second timer, reports `Off`, `OnlyZeros` and
+    `Corrections`, and reaches the disk only through `ITrackWriterFactory`), `IRecording.cs` (`IRecording`, the recording a
+    run drives, and `IRecordingFactory`), `ICaptureSource` and `LoopbackSource` (what the computer plays, through
+    `CaptureChooser`, which follows the run's `ClassSource`, and `ChooseVideo` for a video window), `ClassRecording.cs`
+    (`ClassRecording`, an `IRecording` over one session of the class alone, and `ClassRecordingFactory`), `TrackSet.cs`
+    (`TrackSet`: the class and the microphone on one clock, or the microphone in person; owns the gate and the watch;
+    `MicrophoneTrack`, and `MicrophoneProviderTap`, the provider as a recording sees it, noting each capture opened with the
+    processing it reports through `IAudioCapture.Processing`), `TrackSetFactory.cs` (the registered `IRecordingFactory`: the
+    recording per mode, and which app is followed), `SourceChoice` (the picks of menu choices 6 and 7, or the settings, as a
+    `SourcePlan`), `AudioFailures` (`IsFailedResult`, `CallKey`, `Describe`), the ports `IAudioCapture.cs` (`IAudioCapture`
+    with `Processing`, `ILoopbackCaptureProvider`), `IAudioPreparer`, `ITrackWriterFactory.cs` (`ITrackWriterFactory` and
+    `ITrackWriter`: the write path a recording session reaches the disk by, its folder, next part, delete and length),
+    `IAudioFileFacts` (a WAV file's length from its header), `IMicrophoneRecording.cs` (`IMicrophoneRecording`, what a
+    recording with the microphone tells the run beyond its snapshot, and `ICameraRecording`, which `TrackSet` implements)
+    and `AudioUseCases` (`AddAudioUseCases`).
+  - `Application/Audio/Microphone` (namespace `ClassScribe.Application.Audio.Microphones`): `IMicrophoneProvider.cs` (the
+    contracts `IMicrophoneProvider` and `IMicrophoneCaptureFactory`), `MicrophoneChooser.cs` (which microphone, pinned by
+    id), `MicrophoneAdvice.cs` (the start lines, the echo check, the Vantage poll), `MicrophoneSource.cs` (the microphone
+    as a capture source: chooser plus provider, `Picked`, `FollowApp`), `MicrophoneWatch.cs` (`ClassMicrophoneWatch`, and
+    the readers' contracts `IMicrophoneSessions` and `IMicrophoneUsageRecord`), `MicrophoneGate.cs` (`MicrophoneGate`,
+    pure but for its logger, which is why it is here and not in Core), `MicrophoneChangeTracker.cs` (the check's lines)
+    and `BluetoothMicrophoneWatch.cs` (the class app on a Bluetooth microphone, registered scoped in `AudioUseCases`
+    beside the advice).
+  - `Application/Camera`: `ICameraProvider.cs` (`ICameraProvider`, `CameraListing`), `CameraRoute.cs` (the shared open and
+    its call log: `CameraRoute`, `CameraCall`, `CameraCallLog`, `CameraCallFailedException`, `CameraFormats`,
+    `CameraHresults`, an HRESULT in words with its name where known for certain, `CameraOpening`, and the ports `ICameraCapture` and
+    `ICameraCaptureFactory`), `CameraProblems` (what a camera process says when a camera cannot be opened: the kind, and
+    the cause in words, for the route and for the camera process's jobs), `CameraProcess.cs` (`ICameraProcess` with `Link`, `ICameraProcessStarter`), `CameraSetup.cs`
+    (`CameraSetupFacts`, `ICameraSystem`, `ICameraUsageRecord`: Windows' record of which apps used a camera, with its
+    privacy switches), `CameraRecorder.cs` (`ICameraRecorder`, `CameraRecorder`, `ICameraTrack`, `CameraRecorderNotBuilt`),
+    `CameraTrack.cs` (the recorder's side of a lesson's picture; `NextFreePieceStart` asks `IFileProbe`), `ICameraLink.cs`
+    (`ICameraLink`, `CameraLine`: the camera process's lines as the use cases speak them), `IWebcamHolds.cs`
+    (`IWebcamHolds`, `IWebcamHold`), `IPieceWriter.cs` (`IPieceWriter`, `IPieceWriterFactory`), `LessonVideoMaker.cs` (the
+    starter's side of the finish job: one path for the recorder after a lesson, `finish-video`, menu choice 3's V and the
+    report's V, with `ProgressLimit` against a stuck video), `WebcamState` and `CameraUseCases` (`AddCameraUseCases`).
+  - `Application/Commands`: the use cases of the commands, and the ports of the person and the desktop: the `record` run
+    (`RecordCommand` as the `IRecordRun` in either home, `RecordingLoop` for the keys, states and heartbeat,
+    `RecordingMonitor.cs` for the once-a-second checks, which also declares `MonitorContext`, `MonitorTick`,
+    `MicrophoneWords` and `MicrophoneChecks`, the microphone's checks beside the class's, `VideoEndWatch.cs`, internal: how
+    a video's recording ends by itself, for `RecordingMonitor`, `RunBookkeeping.cs` for the lock, the run file, the
+    recording's log, keep-awake and the end handlers, with `RunContext`, `RunContextSlot` and `ICrashWarnings`,
+    `WindowResultShower`), the starter (`RecordStarter`, `RecorderLauncher.cs` with `LaunchResult` and `RunHomeChoice`),
+    `transcribe` (`TranscribeCommand`, `TranscribeRequest`), `rebuild`, `finish-video` (`FinishVideoCommand`,
+    `FinishVideoRequest`), `list`, `devices` (output devices, apps with sound, then the microphones with which apps hold
+    them, from `Lazy<IMicrophoneProvider>` and `Lazy<IMicrophoneSessions>`, then the cameras), `MicCheckCommand.cs` (the
+    microphone check's loop) with `IMicCheckRun.cs` (`MicCheckRequest` and the `IMicCheckRun` seam), `CameraCheckCommand`
+    (`CameraCheckRequest`) and `CameraDecision`, Google Drive's commands (`DriveCommand`: `drive signin`, `signout` and
+    `status`; `DriveUploadCommand`: `drive upload` and `drive free-space`, and what a path names), `YouTubeCommand`,
+    `settings` (`SettingsCommand`, `SettingsRequest`, `SettingsAnswer`, `SettingRow`, `SettingSource`) and `class`
+    (`ClassCommand`, `ClassRequest`, `ClassAnswer`, `ClassShown`), the use cases, which answer with data that the window's
+    `SettingsOutput` and `ClassOutput` write on `CommandOutput` as text or JSON (architecture question 4), `CommandLine`
+    (a class, one for the process, over `IThisProgram`, for the commands printed for later), `LessonRuns` (the report's
+    lesson video), `Sentence.cs` (`Sentence`, `LocalTime`), the ports `IConsoleUi`, `IUserSignals`, `IDesktop.cs`
+    (`IDesktop`, `DesktopExtensions`) and `IExitWarnings`, and `CommandUseCases.cs` (`AddCommandUseCases`, which also adds
+    `FreezeWatch` with a run's use cases, `CommandLine` as a singleton and the stand-in `NoStartupReport`).
+  - `Application/Desktop`: the desktop's ports and the records they exchange: keeping the laptop awake
+    (`IPowerRequests.cs`: `IPowerRequests`, `IPowerSource`, `StayAwake`, `PowerNeeds`, `NoPowerRequests`,
+    `UnknownPowerSource`), the computer's clocks (`ISystemTimes`), the window's title, taskbar and flash
+    (`IWindowSignals.cs`: `IWindowSignals`, `NoWindowSignals`, `TaskbarState`; `TitleText`, the title and taskbar button
+    for a run's state), starting processes (`IProcessStarter.cs`: `IProcessStarter` with `StartBrowser`, `StartedProcess`,
+    `StartRefusal`), the job check (`IJobInspector.cs`: `IJobInspector`, `JobFacts`), Windows' end of the session
+    (`ISessionEvents.cs`: `ISessionEvents`, `SessionEndEventArgs`, `SessionEndKind`), the registry read only
+    (`IRegistryValues`, HKEY_CURRENT_USER for the microphone advice, and `ReadLocalMachineString` for the machine's PATH and
+    Chrome's App Paths), the program behind a process id (`IProcessNames.cs`: `IProcessNames`, a limited query,
+    `ProcessImage`), ClassScribe's own processes (`IOwnProcesses`, by pid and by `ProgramFiles.Name`), this program as the
+    process that runs it (`IThisProgram`: its path, the folder of its files, this process's id and start), `IFileProbe` (a
+    file or a folder there, when a file was last written, how long it is, its full path, a program's version, `Describe`:
+    the checks the use cases once made with `File`, `Directory` and `Path.GetFullPath`), `IVideoWindows` (a process's
+    Chrome windows: titles and `WM_CLOSE`) and `IProcessFamily` (a process's tree by pid and start time).
+  - `Application/Drive` (design `drive.md`, slices 1 to 3): `DriveOptions` (with `DriveUploadScope`),
+    `GoogleDriveException.cs` (`GoogleDriveException`, `DriveProblem`), `GoogleClient` (the Google OAuth client, with
+    `ShortId`), `GoogleCredentialStore.cs` (`GoogleCredentials`, `StoredCredentials`, `IGoogleCredentialStore`), `Pkce`,
+    the ports `IGoogleClientFiles`, `ILoopbackReceiver.cs` (`ILoopbackReceiver`, `ILoopbackListener`, `ILoopbackRequest`),
+    `IBrowser`, `IGoogleAccount.cs` (`IGoogleAccount`, `GoogleAnswer`), `IGoogleDrive.cs` (`IGoogleDrive`, `DriveItem`,
+    `DriveAccount`), `IUploadManifests` and `IDriveUploadLock`, `DriveFolderPath.cs` (`DriveFolder`, `DriveFolderPath`),
+    `GoogleSignIn` (`SignedIn`, `SignOutOutcome`; window only, never a recorder), the uploads (`DriveRetry`,
+    `UploadSource.cs` with `UploadSource`, `UploadTarget` and `IUploadWatch`, `UploadManifest.cs` with `UploadState`,
+    `UploadSession`, `ManifestFile` and `UploadManifest`, `RecordingUpload` with `RecordingOutcome`,
+    `RecordingUploadResult` and `UploadNotTrackedException`, `DriveUploadPass` with `PassResult`), `LocalAudioFreer`
+    (`FreedAudio`), `LessonVideoDrive` (whether a lesson's video goes to Drive, the start line), `DriveCopies` (the
+    `IAudioOnDrive` of `Storage`), `DriveAutoUpload.cs` (`IDriveAutoUpload`, `DriveAutoUpload`: the queue at a run's start
+    and the upload after it, and after a transcript made later), `DriveQueueReport.cs` (`DriveWaiting`,
+    `DriveQueueReport`: the menu's header line and the report's), `DriveRoom.cs` (`IDriveRoom`, `DriveRoom`, `DriveSpace`:
+    Drive's room from the about call, `ReadAsync` for a YouTube plan, null with `Drive:Enabled` off, and
+    `ReadForUploadAsync` before a lesson's video goes up, whatever `Drive:Enabled` says; both null when not set up, signed
+    out or Drive out of reach) and `DriveUseCases` (`AddDriveUseCases`).
+  - `Application/Recorder`: the ports of runs (architecture 3.9 and 4.3): `IRuntimeFolder`, `IRecordingLock`,
+    `IRunJournal` with `IRunHandle`, `IRunLog` (`IRunLog.StartupFileName` is `recorder.log`), `IProcessLiveness`,
+    `IVideoYield`, `LogEntry` (one numbered line of the recorder's log, which carries a `LogLevel`, which is why it is
+    here and not in Core), `RecorderStart` (what a window hands the recorder: the run id, the request and the settings
+    snapshot, never the key) and `FreezeWatch` (the loop's ticks plus a 1-second timer of its own: sleeps and hold-ups of
+    3 s or more, told apart by Windows' interrupt times).
+  - `Application/Runs`: `IRecorderStatusSink.cs`, `StarterContracts.cs` (`IRunViewer`, `IRecordStarter`, `IRecordRun`,
+    `IStartupReport`, `NoStartupReport`, `IResultShower`), and the ports of slice 3b4 that the window answers
+    (`IContinuePrompt.cs` with `ContinueAnswer`, `ICameraPrompt.cs` with `NothingStarted`, and `IRunStarter.cs`:
+    `ContinueQuestion`, `CameraStart` and `CommandRunner` implement them).
+  - `Application/Settings`: the options classes (`RecordingOptions.cs` with `KeepScreenOn` and `ReopenWindow`,
+    `ElevenLabsOptions` with `ApiKeyVariable`, `TranscriptOptions`, `YouTubeOptions` with `IsChannel`; `DriveOptions` is
+    with Drive), the catalog (`SettingsCatalog.cs`: `SettingsCatalog`, `SettingKey`, `SettingKind`; `DefaultSettings`, the
+    Logging defaults; `DefaultChanges.cs`: `DefaultChanges`, `DefaultChange`, the rows a release fills), the saved classes'
+    choices (`ClassChoices.cs`: `ClassChoices`, `SourceGiven`, `SourceOption`), a settings file as the use cases see it
+    (`SettingsText`, `SettingsOrigin.cs` with `SettingsOrigin` and `SettingsSource`, `SettingsVerdict.cs` with
+    `SettingsVerdict` and `DroppedSetting`, `SettingsEdit.cs` with `SettingsEdit` and `SettingsChange`, and
+    `SettingsDocument`, the user's file as a tree the writer changes) and the ports of slice 3b3 (`ISettingsStore`,
+    `IStagedSettings`, which `StagedSettings` implements, `ISavedClasses`, which `SavedClasses` implements, and
+    `IOutputFolderFacts`, the folders' facts the warnings use).
+  - `Application/Storage`: the ports of slice 3b1, `IClassFolders` (course and date folders: `CreateRecording`,
+    `CreateRecordingIn`, `OpenToContinue`, `FindContinuable`, `IsVideo`, `TrackLength`, `FilesIn`, `FoldersIn` and the rest
+    the use cases call), `IRecordingFolder` (what is on disk of a recording: `FilesOf`, `OpenToRead`, `Delete`,
+    `IsUploadCopyInUse`, `DeleteUploadCopy`, `FindSegments` per track, `FindCameraPieces`, `FindKeptAnswers`,
+    `HasTranscript`, `NextFreeUnreadAnswer`), `ITranscriptCopies`, `IClassMarks`,
+    `IMicCheckLog.cs` (`IMicCheckLog`, `IMicCheckLogFile`) and `IFreeSpace`; `IAudioOnDrive.cs` (`IAudioOnDrive`,
+    `NoAudioOnDrive`: what the lists and commands know of audio kept on Drive alone; `ClassFolders` takes it as an optional
+    last argument); and `Room` (the room recording takes on a drive: an hour of one track, an hour of the upload copy, and a
+    class of a given length, for a run's space warnings and a YouTube batch's reserve).
+  - `Application/Transcription`: the ports `ITranscriptionClient.cs` (`ITranscriptionClient`, `TranscriptionException`),
+    `IElevenLabsAccount.cs` (`IElevenLabsAccount`, `AccountReading`, `AccountReadingKind`), `IGlossaryFiles.cs`
+    (`IGlossaryFiles`, `GlossaryText`) and `ITranscriptAnswers` (the saved answers, for `rebuild`); `GlossaryChoice` (the
+    one resolver that decides a recording's glossary, scoped), the transcript formatter (`TranscriptFormatter`, with
+    `SourceLine` for a video), the workflow (`TranscriptionWorkflow`, rebuild included, `VideoOf`, `RefuseIfTooLong`),
+    `TranscriptionProgress.cs` (`TranscriptionProgress`, scoped: the workflow and the client report preparing, uploading at
+    a percent and waiting, which `RecordCommand` shows as UPLOADING 40% and writes into the run file's heartbeat, which the
+    menu header and `list` read; `TranscriptionStep`), `ProgressReadStream`, the upload's time limit (`UploadTimeLimit`,
+    pure: the audio's length comes from `IAudioFileFacts`), what one file holds (`TranscriptionLimits`), and what a
+    transcript cost: `TranscriptionCost` (the estimate) and `UsageReport` (scoped: the read before the upload and the line
+    after; `Describe` for a YouTube plan, `Charged` for its projection), and `TranscriptionUseCases`
+    (`AddTranscriptionUseCases`).
+  - `Application/YouTube`: the shared parts `YouTubeLink.cs` (`YouTubeLink`, `YouTubeLinkKind`, `LinkReading`,
+    `YouTubeLinks`), `LinkWord`, `YouTubeGuards` (the test guard's switch), `YouTubeRequest.cs` (`YouTubeRequest`,
+    `BatchConfirmation`), `YouTubeBatch.cs` (`YouTubeBatch`, `BatchKeys`), `BatchPace.cs` (`IBatchPace`, `BatchPace`,
+    `ClassWait`), `PastVideo.cs` (`PastVideo`, `PastKind`, `PastVerdict`), `VideoTranscripts.cs` (`VideoToTranscribe`,
+    `IVideoTranscriber`, `ScopedVideoTranscriber`, `VideoTranscriptRun`, `TranscriptOutcome`, `TranscriptStep`,
+    `VideoTranscribed`, `BatchTranscripts`), `TranscriptionRuns.cs` (`TranscriptionRuns`, `TranscriptionRun`) and the ports
+    `IVideoIndex`, `IVideoSources`, `IYouTubeFolders` and `IYouTubeLock`; the download path `IVideoTool.cs` (`IVideoTool`,
+    `VideoInfo`, `ListedPlaylist`, `ListedVideo`), `IToolLocator` (with `BrowserNotFound`), `ToolPaths`, `IToolRunner.cs`
+    (`ToolCall`, `ToolLine`, `ToolResult`, `IToolRunner`), `ToolCheck`, `DownloadFailure.cs` (`DownloadFailureKind`,
+    `DownloadFailure`), `DownloadGuard.cs` (`GuardVerdictKind`, `GuardVerdict`, `DownloadGuard`), `DownloadPlan.cs`
+    (`BatchVideo`, `PlanRoom`, `DownloadPlan`), `IncompleteAudioException`, `IDownloadedAudio` and `DownloadBatch`; the
+    record path `VideoTitle` (with `NoTitle`), `IVideoTitles`, `OpenedWindow.cs` (`OpenedWindow`, `WindowOpening`),
+    `VideoTitles` (`Plain`, `Clean`), `IVideoWindowOpener`, `VideoPlayback`, `VideoEnds.cs` (`VideoEnds`,
+    `VideoWindowClosedException`) and `VideoBatch.cs` (`RecordedVideo`, `VideoPlan`, `VideoBatch`); and `YouTubeUseCases`
+    (`AddYouTubeUseCases`).
+- `src/ClassScribe.Infrastructure` (namespace `ClassScribe.Infrastructure`): the adapters of the ports, with Windows,
+  files, processes, pipes and web APIs; the vendors' records and protocols; the JSON contexts (`ElevenLabsJson`,
+  `RecorderJson`, `LinkJson`, `CameraJson`, `DriveJson`, `DriveStoreJson`, `GoogleOAuthJson`, `UploadJson`, `YouTubeJson`,
+  `YtDlpJson`, `GlossaryJson`) and Refit's generated clients, since this is the one project that sends requests and reads
+  or writes JSON of its own types. At its root `InfrastructureServices` (`AddClassScribeInfrastructure(configuration)`:
+  each area's `<Area>Services`, see Conventions).
+  - `Infrastructure/Audio`: WAV writing (`WavSegmentWriter`: each packet goes to Windows at once; the header is rewritten
+    and flushed to disk every `Recording:FlushSeconds`; and `WavTrackWriterFactory`, the `ITrackWriterFactory` over it, an
+    `ITrackWriter`), `AudioFileFacts` (the `IAudioFileFacts`: a WAV file's length from its header and its size on disk),
+    upload preparation (`AudioPreparer.cs`: `AudioPreparer`, the `IAudioPreparer`, with `MixedSound`, `FiniteSamples`,
+    `MonoDownmix`, `SincResampler` and `WaveData`: the microphone's track mixed in, 16 kHz mono) and `AudioServices.cs`
+    (`AddAudio`, and `LazyLoopbackCaptureProvider`: `ILoopbackCaptureProvider` is made on first use, so the app,
+    `transcribe`, `rebuild` and `list` never touch Windows audio, and `Lazy<ILoopbackCaptureProvider>` (for `devices`)
+    resolves the registered provider).
+  - `Infrastructure/Audio/Microphone` (namespace `ClassScribe.Infrastructure.Audio.Microphones`): `MicrophoneServices.cs`
+    (`AddMicrophone`, called from `InfrastructureServices.AddClassScribeInfrastructure`: the capture factory
+    `MicrophoneActivation`, the provider behind `LazyMicrophoneProvider`, declared here, the sessions reader, and the
+    `Lazy<>`s for `devices`).
+  - `Infrastructure/Audio/Windows`: `CoreAudioInterop.cs` holds ClassScribe's own Core Audio declarations (the property
+    store and its readers, `PropertyKeys`, `EndpointFormFactor`, the endpoint volume and session interfaces) and
+    `CoreAudio` (`CreateEnumerator`, `OpenPropertyStore`, `Check`, `Release`): the device check and the microphone listing
+    go through them, and NAudio does the notifications, the output device names and the captures. `WasapiAudioCapture.cs`
+    is the one capture class for devices, apps and microphones (`ForOutputDevice`, `ForApp`, `ForMicrophone`; the capture
+    thread is "ClassScribe capture" or "ClassScribe microphone"; packets through an internal `IPacketSource` seam, stamped
+    with their QPC position); `AudioClient2Interop.cs` (ClassScribe's `IAudioClient2`: `IAudioClient2Native`,
+    `AudioClient2`, `AudioClientPropertiesNative`) and `MicrophoneActivation.cs` (the microphone capture factory and
+    Windows' activator, `WindowsAudioClientActivator` behind `IAudioClientActivator`, RAW with the fallback;
+    `ActivatedClient`); `WasapiMicrophoneProvider.cs` (the microphone listing, notifications, mute) and `EndpointFacts.cs`
+    (what a capture endpoint's property store says: the array, Bluetooth and loopback rules, the container id);
+    `WasapiMicrophoneSessions.cs` (the sessions and mute per capture endpoint, with `IAudioSessionControl2WholeRaw`);
+    `WasapiLoopbackCaptureProvider.cs`, `ProcessLoopback.cs` and `CaptureGapWatch.cs` (`CaptureGapWatch`, `CaptureGap`) as
+    before.
+  - `Infrastructure/Camera`: `CameraThread.cs` (the camera process's own STA thread), `CameraJobs.cs` (the hold and check
+    jobs, `CameraHoldJob` and `CameraCheckJob`), `CameraRecordJob.cs` (the record job), `CameraFinishJob.cs` (the finish
+    job: the lesson's video, over `ThisProgram.Current` for the command it prints), `ILessonVideoMedia` (the seam between
+    the finish job and Media Foundation), `CameraLines` (the lines of `CameraProtocol` as a starter sends and reads them),
+    `CameraLink` (the `ICameraLink`: an adapter over `CameraLines` and a `LineChannel`), `CameraJson` (the camera process's
+    lines, camelCase, choices by name, strict as the link reads its messages), `JoinedStream` (one stream over two, so a
+    `LineChannel` speaks over a pair of one-way pipes; public, since `CameraHost` makes it), `WebcamHold.cs` (`WebcamHold`,
+    `WebcamHolds`: the `IWebcamHolds` and `IWebcamHold`) and `CameraServices` (`AddCamera`, after `AddMicrophone`).
+  - `Infrastructure/Camera/Windows`: `WindowsCameraCapture.cs` (the real MediaCapture, with `InitializeShared`, which
+    refuses in a test, and `WindowsCameraCaptureFactory`), `WindowsCameraFrame.cs` (a frame's pixels copied out,
+    `MemoryBufferBytes`), `MediaFoundationPieceWriter.cs` (the piece writer and its factory, `VideoGuids`,
+    `FileStreamAsIStream`), `MediaFoundationLessonVideo.cs` (the lesson video's media work, `H264Pictures`,
+    `LessonVideoGuids`), `WindowsCameraProvider.cs` (WinRT's `DeviceInformation.FindAllAsync` with
+    `System.Devices.ContainerId` and `MediaFrameSourceGroup.FindAllAsync`, which open nothing; Windows older than
+    10.0.19041 and a list Windows will not give, whatever exception WinRT maps its HRESULT to, answer with a `CameraList`
+    that says why, and only the caller's own cancel is thrown; an internal constructor takes a stand-in read,
+    `WindowsCameraProviderFailureTests`), `WindowsCameraSystem.cs` (`WindowsCameraSystem`: Windows' version, whether an
+    H.264 encoder is installed, and the antivirus programs Security Center knows of; `CameraUsageRecord`, the ConsentStore
+    webcam key), `SecurityCenterInterop.cs` (`IWscProductListRaw`, `IWscProductRaw`: Security Center's product list through
+    ClassScribe's own declarations, since Windows registers no type library) and `CameraProcessStarter` (the camera process
+    as a `PipedProcess`). The microphone's container is read by `EndpointFacts` (`PropertyKeys.ContainerId`,
+    PKEY_Device_ContainerId) and carried as `Microphone.ContainerId`. `devices` lists the cameras after the microphones. The
+    fakes are `LaptopCameras` and `FakeCameraProvider` (`TestDoubles.Camera.cs`); the real list is the category
+    `WindowsCamera` (`WindowsCameraProviderTests`, run with the suite, listing only, no light).
+  - `Infrastructure/Desktop`: the adapters that need no Windows call of their own: `FileProbe` (the `IFileProbe`),
+    `OwnProcesses` (the `IOwnProcesses`), `ProcessFamily` (the `IProcessFamily`, over `IProcessTree`), `WindowsDesktop`
+    (the `IDesktop`: opens folders and files the Windows way, a failure logged rather than thrown), `ProcessExitWarnings`
+    (the `IExitWarnings`) and `AppDomainCrashWarnings` (the `ICrashWarnings`); the helpers only adapters use:
+    `ChildEnvironment.WithoutTheKey` (the environment a started process gets, never the API key) and `DeviceGuards`
+    (the switch `ClassScribe.Devices.RefuseTheRealDevices`, which the camera process's real start and Windows' activation
+    of a capture endpoint refuse under); and `DesktopServices` (`AddDesktop`: the power requests and source, the clocks,
+    the registry values, the process liveness, the usage record, the process names, the own processes, `IThisProgram` as
+    `ThisProgram.Current`, `IProcessFamily`, `IVideoWindows`, the window signals, the session events, the desktop, the exit
+    and crash warnings, the process starter and the job inspector).
+  - `Infrastructure/Desktop/Windows`: the Windows calls: `ProcessStarter.cs` (`ProcessStarter`, `CreateProcessW` behind
+    `IProcessCreationApi` and `NativeProcessCreationApi`, with `ProcessLaunch`, `ProcessCreationFlags`,
+    `ProcessWindowShow`, `StandardHandles`, and the record `ThisProgram`, the adapter of `IThisProgram`, which
+    `ProcessStarter` and `CameraProcessStarter` keep using for the command line), `ToolProcesses.cs` (the tool and browser
+    start on `NativeProcessCreationApi`: environment block, handle list, suspended start into `ToolJob`; any program but
+    `cmd.exe` refused in tests), `PipedProcess` (a program started as ClassScribe starts its tools and its camera process:
+    three pipes, no other handle, no window, a kill-on-close job of its own), `JobInspector.cs` (`IsProcessInJob` and
+    `QueryInformationJobObject` behind `IJobApi`, `NativeJobApi`), `SessionWindow.cs` (with `IShutdownReasonApi`,
+    `NativeShutdownReasonApi`), `ConsoleWindowSignals.cs` (`IConsoleWindowApi`, `NativeConsoleWindowApi`:
+    `WindowsTerminalVariableSet`, `ClassOf`, `HasTaskbarButton`), `TaskbarList.cs` (`ITaskbarList3` declared with
+    `ITaskbarList`'s and `ITaskbarList2`'s methods first, since COM interop ignores interface inheritance;
+    `ITaskbarProgress`), `WindowFinder.cs` (`WindowFinder`, `IProcessTree`, `NativeProcessTree`, `ProcessFacts`),
+    `WindowsPowerRequests.cs` (`WindowsPowerRequests`, `WindowsPowerSource`, `IPowerRequestApi`, `NativePowerRequestApi`,
+    `PowerRequestHandle`, `PowerRequestType`), `WindowsSystemTimes`, `RegistryValues`, `ProcessNames`,
+    `ConsentStoreRecord` (one of Windows' records of which apps used a device and when, under HKEY_CURRENT_USER's
+    ConsentStore; every key opened for reading and closed at once) with `MicrophoneUsageRecord` (the microphone's) and
+    `ChromeWindows` (`EnumWindows` by process, class `Chrome_WidgetWin_1`, `GetWindowTextW`, `WM_CLOSE`; refused in tests).
+  - `Infrastructure/Drive` and `Drive/Windows`: `IGoogleOAuthApi.cs` and `IDriveApi.cs` (the Refit interfaces; `DriveApi`
+    with `WrittenFor`, `DriveApiSettings`), `GoogleJson.cs` (`GoogleOAuthJson`, `DriveJson`, `DriveStoreJson` and their
+    records, which print no token: `GoogleTokenAnswer`, `DriveAbout`, `DriveUser`, `DriveStorageQuota`, `DriveFile`,
+    `DriveFileList`, `DriveFileMetadata`, `GoogleErrorAnswer`, `GoogleError`, `GoogleErrorItem`, `RememberedFolders`),
+    `GoogleClientFile` (the `IGoogleClientFiles`: the import of a client file, `installed` only), `DpapiGoogleCredentialStore`
+    (the `IGoogleCredentialStore`, DPAPI-protected for the Windows account), `GoogleTokens.cs` (`GoogleTokenCache`, one per
+    process with a `SemaphoreSlim`, and `GoogleTokens`, the `IGoogleAccount`), `DriveClient` (the calls, the 401 renewal,
+    Google's refusals in words and kinds, `PieceAnswer`, `PieceOutcome`, `StartRevisionAsync`), `DriveFolders` (the root
+    folder and the levels under it, remembered in `drive\folders.json`), `GoogleDrive` (the `IGoogleDrive`: the thin adapter
+    over `DriveClient`, `DriveFolders` and `ResumableUpload`), `ShellBrowser` (the `IBrowser`, which never logs the address),
+    `PieceContent`, `ResumableUpload.cs` (`ResumableUpload`, `UploadAddress`, Google's upload path, checked against
+    `Drive:ApiBaseUrl`), `UploadManifests.cs` (`UploadManifests`, the `IUploadManifests`, `drive\recordings\<base>.<8 hex>.json`,
+    and `UploadJson`), `DriveUploadLock` (the `IDriveUploadLock`, `drive\upload.lock`), `DriveServices` (`AddDrive`:
+    Google's clients and the adapters, called from `InfrastructureServices` after the transcription's) and
+    `Windows/HttpListenerLoopbackReceiver.cs` (the `ILoopbackReceiver` on `http://127.0.0.1:<free port>/`, five tries).
+  - `Infrastructure/Link`: one named pipe per run: `LinkMessages.cs` (`LinkProtocol`, `LinkTypes` and `LinkKeys`, and the
+    messages `Envelope`, `Hello`, `Welcome`, `KeyPress`, `StateUpdate`, `LogLine`, `End`, `Bye`, `ByeReasons`, `Refused`),
+    `LineChannel`, `RecorderServer`, `RecorderClient.cs` (`RecorderClient`, `LinkFailure`, `LinkLoss`, `LinkLost`,
+    `Reconnected`, `RecorderSilent`, `RecorderLinkException`) and `LinkJson`; messages are lines of JSON, and a field added
+    to a record that travels on it needs a default. The link's own messages stay with the link; the records it carries
+    (`RunRecord`, `RecorderState`) are Core's, and the version number is `LinkVersion` in Core's `Runs`.
+  - `Infrastructure/Logging`: `PlainConsoleFormatter` (the window's console log and `RecorderLogProvider` both use it).
+  - `Infrastructure/Recorder`: the separate recorder's files, lock and log: `RuntimeFolder` (`%LOCALAPPDATA%\ClassScribe`;
+    the `IRuntimeFolder`; `RealRoot()`, `RefuseTheRealFolderSwitch`), `RecordingLock` (the `IRecordingLock`),
+    `RunJournal.cs` (`RunJournal` and `RunHandle`, the `IRunJournal` and `IRunHandle`: run and request files, `MarkSeen`,
+    `MarkSeenIfOver`, prune; the port's `Begin` is explicit over the adapter's, which gives a `RunHandle`), `RecorderJson`,
+    `ProcessLiveness` (the `IProcessLiveness`), `StopSignal.cs` (`StopSignal`, with the yield event: `YieldPrefix`,
+    `ListenForYield`, `TrySetYield`, `YieldNameFor`; and `WindowsVideoYield`, the `IVideoYield`), `RecorderLog.cs`
+    (`RecorderLog`, the `IRunLog`: the ring of 20,000 lines, `Written`, the files, and `LastStartupLines`, the start-up log's
+    last lines a window reads), `RecorderLogProvider` and `RecorderServices.cs` (`AddRecorderLog`: the log and the logging
+    provider that writes into it).
+  - `Infrastructure/Settings`: `ApiKeyFromEnvironment.cs` (the key from `ELEVENLABS_API_KEY`, the last configuration
+    source; `ApiKeyFromEnvironmentExtensions`), `SettingsCheck` (types, enums, ranges and paths, lists, the Logging section,
+    the warnings, keyed problems for the recording's drop; `CheckYouTube`, `CheckExe`, `CheckLocalOrHttpsAddress`,
+    `FolderWarnings`), `OutputFolderFacts` (the `IOutputFolderFacts`), the places (`SettingsPlaces`: the user's folder, the
+    program's, the marker, the Missing state; `ForThisUser`), the reload (`SettingsFile` with `DescribeStaleCopy`,
+    `CheckedSettingsSource`, `SettingsReloader` with `Snapshot`, `StagedSettings`, the `IStagedSettings`), the writer
+    (`SettingsWriter`), `SettingsStore` (the `ISettingsStore`: the thin adapter over the places, the file, the reloader and
+    the writer), `SavedClasses` (the `ISavedClasses`), `SettingPaths` (a path setting as the adapters use it, `Expanded`)
+    and `SettingsServices` (`AddSettings`, and `AddSettingsReload`, which `AppHost` calls).
+  - `Infrastructure/Storage`: `ClassFolders` (the `IClassFolders` of the use cases: course and date folders, the old flat
+    layout read too; `CreateRecordingIn` and `IsVideo` for YouTube; `TrackLength`, `FilesIn` and `FoldersIn` for the use
+    cases; `RootFor`, `Root` and `RootNamedBy`, with `RefuseTheRealFolderSwitch`; its disk statics stay static for
+    Infrastructure's own callers), `RecordingFolder` (the `IRecordingFolder`: what is on disk of a recording),
+    `TranscriptCopies` (the `ITranscriptCopies`: numbered transcript copies, never overwritten, each copy's `.json` and `.md`
+    claimed with `FileMode.CreateNew`), `ClassMarks` (the `IClassMarks`: marks and notes, `AddResume`), the microphone
+    check's log file (`MicCheckLog` and `MicCheckLogFile`, the `IMicCheckLog` and `IMicCheckLogFile`: the header, the cost
+    line, flushed per line; no `Z` in its stamp, so `RecordingFiles.TryParse` never takes one for a recording), `FreeSpace`
+    (the `IFreeSpace`), `RoamingFolder` (`%APPDATA%\ClassScribe`, where `google-drive.dat` is kept; tests give a temporary
+    one; `RefuseTheRealFolderSwitch`) and `StorageServices` (`AddStorage`: the storage services, each one for the process,
+    and ClassScribe's own folder, the lock and the run journal with their ports).
+  - `Infrastructure/Transcription`: the ElevenLabs client (`IElevenLabsApi.cs`: the Refit interface, `ElevenLabsApi` with
+    `WrittenFor`, `ElevenLabsApiSettings`; `ElevenLabsClient`, the `ITranscriptionClient`, around it; `ElevenLabsJson.cs`:
+    `ElevenLabsJson`, `SpeechToTextResponse`, `SpeechToTextWord`, `SubscriptionResponse`), `ElevenLabsAccount` (the
+    `IElevenLabsAccount`, the reader of `GET /{apiVersion}/user/subscription`), the shared answer parser (`ElevenLabsAnswer`,
+    the `ITranscriptAnswers` of the saved answers, which must keep reading pretty-printed answers), `GlossaryFiles.cs`
+    (`GlossaryFiles`, the `IGlossaryFiles`: a glossary's lines and a recording's glossary record; `GlossaryJson`) and
+    `TranscriptionServices` (`AddTranscription`).
+  - `Infrastructure/YouTube`: `LinkList.cs` (`LinkList`, `LinkListReading`: UTF-8 list files, `#` comments, duplicates
+    by ID taken once), `VideoSourceFile.cs` (`VideoSourceFile`, the `IVideoSources`, written atomically, unknown fields
+    passed over; `YouTubeJson`), `YouTubeFolders` (the `IYouTubeFolders`: every YouTube folder derives from
+    `RuntimeFolder`: `youtube\` with the lock, `converting.json`, `staging\<ID>\`, `yt-dlp-cache\`, and `video-browser\`,
+    named only so that nothing else goes in it), `YouTubeLock` (the `IYouTubeLock`, `youtube.lock` with the holder's pid),
+    `VideoIndex` (the `IVideoIndex`, scoped), the download path `YtDlpTool` (the `IVideoTool`, scoped), `ToolLocator.cs`
+    (`ToolLocator`, the `IToolLocator` of the tools: `YouTube:YtDlpPath`, winget's links folder, then PATH from the
+    registry; `ToolSearch` with `Missing`), `WindowsCommandLine` (the quoting of a Windows command line, for
+    `ProcessStarter` and `ProcessToolRunner`), `ProcessToolRunner` (the `IToolRunner`, on `IProcessCreationApi`, never
+    `System.Diagnostics.Process`; refuses every tool in tests), `YtDlpArguments` (every list, the fixed set first, `ProblemWith`
+    and `Forbidden`), `YtDlpRead.cs` (`YtDlpInfo`, `YtDlpPlaylist`, `YtDlpPlaylistEntry`, `YtDlpFormat`, `PlaylistListing`,
+    `YtDlpRead` and their JSON context `YtDlpJson`), `YtDlpErrors` (`Classify`), `YtDlpCheck` (each tool's version and age),
+    `DownloadedAudio.cs` (`DownloadedAudio`, the `IDownloadedAudio`: NAudio's reader into ClassScribe's own `.wav`,
+    `CleanUp`, `Convert`; `ConversionNote`); the record path `BrowserLocator` (the `IToolLocator` of the browser's search:
+    `YouTube:BrowserPath`, App Paths under HKLM then HKCU, then the program folders), `OEmbedTitles.cs` (`IYouTubeOEmbedApi`,
+    the Refit interface; `OEmbedAnswer`; `OEmbedTitles`, the `IVideoTitles`; `YouTubeHostGuard`, which refuses YouTube's
+    hosts in tests) and `VideoWindow` (the `IVideoWindowOpener`: ClassScribe's own Chrome window, `Arguments`, `HandedOff`);
+    and `YouTubeServices` (`AddYouTube`, its adapters and the oEmbed client; `IFileProbe` is registered here, where it was
+    first registered).
+- `src/ClassScribe.Cli` (namespace `ClassScribe.Cli`; assembly `ClassScribe`, so the build makes `ClassScribe.exe` and
+  `ClassScribe.dll`): it talks to the person and composes the rest. `Program.cs` (top-level statements: `--recorder` to
+  `RecorderHost` and `--camera-process` to `CameraHost`, both before anything touches the console; then the console set to
+  UTF-16, and to UTF-8 when redirected for `settings` and `class`; `AppHost.Build` and `App`; a start-up failure printed
+  plainly, exit 1; the close prompt), `AppHost` (builds the host: the checked settings source and a first checked read,
+  the key from the environment, the plain log format, scopes and registrations validated; `BuildRecorder` with
+  `AddRecorder`, the recorder's own services in place of the window's; `LogToStandardError` for `--json`;
+  `DescribeFailure`), `App` (the command line, with the gate before each command, and the report at the start for
+  commands), `ServiceCollectionExtensions` (`AddClassScribe`: the clock, Application, Infrastructure, `CommandServices` and
+  `WindowServices`, see Conventions) and `appsettings.json` (the shipped defaults, copied beside the exe; the one
+  `appsettings.json` of the four projects).
+  - `Cli/Commands`: the menu (`MenuCommand`; `MicrophoneMenu.cs`, menu choice 7: W, I or N, the microphone, the follow
+    question; `DriveMenu`, menu choice 9; `YouTubeMenu.cs`, `YouTubeMenu` for menu choice Y and `YouTubeMenuMemory`;
+    `ClassesMenu` and `SettingsMenu`, menus C and S, per run; `RecordingNamePrompt`; `ClosePrompt`), the command line
+    (`CommandLineTree` on System.CommandLine, one partial class in `CommandLineTree.cs`, `CommandLineTree.Settings.cs` and
+    `CommandLineTree.Classes.cs`, with `CommandKind` and `ParseOutcome`: `Tidy`, `Parse` with ClassScribe's own errors and
+    exit 2, `KindOf`, `InvokeAsync` with Ctrl+C left to ClassScribe, `YouTubeProblems`, `IsOwnKind`, `WantsJson`),
+    `ICommandRunner.cs` (`ICommandRunner`, which extends `IRunStarter`, and `CommandRunner`: each command in its own DI
+    scope, record through `IRecordStarter`, attach through `AttachCommand`, list, devices, the microphone menu and the
+    check through their commands; `TranscribeAsync` refuses a recording a live run records or transcribes), the console
+    (`ConsoleUi`, the `IConsoleUi`, with `UseUnicode`, `UseUtf8WhenRedirected` and `OwnsConsoleWindow`;
+    `ConsoleUserSignals`, the `IUserSignals`), the view of a background run (`RecorderView.cs`: `RecorderView`,
+    `ConsoleCtrlC`, `WindowText`; `AttachCommand`), the report at the start (`StartupReport`, the `IStartupReport`, which
+    replaces `NoStartupReport`), the gate (`RunGate.cs`: `RunGate`, `GateUse`), the window's prompts (`ContinueQuestion`, the
+    `IContinuePrompt`; `CameraStart`, the `ICameraPrompt`), `CommandOutput` (where `settings` and `class` write: standard
+    output and standard error) with `SettingsOutput` and `ClassOutput` (the text and `--json` of the two commands,
+    architecture question 4), and the registrations `CommandServices.cs` (`AddCommands`) and `WindowServices.cs`
+    (`AddWindow`, the window's side of a run in the background). A start from the window the recorder opened by itself is
+    `StartOrigin.AutoContinueFromAlert`: shown with the keys locked, never recorded in that window, never marked seen.
+  - `Cli/Desktop`: `WindowStatusSink` (the `IRecorderStatusSink` of a run in this window: the title and the taskbar button
+    as `TitleText` gives them, and a flash for each new Alert).
+  - `Cli/Hosts/Recorder` (namespace `ClassScribe.Cli.Hosts.Recorder`): `RecorderHost.cs` (`RecorderHost`: the recorder
+    process from the request to the end, with `IsRecorderStart` for `Program`, the exit codes, `EndPatience`, and the seams
+    `Folder`, `Places`, `Time` and `ConfigureServices`) and the four adapters only the recorder's host registers:
+    `LinkConsoleUi` (the windows' keys as the recorder's console), `LinkStatusSink` (states to the windows and the alerts,
+    repeated once a second), `RecorderResultShower` and `UnattendedAlerts` (the minimized window brought back by itself; a
+    window that left with Esc counts as no close).
+  - `Cli/Hosts/Camera`: `CameraHost` (the camera process, `ClassScribe.exe --camera-process <job id>`: it reads its job,
+    the first line on its standard input, speaks `CameraProtocol`'s lines on its standard output, and runs the hold, check,
+    record or finish job on an STA thread of its own through `CameraRoute`).
 - `tools/dry-run`: the dry-run kit (its `README.md`): `Start-DryRun.cmd` and `Start-DryRun.ps1` (dot-sourced, it
   defines its functions and runs nothing; `Invoke-DryRun -Roots` takes the folders, `Get-DryRunRoots` gives this
   user's; `Get-ClassScribeProject` finds the project file of either layout; `Get-MissingPublishFiles`, `Switch-Install`
@@ -2446,7 +2652,12 @@ each constructor that takes a port, and what the trial move made the one-project
   settings folder's variable in every `ClassScribe*.dll`), `ElevenLabsStub.cs` (the stand-in for ElevenLabs: `SoundFinder`, `StandInTranscript`, `StandInUpload`,
   `StandInServer`, `StandInProgram`, in a block namespace `ClassScribe.DryRun`), `TestPlayer\` (plays a clip aloud as the
   class, only with `-Player`; not in the solution) and a `.gitattributes` that keeps `.cmd` and `.ps1` in CRLF.
-- `tests/ClassScribe.Tests`: NUnit and Moq. Hand-written fakes for the device, keyboard, clock and
+- `examples/glossary`: the example glossary of the Islamic sciences (`keyterms-islamic-sciences.txt`, with a `README.md`),
+  never built or published; only the test project links it, for `GlossaryFilesTests`.
+- `tests/ClassScribe.Tests`: NUnit and Moq, one project for all four (architecture question 6; `net10.0-windows10.0.19041.0`,
+  referencing `ClassScribe.Cli`, the rest coming with it; the namespace `ClassScribe.Tests`). `Architecture/` holds the
+  architecture test (`ArchitectureFacts`, `ArchitectureRules`, `ArchitectureRulesTests`, `ArchitectureTests`,
+  `AppAssemblies`, `RepositoryLayoutTests`; see the rule of dependencies under Conventions). Hand-written fakes for the device, keyboard, clock and
   HTTP transport are in `TestDoubles.cs`, with `TestOptions<T>`, `TestSettings`,
   `FakeAudioCapture.DeliversContinuously` (default false, like device loopback), and
   `FakeCaptureProvider.SetAppLevel` and `FailListings`. Others are in `TestDoubles.*.cs`:
@@ -2547,4 +2758,5 @@ each constructor that takes a port, and what the trial move made the one-project
   (`FakeGoogle.AuthorizationPage`), `ResumableUploadTests` (`UploadAddress` with the version), and the routes the
   versions make over `StubHttpHandler` in `ElevenLabsClientTests`, `ElevenLabsAccountTests` and `DriveClientTests`
   (`StubHttpHandler.Enqueue(Func<HttpResponseMessage>)` for an answer with a Location). `Denied.cs` holds ACL helpers; `ClassScribe.Tests.runsettings` holds the hang
-  guard. The test project sees ClassScribe's internals (the `InternalsVisibleTo` item in `ClassScribe.csproj`).
+  guard; `TestGuards.cs` holds the `[SetUpFixture]` that turns the test switches on, and `RecordingsFolderGuardTests`. The
+  test project sees the internals of all four projects through the `InternalsVisibleTo` item in `src/Directory.Build.props`.
