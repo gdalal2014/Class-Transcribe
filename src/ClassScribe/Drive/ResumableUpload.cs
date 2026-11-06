@@ -168,7 +168,7 @@ public sealed class ResumableUpload(DriveClient drive, DriveRetry retry, IOption
     private async Task<(UploadSession Session, UploadAddress Address)> StartAsync(UploadSource source, UploadTarget target, string apiBase, CancellationToken cancellationToken)
     {
         var given = await retry.RunAsync(token => target.RevisionOf is { } fileId
-                ? drive.StartRevisionAsync(fileId, source.ContentType, source.Length, token)
+                ? drive.StartRevisionAsync(fileId, source.ContentType, source.Length, target.KeepRevisionForever, token)
                 : drive.StartUploadAsync(new DriveFileMetadata(target.Name, source.ContentType, target.FolderId is { } folder ? [folder] : null, AppProperties: null),
                     source.ContentType, source.Length, token),
             "start an upload", cancellationToken);

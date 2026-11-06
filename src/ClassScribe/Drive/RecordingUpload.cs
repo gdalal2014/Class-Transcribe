@@ -58,8 +58,8 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 /// (<see cref="IUploadManifests"/>) with its size and the time it was last written, and after its last piece the copy on
 /// Drive is checked against Drive's own size and MD5; one that differs is sent again once, as a new revision. A file already
 /// checked goes up no more; a text file that has grown since (a log, the marks, an answer laid out anew), and a lesson's
-/// video made again since (teach-video 8), go up as a new revision of the same file on Drive; nothing else on Drive is ever
-/// replaced, deleted or trashed. A file deleted from the
+/// video made again since (teach-video 8; its revision kept for ever on Drive, answer 4 (b)), go up as a new revision of
+/// the same file on Drive; nothing else on Drive is ever replaced, deleted or trashed. A file deleted from the
 /// laptop after its copy was checked is safe on Drive, not missing. With no manifest, Drive's files in the folder are
 /// adopted by name and MD5, so nothing goes up twice. A recording being recorded or transcribed now is passed over and left
 /// in the queue, and so is one whose audio another program holds open. One whose folder is not there waits only while its
@@ -588,7 +588,8 @@ public sealed partial class RecordingUpload(
         /// either, the folder on Drive is looked through for a copy of the same name, which is adopted when it is the same.
         /// Media (<paramref name="media"/>: audio, or a lesson's video) is never sent as a revision, but for a lesson's finished
         /// video (<paramref name="lessonVideo"/>) made again since its copy was checked, as a continued lesson's by
-        /// finish-video: it goes up whole as a new revision of that copy, larger or smaller (teach-video 8), which is said.
+        /// finish-video: it goes up whole as a new revision of that copy, larger or smaller (teach-video 8), kept for ever on
+        /// Drive (keepRevisionForever, Gulzar's answer 4 (b) of 29 October 2026 to the 0.5.0 review), which is said.
         /// </summary>
         private async Task<UploadTarget?> TargetOfAsync(ManifestFile entry, string name, bool media, bool lessonVideo, DriveFolderPath location, CancellationToken cancellationToken)
         {
@@ -603,8 +604,9 @@ public sealed partial class RecordingUpload(
 
                 if (await CheckAsync(entry.DriveId, name, cancellationToken) is { Trashed: false })
                 {
-                    if (lessonVideo) owner.Logger.LogInformation("{Name} was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy", name);
-                    return new UploadTarget(name, null, entry.DriveId);
+                    // A remade lesson video's revision is kept for ever on Drive, so the older video is never purged (answer 4 (b)).
+                    if (lessonVideo) owner.Logger.LogInformation("{Name} was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy, kept for ever", name);
+                    return new UploadTarget(name, null, entry.DriveId, KeepRevisionForever: lessonVideo);
                 }
 
                 owner.Logger.LogInformation("{Name}'s copy on Google Drive is no longer there, or is in the trash, so it goes up again as a new file; ClassScribe takes nothing out of the trash", name);

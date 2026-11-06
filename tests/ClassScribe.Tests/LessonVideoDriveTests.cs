@@ -175,7 +175,8 @@ public sealed class LessonVideoDriveTests
             Assert.That(_world.Google.FilesIn(folder).Where(file => file.Name == $"{b}.mp4").Select(file => file.Id), Is.EqualTo(new[] { copy.Id }), "a new revision, not a second file");
             Assert.That(copy.Content, Is.EqualTo(File.ReadAllBytes(_lesson.LessonVideo)));
             Assert.That(copy.Revisions, Is.EqualTo(2));
-            Assert.That(_world.Lines, Has.Member($"{b}.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy"));
+            Assert.That(copy.RevisionsKeptForever, Is.EqualTo(1), "the remade video's revision is kept for ever (answer 4 (b))");
+            Assert.That(_world.Lines, Has.Member($"{b}.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy, kept for ever"));
             Assert.That(_world.Google.Destructive, Is.Empty);
         }
 

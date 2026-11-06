@@ -155,6 +155,37 @@ public class RecordingUploadTests
     }
 
     /// <summary>
+    /// A remade lesson video's revision is the one revision ClassScribe asks Drive to keep for ever (keepRevisionForever,
+    /// Gulzar's answer 4 (b) of 29 October 2026 to the 0.5.0 review): its start request carries the parameter, a grown log's
+    /// does not, and nothing destructive is ever sent (review 3.18).
+    /// </summary>
+    [Test]
+    public async Task A_remade_lesson_video_s_revision_is_kept_for_ever_and_a_text_file_s_is_not()
+    {
+        _world.Options.Set(new DriveOptions { LessonVideos = true });
+        File.WriteAllBytes(_mantiq.LessonVideo, [.. Enumerable.Range(0, 300_000).Select(i => (byte)(i % 251))]);
+        await UploadAsync();
+        var video = _world.Google.FilesIn(DriveFolder.Id).Single(file => file.Name == $"{_mantiq.BaseName}.mp4");
+        var log = _world.Google.FilesIn(DriveFolder.Id).Single(file => file.Name == $"{_mantiq.BaseName}.log");
+        File.WriteAllBytes(_mantiq.LessonVideo, [.. Enumerable.Range(0, 200_000).Select(i => (byte)(i % 241))]);
+        File.AppendAllText(_mantiq.Log, "a line more\n");
+
+        var result = await UploadAsync();
+
+        var starts = _world.Google.Requests.Where(request => request.IsRevisionStart).ToList();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.Outcome, Is.EqualTo(RecordingOutcome.Done));
+            Assert.That(starts.Single(request => request.Path.EndsWith($"/{video.Id}", StringComparison.Ordinal)).Query["keepRevisionForever"], Is.EqualTo("true"));
+            Assert.That(starts.Single(request => request.Path.EndsWith($"/{log.Id}", StringComparison.Ordinal)).Query["keepRevisionForever"], Is.Null);
+            Assert.That((video.Revisions, video.RevisionsKeptForever, log.Revisions, log.RevisionsKeptForever), Is.EqualTo((2, 1, 2, 0)));
+            Assert.That(video.Content, Is.EqualTo(File.ReadAllBytes(_mantiq.LessonVideo)));
+            Assert.That(_world.Lines, Has.Member($"{_mantiq.BaseName}.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy, kept for ever"));
+            Assert.That(_world.Google.Destructive, Is.Empty);
+        }
+    }
+
+    /// <summary>
     /// A file that changed in any other way, audio whose bytes differ or a text file that is now smaller, is never sent over
     /// its copy on Drive: that copy stays as it is, which is said, and the recording is done.
     /// </summary>

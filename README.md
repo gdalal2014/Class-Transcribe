@@ -1320,9 +1320,11 @@ GB free), so it stays on this laptop for now; it goes up with a later upload onc
 rest of <base> is up`; the rest of the recording goes up, and the recording waits in the queue with its
 next try after a class a day later (9 > U and `drive upload` try at once). A lesson's video made again since its copy went up (a continued lesson's, or one made
 with `finish-video`) goes up whole, as a new revision of that copy, with the line `<base>.mp4 was made
-again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy`: an
-hour of video takes as long again to send. Google Drive keeps the older revision for 30 days, under the
-file's Manage versions.
+again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy, kept
+for ever`: an hour of video takes as long again to send. That revision is sent with Drive's
+keepRevisionForever, so Google Drive keeps the older video for ever under the file's Manage versions
+(it counts against your Drive's room; delete it there yourself when you no longer need it), while a
+text file's older revision Drive purges after 30 days.
 Your own files in the folder, such as the class's PDFs, never go up: only files named as the
 recording's are taken. With `Drive:Upload` set to `WithoutAudio` the `.wav` files stay on the laptop
 alone, and so does a lesson's video, which holds the same sound. A YouTube video's recording goes up the same way, its `.source.json` with it, but
@@ -2881,7 +2883,8 @@ Windows audio through COM interop.
   API), and it only adds to Drive: it never deletes, trashes or overwrites anything there, with one
   exception, a new revision of its own copy of a file in three cases only: a text file of the recording
   (its log, its marks, a transcript or an answer) that has grown since it went up, a lesson's video made
-  again (with `Drive:LessonVideos` on), and its own copy whose MD5 check failed, sent once more. A
+  again (with `Drive:LessonVideos` on; that revision is the one Drive is asked to keep for ever, so the
+  older video stays under Manage versions), and its own copy whose MD5 check failed, sent once more. A
   class's audio goes to Google's servers, as it does to
   ElevenLabs'; with your microphone, or in person, other voices go too. Your own files beside a
   recording, such as the class's PDFs, never go up. The Google client and the sign-in stay on this
@@ -3282,7 +3285,7 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Google Drive takes no more uploads today (...). Upload again tomorrow.` | Google lets each account upload 750 GB in 24 hours ([Google's limits](https://knowledge.workspace.google.com/admin/drive/storage-and-upload-limits-for-google-workspace)). Upload tomorrow with 9 > U; after a class, ClassScribe tries again no sooner than a day later. |
 | `<file> does not match Drive's MD5 after it went up (here ..., ... bytes; on Drive ..., ... bytes); sending it again as a new revision` | The copy that arrived differs from the file, so it is sent once more, as a new revision of ClassScribe's own copy. `<file> still does not match Drive's MD5 after it was sent again; it goes up again with the next upload.` leaves the recording waiting; the next upload tries again. |
 | `<file> on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown, or a lesson's video made again, goes up again, as a new revision. The copy on Drive stays as it is`, `A different <file> is already in My Drive > ... on Google Drive; ClassScribe never replaces it, so this one did not go up` | The file changed on the laptop after it went up, or Drive holds another file of that name. The copy on Drive stays as it is; only a text file that has grown, or a lesson's video made again, goes up again. To keep the laptop's version on Drive as well, upload it yourself under another name. |
-| `<base>.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy` | Normal, with `Drive:LessonVideos` on: a continued lesson's video, or one made with `finish-video`, replaces its copy on Drive as a new revision of the same file. Once it is checked there, free-space can delete the camera's pieces. |
+| `<base>.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy, kept for ever` | Normal, with `Drive:LessonVideos` on: a continued lesson's video, or one made with `finish-video`, replaces its copy on Drive as a new revision of the same file, and Drive keeps the older video for ever under Manage versions (it still counts against your room there). Once it is checked there, free-space can delete the camera's pieces. |
 | `<file>'s copy on Google Drive is no longer there, or is in the trash, so it goes up again as a new file; ClassScribe takes nothing out of the trash` | Nothing to do: the grown file goes up again, and the copy in the trash stays there. |
 | `<base> is being recorded now; it goes up once it has stopped`, `<base> is being transcribed now; it goes up once it has stopped`, `<file> is open in another program, as while it is being recorded; <base> goes up once it is closed` | Nothing to do: it waits and goes up after it has stopped. For another program holding a file, close that program. |
 | `Google Drive answered with an upload address for <file> that is not its own, so nothing was sent there.`, `The upload of <file> begun earlier names an address that is not Google Drive's own at Drive:ApiBaseUrl and Drive:ApiVersion as they are now, so it is not used; the upload starts again` | ClassScribe sends a file only to Google Drive's own address, at the version of its API that `Drive:ApiVersion` names. Nothing was sent elsewhere; the file goes up with the next upload, or starts again from the beginning. An upload begun before `Drive:ApiVersion` changed starts again, since its address names the version it began under. If it happens again, check `Drive:ApiBaseUrl` and `Drive:ApiVersion`; `ClassScribe settings reset Drive:ApiVersion` puts the version back. |

@@ -81,6 +81,9 @@ public sealed class FakeDriveFile
     /// <summary>How many revisions of its content were uploaded: 1 for a file uploaded once, 0 for a folder or one added by the test.</summary>
     public int Revisions { get; set; }
 
+    /// <summary>How many of those revisions were sent with keepRevisionForever, which Drive then never purges: a remade lesson video's, and no other.</summary>
+    public int RevisionsKeptForever { get; set; }
+
     /// <summary>The MD5 Drive gives for it instead of its content's, as a fault; null for the right one.</summary>
     public string? Md5Override { get; set; }
 
@@ -111,6 +114,9 @@ public sealed class FakeUploadSession
 
     /// <summary>The file a new revision is of; null for a new file.</summary>
     public string? RevisionOf { get; init; }
+
+    /// <summary>True when the start asked Drive to keep the new revision for ever (keepRevisionForever=true in its query).</summary>
+    public bool KeepRevisionForever { get; init; }
 
     /// <summary>The length the upload declared it would send.</summary>
     public long Declared { get; init; }
@@ -539,6 +545,7 @@ public sealed partial class FakeGoogle : HttpMessageHandler
             MimeType = (string?)metadata["mimeType"],
             Parents = metadata["parents"] is JsonArray parents ? [.. parents.Select(parent => (string)parent!)] : [],
             RevisionOf = revisionOf,
+            KeepRevisionForever = string.Equals(request.Query["keepRevisionForever"], "true", StringComparison.Ordinal),
             Declared = long.Parse(request.UploadLength ?? "0", System.Globalization.CultureInfo.InvariantCulture)
         };
         _secrets.Add(id);
@@ -603,6 +610,7 @@ public sealed partial class FakeGoogle : HttpMessageHandler
         var file = session.RevisionOf is { } fileId ? Files.First(known => known.Id == fileId) : NewFile(session);
         file.Content = session.Received.ToArray();
         file.Revisions++;
+        if (session.KeepRevisionForever) file.RevisionsKeptForever++;
         file.Md5Override = _wrongMd5.TryGetValue(file.Name, out var wrong) && wrong > 0 ? "0123456789abcdef0123456789abcdef" : null;
         if (wrong > 0) _wrongMd5[file.Name] = wrong - 1;
         session.Completed = file;

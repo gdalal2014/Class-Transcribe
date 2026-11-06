@@ -116,8 +116,12 @@ advice after a format error (10 A).
   exception Gulzar allowed: a new revision of its own copy of a text file that has grown (a log, the
   marks, an answer laid out anew; `RecordingUpload` sends a revision only when the text file is
   larger than Drive's copy, and to its copy that is still there outside the trash, or to repair its own
-  copy whose MD5 check failed), and, as teach-video 8 asks, a new revision of its own verified copy of a
-  lesson's video (`<base>.mp4`) made again, larger or smaller; never of a `.wav`. Deleting local files,
+  copy whose MD5 check failed), and, as teach-video 8 asks and Gulzar chose on 29 October 2026 (the 0.5.0
+  review's answer 4 (b)), a new revision of its own verified copy of a lesson's video (`<base>.mp4`) made again, larger
+  or smaller, sent with Drive's `keepRevisionForever=true` (`UploadTarget.KeepRevisionForever`, set for that revision
+  alone, through `DriveClient.StartRevisionAsync`), so that Drive keeps the older video for ever instead of purging it
+  after 30 days as it does a text file's older revision (`FakeGoogle` counts them as `RevisionsKeptForever`, and
+  `RecordingUploadTests` pins which revisions carry the parameter); never of a `.wav`. Deleting local files,
   by `drive free-space` or by hand, never touches Drive. A test run turns on the AppContext switches
   `RoamingFolder.RefuseTheRealFolderSwitch`, `RuntimeFolder.RefuseTheRealFolderSwitch` and
   `ClassFolders.RefuseTheRealFolderSwitch` (`TestGuards`,

@@ -11,7 +11,12 @@ public sealed record UploadSource(Stream Content, long Length, string Md5, strin
 /// <param name="Name">The file's name on Drive.</param>
 /// <param name="FolderId">The folder a new file goes into.</param>
 /// <param name="RevisionOf">The id of ClassScribe's own file that gets a new revision; null for a new file.</param>
-public sealed record UploadTarget(string Name, string? FolderId, string? RevisionOf);
+/// <param name="KeepRevisionForever">
+/// True for a revision Drive must keep for ever (its keepRevisionForever), rather than purge after 30 days as it does a
+/// revision by default: a lesson's video made again, so that the older video is never lost on Drive (Gulzar's answer 4 (b)
+/// of 29 October 2026 to the 0.5.0 review); false for a text file's revision, and for a new file.
+/// </param>
+public sealed record UploadTarget(string Name, string? FolderId, string? RevisionOf, bool KeepRevisionForever = false);
 
 /// <summary>What an upload tells as it goes, and what may hold it up between pieces.</summary>
 public interface IUploadWatch

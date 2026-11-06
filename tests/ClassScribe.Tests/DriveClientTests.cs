@@ -151,10 +151,17 @@ public class DriveClientTests
         Assert.That(address, Is.EqualTo($"https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id={session.Id}"));
 
         var file = _world.Google.AddFile("Kalam.log", "folder-1", [1, 2, 3]);
-        var revision = await drive.StartRevisionAsync(file.Id, "text/plain", 10, CancellationToken.None);
+        var revision = await drive.StartRevisionAsync(file.Id, "text/plain", 10, keepRevisionForever: false, CancellationToken.None);
         var patch = _world.Google.Requests.Single(request => request.IsRevisionStart);
         Assert.That((patch.Path, patch.Body), Is.EqualTo(($"/upload/drive/v3/files/{file.Id}", "{}")));
+        Assert.That(patch.Query["keepRevisionForever"], Is.Null, "a revision Drive may purge after 30 days carries no parameter");
         Assert.That(revision, Does.StartWith($"https://www.googleapis.com/upload/drive/v3/files/{file.Id}?uploadType=resumable&upload_id="));
+
+        var video = _world.Google.AddFile("Kalam.mp4", "folder-1", [4, 5, 6]);
+        await drive.StartRevisionAsync(video.Id, "video/mp4", 10, keepRevisionForever: true, CancellationToken.None);
+        var kept = _world.Google.Requests.Last(request => request.IsRevisionStart);
+        Assert.That((kept.Path, kept.Query["uploadType"], kept.Query["keepRevisionForever"]), Is.EqualTo(($"/upload/drive/v3/files/{video.Id}", "resumable", "true")),
+            "a revision Drive keeps for ever asks for it in the query, lowercase as Drive reads it");
     }
 
     /// <summary>An answer without a Location header is a refusal that says Drive did not say where to send the file.</summary>
@@ -228,7 +235,7 @@ public class DriveClientTests
         await drive.CreateFolderAsync(new DriveFileMetadata("Kalam", "application/vnd.google-apps.folder", null, null), CancellationToken.None);
         var upload = UploadAddress.TryParse(await drive.StartUploadAsync(new DriveFileMetadata("a.md", "text/markdown", ["folder-1"], null), "text/markdown", 2, CancellationToken.None),
             "https://www.googleapis.com/", version, revisionOf: null)!;
-        var revision = UploadAddress.TryParse(await drive.StartRevisionAsync("file-1", "text/markdown", 2, CancellationToken.None), "https://www.googleapis.com/", version, "file-1")!;
+        var revision = UploadAddress.TryParse(await drive.StartRevisionAsync("file-1", "text/markdown", 2, keepRevisionForever: false, CancellationToken.None), "https://www.googleapis.com/", version, "file-1")!;
         await drive.SendPieceAsync(upload, () => new PieceContent(content, 0, 2, 2), DriveClient.CallLimit, CancellationToken.None);
         await drive.SendPieceAsync(revision, () => new PieceContent(content, 0, 2, 2), DriveClient.CallLimit, CancellationToken.None);
 
