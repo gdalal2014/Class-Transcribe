@@ -1141,7 +1141,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
     {
         if (ValueProblem(value, $"{option} needs a folder after it, such as \"D:\\Classes\"", optionNames) is { } missing) return missing;
         if (value!.IndexOfAny(NotInPaths) >= 0 || value.Any(char.IsControl))
-            return $"{option} takes a folder, such as \"D:\\Classes\"; \"{value}\" has a character Windows does not allow in a path: < > \" | ? *";
+            return $"{option} takes a folder, such as \"D:\\Classes\"; {(LongValues.TooLongToQuote(value) ? $"the one given, {LongValues.Described(value)}," : $"\"{value}\"")} has a character Windows does not allow in a path: < > \" | ? *";
         if (FolderPaths.TooLong(value, Environment.CurrentDirectory) is { } tooLong)
             return $"{option} takes a folder, such as \"D:\\Classes\"; the one given {tooLong}";
 

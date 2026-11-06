@@ -1,4 +1,6 @@
 using System.Globalization;
+using ClassScribe.Core.Settings;
+using ClassScribe.Infrastructure.Settings;
 
 namespace ClassScribe.Infrastructure.Storage;
 
@@ -20,9 +22,6 @@ public static class FolderPaths
     /// once the course, the date folder and the file names are added to it.
     /// </summary>
     public const int LongestPath = 32_766;
-
-    /// <summary>How many characters of a value too long a problem shows: enough to tell which value it is, never the whole of it.</summary>
-    public const int ShownStart = 40;
 
     /// <summary>
     /// The folder a recordings folder setting of <paramref name="value"/> names, as a path and nothing more: environment
@@ -70,10 +69,10 @@ public static class FolderPaths
     {
         if (FullLength(path, baseFolder) is not { } length) return null;
 
-        var written = (value ?? "").Trim();
-        var start = written.Length > ShownStart ? written[..ShownStart] + "..." : written;
+        // As written, %VAR% kept, but without the quotes around it, which the length does not count either.
+        var written = (value ?? "").Trim().Trim('"').Trim();
         return string.Create(CultureInfo.InvariantCulture,
-            $"names a folder whose full path is {length:N0} characters long, starting \"{start}\"; no path on Windows can be longer than {LongestPath:N0} characters");
+            $"names a folder whose full path is {length:N0} characters long, starting \"{LongValues.Start(written)}\"; no path on Windows can be longer than {LongestPath:N0} characters");
     }
 
     /// <summary>
@@ -92,14 +91,36 @@ public static class FolderPaths
         catch (PathTooLongException)
         {
             // Deliberately not rethrown: the refusal is the answer, said in words of its own by the caller. Its length is the
-            // path as joined, never less than the first length Windows refuses, since Windows refused it.
-            var joined = Path.IsPathFullyQualified(path) ? path.Length : Path.Join(baseFolder, path).Length;
-            return Math.Max(joined, LongestPath + 1);
+            // path as Windows would join it, never less than the first length Windows refuses, since Windows refused it.
+            return Math.Max(Joined(path, baseFolder).Length, LongestPath + 1);
         }
     }
 
-    /// <summary>A setting's path as it is used: environment variables such as %USERPROFILE% expanded, and the quotes and spaces around it gone.</summary>
-    private static string Expanded(string? value) => Environment.ExpandEnvironmentVariables(value ?? "").Trim().Trim('"').Trim();
+    /// <summary>
+    /// <paramref name="path"/> joined to <paramref name="baseFolder"/> as Path.GetFullPath joins them before it measures:
+    /// a fully qualified path as it is; one rooted on the current drive (\folder) under the base's root alone; one relative to
+    /// a drive (X:folder) under the base when the base is on that drive, else under X:\; any other under the base.
+    /// </summary>
+    private static string Joined(string path, string baseFolder)
+    {
+        if (Path.IsPathFullyQualified(path)) return path;
+
+        var separators = new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+        if (path[0] is '\\' or '/')
+            return Path.Join(Path.GetPathRoot(baseFolder), path.TrimStart(separators));
+
+        if (path.Length >= 2 && path[1] == Path.VolumeSeparatorChar && char.IsAsciiLetter(path[0]))
+        {
+            var sameDrive = Path.GetPathRoot(baseFolder) is { Length: >= 2 } root && root[1] == Path.VolumeSeparatorChar
+                && char.ToUpperInvariant(root[0]) == char.ToUpperInvariant(path[0]);
+            return sameDrive ? Path.Join(baseFolder, path[2..]) : string.Concat(path.AsSpan(0, 2), @"\", path.AsSpan(2));
+        }
+
+        return Path.Join(baseFolder, path);
+    }
+
+    /// <summary>A setting's path as it is used: environment variables expanded and the quotes and spaces around it gone, as every path setting is (<see cref="SettingPaths.Expanded"/>).</summary>
+    private static string Expanded(string? value) => SettingPaths.Expanded(value);
 
     /// <summary>The user profile, from which a relative recordings folder is taken.</summary>
     private static string Profile => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

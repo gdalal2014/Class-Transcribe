@@ -164,7 +164,7 @@ public sealed class SettingsPlaces
     /// </summary>
     public static string ResolveFile(string configured, string folder)
     {
-        var path = Environment.ExpandEnvironmentVariables(configured).Trim().Trim('"').Trim();
+        var path = SettingPaths.Expanded(configured);
         return path.Length == 0 ? "" : Path.GetFullPath(path, folder);
     }
 

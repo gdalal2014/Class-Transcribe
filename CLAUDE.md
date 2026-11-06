@@ -1004,7 +1004,7 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   `GoogleWorld`, and a batch of two videos recorded as they play through the real `RecorderHost`
   (the window's settings point `YouTube:OEmbedBaseUrl` at the stub; the recorder gets
   `FakeVideoWindows` and a `VideoPlayback` over the test's processes). Nothing is played or recorded. The suite holds
-  5,167 tests after the move into four projects, the S5 review's fixes, the fix for a glossary or a recordings folder longer than any path and the refusal of a recordings folder longer than any path (architecture slices 4 and 5), all passing. The uploads by
+  5,177 tests after the move into four projects, the S5 review's fixes, the fix for a glossary or a recordings folder longer than any path, the refusal of a recordings folder longer than any path and the review's fixes to it (architecture slices 4 and 5), all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -1040,9 +1040,9 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
-  four and a half minutes (4 min 34 s for 5,167 tests after the move into four projects, the S5 review's fixes, the
-  fix for a glossary or a recordings folder longer than any path and the refusal of a recordings folder longer than
-  any path, architecture slices 4 and 5, on 6 November 2026, plus the build).
+  four and a half minutes (4 min 38 s for 5,177 tests after the move into four projects, the S5 review's fixes, the
+  fix for a glossary or a recordings folder longer than any path, the refusal of a recordings folder longer than any
+  path and the review's fixes to it, architecture slices 4 and 5, on 6 November 2026, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1384,19 +1384,26 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   the user profile is too long when `Path.GetFullPath` throws `PathTooLongException` (from 32,767 characters) or gives
   more than `FolderPaths.LongestPath`, 32,766 (Windows' limit with the null; `GetFullPath` passes a `\\?\` path
   whatever its length; a folder just under it passes and still fails where it is used, once the course, date and file
-  names are added); the words give the full path's length and the value's first 40 characters, never the whole value,
-  and the folder need not exist. `Recording:OutputFolder` (the file or `Recording__OutputFolder`, which then stops the
+  names are added; a value rooted but not fully qualified, `\folder` or `C:folder`, that Windows refuses is measured as
+  `GetFullPath` would join it, from the base's root or drive); the words give the full path's length and the value's
+  first 40 characters (as written, %VAR% kept, the quotes around it left out), never the whole value, and the folder
+  need not exist. A line shortens a value only when it is too long to read in it, one rule in
+  `Core/Settings/LongValues` (`LongestQuoted`, 1,024, longer than any ordinary path; `ShownStart`, 40; `Start`,
+  `TooLongToQuote`, `Described`): every real path, a deep WinGet or OneDrive one included, is still quoted whole.
+  `Recording:OutputFolder` (the file or `Recording__OutputFolder`, which then stops the
   start) is a problem of `SettingsCheck.CheckFolderLength`, so a refused file keeps the last accepted values and a
-  recording drops the setting (`DroppedSetting.Describe` gives a refused value over 80 characters by its length and its
-  first 40: `Recording:OutputFolder is a value 40,000 characters long, starting "...", in ...`); a saved class's
+  recording drops the setting (`DroppedSetting.Describe` gives a refused value over 1,024 characters by its length and
+  its first 40: `Recording:OutputFolder is a value 40,000 characters long, starting "...", in ...`); a saved class's
   `OutputFolder` makes that class alone unusable (`SavedClass.Check`, which is handed the rule as `folderTooLong`:
-  `FolderPaths.TooLong` from `SavedClasses` and `CommandLineTree`, `IClassFolders.TooLong` from `ClassCommand`), so
+  `FolderPaths.TooLong` from `SavedClasses` and `CommandLineTree`, `IClassFolders.TooLong` from `ClassCommand` and
+  menu C's `ClassesMenu`), so
   `class add`/`set --output` and `settings set Classes:<name>:OutputFolder` are refused with exit 2 before anything is
   written, and menu C's folder question hands such a value (or one with a character no path may hold) on as typed, to
   the same refusal, which names the class and changes nothing; `CommandLineTree.FolderProblem` refuses such an
   `--output` or `--log-folder` (as written, from the current folder, then with its variables expanded as the run
   expands them) as a mistake of the command line, exit 2; and menu S's folder question refuses it before anything is
-  saved. `SettingsReloader.Snapshot` (`ISettingsStore.Snapshot`) gives the Recording, ElevenLabs (never the
+  saved. Their refusals of a character no path may hold say a value over 1,024 characters by its length and its start
+  too (`LongValues.Described`). `SettingsReloader.Snapshot` (`ISettingsStore.Snapshot`) gives the Recording, ElevenLabs (never the
   key), Transcript, Drive (no secret is ever a setting), YouTube and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
   the recorder in the request file, and `RunJournal.WriteRequest` leaves the key out should it ever
   be in it. A recording that is running keeps the settings it started with. The microphone's
@@ -2317,7 +2324,9 @@ each constructor that takes a port, and what the trial move made the one-project
     `KeepSeenRunsFor`, how long a seen run's file is kept) and `LinkVersion` (the link's version, which
     `LinkProtocol.Version` names and every run file records).
   - `Core/Settings`: `SavedClass.cs` (`SavedClass`, `SavedClassEntry`, `ClassFields`; the check of a class is
-    `SavedClass.Check`) and `SettingsProblem` (keyed problems, for the recording's drop of refused settings).
+    `SavedClass.Check`, handed the folder rule as `folderTooLong`), `SettingsProblem` (keyed problems, for the recording's
+    drop of refused settings) and `LongValues` (a value too long to read in a line, over 1,024 characters, said by its
+    length and its first 40).
   - `Core/Storage`: `RecordingFiles` (the naming alone: both tracks, `_partN`, `.mic.wav`, `.marks.txt`, `.log`, `.md`,
     `.json`, `.upload.wav`, `.unread.json`, `.source.json`, `.glossary.json`, `.mp4`, a lesson's camera pieces, and
     `TryParse`), `CameraPieceFile`, `ClassMark` (a mark or note of `.marks.txt`; `ClassMark.PartsIn` counts the parts),
@@ -2449,7 +2458,8 @@ each constructor that takes a port, and what the trial move made the one-project
     `IOutputFolderFacts`, the folders' facts the warnings use).
   - `Application/Storage`: the ports of slice 3b1, `IClassFolders` (course and date folders: `CreateRecording`,
     `CreateRecordingIn`, `OpenToContinue`, `FindContinuable`, `IsVideo`, `TrackLength`, `FilesIn`, `FoldersIn` and the rest
-    the use cases call), `IRecordingFolder` (what is on disk of a recording: `FilesOf`, `OpenToRead`, `Delete`,
+    the use cases call, and `TooLong`, the rule for a recordings folder longer than any path), `IRecordingFolder` (what is
+    on disk of a recording: `FilesOf`, `OpenToRead`, `Delete`,
     `IsUploadCopyInUse`, `DeleteUploadCopy`, `FindSegments` per track, `FindCameraPieces`, `FindKeptAnswers`,
     `HasTranscript`, `NextFreeUnreadAnswer`), `ITranscriptCopies`, `IClassMarks`,
     `IMicCheckLog.cs` (`IMicCheckLog`, `IMicCheckLogFile`) and `IFreeSpace`; `IAudioOnDrive.cs` (`IAudioOnDrive`,
@@ -2609,7 +2619,9 @@ each constructor that takes a port, and what the trial move made the one-project
   - `Infrastructure/Storage`: `ClassFolders` (the `IClassFolders` of the use cases: course and date folders, the old flat
     layout read too; `CreateRecordingIn` and `IsVideo` for YouTube; `TrackLength`, `FilesIn` and `FoldersIn` for the use
     cases; `RootFor`, `Root` and `RootNamedBy`, with `RefuseTheRealFolderSwitch`; its disk statics stay static for
-    Infrastructure's own callers), `RecordingFolder` (the `IRecordingFolder`: what is on disk of a recording),
+    Infrastructure's own callers), `FolderPaths` (a recordings folder setting or option: `Named`, which `RootNamedBy`
+    delegates to, `TooLong` for a full path longer than `LongestPath`, 32,766, and its words), `RecordingFolder` (the
+    `IRecordingFolder`: what is on disk of a recording),
     `TranscriptCopies` (the `ITranscriptCopies`: numbered transcript copies, never overwritten, each copy's `.json` and `.md`
     claimed with `FileMode.CreateNew`), `ClassMarks` (the `IClassMarks`: marks and notes, `AddResume`), the microphone
     check's log file (`MicCheckLog` and `MicCheckLogFile`, the `IMicCheckLog` and `IMicCheckLogFile`: the header, the cost

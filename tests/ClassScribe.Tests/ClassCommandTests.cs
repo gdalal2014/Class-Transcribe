@@ -341,6 +341,8 @@ public class ClassCommandTests
             }
 
             Assert.That(_files.UserValue("Classes:Mantiq:Course")!.GetValue<string>(), Is.EqualTo("Mantiq Chrome"));
+            Assert.That(_files.Log.Messages.Count(message => message.StartsWith("Changed the class \"Mantiq\"", StringComparison.Ordinal)
+                && message.Contains("OutputFolder names a folder whose full path is ", StringComparison.Ordinal)), Is.EqualTo(1), "the change says why the class cannot be used");
             Assert.That(_files.Log.Messages, Has.Some.StartsWith("The next class of Mantiq goes to a new folder, Mantiq Chrome\\..."));
             Assert.That(_files.Log.Messages.Count(message => message.Contains("stay where they are", StringComparison.Ordinal)), Is.Zero);
             Assert.That(_files.Log.Problems, Is.Empty);
