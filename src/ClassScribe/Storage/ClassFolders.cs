@@ -58,25 +58,64 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     private static readonly EnumerationOptions Strict = new() { IgnoreInaccessible = false, AttributesToSkip = 0 };
 
     /// <summary>
+    /// The AppContext switch a test run turns on: with it on, a root that is the real %USERPROFILE%\ClassScribe, or a
+    /// folder in it, is refused, and only another folder is used. The real folder holds Gulzar's classes, with his PDFs
+    /// and notes beside them, and --output is optional, so a test that forgets would record or list there. ClassScribe
+    /// itself never turns it on.
+    /// </summary>
+    public const string RefuseTheRealFolderSwitch = "ClassScribe.ClassFolders.RefuseTheRealFolder";
+
+    /// <summary>
     /// The folder that holds every recording folder: Recording:OutputFolder with environment variables
     /// such as %USERPROFILE% expanded and any surrounding quotes removed. A relative setting is taken from
     /// the user profile, so it means the same folder however ClassScribe was started; an empty one means
-    /// a ClassScribe folder there.
+    /// a ClassScribe folder there. Refused while <see cref="RefuseTheRealFolderSwitch"/> is on and it is the
+    /// real %USERPROFILE%\ClassScribe, or a folder in it.
     /// </summary>
     public string Root => RootFor(options.CurrentValue.OutputFolder);
 
     /// <summary>
     /// The folder that holds every recording folder when Recording:OutputFolder is <paramref name="outputFolder"/>:
     /// environment variables such as %USERPROFILE% expanded and any surrounding quotes removed, a relative path taken
-    /// from the user profile, and an empty one meaning a ClassScribe folder there.
+    /// from the user profile, and an empty one meaning a ClassScribe folder there. Refused while
+    /// <see cref="RefuseTheRealFolderSwitch"/> is on and it is the real %USERPROFILE%\ClassScribe, or a folder in it:
+    /// everything that reads or writes under the root resolves it here.
     /// </summary>
-    public static string RootFor(string? outputFolder)
+    public static string RootFor(string? outputFolder) => RefuseTheRealFolder(RootNamedBy(outputFolder));
+
+    /// <summary>
+    /// The folder Recording:OutputFolder names when it is <paramref name="outputFolder"/>, as a path and nothing more:
+    /// environment variables such as %USERPROFILE% expanded and any surrounding quotes removed, a relative path taken
+    /// from the user profile, and an empty one meaning a ClassScribe folder there. Never refused, for the settings'
+    /// warnings, which only say where the folder is; reading or writing there goes through <see cref="RootFor"/>.
+    /// </summary>
+    public static string RootNamedBy(string? outputFolder)
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var configured = Environment.ExpandEnvironmentVariables(outputFolder ?? "").Trim().Trim('"').Trim();
         return configured.Length == 0
             ? Path.Combine(profile, "ClassScribe")
             : Path.GetFullPath(configured, profile);
+    }
+
+    /// <summary>
+    /// <paramref name="root"/> as it is, unless <see cref="RefuseTheRealFolderSwitch"/> is on and it is the real
+    /// %USERPROFILE%\ClassScribe or a folder in it, which a test may not reach: then an exception that says what to give
+    /// instead.
+    /// </summary>
+    private static string RefuseTheRealFolder(string root)
+    {
+        if (!(AppContext.TryGetSwitch(RefuseTheRealFolderSwitch, out var refused) && refused)) return root;
+
+        var real = Path.TrimEndingDirectorySeparator(RootNamedBy(""));
+        var given = Path.TrimEndingDirectorySeparator(root);
+        if (given.Equals(real, StringComparison.OrdinalIgnoreCase) || given.StartsWith(real + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"A test asked for the real %USERPROFILE%\\ClassScribe ({root}), which holds Gulzar's classes. Give Recording:OutputFolder, --output or the run's recordings folder a temporary folder (TempFolder) instead.");
+        }
+
+        return root;
     }
 
     /// <summary>

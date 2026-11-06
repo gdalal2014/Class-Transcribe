@@ -119,11 +119,12 @@ advice after a format error (10 A).
   copy whose MD5 check failed), and, as teach-video 8 asks, a new revision of its own verified copy of a
   lesson's video (`<base>.mp4`) made again, larger or smaller; never of a `.wav`. Deleting local files,
   by `drive free-space` or by hand, never touches Drive. A test run turns on the AppContext switches
-  `RoamingFolder.RefuseTheRealFolderSwitch` and `RuntimeFolder.RefuseTheRealFolderSwitch` (`TestGuards`,
-  the assembly's `[SetUpFixture]`), so a test that asks for the real `%APPDATA%\ClassScribe` or
-  `%LOCALAPPDATA%\ClassScribe` fails at once: with Gulzar signed in, a class recorded through the real
-  app would otherwise go up to his own Drive after it ends, and the real run files and Drive queue are
-  his. Every test that builds the app or the recorder's host registers `new RoamingFolder(<temporary
+  `RoamingFolder.RefuseTheRealFolderSwitch`, `RuntimeFolder.RefuseTheRealFolderSwitch` and
+  `ClassFolders.RefuseTheRealFolderSwitch` (`TestGuards`,
+  the assembly's `[SetUpFixture]`), so a test that asks for the real `%APPDATA%\ClassScribe`,
+  `%LOCALAPPDATA%\ClassScribe` or `%USERPROFILE%\ClassScribe` fails at once: with Gulzar signed in, a class recorded through the real
+  app would otherwise go up to his own Drive after it ends, the real run files and Drive queue are
+  his, and so are the classes in the recordings folder. Every test that builds the app or the recorder's host registers `new RoamingFolder(<temporary
   folder>)` or a `FakeCredentialStore`, and a `TestRuntime`'s `RuntimeFolder` (`RecorderHost.Folder` is
   made only when first asked for, so giving one is enough; `RuntimeFolder.RealRoot()` works out the
   real path, without the switch, for the one test of where it is).
@@ -163,7 +164,16 @@ advice after a format error (10 A).
   `video-browser` folder appeared there during the run. `%APPDATA%\ClassScribe\appsettings.json` is
   Gulzar's own settings file once he has made a change: list `%APPDATA%\ClassScribe` too, and never
   change his settings by hand or from a manual run; such a run sets `CLASSSCRIBE_SETTINGS_FOLDER` to
-  a temporary folder first (the menu then names it), and tests use `SettingsFileFixtures`.
+  a temporary folder first (the menu then names it), and tests use `SettingsFileFixtures`. The
+  recordings folder has its guard too, since `--output` is optional: `ClassFolders.RefuseTheRealFolderSwitch`
+  (on in `TestGuards`) makes `ClassFolders.RootFor` and `Root`, through which everything that reads
+  or writes under the root resolves it, refuse the real `%USERPROFILE%\ClassScribe` and any folder in
+  it, naming what to give instead; `ClassFolders.RootNamedBy` only names the folder, for the settings'
+  warnings (`SettingsCheck.FolderWarnings`), which read and write nothing there;
+  `SettingsFileFixtures.ShippedJson` names a placeholder (`PlaceholderOutputFolder`), never the real
+  folder; and `RecordingsFolderGuardTests` (in `TestGuards.cs`) pins the guard. A test that shows the
+  menu or runs a command without `--output` gives its settings a `Recording:OutputFolder` in a
+  temporary folder.
 
 ## Conventions
 

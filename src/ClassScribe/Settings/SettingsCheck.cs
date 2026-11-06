@@ -448,7 +448,8 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     {
         if (value is not null && value.IndexOfAny(Path.GetInvalidPathChars()) >= 0) yield break;
 
-        var root = Path.TrimEndingDirectorySeparator(ClassFolders.RootFor(value));
+        // The folder as named, never refused: the warnings only say where it is, and read or write nothing there.
+        var root = Path.TrimEndingDirectorySeparator(ClassFolders.RootNamedBy(value));
         if (Placement(root) is { } placement) yield return $"{name} {placement}";
 
         if (IsInsideOneDrive(root))
