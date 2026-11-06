@@ -866,7 +866,7 @@ public class SettingsReloadTests
     [Test]
     public async Task The_menu_names_the_settings_file_and_warns_of_a_stale_copy()
     {
-        var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", "{}");
+        var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", Json(new { Recording = new { OutputFolder = _data.File("Recordings") } }));
         using var app = Build(output);
         var ui = new FakeConsoleUi();
         ui.Type('q');
@@ -980,7 +980,8 @@ public class SettingsReloadTests
         using var user = new TempFolder();
         var userSettings = user.File("appsettings.json");
         WriteSettings("{ not even JSON");
-        File.WriteAllText(userSettings, Json(new { Recording = new { FlushSeconds = 7 } }));
+        var recordings = _data.File("Recordings");
+        File.WriteAllText(userSettings, Json(new { Recording = new { OutputFolder = recordings, FlushSeconds = 7 } }));
         using var app = Build(new SettingsPlaces(_folder.Path, user.Path));
         var recording = app.Services.GetRequiredService<IOptionsMonitor<RecordingOptions>>();
         var ui = new FakeConsoleUi();
@@ -990,7 +991,7 @@ public class SettingsReloadTests
         Assert.That(app.Services.GetRequiredService<RunGate>().Problems, Is.Empty, "the broken file beside the program was not read");
         Assert.That(recording.CurrentValue.FlushSeconds, Is.EqualTo(7));
 
-        File.WriteAllText(userSettings, Json(new { Recording = new { FlushSeconds = 8 } }));
+        File.WriteAllText(userSettings, Json(new { Recording = new { OutputFolder = recordings, FlushSeconds = 8 } }));
         Assert.That(app.Services.GetRequiredService<RunGate>().TryOpen(GateUse.MenuChoice), Is.True);
         Assert.That(recording.CurrentValue.FlushSeconds, Is.EqualTo(8), "an edit to the user's file counts from the next choice");
 
@@ -1037,7 +1038,7 @@ public class SettingsReloadTests
     {
         using var user = new TempFolder();
         using var state = new TempFolder();
-        WriteSettings(Json(new { Recording = new { FlushSeconds = 4 } }));
+        WriteSettings(Json(new { Recording = new { OutputFolder = _data.File("Recordings"), FlushSeconds = 4 } }));
         var places = new SettingsPlaces(_folder.Path, user.Path, state.Path);
         places.MarkUserFileMade();
         using var app = Build(new SettingsPlaces(_folder.Path, user.Path, state.Path));
@@ -1068,7 +1069,7 @@ public class SettingsReloadTests
     public async Task The_menu_says_when_the_defaults_stand_in_for_a_file_of_the_users_own()
     {
         using var user = new TempFolder();
-        WriteSettings("{}");
+        WriteSettings(Json(new { Recording = new { OutputFolder = _data.File("Recordings") } }));
         using var app = Build(new SettingsPlaces(_folder.Path, user.Path));
         var ui = new FakeConsoleUi();
         ui.Type('q');
@@ -1088,7 +1089,7 @@ public class SettingsReloadTests
     public async Task The_header_names_a_settings_folder_override_and_counts_older_defaults()
     {
         using var user = new TempFolder();
-        File.WriteAllText(user.File("appsettings.json"), Json(new { Recording = new { MicrophoneFollows = "chrome" } }));
+        File.WriteAllText(user.File("appsettings.json"), Json(new { Recording = new { OutputFolder = _data.File("Recordings"), MicrophoneFollows = "chrome" } }));
         using var app = Build(new SettingsPlaces(_folder.Path, user.Path, stateFolder: null, overridden: true));
         var ui = new FakeConsoleUi();
         ui.Type('q');
@@ -1108,7 +1109,7 @@ public class SettingsReloadTests
     public async Task Under_dotnet_run_the_header_is_as_before_whether_or_not_there_is_a_user_folder()
     {
         using var user = new TempFolder();
-        var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", "{}");
+        var output = DevelopmentLayout("""{ "Recording": { "FlushSeconds": 9 } }""", Json(new { Recording = new { OutputFolder = _data.File("Recordings") } }));
         using var app = Build(new SettingsPlaces(output, user.Path));
         var ui = new FakeConsoleUi();
         ui.Type('q');

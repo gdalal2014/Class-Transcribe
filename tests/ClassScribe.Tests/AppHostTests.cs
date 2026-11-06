@@ -143,7 +143,7 @@ public class AppHostTests
         AssertEqualsDefaults(template, TranscriptOptions.SectionName, new TranscriptOptions());
         AssertEqualsDefaults(template, DriveOptions.SectionName, new DriveOptions());
         AssertEqualsDefaults(template, YouTubeOptions.SectionName, new YouTubeOptions());
-        Assert.That(ClassFolders.RootFor(template["Recording:OutputFolder"]), Is.EqualTo(ClassFolders.RootFor("")), "the same folder, written out");
+        Assert.That(ClassFolders.RootNamedBy(template["Recording:OutputFolder"]), Is.EqualTo(ClassFolders.RootNamedBy("")), "the same folder, written out");
         var logging = template.GetSection("Logging").AsEnumerable().Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         Assert.That(logging, Is.EquivalentTo(DefaultSettings.Values));
         Assert.That(template.GetChildren().Select(section => section.Key), Is.EquivalentTo(new[]

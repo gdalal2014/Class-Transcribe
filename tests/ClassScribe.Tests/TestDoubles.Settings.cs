@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using ClassScribe.Settings;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -14,8 +15,15 @@ namespace ClassScribe.Tests;
 /// </summary>
 public sealed class SettingsFileFixtures : IDisposable
 {
-    /// <summary>The settings beside the program unless a test gives others: the shipped file's own, with a Recording section.</summary>
-    public const string ShippedJson = """{ "Recording": { "OutputFolder": "%USERPROFILE%\\ClassScribe", "FlushSeconds": 5 } }""";
+    /// <summary>
+    /// The settings beside the program unless a test gives others: a Recording section as the shipped file has, with a
+    /// placeholder for the recordings folder, never the real %USERPROFILE%\ClassScribe, which holds Gulzar's classes and
+    /// which a test run refuses (see <see cref="ClassFolders.RefuseTheRealFolderSwitch"/>).
+    /// </summary>
+    public const string ShippedJson = """{ "Recording": { "OutputFolder": "%USERPROFILE%\\ClassScribe (a placeholder of the tests)", "FlushSeconds": 5 } }""";
+
+    /// <summary>The recordings folder <see cref="ShippedJson"/> names, as a setting reads it: a placeholder, never the real one.</summary>
+    public const string PlaceholderOutputFolder = @"%USERPROFILE%\ClassScribe (a placeholder of the tests)";
 
     /// <summary>Writes <paramref name="programJson"/> beside the program and puts the settings together over the three folders, then reads them once, as the app does at start.</summary>
     public SettingsFileFixtures(string programJson = ShippedJson, bool overridden = false)

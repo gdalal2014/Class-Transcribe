@@ -137,7 +137,7 @@ public class SettingsCommandTests
 
         Assert.That(Lines, Is.EqualTo(new[]
         {
-            "%USERPROFILE%\\ClassScribe", "@one", "@two", "Default=Information", "Microsoft=Warning", "System=Warning", "5", """["@one","@two"]"""
+            SettingsFileFixtures.PlaceholderOutputFolder, "@one", "@two", "Default=Information", "Microsoft=Warning", "System=Warning", "5", """["@one","@two"]"""
         }));
     }
 

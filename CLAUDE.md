@@ -119,11 +119,12 @@ advice after a format error (10 A).
   copy whose MD5 check failed), and, as teach-video 8 asks, a new revision of its own verified copy of a
   lesson's video (`<base>.mp4`) made again, larger or smaller; never of a `.wav`. Deleting local files,
   by `drive free-space` or by hand, never touches Drive. A test run turns on the AppContext switches
-  `RoamingFolder.RefuseTheRealFolderSwitch` and `RuntimeFolder.RefuseTheRealFolderSwitch` (`TestGuards`,
-  the assembly's `[SetUpFixture]`), so a test that asks for the real `%APPDATA%\ClassScribe` or
-  `%LOCALAPPDATA%\ClassScribe` fails at once: with Gulzar signed in, a class recorded through the real
-  app would otherwise go up to his own Drive after it ends, and the real run files and Drive queue are
-  his. Every test that builds the app or the recorder's host registers `new RoamingFolder(<temporary
+  `RoamingFolder.RefuseTheRealFolderSwitch`, `RuntimeFolder.RefuseTheRealFolderSwitch` and
+  `ClassFolders.RefuseTheRealFolderSwitch` (`TestGuards`,
+  the assembly's `[SetUpFixture]`), so a test that asks for the real `%APPDATA%\ClassScribe`,
+  `%LOCALAPPDATA%\ClassScribe` or `%USERPROFILE%\ClassScribe` fails at once: with Gulzar signed in, a class recorded through the real
+  app would otherwise go up to his own Drive after it ends, the real run files and Drive queue are
+  his, and so are the classes in the recordings folder. Every test that builds the app or the recorder's host registers `new RoamingFolder(<temporary
   folder>)` or a `FakeCredentialStore`, and a `TestRuntime`'s `RuntimeFolder` (`RecorderHost.Folder` is
   made only when first asked for, so giving one is enough; `RuntimeFolder.RealRoot()` works out the
   real path, without the switch, for the one test of where it is).
@@ -163,15 +164,25 @@ advice after a format error (10 A).
   `video-browser` folder appeared there during the run. `%APPDATA%\ClassScribe\appsettings.json` is
   Gulzar's own settings file once he has made a change: list `%APPDATA%\ClassScribe` too, and never
   change his settings by hand or from a manual run; such a run sets `CLASSSCRIBE_SETTINGS_FOLDER` to
-  a temporary folder first (the menu then names it), and tests use `SettingsFileFixtures`.
+  a temporary folder first (the menu then names it), and tests use `SettingsFileFixtures`. The
+  recordings folder has its guard too, since `--output` is optional: `ClassFolders.RefuseTheRealFolderSwitch`
+  (on in `TestGuards`) makes `ClassFolders.RootFor` and `Root`, through which everything that reads
+  or writes under the root resolves it, refuse the real `%USERPROFILE%\ClassScribe` and any folder in
+  it, naming what to give instead; `ClassFolders.RootNamedBy` only names the folder, for the settings'
+  warnings (`SettingsCheck.FolderWarnings`), which read and write nothing there;
+  `SettingsFileFixtures.ShippedJson` names a placeholder (`PlaceholderOutputFolder`), never the real
+  folder; and `RecordingsFolderGuardTests` (in `TestGuards.cs`) pins the guard. A test that shows the
+  menu or runs a command without `--output` gives its settings a `Recording:OutputFolder` in a
+  temporary folder.
 
 ## Conventions
 
 - .NET 10 and C# 14, nullable on, file-scoped namespaces, primary constructors, records and
   `init` for immutable data, target-typed `new`, collection expressions, LINQ where it reads
   well, async/await, the built-in DI container. Both projects target `net10.0-windows10.0.19041.0`
-  (teach-video 6.3; Windows 10 version 2004 or later), for Windows' camera API (WinRT: the device lists and, from
-  0.6.0, `MediaCapture`); the test project must follow or NuGet refuses the reference (NU1201). NAudio still takes its
+  (teach-video 6.3; Windows 10 version 2004 or later), for Windows' camera API (WinRT: the device lists and
+  `MediaCapture`, both in 0.5.0, which holds the camera's steps 12, 1 and 13); the test project must follow or NuGet
+  refuses the reference (NU1201). NAudio still takes its
   `netstandard2.0` library, and CsWinRT's `ComWrappers` sits beside NAudio's and ClassScribe's built-in COM. The
   published folder grew from about 7 to 33 MB (`Microsoft.Windows.SDK.NET.dll` is 25 MB); trimming and Native AOT stay off.
   In a namespace that ends in `Windows` (`ClassScribe.Audio.Windows`, `ClassScribe.Desktop.Windows`), WinRT's own namespaces
@@ -367,7 +378,11 @@ advice after a format error (10 A).
   ArgumentException that stopped `devices` with the Zoom app in a meeting on 18 October); NAudio's
   calls still map, so the places that turn a failed look into a listing that says so
   (`RecordingMonitor.ClassDevice`, `BluetoothMicrophoneWatch.LookNow`, `WasapiMicrophoneSessions`,
-  `DevicesCommand.Read`) catch `AudioFailures.IsFailedResult`. `CoreAudio.Check` takes the checked
+  `DevicesCommand.Read`) catch `AudioFailures.IsFailedResult`: a `COMException` of any result, an
+  `InvalidCastException`, and the mapped `ArgumentException` of E_INVALIDARG, `UnauthorizedAccessException`
+  of E_ACCESSDENIED and `NotImplementedException` of E_NOTIMPL by their exact type and that result, with no
+  parameter named; a null or out-of-range argument, a named parameter or a derived type is a programming
+  error and fails loudly (`AudioFailuresTests`). `CoreAudio.Check` takes the checked
   expression (`CallerArgumentExpression`) and notes the call in the exception (`AudioFailures.CallKey`),
   so `AudioFailures.Describe` says `GetState: The parameter is incorrect. (0x80070057)`. In the apps
   with sound (`GetPlayingAppsListing`, a `PlayingAppsListing` with its `UnreadAudioSession`s) a
@@ -556,14 +571,17 @@ plan wins.
   agents only fast-forward `main`, tag and push, with his OK, when it is clean and no class runs (and not within an hour
   of one); `docs/HANDOFF.md` is the one file they may write there. `main` stays GitHub's default branch.
 - `develop` is the integration branch (worktree `%LOCALAPPDATA%\csw\develop`). Each step is a `feature/<name>` branch
-  from `develop`, in a worktree under `%LOCALAPPDATA%\csw` (never `%TEMP%` or OneDrive), committed at the end of every
+  from `develop`, in a worktree under `%LOCALAPPDATA%\csw` (never `%TEMP%` or OneDrive, and never deep: the Windows
+  target, `net10.0-windows10.0.19041.0`, pushes the test project's output paths past MAX_PATH in a deep folder, such as a
+  session's scratch folder, so a build there needs a short `-p:OutDir=<folder>`), committed at the end of every
   session after `git status` has been read for deletions nobody made. Before its merge it is rebased on `develop`, the
   suite run again, and `git range-diff` read, so that a conflict resolved in the rebase is reviewed too. It is merged
   with `--no-ff` when green and reviewed, so `git revert -m 1 <merge>` takes it out again (and reverting that revert
   brings it back). A feature goes into `develop` only when it may reach a class with the next release.
-- A release is `release/<version>`, cut from `develop` once its steps are merged, one open at a time. The cut is one
-  commit: the `<Version>` line in `src/ClassScribe/ClassScribe.csproj` (and, from step 1, the version of each
-  `DefaultChanges` row left empty). Its checklist names the vendors' defaults (architecture 7.1): one the release moves
+- A release is `release/<version>`, cut from `develop` once its steps are merged, one open at a time. The cut is meant
+  to be one commit: the `<Version>` line in `src/ClassScribe/ClassScribe.csproj` (and, from step 1, the version of each
+  `DefaultChanges` row left empty); 0.5.0's took two (`1bebef6`, whose `DefaultChangesTests` failed on the row's version,
+  then `5daac45`), so the suite is run on the cut before its dry run. Its checklist names the vendors' defaults (architecture 7.1): one the release moves
   (an address, an API version, the model, a price, one of ElevenLabs' limits) has a `DefaultChanges` row, as
   `DefaultChangesTests.A_vendors_default_that_moves_needs_a_row` demands. Then its weekday dry run through the kit, from the release's own worktree, which
   records the commit it tested. The finish: `main` merged into it first when `main` holds a hotfix it lacks, and the
@@ -580,7 +598,11 @@ plan wins.
   line, so its build shows `1.0.0+<commit>`.
 - The way back on a class day, until step 2: the previous tag checked out in the checkout
   (`git switch --detach v<previous>`), which `Start-Class.ps1` then builds; `git switch main` once a hotfix is finished.
-  Never during a class.
+  Never during a class, nor within an hour of one. For 0.5.0 the previous tag is `v0.4.0` (`8acbdd9`): `hotfix/0.4.1` was
+  never released and 0.5.0 carries its Zoom fix, so there is no `v0.4.1`. The seven steps (nothing of ClassScribe
+  running, the checkout, the launcher with `-NoRecord`, Auto Sleep off or the array since 0.4.0 has no hold, the Zoom app
+  quit, 0.4.0 reading only the file beside its exe, and back with `git switch main`) are in the README under "A program
+  to double-click" and on the card beside his launchers, `C:\Users\gdala\ClassScribe\Way back to 0.4.0.txt`.
 - Dry runs, and every manual run of a side build, go through the kit in `tools\dry-run` (its `README.md`).
   `Start-DryRun.cmd`, double-clicked by Gulzar in Explorer so that the window and its recorder start outside any job,
   publishes the worktree to `%LOCALAPPDATA%\Programs\ClassScribe-Dry` (never through an installer, never single-file),
@@ -588,7 +610,8 @@ plan wins.
   `ElevenLabs__BaseUrl`, `Drive__Enabled=false` and `CLASSSCRIBE_SETTINGS_FOLDER` in its own process only (never at
   user scope; builds before saved classes and the settings folder (build plan step 1) read only the `appsettings.json`
   beside their exe and pass over the variable, and the kit says which the build reads), runs `record ... --new --output
-  "%USERPROFILE%\ClassScribe dry runs"`, checks the run
+  "%USERPROFILE%\ClassScribe dry runs"` (`-Mic` is `OBSBOT` by default, as his launcher records, so a dry run takes the
+  path a class takes; `-Mic "Microphone Array"` on a laptop without one), checks the run
   file (`home` `Separate`), the transcript, the recording's log and the stand-in's log, compares the listings of
   `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` and `%USERPROFILE%\ClassScribe` before and after, and adds the
   result to `%LOCALAPPDATA%\ClassScribe-DryRuns\runs.log`, which a release's finish reads. It refuses while a class
@@ -741,9 +764,13 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   his glossary lives in `%APPDATA%\ClassScribe\keyterms-islamic-sciences.txt`, and the repository keeps
   `examples/glossary/keyterms-islamic-sciences.txt`, outside `src`, never built or published, which
   only the test project links (`RepositoryLayoutTests` checks that no glossary sits under `src` and no
-  project there copies one). A relative glossary is taken from the folder of the settings in force and
-  from nowhere else (`SettingsPlaces.ResolveFile`, behind `IGlossaryFiles.Resolve` and `ISettingsStore.ResolveFile`): never beside the exe, where a 0.4 build's
-  `keyterms.txt` may be left over. `GlossaryChoice` (scoped) is the one resolver, for every run, every
+  project there copies one). A relative glossary is taken from the folder of the settings file in force
+  and from nowhere else (`SettingsPlaces.ResolveFile`, behind `IGlossaryFiles.Resolve` and
+  `ISettingsStore.ResolveFile`): the user's settings folder once his own file exists, and before his
+  first change, or while his file is missing, the program's folder, where the shipped defaults are. So
+  a 0.4 build's leftover `keyterms.txt` beside the exe is read only until his first change (the README's
+  glossary section and its `No glossary at ...` row say the same), which is why a glossary is named by
+  its full path to be sure. `GlossaryChoice` (scoped) is the one resolver, for every run, every
   later transcription and the YouTube plans (`TermsFor`): `transcribe --keyterms`, then the
   recording's own `<base>.glossary.json` (`GlossaryRecord`: `decided` once, at the start, and one `sent`
   entry per transcript; read leniently and written whole through `GlossaryFiles`, behind
@@ -1513,24 +1540,22 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   and in a recorder the pass goes on to other recordings after its own, and those lines land in this
   class's local `.log` after its copy went up, so Drive's copy lacks them until that recording goes up
   again (a later transcript, rebuild or explicit upload sends the longer log as a revision).
-- Still to be checked with Gulzar against the real Google (design 5.3), never from a test or a manual
-  run without asking: the Google Cloud set-up with the app published before the first sign-in; the
-  real sign-in, and whether Bitdefender lets the browser reach `http://127.0.0.1:<port>/`; that
-  Google's console and consent screens still match the README's steps; then a publish to
-  `%LOCALAPPDATA%\Programs\ClassScribe` with a renewed Bitdefender ATD exception. Only `FakeGoogle`
-  (the generated Refit client, the real app's DI clients in `DriveSecretsTests`) and the design's local
-  probe have exercised the 308/`Range` handling, the `Location` format, and Refit's `[Body]
-  HttpContent` with `Content-Range` through a real `SocketsHttpHandler`; the 403 reasons
-  `uploadLimitExceeded` and `dailyLimitExceeded` were not checked against Google's error pages. The
-  first real class with Drive set up is the first time the hidden recorder lives on after the window
-  has the end and the first time it reaches the network (Bitdefender may notice). The first real
-  upload is Gulzar's to start: his class of 17 October (about 727 MB, once he has moved it to
-  `%USERPROFILE%\ClassScribe\Mantiq\2026-10-17` and renamed its files `Mantiq_2026-10-17_14-04-42Z.*`;
-  his PDFs and notes beside it stay on the laptop). Its `.json` was re-indented by his editor (tabs,
-  CRLF, 5.2 MB) and still parses whole (39,543 words, 7,884 s), so `ElevenLabsAnswer` and `rebuild`
-  must keep reading pretty-printed answers. His run file `20261017-140441Z-af758de8.json` in
-  `%LOCALAPPDATA%\ClassScribe\runs` still names the old `Mantiq_10_17_2026` folder; it looks finished,
-  but if the start-up report ever names it, that is why.
+- Google Drive against the real Google (design 5.3): Gulzar is signed in, and his classes go up by
+  themselves after each one, from the hidden recorder that lives on after the window has the end, into
+  the course > date tree; so the sign-in through the loopback receiver, the resumable upload in pieces
+  (the 308/`Range` handling, the `Location` format, Refit's `[Body] HttpContent` with `Content-Range`
+  through a real `SocketsHttpHandler`) and the recorder's reach of the network have run for real, not
+  only through `FakeGoogle` and the design's local probe. Never from a test or a manual run without
+  asking, and still unseen against Google: the 403 reasons `uploadLimitExceeded` and
+  `dailyLimitExceeded`, which `FakeGoogle` plays by Google's pages and no real answer has shown; and
+  whether Google's console and consent screens still match the README's steps, which only a new
+  sign-in would tell. His class of 17 October (about 727 MB, once moved to
+  `%USERPROFILE%\ClassScribe\Mantiq\2026-10-17` with its files renamed `Mantiq_2026-10-17_14-04-42Z.*`;
+  his PDFs and notes beside it stay on the laptop) goes up only when he asks for it. Its `.json` was
+  re-indented by his editor (tabs, CRLF, 5.2 MB) and still parses whole (39,543 words, 7,884 s), so
+  `ElevenLabsAnswer` and `rebuild` must keep reading pretty-printed answers. His run file
+  `20261017-140441Z-af758de8.json` in `%LOCALAPPDATA%\ClassScribe\runs` still names the old
+  `Mantiq_10_17_2026` folder; it looks finished, but if the start-up report ever names it, that is why.
 - YouTube, what both paths share (design `youtube.md` section 2; `src/ClassScribe/YouTube`): `youtube`
   and menu choice Y (`YouTubeMenu`: links pasted or a dragged list file, the course with Enter taking
   `YouTubeMenuMemory.LastCourse`, R or D, T or O, Esc back at every step; R leaves out playlist and
@@ -1682,6 +1707,34 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with a renewed Bitdefender exception (Bitdefender may notice ClassScribe starting Chrome). Left for
   later, only if use calls for it: the media-controls probe for paused against ended, titled date
   folders, and automated playback (Gulzar chose attended).
+- Still to be checked with Gulzar on 0.5.0, hands on, each asked first (the 0.5.0 review's section 5,
+  `release-0.5.0-review.md` beside the build plan, written on 29 October: ask which have run since and
+  strike those). The camera probe's evening 2 (its steps 8, 4, 5 and 16: the wake, and how 0.5.0 holds
+  the OBSBOT shared beside Chrome) and evening 3 (steps 17 to 21), the latter before his first lesson
+  with `--camera`. The kit's dry runs on a class's path (`-Mic OBSBOT`, the default now: V off and on,
+  the OBSBOT unplugged and replugged once, the microphone reopening within 5 s of the start) and the
+  OBSBOT pair with Auto Sleep on (`-Follows none`: the one `only exact zeros` warning and the Notice,
+  then with `-Setting "Recording:WakeCameraMicrophone=true"` the hold's line, the light on through P
+  and V, `Let go of the picture` at the stop, Windows' Camera app still showing the picture meanwhile).
+  The installed 0.5.0 (`--version` `0.5.0+5daac45`, the template's `"MicrophoneFollows": "auto"` and
+  `"CameraOffsets": {}`, `ClassScribe.previous` holding the old file) and its settings from the
+  installed exe (the menu's `Settings:` line with no ERROR, WARNING or older-default line; `settings
+  list`, `settings get ElevenLabs:ApiKey` refused with exit 2, `settings path`, `class list`, with no
+  `appsettings.json` made in `%APPDATA%\ClassScribe` and no `settings-home.txt` in
+  `%LOCALAPPDATA%\ClassScribe`; `devices` listing the OBSBOT; `camera-check "OBSBOT"` with Y and
+  Bitdefender's Webcam Protection allowed). The first class on 0.5.0 (the 0.5.0 build line, the OBSBOT
+  in the microphone lines, no `which the check refuses` or `Nothing of ... could be taken` warning, the
+  recording in `Mantiq\<date>`, then `Transcript saved to`, the cost line, the glossary counted, `is on
+  Google Drive`, no lesson-video line, the recorder ending after the upload). Later: a Zoom test
+  meeting of his own on the installed build before the Zoom app is used in a class (`devices` with
+  `Could not be read now:` lines and exit 0, and no `"chrome" has closed` warning in a recording beside
+  it); before his first lesson with `--camera`, `camera-check` on the built-in camera and a short lesson
+  with each camera (claps at the start and the end, P twice, the OBSBOT unplugged ten seconds, Q twice,
+  the `.mp4` played in Media Player and VLC with the claps in step, `Recording:CameraOffsets` set if
+  not), Ctrl+C once while a video is made, a record-only lesson continued with C, once a video over
+  4 GiB, the 2.5-hour clock-and-clap recording, and no `--camera-process` left after Q twice; and
+  before `Drive:LessonVideos` goes on, the remade video's revision kept for ever (his answer 4 b, not
+  built yet) and one real video checked for fast start (review 3.19).
 - The camera's open (`Camera/CameraRoute.cs`, following `ROOT-CAUSE.md` beside the camera probe, finding 7 of 21
   October): `CameraRoute.Open` makes the MediaCapture, registers `Failed`, finds the camera's source group by its id (never
   left out: a camera Windows no longer lists is an error, never Windows' default camera), calls InitializeAsync with

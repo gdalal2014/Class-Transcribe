@@ -35,7 +35,12 @@ is how the tests reach them (DryRunScriptTests).
 
 .EXAMPLE
 Start-DryRun.cmd
-The full dry run of the worktree this script is in: Chrome and the microphone array, about 15 minutes.
+The full dry run of the worktree this script is in: Chrome and the OBSBOT's microphone, as the class launcher records,
+about 15 minutes.
+
+.EXAMPLE
+Start-DryRun.cmd -Mic "Microphone Array"
+The full dry run on the laptop's own array, on a laptop without the OBSBOT.
 
 .EXAMPLE
 Start-DryRun.cmd -Short -NoMic
@@ -53,8 +58,10 @@ param(
     [string]$Name = 'Dry run',
     # The app whose sound is the class: chrome, or the test player with -Player.
     [string]$App,
-    # The microphone, by part of its name, as the class launchers name it.
-    [string]$Mic = 'Microphone Array',
+    # The microphone, by part of its name, as the class launcher names it: the OBSBOT by default, so that a dry run takes
+    # the path a class takes (the camera listing at the pick, the webcam rules, the hold); 'Microphone Array' on a laptop
+    # without one.
+    [string]$Mic = 'OBSBOT',
     # Records the class alone, without the microphone.
     [switch]$NoMic,
     # The app the microphone follows: the class app by default; none records the microphone throughout.

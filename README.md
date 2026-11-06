@@ -2372,8 +2372,13 @@ ClassScribe settings set ElevenLabs:KeytermsFile "%APPDATA%\ClassScribe\keyterms
 ```
 
 Environment variables such as `%APPDATA%` work, and quotes around the path are ignored. A relative
-path is taken from the settings folder and from nowhere else, never from beside the app. An edit to
-the file counts from the next recording's start: no build and no update.
+path is taken from the folder of the settings file in force, and from nowhere else: your own settings
+folder once your file exists, which it does as soon as you have changed a setting; before that, the
+program's folder, where the shipped defaults are. So a glossary kept beside `ClassScribe.exe` is
+read only until your first change, and a publish, or the launcher's next build (which moves the old
+folder to `ClassScribe.previous`), replaces that folder: keep it in your settings folder, and name it
+by its full path to be sure. An edit to the file counts from the next recording's start: no build and
+no update.
 
 A saved class can name a glossary of its own, or none: `ClassScribe class set "Mantiq" --keyterms
 "%APPDATA%\ClassScribe\mantiq.txt"`, `--keyterms none`, or the last question of menu C, E (Enter
@@ -2460,9 +2465,11 @@ says what the file is, and says once `Your settings are now kept in ...; an upda
 never changes that file.` From then on an update of ClassScribe never changes it: a later build that
 adds a setting uses its default until you add it. Your next change from the menu (S or C), `settings set`
 or `class` adds every setting your file lacks, at its default, and names each with the build's
-version (`ClassScribe 0.7.0 added 1 setting to your file: Recording:CameraResolution = 720p.`), and
+version (`ClassScribe 0.7.0 added 1 setting to your file: ... = ...`, with the setting's name and its
+default; your file from 0.5.0 holds every setting there is, so the line first comes with a later
+build that adds one), and
 `ClassScribe settings fill` adds them without changing anything else. When a later build changes a default, your file
-keeps the value it holds, and `settings list` marks it (`newer default: auto`), as the menu's header
+keeps the value it holds, and `settings list` marks it (`newer default: auto (since 0.5.0)`), as the menu's header
 does (`1 setting holds an older default; settings list shows it`): `settings reset <setting>` takes
 the new default. Before each change ClassScribe keeps the file as it was in
 `appsettings.previous.json` beside it.
@@ -2569,7 +2576,7 @@ The ones you are most likely to change:
 | `ElevenLabs:ApiVersion` | `v1` | The version of ElevenLabs' API the requests go to, the first part of their address (`/v1/speech-to-text`, `/v1/user/subscription`): `v` and one to three digits, refused otherwise. A version other than `v1`, the one this build's requests and answers were written for, only brings a warning, since ElevenLabs may refuse them or answer in a shape ClassScribe cannot read; `ClassScribe settings reset ElevenLabs:ApiVersion` puts it back. Moving to a new version is a new ClassScribe. |
 | `ElevenLabs:LanguageCode` | empty | Empty lets ElevenLabs detect the language. |
 | `ElevenLabs:NoVerbatim` | false | Drop filler words and false starts. |
-| `ElevenLabs:KeytermsFile` | `""` | The glossary of every recording no saved class names one for (see [The glossary](#the-glossary)): none by default, since ClassScribe ships none. Name a glossary of your own, such as `%APPDATA%\ClassScribe\keyterms-islamic-sciences.txt`, most easily with `settings set`, which writes it into the file as JSON needs it. Environment variables work, and quotes are ignored; a relative path is taken from your settings folder, never from beside the app. Empty, or `none`, sends no glossary. The default changed: a file that still holds `keyterms.txt`, the glossary earlier versions shipped, is pointed out by `settings list` (`newer default: ""`), and that name now finds no file. |
+| `ElevenLabs:KeytermsFile` | `""` | The glossary of every recording no saved class names one for (see [The glossary](#the-glossary)): none by default, since ClassScribe ships none. Name a glossary of your own, such as `%APPDATA%\ClassScribe\keyterms-islamic-sciences.txt`, most easily with `settings set`, which writes it into the file as JSON needs it. Environment variables work, and quotes are ignored; a relative path is taken from the folder of the settings file in force (your own settings folder once your file exists; the program's folder only before your first change, see [The glossary](#the-glossary)). Empty, or `none`, sends no glossary. The default changed: a file that still holds `keyterms.txt`, the glossary earlier versions shipped, is pointed out by `settings list` (`newer default: ""`), and that name now finds no file. |
 | `ElevenLabs:MaxKeyterms` | 1000 | The most terms one transcript's glossary sends; the rest of a longer glossary is left out, with a warning. ElevenLabs takes 1,000. From 1 to 10,000: above ElevenLabs' own it only brings a warning, since ElevenLabs then refuses the whole request, perhaps after an hour of upload. |
 | `ElevenLabs:KeytermCharacterLimit` | 50 | A glossary term must be shorter than this many characters, or it is left out with a warning. ElevenLabs takes terms shorter than 50. From 2 to 1,000; above 50 only brings a warning, as above. |
 | `ElevenLabs:MaxKeytermWords` | 5 | The most words in a glossary term; a longer one is left out with a warning. ElevenLabs takes 5. From 1 to 50; above 5 only brings a warning, as above. |
@@ -2641,7 +2648,7 @@ it already has writes nothing. When an environment variable sets that setting, t
 and ClassScribe says it has no effect while the variable is set. The ElevenLabs key is never a
 setting: `settings set ElevenLabs:ApiKey` is refused, with how to set `ELEVENLABS_API_KEY` instead.
 `settings list` marks a value that comes from an environment variable, and one that holds an older
-default (`newer default: auto`). `settings reset --all` keeps the file as it was in
+default (`newer default: auto (since 0.5.0)`). `settings reset --all` keeps the file as it was in
 `appsettings.previous.json`. Two ClassScribe windows never write the file at once: a change waits up
 to 2 seconds for another to finish, and a file that another program saves while ClassScribe changes
 it is read again before the change is made.
@@ -2744,9 +2751,34 @@ upload cannot close it over the result.
 The published app keeps your settings in `%APPDATA%\ClassScribe\appsettings.json`, made at your
 first change, and never in its own folder, so publishing again never changes them (see
 [Settings](#settings)). The `appsettings.json` beside `ClassScribe.exe` holds the shipped defaults,
-which a publish replaces. No glossary is shipped, and none beside `ClassScribe.exe` is ever read,
-not even a `keyterms.txt` an older version left there: keep your glossary in your settings folder
-and name it in your settings (see [The glossary](#the-glossary)).
+which a publish replaces. No glossary is shipped. One beside `ClassScribe.exe` is read only while
+you have no settings file of your own and a relative `ElevenLabs:KeytermsFile` names it, and the
+launcher's next build replaces that folder: keep your glossary in your settings folder and name it
+in your settings (see [The glossary](#the-glossary)).
+
+**The way back to 0.4.0.** If 0.5.0 misbehaves before a class, the version before is a checkout
+away. Never during a class, and never within an hour of one; the card beside your launchers,
+`Way back to 0.4.0.txt`, says the same.
+
+1. Make sure nothing of ClassScribe runs: `Get-Process ClassScribe` in PowerShell must find none
+   (PowerShell says it cannot find a process with that name). A recorder still uploading the last
+   class counts: wait for it to end. The launcher will not build while any ClassScribe runs; it
+   starts the installed build instead.
+2. In the repository's checkout, `git switch --detach v0.4.0` (v0.4.0, not v0.4.1: there is no
+   v0.4.1 tag; 0.4.1 was never released, and 0.5.0 carries its Zoom fix).
+3. Build and install it, recording nothing: `Start-Class.ps1 -Name "Mantiq" -NoRecord`, and read
+   `commit 8acbdd9` and `Built, checked and installed`.
+4. 0.4.0 has no OBSBOT hold and no webcam warnings. Either keep Device Auto Sleep off in OBSBOT
+   Center (light green), or record on the laptop's array instead: start the class with
+   `-Microphone "Microphone Array"` and set Chrome's (and Zoom's) microphone back to the array.
+5. 0.4.0 lacks the Zoom fix: quit the Zoom app before each class.
+6. 0.4.0 reads only the `appsettings.json` beside its exe. Changes made in 0.5.0 (your own settings
+   file, saved classes) do not apply to it; the launcher's own options still carry the class. A
+   camera lesson's run file that 0.4.0 rewrites loses its camera fields.
+7. Back to 0.5.0 afterwards: in the checkout, `git switch main`, then
+   `Start-Class.ps1 -Name "Mantiq" -NoRecord`, reading `commit 5daac45` (or main's newer commit,
+   after a later release). `ClassScribe.previous` holds the build before the last one, not 0.4.0,
+   so the way back is always the checkout.
 
 Do not publish as a single `.exe` (`-p:PublishSingleFile=true`): Bitdefender has quarantined
 single-file builds of ClassScribe as `Gen:Variant.Yogi.67941`, a false positive, while the folder
@@ -2855,6 +2887,7 @@ words you see.
 | `... is no longer there, so the settings stay as they were when it was last read` | The settings file was deleted or renamed while ClassScribe ran. Put it back (`appsettings.previous.json` beside your own file is the version before your last change); under `dotnet run`, a build puts the copy beside the program back. To go back to the defaults instead: `ClassScribe settings reset --all` for your own file, or start ClassScribe again without the file beside the program. |
 | `... could not be read: ...` | Another program, such as OneDrive or an editor, held the settings file for longer than a moment, or Windows would not let ClassScribe read it. Close that program, then choose again, or run the command again. |
 | `appsettings.json cannot be read: ...` | The file is valid JSON, but not in the shape settings take: the same setting written twice in one section, say, or something other than `{ ... }` around them all. Fix what the message names, then choose again. |
+| `WARNING  The settings in ... passed the check, but a part of ClassScribe could not read them, so the settings before them stay`, then `A part of ClassScribe could not use these settings: ...` | The file passed every check ClassScribe knows, yet a part of ClassScribe refused a value as the settings were read in; the reason follows. The settings as they were before stay in force, and the choice or command is refused as for any other problem with the file. Fix what the reason names, then choose again or run the command again; if it names nothing you changed, report the line. |
 | `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0-windows10.0.19041.0`. Build again, or edit that copy, for the change to count. |
 | `ClassScribe could not start.` and `An environment variable sets a value ClassScribe cannot use` | Change or remove the variable the message names (the setting's name, with `__` for each colon), then start ClassScribe again. |
 | `ClassScribe shows its menu only when someone can type into its window` | ClassScribe was started without a command from a script, or with its input redirected. Give it a command, such as `record` or `list`; the help follows the message. |
@@ -3033,6 +3066,8 @@ words you see.
 | `The camera process could not be let go within 5 seconds; it ends with ClassScribe at the latest` | The camera's process could not be ended at once, often a camera driver stuck inside Windows. Nothing to do: the stop goes on, and the process ends when ClassScribe does. If the camera's light stays on afterwards, unplug the camera. |
 | `The camera's picture did not stop within 25 seconds of the sound's stop; the recording goes on without it, and its piece is kept as far as it was written` | The camera hung at the stop. The sound was saved first, and the transcript and the next class go on; the piece keeps all but its last moments. |
 | `The camera's track did not let go within 25 seconds; it is left to finish by itself` | The same, when the recording's files were closed. Nothing to do. |
+| `ERROR  The camera's picture cannot be recorded: ...; the sound records on` | The camera's track could not be started as the recording began, for the reason given (its process or its first piece could not be set up). The lesson records its sound without the picture, to its end; nothing was interrupted. Before the next lesson, plug the camera in again or restart the laptop, and run `camera-check`; if the line comes again, report it with its reason. |
+| `ERROR  The camera's picture could not be stopped cleanly: ...; its piece is kept as far as it was written` | At the stop, the camera's track failed in a way nobody expected, after the sound was saved. The piece keeps everything written up to the failure, and the transcript goes on. If it comes again, report the line with its reason. |
 | `The picture is placed 60 ms earlier for "..." (Recording:CameraOffsets)` | The camera's offset from your settings applies. See [Recording with the camera](#recording-with-the-camera) to measure it. |
 | `--resolution needs --camera` or `--resolution takes 480p, 720p or 1080p, ...` (exit code 2) | Give `--resolution` only with `--camera`, and one of the three sizes or a width and a height such as `1024x576` within the limits the message gives. |
 | `PROBLEM  Windows does not let desktop apps use the camera: ...` (camera check, exit code 1) | Turn on Let desktop apps access your camera in Settings > Privacy & security > Camera (the line names the page), then run the camera check again. |
@@ -3130,7 +3165,7 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Copy ... of the transcript of ... was taken at that moment; saving the next one instead` | Another ClassScribe window saved a transcript of the same recording at the same moment. Each is kept, under its own number; nothing to do. |
 | `The header of ... says it holds ..., but the file goes on to ...` | The file comes from a recorder that stopped without finishing it. ClassScribe reads all of it; nothing to do. |
 | `Skipping keyterm on line ...` | That term breaks a rule of [the glossary](#the-glossary), so it was not sent; the message says which rule. |
-| `No glossary at ... (ElevenLabs:KeytermsFile), so the transcript is made without its terms` | The glossary your settings name is not there. Put the file there: this recording's next transcript sends it, the one after the class included when this line came at its start. To send another, run `transcribe <path> --again --keyterms "<file>"` once the class is over. The `settings set` command the line gives names another from the next recording, never for a class under way. A relative name is taken from your settings folder, never from beside the app, so a `keyterms.txt` an older version left there is not read. |
+| `No glossary at ... (ElevenLabs:KeytermsFile), so the transcript is made without its terms` | The glossary your settings name is not there. Put the file there: this recording's next transcript sends it, the one after the class included when this line came at its start. To send another, run `transcribe <path> --again --keyterms "<file>"` once the class is over. The `settings set` command the line gives names another from the next recording, never for a class under way. A relative name is taken from the folder of the settings file in force: your own settings folder once your file exists, and before your first change the program's folder, which the launcher's next build replaces; so a `keyterms.txt` an older version left beside the app is read only until your first change, and never afterwards (see [The glossary](#the-glossary)). |
 | `No glossary at ... (the saved class "..."), so the transcript is made without its terms` | The class's own glossary is not there. Put the file there: this recording's next transcript sends it, the one after the class included when this line came at its start. To send another, run `transcribe <path> --again --keyterms "<file>"` once the class is over. The `class set ... --keyterms` command the line gives names another from the class's next recording, never for the one under way; `--clear keyterms` gives the class `ElevenLabs:KeytermsFile`'s instead. The class records all the same. |
 | `The glossary ... (...) could not be read (...), so the transcript is made without its terms`, `The glossary ..., as decided when this recording started, could not be read (...), so the transcript is made without its terms` | The glossary is there, but another program held it, such as an editor or OneDrive, or Windows would not let ClassScribe read it. The transcript goes without its terms. Close that program, then run `transcribe <path> --again`, which is billed again, to send the glossary. |
 | `No glossary: ElevenLabs:KeytermsFile is empty` | No glossary is named, so none is sent: ClassScribe ships none. To send yours, name it (see [The glossary](#the-glossary)). `... says none` means the setting, the class or `--keyterms` was set to `none` on purpose. |

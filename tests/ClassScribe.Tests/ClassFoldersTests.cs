@@ -128,13 +128,16 @@ public class ClassFoldersTests
             .Reverse()
             .FirstOrDefault(drive => !Directory.Exists(drive + @"\"));
 
-    /// <summary>An empty setting keeps the old default, a ClassScribe folder in the user profile.</summary>
+    /// <summary>
+    /// An empty setting keeps the old default, a ClassScribe folder in the user profile: named as such, since the real folder
+    /// is refused in a test (see <see cref="RecordingsFolderGuardTests"/>).
+    /// </summary>
     [Test]
     public void An_empty_setting_means_ClassScribe_in_the_user_profile()
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-        Assert.That(Folders(outputFolder: "").Root, Is.EqualTo(Path.Combine(profile, "ClassScribe")));
+        Assert.That(ClassFolders.RootNamedBy(""), Is.EqualTo(Path.Combine(profile, "ClassScribe")));
     }
 
     /// <summary>The setting may use environment variables such as %USERPROFILE%.</summary>
@@ -190,14 +193,17 @@ public class ClassFoldersTests
         Assert.That(folders.DescribeRootProblem(), Does.StartWith($"{inTheWay} is a file"));
     }
 
-    /// <summary>The root a setting stands for is worked out the same way everywhere: here for an empty setting, a relative one and one with quotes.</summary>
+    /// <summary>
+    /// The root a setting stands for is worked out the same way everywhere: here for an empty setting (named only, as the
+    /// real folder is refused in a test), a relative one and one with quotes.
+    /// </summary>
     [Test]
     public void The_root_for_a_setting_is_worked_out_without_the_folders()
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-        Assert.That(ClassFolders.RootFor(""), Is.EqualTo(Path.Combine(profile, "ClassScribe")));
-        Assert.That(ClassFolders.RootFor(null), Is.EqualTo(Path.Combine(profile, "ClassScribe")));
+        Assert.That(ClassFolders.RootNamedBy(""), Is.EqualTo(Path.Combine(profile, "ClassScribe")));
+        Assert.That(ClassFolders.RootNamedBy(null), Is.EqualTo(Path.Combine(profile, "ClassScribe")));
         Assert.That(ClassFolders.RootFor("Classes"), Is.EqualTo(Path.Combine(profile, "Classes")));
         Assert.That(ClassFolders.RootFor($"\"{_folder.File("Classes")}\""), Is.EqualTo(_folder.File("Classes")));
     }

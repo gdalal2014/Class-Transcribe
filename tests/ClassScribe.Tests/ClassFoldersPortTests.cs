@@ -93,7 +93,7 @@ public class ClassFoldersPortTests
         Assert.Multiple(() =>
         {
             Assert.That(Port.RootFor("%USERPROFILE%\\Classes"), Is.EqualTo(ClassFolders.RootFor("%USERPROFILE%\\Classes")));
-            Assert.That(Port.RootFor(null), Is.EqualTo(ClassFolders.RootFor(null)));
+            Assert.That(Port.RootFor("Classes"), Is.EqualTo(ClassFolders.RootFor("Classes")));
             Assert.That(Port.IsVideo(video), Is.True.And.EqualTo(ClassFolders.IsVideo(video)));
             Assert.That(Port.IsVideo(files), Is.False.And.EqualTo(ClassFolders.IsVideo(files)));
             Assert.That(Port.FindNewest(course), Is.EqualTo(video).And.EqualTo(ClassFolders.FindNewest(course)));

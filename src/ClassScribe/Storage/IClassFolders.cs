@@ -21,7 +21,8 @@ public interface IClassFolders
     /// <summary>
     /// The folder that holds every recording folder when Recording:OutputFolder is <paramref name="outputFolder"/>:
     /// environment variables such as %USERPROFILE% expanded and any surrounding quotes removed, a relative path taken from
-    /// the user profile, and an empty one meaning a ClassScribe folder there.
+    /// the user profile, and an empty one meaning a ClassScribe folder there. In a test run the real
+    /// %USERPROFILE%\ClassScribe, and any folder in it, is refused (see <c>ClassFolders.RefuseTheRealFolderSwitch</c>).
     /// </summary>
     string RootFor(string? outputFolder);
 
