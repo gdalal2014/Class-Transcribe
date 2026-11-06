@@ -81,6 +81,9 @@ public sealed class FakeDriveFile
     /// <summary>How many revisions of its content were uploaded: 1 for a file uploaded once, 0 for a folder or one added by the test.</summary>
     public int Revisions { get; set; }
 
+    /// <summary>How many of those revisions were sent with keepRevisionForever, which Drive then never purges: a remade lesson video's, and no other.</summary>
+    public int RevisionsKeptForever { get; set; }
+
     /// <summary>The MD5 Drive gives for it instead of its content's, as a fault; null for the right one.</summary>
     public string? Md5Override { get; set; }
 
@@ -111,6 +114,9 @@ public sealed class FakeUploadSession
 
     /// <summary>The file a new revision is of; null for a new file.</summary>
     public string? RevisionOf { get; init; }
+
+    /// <summary>True when the start asked Drive to keep the new revision for ever (keepRevisionForever=true in its query).</summary>
+    public bool KeepRevisionForever { get; init; }
 
     /// <summary>The length the upload declared it would send.</summary>
     public long Declared { get; init; }
@@ -539,6 +545,7 @@ public sealed partial class FakeGoogle : HttpMessageHandler
             MimeType = (string?)metadata["mimeType"],
             Parents = metadata["parents"] is JsonArray parents ? [.. parents.Select(parent => (string)parent!)] : [],
             RevisionOf = revisionOf,
+            KeepRevisionForever = string.Equals(request.Query["keepRevisionForever"], "true", StringComparison.Ordinal),
             Declared = long.Parse(request.UploadLength ?? "0", System.Globalization.CultureInfo.InvariantCulture)
         };
         _secrets.Add(id);
@@ -603,6 +610,7 @@ public sealed partial class FakeGoogle : HttpMessageHandler
         var file = session.RevisionOf is { } fileId ? Files.First(known => known.Id == fileId) : NewFile(session);
         file.Content = session.Received.ToArray();
         file.Revisions++;
+        if (session.KeepRevisionForever) file.RevisionsKeptForever++;
         file.Md5Override = _wrongMd5.TryGetValue(file.Name, out var wrong) && wrong > 0 ? "0123456789abcdef0123456789abcdef" : null;
         if (wrong > 0) _wrongMd5[file.Name] = wrong - 1;
         session.Completed = file;
@@ -1165,6 +1173,12 @@ public sealed class FakeDriveAutoUpload : IDriveAutoUpload
         _calls.Enqueue($"Upload {files.BaseName}");
         if (OnUpload is { } upload) await upload();
     }
+
+    /// <summary>What <see cref="IsUploadingNow"/> answers for every recording: false unless a test says an upload goes on.</summary>
+    public bool UploadingNow { get; set; }
+
+    /// <inheritdoc />
+    public bool IsUploadingNow(RecordingFiles files) => UploadingNow;
 }
 
 /// <summary>
@@ -1320,7 +1334,10 @@ public sealed class GoogleWorld : IDisposable
 
     /// <summary>The upload of one recording, looking at the disk through <paramref name="probe"/>, the real probe unless a test gives another.</summary>
     public RecordingUpload RecordingUpload(IFileProbe? probe = null) =>
-        new(GoogleDrive(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), new RecordingFolder(), probe ?? new FileProbe(), RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
+        new(GoogleDrive(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), new RecordingFolder(), probe ?? new FileProbe(), RecorderLog, Room(), Options, YouTube, Time, Log<RecordingUpload>());
+
+    /// <summary>Drive's room, read from the in-memory Google's about call before a lesson's video goes up (its <see cref="FakeGoogle.StorageLimit"/> and usage).</summary>
+    public DriveRoom Room() => new(Store, new Lazy<IGoogleDrive>(GoogleDrive), Options, Log<DriveRoom>());
 
     /// <summary>The upload lock, in the temporary ClassScribe folder.</summary>
     public DriveUploadLock Lock() => new(Runtime.Folder, Log<DriveUploadLock>());
@@ -1330,7 +1347,7 @@ public sealed class GoogleWorld : IDisposable
 
     /// <summary>The uploads that happen by themselves in a run, over a pass made when one runs, with Ctrl+C played by <paramref name="signals"/>.</summary>
     public DriveAutoUpload AutoUpload(FakeUserSignals? signals = null) =>
-        new(Store, Manifests(), new Lazy<DriveUploadPass>(Pass), signals ?? new FakeUserSignals(), Options, Log<DriveAutoUpload>());
+        new(Store, Manifests(), new Lazy<DriveUploadPass>(Pass), signals ?? new FakeUserSignals(), Options, Time, Log<DriveAutoUpload>());
 
     /// <summary>What the menu's header and the report at the start say of the queue, with local times in US Eastern time.</summary>
     public DriveQueueReport QueueReport() => new(Store, Manifests(), Runtime.Journal, ClassFolders(), Options, ZonedClock.Eastern(Time));

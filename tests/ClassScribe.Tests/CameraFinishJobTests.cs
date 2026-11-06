@@ -38,12 +38,31 @@ public sealed class CameraFinishJobTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Writes a piece of the lesson beginning at <paramref name="startSeconds"/>, and returns its path.</summary>
+    /// <summary>Writes a piece of the lesson beginning at <paramref name="startSeconds"/>, written now (newer than any older video), and returns its path.</summary>
     private string Piece(double startSeconds)
     {
         var path = _files.CameraPiece(TimeSpan.FromSeconds(startSeconds));
         File.WriteAllBytes(path, [0, 0, 0, 24, (byte)'f', (byte)'t', (byte)'y', (byte)'p']);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
         return path;
+    }
+
+    /// <summary>
+    /// Writes a piece beginning at <paramref name="startSeconds"/> that an earlier making left behind: older than the older
+    /// video, which was made from it, as a piece that could not be deleted after that making.
+    /// </summary>
+    private string Leftover(double startSeconds)
+    {
+        var path = Piece(startSeconds);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddHours(-2));
+        return path;
+    }
+
+    /// <summary>Writes the lesson's older video, made an hour ago, so that a piece written now is newer than it.</summary>
+    private void OlderVideo(string content = "the older video")
+    {
+        File.WriteAllText(_files.LessonVideo, content);
+        File.SetLastWriteTimeUtc(_files.LessonVideo, DateTime.UtcNow.AddHours(-1));
     }
 
     /// <summary>The finish job for the lesson, keeping its pieces when <paramref name="keepPieces"/>.</summary>
@@ -111,17 +130,45 @@ public sealed class CameraFinishJobTests
     /// <summary>Two checks are the same when they ask for the same length and the same frames.</summary>
     private static bool SameCheck(LessonVideoCheck first, LessonVideoCheck second) => first.Length == second.Length && first.FramesAt.SequenceEqual(second.FramesAt);
 
-    /// <summary>A video meant for Google Drive keeps its pieces until free-space finds it there, which a line says.</summary>
+    /// <summary>
+    /// A video meant for Google Drive keeps its pieces until free-space finds it there, which a line says, and lists them
+    /// beside the video, so that free-space knows which pieces the video holds (review 3.15).
+    /// </summary>
     [Test]
     public async Task Pieces_kept_for_Drive_stay_with_a_line()
     {
-        Piece(0);
+        var piece = Piece(0);
 
         var (exit, seen) = await RunAsync(Finish(keepPieces: true));
 
         Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
         Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
         Assert.That(seen.Logs, Has.Member($"The camera's 1 piece of {BaseName} stay on this laptop until free-space finds the video safe on Google Drive (Drive:LessonVideos)"));
+        Assert.That(File.ReadAllLines(_files.LessonVideoPieces), Is.EqualTo(new[] { Path.GetFileName(piece) }));
+    }
+
+    /// <summary>
+    /// The list beside a video kept for Drive names only the pieces the video was made from: one left out as unreadable is
+    /// not in it, so free-space keeps it (review 3.15); the list goes with the pieces when a later making deletes them.
+    /// </summary>
+    [Test]
+    public async Task The_list_of_pieces_names_only_those_the_video_was_made_from()
+    {
+        var bad = Piece(0);
+        _media.Unreadable(Path.GetFileName(bad));
+        var good = Piece(0.5);
+
+        var (exit, _) = await RunAsync(Finish(keepPieces: true));
+
+        Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
+        Assert.That(File.ReadAllLines(_files.LessonVideoPieces), Is.EqualTo(new[] { Path.GetFileName(good) }));
+
+        File.Delete(_files.LessonVideo);
+        var (again, _) = await RunAsync(Finish());
+
+        Assert.That(again, Is.EqualTo(CameraProtocol.DoneExitCode));
+        Assert.That(File.Exists(good), Is.False);
+        Assert.That(File.Exists(_files.LessonVideoPieces), Is.False, "the pieces went, and the list with them");
     }
 
     /// <summary>A piece from the software encoder, with another sequence header, has the whole picture encoded again, which a line says.</summary>
@@ -147,7 +194,7 @@ public sealed class CameraFinishJobTests
     public async Task A_video_that_fails_its_check_is_deleted_and_the_pieces_kept()
     {
         Piece(0);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
         _media.CheckAnswer = "no frame decodes at 00:00:01.250";
 
         var (exit, seen) = await RunAsync(Finish());
@@ -170,7 +217,7 @@ public sealed class CameraFinishJobTests
     public async Task An_older_video_is_replaced_only_once_the_new_one_passed()
     {
         Piece(0);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
         using var gate = new ManualResetEventSlim();
         _media.HoldWrite = gate;
         await using var process = new FakeCameraProcess();
@@ -197,7 +244,7 @@ public sealed class CameraFinishJobTests
     public async Task An_older_video_a_player_holds_open_is_not_replaced_and_failed_says_why()
     {
         Piece(0);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
 
         int exit;
         CameraLinesSeen seen;
@@ -209,8 +256,8 @@ public sealed class CameraFinishJobTests
         {
             Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
             Assert.That(failed, Does.StartWith(
-                $"{BaseName}.mp4, the older video, is open in another program, such as a video player, so the new one, which passed its check, could not take its place ("));
-            Assert.That(failed, Does.Contain($"Close it, then make the video again. The camera's pieces are kept. To make it again, free: "));
+                $"{BaseName}.mp4, the older video, is open in another program (a video player, or ClassScribe sending it to Google Drive), so the new one, which passed its check, could not take its place ("));
+            Assert.That(failed, Does.Contain($"Close the player, or wait for the upload to end, then make the video again. The camera's pieces are kept. To make it again, free: "));
             Assert.That(failed, Does.Contain($"finish-video \"{_files.Segment(1)}\""));
             Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("the older video"));
             Assert.That(File.Exists(_files.LessonVideoPartial), Is.True, "the checked video is kept as its .partial");
@@ -225,7 +272,7 @@ public sealed class CameraFinishJobTests
     public async Task An_older_video_held_for_a_moment_is_replaced_once_let_go()
     {
         Piece(0);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
         await using var scanner = new FileStream(_files.LessonVideo, FileMode.Open, FileAccess.Read, FileShare.Read);
         await using var process = new FakeCameraProcess();
         var (host, seen) = await StartAsync(process, Finish());
@@ -244,7 +291,7 @@ public sealed class CameraFinishJobTests
     public async Task A_continued_lesson_takes_the_older_video_before_its_first_piece()
     {
         var piece = Piece(1.5);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
 
         var (exit, _) = await RunAsync(Finish());
 
@@ -256,6 +303,83 @@ public sealed class CameraFinishJobTests
     }
 
     /// <summary>
+    /// A piece an earlier making left behind at 0 (it could not be deleted then), with the older video made from it: the older
+    /// video holds its picture and everything after it, which the piece alone does not, so a new video would lose that
+    /// picture (review 3.2). Nothing is made, the older video stays as it is, and failed says so and what to do.
+    /// </summary>
+    [Test]
+    public async Task A_leftover_piece_at_the_start_never_replaces_the_older_video_made_from_it()
+    {
+        var leftover = Leftover(0);
+        OlderVideo();
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(seen.Of<CameraFailed>().Single().Why, Is.EqualTo(
+                $"{BaseName}.mp4, the older video, holds the picture of every camera piece here already ({Path.GetFileName(leftover)} is older than it), so there is nothing to add to it, and it stays as it is. To make the video again from the pieces alone, move the older video out of the folder first (keep it: the pieces here may not hold all of its picture). The camera's pieces are kept"));
+            Assert.That(_media.Written, Is.Empty);
+            Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("the older video"));
+            Assert.That(File.Exists(leftover), Is.True);
+        }
+    }
+
+    /// <summary>
+    /// A continued lesson with a leftover piece in the middle of the older video's picture: the leftover is older than the
+    /// video, which holds its picture already, so it is left out with a line, and the older video's picture is used up to the
+    /// first newer piece, so that nothing the older video held is lost (review 3.2); the leftover goes with the pieces.
+    /// </summary>
+    [Test]
+    public async Task A_leftover_piece_in_the_middle_is_left_out_and_the_older_video_used_up_to_the_newer_piece()
+    {
+        var leftover = Leftover(0.5);
+        OlderVideo();
+        var fresh = Piece(1.5);
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
+            Assert.That(_media.Written.Single().Slices, Is.EqualTo(new[]
+            {
+                new PlannedSlice(_files.LessonVideo, TimeSpan.Zero, TimeSpan.FromSeconds(1.5)), new PlannedSlice(fresh, TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(0.5))
+            }));
+            Assert.That(seen.Logs, Has.Member($"{Path.GetFileName(leftover)} is older than {BaseName}.mp4, which holds its picture already, so it is left out; the older video's picture is used instead, up to the first newer piece"));
+            Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("a lesson's video"));
+            Assert.That(OnDisk.FindCameraPieces(_files), Is.Empty, "the leftover's picture is in the new video, through the older one, so it goes with the rest");
+        }
+    }
+
+    /// <summary>
+    /// A piece beginning at or past the older video's end cannot be in that video, whatever its write time says (the Windows
+    /// clock set back between the two parts' makings, or pieces restored with their times kept): it is fresh, used after the
+    /// older video's picture, never left out as held by it and deleted (review of 3.2).
+    /// </summary>
+    [Test]
+    public async Task A_piece_starting_past_the_older_video_s_end_is_used_whatever_its_time()
+    {
+        OlderVideo();
+        _media.Holds($"{BaseName}.mp4", _media.Default with { Length = TimeSpan.FromSeconds(1) });
+        var later = Leftover(1);
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
+            Assert.That(_media.Written.Single().Slices, Is.EqualTo(new[]
+            {
+                new PlannedSlice(_files.LessonVideo, TimeSpan.Zero, TimeSpan.FromSeconds(1)), new PlannedSlice(later, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))
+            }));
+            Assert.That(seen.Logs.Where(line => line.Contains("holds its picture already", StringComparison.Ordinal)), Is.Empty);
+            Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("a lesson's video"));
+        }
+    }
+
+    /// <summary>
     /// An older video that cannot be read, of a continued lesson whose first pieces are gone, holds the only picture before its
     /// first piece: the video is not made, rather than made without it and put in its place; failed says what to do.
     /// </summary>
@@ -263,7 +387,7 @@ public sealed class CameraFinishJobTests
     public async Task An_older_video_that_cannot_be_read_is_never_replaced_by_one_without_its_picture()
     {
         Piece(1.5);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
         _media.Unreadable(Path.GetFileName(_files.LessonVideo));
 
         var (exit, seen) = await RunAsync(Finish());
@@ -388,6 +512,32 @@ public sealed class CameraFinishJobTests
         await Wait.UntilAsync(() => seen.Logs.Contains($"The making of {BaseName}.mp4 was cancelled; the camera's pieces are kept"));
     }
 
+    /// <summary>
+    /// A damaged .wav part is skipped by the mix, as the upload skips it, which would make the video's sound shorter than the
+    /// lesson and put every later piece's picture out of step with it, while the check could not tell (the part measures as
+    /// nothing): the job fails with the part named, the unfinished video deleted and the pieces kept (review 3.14).
+    /// </summary>
+    [Test]
+    public async Task A_damaged_wav_part_fails_the_video_and_keeps_the_pieces()
+    {
+        Piece(0);
+        File.WriteAllText(_files.Segment(2), "This is not audio at all, although the name says so.");
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        var failed = seen.Of<CameraFailed>().Single().Why;
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(failed, Does.StartWith(
+                $"The lesson's sound could not all be read: {Path.GetFileName(_files.Segment(2))} is not a readable WAV file, so the video was not made; its picture would be out of step with the sound after it. The camera's pieces are kept. To make it again, free: "));
+            Assert.That(File.Exists(_files.LessonVideoPartial), Is.False);
+            Assert.That(File.Exists(_files.LessonVideo), Is.False);
+            Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
+            Assert.That(seen.Logs, Has.Some.StartsWith($"Skipping {Path.GetFileName(_files.Segment(2))}: it is not a readable WAV file"));
+        }
+    }
+
     /// <summary>A write that fails, as a full disk, deletes the unfinished video and keeps the pieces; failed says why, exit 1.</summary>
     [Test]
     public async Task A_write_that_fails_keeps_the_pieces()
@@ -403,9 +553,26 @@ public sealed class CameraFinishJobTests
         Assert.That(seen.Of<CameraFailed>().Single().Why, Does.StartWith("The lesson's video could not be written (There is not enough space on the disk"));
     }
 
-    /// <summary>While the writing takes its time, a progress line goes out at least every ten seconds, so that the starter's limit never ends it.</summary>
+    /// <summary>
+    /// Moves the clock by <paramref name="by"/>, a look at a time, letting the job's loop take each look (its next wait is a
+    /// new timer) before the next, so that what the job sends meanwhile is what it would send in that much time.
+    /// </summary>
+    private async Task AdvanceAsync(TimeSpan by)
+    {
+        for (var moved = TimeSpan.Zero; moved < by; moved += CameraFinishJob.LookEvery)
+        {
+            var timers = _time.TimersMade;
+            _time.Advance(CameraFinishJob.LookEvery);
+            await Wait.UntilAsync(() => _time.TimersMade > timers);
+        }
+    }
+
+    /// <summary>
+    /// While a slow writing creeps on below the next percent, the same percent is said again every ten seconds, so that the
+    /// starter's limit never ends a working job: the line follows the work's own progress, not the clock alone (review 3.3).
+    /// </summary>
     [Test]
-    public async Task Progress_is_said_at_least_every_ten_seconds()
+    public async Task Progress_is_said_again_every_ten_seconds_while_the_writing_moves()
     {
         Piece(0);
         using var gate = new ManualResetEventSlim();
@@ -415,9 +582,55 @@ public sealed class CameraFinishJobTests
         await _time.AdvanceUntilAsync(() => _media.Writing && seen.Of<CameraProgress>().Any(progress => progress.Percent == 50), CameraFinishJob.LookEvery, timeoutSeconds: 30);
         var before = seen.Of<CameraProgress>().Count;
 
-        await _time.AdvanceUntilAsync(() => seen.Of<CameraProgress>().Count > before, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        _media.Creep();
+        await AdvanceAsync(CameraFinishJob.ProgressEvery);
+        await Wait.UntilAsync(() => seen.Of<CameraProgress>().Count > before);
 
-        Assert.That(seen.Of<CameraProgress>()[^1].Percent, Is.EqualTo(50), "the same percent, said again");
+        Assert.That(seen.Of<CameraProgress>()[^1].Percent, Is.EqualTo(50), "the same percent, said again, since the work moved");
+        gate.Set();
+        await _time.AdvanceUntilAsync(() => host.IsCompleted, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        Assert.That(await host, Is.EqualTo(CameraProtocol.DoneExitCode));
+    }
+
+    /// <summary>
+    /// A writing whose progress stands still is said no more: a Media Foundation call that never returns would otherwise be
+    /// kept alive for ever by the repeated line, and the starter's two-minute limit is what ends it (review 3.3).
+    /// </summary>
+    [Test]
+    public async Task A_writing_that_stands_still_is_said_no_more()
+    {
+        Piece(0);
+        using var gate = new ManualResetEventSlim();
+        _media.HoldWrite = gate;
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Finish());
+        await _time.AdvanceUntilAsync(() => _media.Writing && seen.Of<CameraProgress>().Any(progress => progress.Percent == 50), CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        var before = seen.Of<CameraProgress>().Count;
+
+        await AdvanceAsync(3 * CameraFinishJob.ProgressEvery);
+
+        Assert.That(seen.Of<CameraProgress>().Count, Is.EqualTo(before), "nothing moved, so nothing more is said");
+        gate.Set();
+        await _time.AdvanceUntilAsync(() => host.IsCompleted, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        Assert.That(await host, Is.EqualTo(CameraProtocol.DoneExitCode));
+    }
+
+    /// <summary>The check's 99 is said once, and again only as its frames decode: a check stuck on a frame is said no more (review 3.3).</summary>
+    [Test]
+    public async Task A_check_that_stands_still_is_said_no_more()
+    {
+        Piece(0);
+        using var gate = new ManualResetEventSlim();
+        _media.HoldCheck = gate;
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Finish());
+        // 99 is said as the check begins, and once more at its first look; neither is a repeat.
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraProgress>().Count(progress => progress.Percent == 99) == 2, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        var before = seen.Of<CameraProgress>().Count;
+
+        await AdvanceAsync(3 * CameraFinishJob.ProgressEvery);
+
+        Assert.That(seen.Of<CameraProgress>().Count, Is.EqualTo(before), "no frame decoded, so nothing more is said");
         gate.Set();
         await _time.AdvanceUntilAsync(() => host.IsCompleted, CameraFinishJob.LookEvery, timeoutSeconds: 30);
         Assert.That(await host, Is.EqualTo(CameraProtocol.DoneExitCode));

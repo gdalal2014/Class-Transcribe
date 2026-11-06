@@ -44,12 +44,15 @@ public interface IDriveApi
         [Header("X-Upload-Content-Length")] long length, [Body] DriveFileMetadata metadata, CancellationToken cancellationToken);
 
     /// <summary>
-    /// PATCH /upload/drive/{apiVersion}/files/{fileId}?uploadType=resumable: starts the upload of a new revision of
-    /// ClassScribe's own file <paramref name="fileId"/>, which keeps its id, its name and its earlier revisions; as
-    /// <see cref="StartUploadAsync"/> otherwise.
+    /// PATCH /upload/drive/{apiVersion}/files/{fileId}?uploadType=resumable[&amp;keepRevisionForever=true]: starts the upload
+    /// of a new revision of ClassScribe's own file <paramref name="fileId"/>, which keeps its id, its name and its earlier
+    /// revisions; as <see cref="StartUploadAsync"/> otherwise. <paramref name="keepRevisionForever"/> is "true" for a
+    /// revision Drive must keep for ever (a lesson's video made again), and null, so left out, for one Drive may purge after
+    /// 30 days as it does by default.
     /// </summary>
     [Patch("/upload/drive/{apiVersion}/files/{fileId}?uploadType=resumable")]
     Task<HttpResponseMessage> StartRevisionAsync([Header("Authorization")] string authorization, string apiVersion, string fileId,
+        [AliasAs("keepRevisionForever")] string? keepRevisionForever,
         [Header("X-Upload-Content-Type")] string contentType, [Header("X-Upload-Content-Length")] long length, [Body] DriveFileMetadata metadata,
         CancellationToken cancellationToken);
 

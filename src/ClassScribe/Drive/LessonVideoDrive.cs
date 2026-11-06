@@ -1,4 +1,6 @@
+using System.IO;
 using ClassScribe.Commands;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Drive;
@@ -23,6 +25,14 @@ public sealed class LessonVideoDrive(IGoogleCredentialStore store, IOptionsSnaps
     /// <summary>The start line with Drive:LessonVideos off, the default: how to turn it on, with this very program's settings set, printed by <paramref name="commandLine"/>.</summary>
     public static string StaysHereLine(CommandLine commandLine) =>
         $"The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: {commandLine.SettingsSet("Drive:LessonVideos", "true")}. Its camera pieces are deleted once the video passes its check.";
+
+    /// <summary>
+    /// Why the video of <paramref name="files"/> is not made again while ClassScribe's own upload sends its older video to
+    /// Google Drive (review 3.5): the upload holds that video open, shared for delete, so the new one could not take its
+    /// place; <paramref name="command"/> is the finish-video command for once the upload is done.
+    /// </summary>
+    public static string UploadGoingOnLine(RecordingFiles files, string command) =>
+        $"The video of {files.BaseName} is not made again now: ClassScribe is sending its older video, {Path.GetFileName(files.LessonVideo)}, to Google Drive, and the new one could not take its place meanwhile. Once the upload is done, make it again, free: {command}";
 
     /// <summary>The start line with Drive:LessonVideos on and Drive:Upload WithoutAudio, which keeps the video's sound off Drive too.</summary>
     public const string WithoutAudioLine =

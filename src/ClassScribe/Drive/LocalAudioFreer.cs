@@ -144,8 +144,10 @@ public sealed class LocalAudioFreer(IGoogleDrive drive, DriveRetry retry, IUploa
     /// A lesson's camera pieces after its audio: deleted once its finished video, <see cref="RecordingFiles.LessonVideo"/>,
     /// is on Drive, checked when it went up and checked again now as each .wav is (its MD5 worked out afresh, Drive's copy
     /// outside the trash with the same size and MD5); otherwise they stay, the only other copy of the picture, which is said
-    /// when the video's copy fails the check. Only the pieces the video holds go, those not newer than it: a newer one, whose
-    /// picture is in no video yet, stays, named. Never the finished video. What it deletes is added to <paramref name="freed"/>.
+    /// when the video's copy fails the check. Only the pieces the video holds go: those the finish job listed beside it
+    /// (<see cref="RecordingFiles.LessonVideoPieces"/>; a piece left out of the video, one it could not read, is not in the
+    /// list and stays, named, review 3.15; without a list, those not newer than the video), and a newer one, whose picture is
+    /// in no video yet, stays, named. Never the finished video. What it deletes is added to <paramref name="freed"/>.
     /// </summary>
     private async Task<FreedAudio> FreePiecesAsync(RecordingFiles files, FreedAudio freed, CancellationToken cancellationToken)
     {
@@ -167,13 +169,38 @@ public sealed class LocalAudioFreer(IGoogleDrive drive, DriveRetry retry, IUploa
             return freed with { Problem = freed.Problem ?? kept };
         }
 
-        var madeUtc = probe.LastWriteUtc(files.LessonVideo);
-        var pieces = all.Where(piece => probe.LastWriteUtc(piece) <= madeUtc).ToList();
-        foreach (var piece in all.Except(pieces))
+        IReadOnlySet<string>? listed;
+        try
         {
-            var newer = $"{Path.GetFileName(piece)} is newer than the lesson video of {files.BaseName}, which does not hold it, so it stays on this laptop";
-            logger.LogWarning("{Problem}", newer);
-            freed = freed with { Problem = freed.Problem ?? newer };
+            listed = ListedPieces(files);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: a list another program holds, or that cannot be read, leaves no way to tell which
+            // pieces the video holds, so they all stay, with why; the next free-space looks again.
+            var unread = $"The camera's pieces of {files.BaseName} stay: the list of the pieces its video was made from, {Path.GetFileName(files.LessonVideoPieces)}, cannot be read ({ex.Message.TrimEnd('.')})";
+            logger.LogWarning("{Problem}", unread);
+            return freed with { Problem = freed.Problem ?? unread };
+        }
+
+        var madeUtc = probe.LastWriteUtc(files.LessonVideo);
+        List<string> pieces = [];
+        foreach (var piece in all)
+        {
+            var name = Path.GetFileName(piece);
+            var stays = probe.LastWriteUtc(piece) > madeUtc
+                ? $"{name} is newer than the lesson video of {files.BaseName}, which does not hold it, so it stays on this laptop"
+                : listed is not null && !listed.Contains(name)
+                    ? $"{name} is in no video: it was left out when the lesson video of {files.BaseName} was made, so it stays on this laptop. Delete it by hand once you no longer need it"
+                    : null;
+            if (stays is null)
+            {
+                pieces.Add(piece);
+                continue;
+            }
+
+            logger.LogWarning("{Problem}", stays);
+            freed = freed with { Problem = freed.Problem ?? stays };
         }
 
         List<string> deleted = [];
@@ -205,7 +232,45 @@ public sealed class LocalAudioFreer(IGoogleDrive drive, DriveRetry retry, IUploa
                 deleted.Count == 1 ? "1 piece" : $"{deleted.Count} pieces", files.BaseName, Sizes.Describe(bytes), manifest.DriveLocation);
         }
 
+        if (listed is not null && !all.Except(pieces.Where(piece => deleted.Contains(Path.GetFileName(piece)))).Any(piece => listed.Contains(Path.GetFileName(piece))))
+            DeleteTheList(files);
+
         return freed with { Deleted = [.. freed.Deleted, .. deleted], Bytes = freed.Bytes + bytes, Problem = freed.Problem ?? failure };
+    }
+
+    /// <summary>
+    /// The names of the pieces the lesson's video was made from, as the finish job listed them beside it (see
+    /// <see cref="RecordingFiles.LessonVideoPieces"/>), so that a piece left out of the video is kept (review 3.15); null
+    /// when there is no list, as for a video made before the list was kept, and the pieces' times decide alone. The file
+    /// system's own exceptions for a list that cannot be read.
+    /// </summary>
+    private IReadOnlySet<string>? ListedPieces(RecordingFiles files)
+    {
+        if (!probe.FileExists(files.LessonVideoPieces)) return null;
+
+        using var reader = new StreamReader(recordings.OpenToRead(files.LessonVideoPieces, othersMayWrite: true));
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        while (reader.ReadLine() is { } line)
+        {
+            if (line.Trim() is { Length: > 0 } name) names.Add(name);
+        }
+
+        return names;
+    }
+
+    /// <summary>Deletes the list of the pieces once every piece it names is gone: it has served.</summary>
+    private void DeleteTheList(RecordingFiles files)
+    {
+        try
+        {
+            recordings.Delete(files.LessonVideoPieces);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: housekeeping; a list that cannot be deleted now names pieces that are gone, which
+            // changes nothing, and the next free-space of the lesson tries again.
+            logger.LogDebug("The list of the pieces of {Recording}'s video could not be deleted now ({Reason}); it names pieces that are gone", files.BaseName, ex.Message);
+        }
     }
 
     /// <summary>

@@ -80,9 +80,23 @@ public class RecordingFilesTests
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.mic.json")]
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z (2).glossary.json")]
     [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.glossary.json.0123abcd.tmp")]
+    [TestCase(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.mp4.pieces.txt")]
     [TestCase(@"C:\Classes\mic-check\mic-check_2026-10-17_19-00-12.log")]
     public void Other_files_do_not_pass_for_a_recordings(string path) =>
         Assert.That(RecordingFiles.TryParse(path), Is.Null);
+
+    /// <summary>
+    /// The list of the pieces a lesson's video was made from lies beside the video, named after it, and is never one of the
+    /// recording's files: no listing, upload or deletion takes it (review 3.15).
+    /// </summary>
+    [Test]
+    public void The_list_of_a_lesson_video_s_pieces_is_named_beside_it_and_is_not_the_recording_s()
+    {
+        var files = new RecordingFiles(@"C:\Classes\Kalam", "Kalam_2026-10-15_20-55-27Z");
+
+        Assert.That(files.LessonVideoPieces, Is.EqualTo(@"C:\Classes\Kalam\Kalam_2026-10-15_20-55-27Z.mp4.pieces.txt"));
+        Assert.That(RecordingFiles.TryParse(files.LessonVideoPieces), Is.Null);
+    }
 
     /// <summary>
     /// Each track has segment files of its own: the main track's carry the recording's plain names, the microphone's end

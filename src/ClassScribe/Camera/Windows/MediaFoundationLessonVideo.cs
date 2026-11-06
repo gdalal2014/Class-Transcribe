@@ -94,7 +94,7 @@ public sealed class MediaFoundationLessonVideo : ILessonVideoMedia
     }
 
     /// <inheritdoc />
-    public string? Check(string path, LessonVideoCheck check)
+    public string? Check(string path, LessonVideoCheck check, Action<int> progress)
     {
         MediaFoundationApi.Startup();
         IMFSourceReader reader;
@@ -131,9 +131,12 @@ public sealed class MediaFoundationLessonVideo : ILessonVideoMedia
                 Marshal.ReleaseComObject(decoded);
             }
 
+            var framesDecoded = 0;
             foreach (var at in check.FramesAt)
             {
                 if (!DecodesAt(reader, at)) return $"no frame decodes at {Durations.Format(at)}.{at.Milliseconds:000}";
+
+                progress(++framesDecoded);
             }
 
             return null;

@@ -123,12 +123,15 @@ public sealed class DriveClient(IDriveApi api, GoogleTokens tokens, IOptionsSnap
     /// <summary>
     /// Starts the resumable upload of a new revision of ClassScribe's own file <paramref name="fileId"/>, of
     /// <paramref name="length"/> bytes of <paramref name="contentType"/>, and returns the session's address as
-    /// <see cref="StartUploadAsync"/> does. The file keeps its id, its name and its earlier revisions.
+    /// <see cref="StartUploadAsync"/> does. The file keeps its id, its name and its earlier revisions; with
+    /// <paramref name="keepRevisionForever"/> Drive keeps this revision for ever (its keepRevisionForever), as a lesson's
+    /// video made again asks, rather than purging it after 30 days as it does a revision by default.
     /// </summary>
-    public async Task<string> StartRevisionAsync(string fileId, string contentType, long length, CancellationToken cancellationToken)
+    public async Task<string> StartRevisionAsync(string fileId, string contentType, long length, bool keepRevisionForever, CancellationToken cancellationToken)
     {
         var unchanged = new DriveFileMetadata(Name: null, MimeType: null, Parents: null, AppProperties: null);
-        using var response = await CallAsync((authorization, token) => api.StartRevisionAsync(authorization, Version, fileId, contentType, length, unchanged, token),
+        using var response = await CallAsync(
+            (authorization, token) => api.StartRevisionAsync(authorization, Version, fileId, keepRevisionForever ? "true" : null, contentType, length, unchanged, token),
             "start a new revision of a file", CallLimit, cancellationToken);
         return SessionAddress(response, "start a new revision of a file");
     }

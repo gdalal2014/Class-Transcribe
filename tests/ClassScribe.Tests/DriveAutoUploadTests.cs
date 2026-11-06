@@ -67,6 +67,63 @@ public class DriveAutoUploadTests
         Assert.That(_world.Google.Requests, Is.Empty);
     }
 
+    /// <summary>
+    /// Whether the recording's upload goes on now, for a remake of a lesson's video that must not race it (review 3.5): not
+    /// without a manifest or merely queued, yes while an upload wrote the manifest within the last five minutes with no
+    /// error, no once that is older.
+    /// </summary>
+    [Test]
+    public void IsUploadingNow_says_whether_the_recording_s_upload_goes_on()
+    {
+        var auto = _world.AutoUpload(_signals);
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.False, "no manifest");
+
+        auto.Queue(_mantiq);
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.False, "queued, not tried");
+
+        _world.Manifests().Write(_world.Manifests().Read(_mantiq)! with { LastTriedUtc = _world.Time.GetUtcNow().AddMinutes(-3), UpdatedUtc = _world.Time.GetUtcNow().AddMinutes(-1) });
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.True, "an upload wrote the manifest a minute ago");
+
+        _world.Manifests().Write(_world.Manifests().Read(_mantiq)! with { UpdatedUtc = _world.Time.GetUtcNow().AddMinutes(-6) });
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.False, "nothing of it for six minutes");
+    }
+
+    /// <summary>
+    /// A continued lesson: the upload of its first part, held up between pieces while the lesson records again (and, after
+    /// its stop, while it is transcribed), still counts as going on long past five minutes, since the pause writes the
+    /// manifest every minute meanwhile, and the queue at the lesson's start leaves that as it is (review of 3.5): so the
+    /// remake at the stop is left for later while the upload holds the older video open. Once the lesson has stopped and
+    /// the upload is done, it no longer counts.
+    /// </summary>
+    [Test]
+    public async Task A_paused_upload_still_counts_as_going_on()
+    {
+        _world.Runtime.Processes.Start(TestRuns.ProcessId, TestRuns.ProcessStart);
+        _world.Runtime.Journal.Begin(TestRuns.Record(TestRuns.Id(), RunState.Recording, name: "Mantiq"));
+        var auto = _world.AutoUpload(_signals);
+        var pass = _world.Pass().RunAsync([_mantiq], everythingWaiting: false, CancellationToken.None);
+        await Wait.UntilAsync(() => _world.Lines.Contains("Google Drive: paused while \"Mantiq\" records"));
+        auto.Queue(_mantiq);
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.True, "queued as the lesson's second part starts, while the upload is held up");
+
+        for (var poll = 0; poll < 16; poll++)
+        {
+            // Each look made, the pass waits for the next: eight minutes pass, well past GoingOnWithin.
+            var made = _world.Time.TimersMade;
+            _world.Time.Advance(DriveUploadPass.PausePoll);
+            await Wait.UntilAsync(() => _world.Time.TimersMade > made && _world.Time.UntilNextTimer == DriveUploadPass.PausePoll);
+        }
+
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.True, "the pause writes the manifest meanwhile");
+        Assert.That(_world.Google.Requests.Where(request => request.IsPiece), Is.Empty);
+
+        _world.Runtime.Processes.End(TestRuns.ProcessId);
+        await _world.Time.AdvanceUntilAsync(() => pass.IsCompleted, TimeSpan.FromSeconds(1), timeoutSeconds: 30);
+
+        Assert.That((await pass).AllDone, Is.True);
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.False, "done");
+    }
+
     /// <summary>Signed out, the recording still goes into the queue as its run starts, for the upload after the sign-in.</summary>
     [Test]
     public void Signed_out_the_recording_still_goes_into_the_queue()

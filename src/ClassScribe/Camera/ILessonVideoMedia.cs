@@ -31,7 +31,9 @@ public interface ILessonVideoMedia
 
     /// <summary>
     /// Checks the video at <paramref name="path"/> as <paramref name="check"/> asks: it opens, it has a picture and a sound,
-    /// its length matches, and a frame decodes at each place asked. Null when it passes; otherwise why not, in a few words.
+    /// its length matches, and a frame decodes at each place asked, how many so far going to <paramref name="progress"/> as
+    /// each decodes, so that the job can tell a check that moves from one that is stuck. Null when it passes; otherwise why
+    /// not, in a few words.
     /// </summary>
-    string? Check(string path, LessonVideoCheck check);
+    string? Check(string path, LessonVideoCheck check, Action<int> progress);
 }

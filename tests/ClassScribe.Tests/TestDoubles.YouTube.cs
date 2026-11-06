@@ -317,6 +317,9 @@ public sealed class FakeDriveRoom : IDriveRoom
         Reads++;
         return Task.FromResult(Space);
     }
+
+    /// <inheritdoc />
+    public Task<DriveSpace?> ReadForUploadAsync(CancellationToken cancellationToken) => ReadAsync(cancellationToken);
 }
 
 /// <summary>

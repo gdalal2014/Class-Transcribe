@@ -48,8 +48,25 @@ public sealed class FakeLessonVideoMedia : ILessonVideoMedia
     /// <summary>When set, the writing waits for it, cancellation passed through, before it ends: a video taking its time.</summary>
     public ManualResetEventSlim? HoldWrite { get; set; }
 
+    /// <summary>When set, the check waits for it before it decodes its first frame: a check taking its time, or stuck.</summary>
+    public ManualResetEventSlim? HoldCheck { get; set; }
+
     /// <summary>When set, the writing throws this once it has made its file.</summary>
     public Exception? WriteFailure { get; set; }
+
+    /// <summary>The writing's progress callback while it waits at <see cref="HoldWrite"/>, and how far it had got then.</summary>
+    private (Action<double> Report, double Fraction)? _held;
+
+    /// <summary>Moves the held writing on by <paramref name="by"/>, a ten-thousandth by default: progress below the next percent, as a slow but working write makes.</summary>
+    public void Creep(double by = 0.0001)
+    {
+        lock (_gate)
+        {
+            if (_held is not { } held) throw new InvalidOperationException("Nothing is being written and held");
+            _held = (held.Report, held.Fraction + by);
+            held.Report(held.Fraction + by);
+        }
+    }
 
     /// <summary>What the check answers: null passes, words fail it.</summary>
     public string? CheckAnswer { get; set; }
@@ -109,7 +126,9 @@ public sealed class FakeLessonVideoMedia : ILessonVideoMedia
 
             (SoundSamples, SoundRate, SoundPeak) = (samples, sound.SampleRate, peak);
             progress(0.5);
+            lock (_gate) _held = (progress, 0.5);
             HoldWrite?.Wait(cancellationToken);
+            lock (_gate) _held = null;
             if (WriteFailure is { } failure) throw failure;
             progress(1);
         }
@@ -120,9 +139,11 @@ public sealed class FakeLessonVideoMedia : ILessonVideoMedia
     }
 
     /// <inheritdoc />
-    public string? Check(string path, LessonVideoCheck check)
+    public string? Check(string path, LessonVideoCheck check, Action<int> progress)
     {
         lock (_gate) _checks.Add(check);
+        HoldCheck?.Wait();
+        for (var frame = 1; frame <= check.FramesAt.Count; frame++) progress(frame);
         return File.Exists(path) ? CheckAnswer : "it is not there";
     }
 }

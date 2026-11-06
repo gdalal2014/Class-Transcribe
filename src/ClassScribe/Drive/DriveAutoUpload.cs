@@ -36,6 +36,14 @@ public interface IDriveAutoUpload
     /// only what is new goes up. Never throws.
     /// </summary>
     Task UploadAsync(RecordingFiles files);
+
+    /// <summary>
+    /// True while an upload of <paramref name="files"/> goes on now, in any process, held up between pieces while a class
+    /// records or is transcribed included, as its manifest tells (see <see cref="UploadManifest.IsBeingUploaded"/>): a
+    /// lesson's video is not made again meanwhile, since the upload holds the older video open and the new one could not
+    /// take its place (review 3.5). Never throws.
+    /// </summary>
+    bool IsUploadingNow(RecordingFiles files);
 }
 
 /// <summary>
@@ -50,6 +58,7 @@ public sealed class DriveAutoUpload(
     Lazy<DriveUploadPass> pass,
     IUserSignals signals,
     IOptionsSnapshot<DriveOptions> options,
+    TimeProvider time,
     ILogger<DriveAutoUpload> logger) : IDriveAutoUpload
 {
     /// <summary>The recording of the run, once it is known.</summary>
@@ -118,6 +127,9 @@ public sealed class DriveAutoUpload(
                 DriveUploadPass.AfterTheNextClass);
         }
     }
+
+    /// <inheritdoc />
+    public bool IsUploadingNow(RecordingFiles files) => manifests.Read(files)?.IsBeingUploaded(time.GetUtcNow()) == true;
 
     /// <summary>
     /// True when the uploads after each class are on (Drive:Enabled) and Drive is set up: a Google client is kept, signed in

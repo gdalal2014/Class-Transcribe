@@ -75,6 +75,15 @@ public sealed partial record RecordingFiles(string Folder, string BaseName)
     public string LessonVideoPartial => Path.Combine(Folder, $"{BaseName}.mp4.partial");
 
     /// <summary>
+    /// The list of the camera's pieces the lesson's video was made from, one file name a line, which the finish job writes
+    /// beside the video when the pieces are kept for Google Drive, so that free-space deletes only those once the video is
+    /// safe there and keeps one left out of the video (review 3.15); free-space deletes the list once every piece it names
+    /// is gone. Never one of the recording's files (<see cref="TryParse"/> passes it over), so no listing, upload or
+    /// deletion takes it.
+    /// </summary>
+    public string LessonVideoPieces => Path.Combine(Folder, $"{BaseName}.mp4.pieces.txt");
+
+    /// <summary>
     /// A YouTube video's source file: the video's title and link and how its audio was obtained (see
     /// <see cref="VideoSource"/>). Only a video's recording has one; it is never an answer or a transcript.
     /// </summary>

@@ -583,10 +583,11 @@ microphone's own sentence follows the length.
 The window's title shows the state at a glance, such as `REC 01:12:40 Kalam | ClassScribe`,
 `PAUSED ...`, `! NOT RECORDING (waiting for "chrome") Kalam`, `REC 01:12:40 Kalam (no sound 2 min)`,
 `REC 01:12:40 MIC MUTED Kalam` with your microphone (see [Your microphone](#your-microphone)),
-`UPLOADING 40% Kalam`, `TRANSCRIBING Kalam`, then `DONE Kalam`, `! FAILED Kalam` or
+`UPLOADING 40% Kalam`, `TRANSCRIBING Kalam`, `MAKING VIDEO 40% Tajwid 4` while only a lesson's
+video remains to be made, then `DONE Kalam`, `! FAILED Kalam` or
 `CANCELLED Kalam`, with `(stops 20:30)` while `--minutes` or the safety stop will end it, and
 `(in this window)` when the recording runs in that window. The taskbar button is green while
-recording or uploading, yellow when paused or when something is worth a look, red when something
+recording, uploading or making the video, yellow when paused or when something is worth a look, red when something
 needs attention or the run failed, and a bar runs back and forth while ClassScribe waits for
 ElevenLabs. It flashes once for each new problem that needs attention now, until the window comes
 forward; something only worth a look turns it yellow without a flash. Windows Terminal shows the
@@ -1313,11 +1314,17 @@ camera pieces and its `.mp4.partial` never go up. At the start of a lesson with 
 where its video goes; with `Drive:LessonVideos` off: `The lesson's video stays on this laptop; to send
 lesson videos to Google Drive too, run: & "...\ClassScribe.exe" settings set Drive:LessonVideos "true".
 Its camera pieces are deleted once the video passes its check.` (A free 15 GB Drive holds about six hours
-of 720p video.) A lesson's video made again since its copy went up (a continued lesson's, or one made
+of 720p video.) Before the video goes up, Drive's room is read (by 9 > U and `drive upload` too, with
+`Drive:Enabled` off): with too little room for it, the video stays on the laptop for now, with the line `<base>.mp4 (2.4 GB) does not fit in Google Drive's room (1.1
+GB free), so it stays on this laptop for now; it goes up with a later upload once there is room, and the
+rest of <base> is up`; the rest of the recording goes up, and the recording waits in the queue with its
+next try after a class a day later (9 > U and `drive upload` try at once). A lesson's video made again since its copy went up (a continued lesson's, or one made
 with `finish-video`) goes up whole, as a new revision of that copy, with the line `<base>.mp4 was made
-again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy`: an
-hour of video takes as long again to send. Google Drive keeps the older revision for 30 days, under the
-file's Manage versions.
+again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy, kept
+for ever`: an hour of video takes as long again to send. That revision is sent with Drive's
+keepRevisionForever, so Google Drive keeps the older video for ever under the file's Manage versions
+(it counts against your Drive's room; delete it there yourself when you no longer need it), while a
+text file's older revision Drive purges after 30 days.
 Your own files in the folder, such as the class's PDFs, never go up: only files named as the
 recording's are taken. With `Drive:Upload` set to `WithoutAudio` the `.wav` files stay on the laptop
 alone, and so does a lesson's video, which holds the same sound. A YouTube video's recording goes up the same way, its `.source.json` with it, but
@@ -1373,6 +1380,9 @@ It waits the same way while a class is transcribed, or a lesson's video made (`G
 while "Kalam" is transcribed`, then `Google Drive: going on, now that "Kalam" is done`), so that the
 transcript's own upload to ElevenLabs has the connection to itself. A lesson whose video is being made by
 `finish-video` waits too (`... is having its lesson video made now; it goes up once it has stopped`).
+An upload that waits this way still counts as going on, however long the wait (it notes that it is
+still there every minute): the menu's header keeps saying `uploading`, and a lesson's video is not made
+again while the waiting upload holds its older video open (see [The lesson's video](#the-lessons-video)).
 The laptop is kept awake meanwhile (see [Keeping the laptop awake](#keeping-the-laptop-awake)).
 
 A recording asked for again that is on Drive already and has not changed is not put back in the
@@ -1408,8 +1418,11 @@ with the same size and MD5), the pieces are deleted with the audio: `Freed the c
 ... (4.6 GB): its lesson video is on Google Drive, checked, in My Drive > ...; the video stays here too`.
 The finished video itself is never deleted. A video whose copy on Drive no longer matches keeps the
 pieces, with why (`The camera's pieces of ... stay: ... differs from its copy on Google Drive ...`); a
-video not on Drive keeps them too. Only the pieces the video holds go: a piece newer than the video
-stays, named (`... is newer than the lesson video of ..., which does not hold it, so it stays on this
+video not on Drive keeps them too. Only the pieces the video holds go, as the list the making left
+beside it (`<base>.mp4.pieces.txt`) names them: a piece left out of the video stays, named (`... is in no
+video: it was left out when the lesson video of ... was made, so it stays on this laptop. Delete it by
+hand once you no longer need it`), and so does a piece newer than the video (`... is newer than the
+lesson video of ..., which does not hold it, so it stays on this
 laptop`). A lesson whose video is still to be made (`lesson video not made yet` in `list`), such as a
 continued lesson whose new part's video was cut off, keeps its audio and its pieces alike, since making
 the video needs both: `The lesson video of ... is still to be made, so none of its audio or camera pieces
@@ -1540,26 +1553,40 @@ made in a camera process of its own while the transcript is made, and the end of
   to Google Drive (Drive:LessonVideos), so the video is the one copy of the picture kept`. Only when the
   video goes to Google Drive (Drive set up, `Drive:LessonVideos` on, `Drive:Upload` sending audio) are they
   kept until [free room](#free-room-on-the-laptop) finds the video safe on Drive, and deleted then with the
-  `.wav` files. The finished video itself is never deleted. A piece whose picture cannot be read (as one
+  `.wav` files; which pieces the video holds is then listed beside it, in `<base>.mp4.pieces.txt`, one
+  name a line, so free-space deletes only those (the list goes with them). The finished video itself is
+  never deleted. A piece whose picture cannot be read (as one
   whose camera process was ended before it wrote anything) is left out of the video with a line, and stays
-  on the laptop, since its picture is in no video. A piece Windows cannot open at that moment (another
+  on the laptop, since its picture is in no video, free-space included. A piece Windows cannot open at that moment (another
   program holds it), or an older video that cannot be read, stops the making with every piece kept, so
   that no picture is lost to a video made without it; the line says what to do.
 - **While it is made** the run's file says the recording is complete and being transcribed or its video
   made, so Google Drive, `transcribe` and a move wait, and the next class may start. The laptop is kept
-  awake until the video is made. **Ctrl+C** after the stop cancels the video with the transcript: the
+  awake until the video is made. While the transcript is still being made the title follows the
+  transcript (`UPLOADING 40%`, `TRANSCRIBING`); once only the video remains (record-only from the stop,
+  or the transcript saved) the line `Only the lesson's video remains to be made (Ctrl+C cancels it; its
+  pieces are kept for finish-video)` is said and the title shows `MAKING VIDEO 40%`, the taskbar's bar
+  green and filling with it. **Ctrl+C** after the stop cancels the video with the transcript: the
   unfinished file goes, the pieces stay.
-- **When it is not made** (a failed check, Ctrl+C, a camera process that says nothing of its progress for
-  2 minutes, a crash, Windows ending the session), the pieces are kept and the line names the command that
+- **When it is not made** (a failed check, Ctrl+C, a camera process that makes no headway for 2 minutes,
+  a crash, Windows ending the session), the pieces are kept and the line names the command that
   makes it again, free. `list` and menu choice 3 say `lesson video not made yet` (and `lesson video` once it
   is there); menu choice 3's **V** then the lesson's number makes it; and the report at the next start
   offers **V** (`make the lesson's video now, free`).
 - **Again, free:** `ClassScribe finish-video "<the lesson's folder or one of its files>" [--no-open]` makes
-  it again in this window, from the pieces that are still there, positions before the first of them taking
-  the older video's picture. It needs the lesson's `.wav` files: after free-space it says `The sound of this
+  it again in this window, from the pieces newer than the lesson's video, with the older video's picture
+  before the first of them. A piece older than the video (one kept for Drive, or one an earlier making
+  could not delete) that begins before the video ends is in the older video already, so it is left out,
+  with the line `... is older than ....mp4, which holds its picture already, so it is left out; the older
+  video's picture is used instead, up to the first newer piece`; a lesson whose pieces are all older than
+  its video has nothing to add, and the older video stays, which is said. A piece that begins at or after
+  the older video's end is used whatever its date says. To make a video from the pieces alone all the same,
+  move the older video out of the folder first (keep it). It needs the lesson's `.wav` files: after free-space it says `The sound of this
   lesson is on Google Drive only, so its video cannot be made again here.` (exit 1). It refuses a lesson
-  being recorded or having its video made, and one without camera pieces. Exit 0 made, 1 not made, 130
-  cancelled.
+  being recorded or having its video made, one whose older video ClassScribe's own upload is sending to
+  Google Drive at that moment, or holding while it waits for a class to stop recording or to be
+  transcribed (the new one could not take its place meanwhile; the line says to make it once the upload
+  is done), and one without camera pieces. Exit 0 made, 1 not made, 130 cancelled.
 
 ### Checking the cameras
 
@@ -2861,7 +2888,8 @@ Windows audio through COM interop.
   API), and it only adds to Drive: it never deletes, trashes or overwrites anything there, with one
   exception, a new revision of its own copy of a file in three cases only: a text file of the recording
   (its log, its marks, a transcript or an answer) that has grown since it went up, a lesson's video made
-  again (with `Drive:LessonVideos` on), and its own copy whose MD5 check failed, sent once more. A
+  again (with `Drive:LessonVideos` on; that revision is the one Drive is asked to keep for ever, so the
+  older video stays under Manage versions), and its own copy whose MD5 check failed, sent once more. A
   class's audio goes to Google's servers, as it does to
   ElevenLabs'; with your microphone, or in person, other voices go too. Your own files beside a
   recording, such as the class's PDFs, never go up. The Google client and the sign-in stay on this
@@ -3086,12 +3114,18 @@ words you see.
 | `The camera's 2 pieces of ... stay on this laptop until free-space finds the video safe on Google Drive (Drive:LessonVideos)` | Lesson videos go to Drive, so the pieces are kept until free-space (9 > L) has checked the video's copy there. |
 | `... was encoded differently from ... (another encoder or another picture size), so the whole picture is encoded again, which takes longer than joining the pieces as they are` | The pieces came from two encoders (the software one took over), or a continued lesson changed its size. Wait: the video is made all the same, more slowly. |
 | `The lesson's video was not made: The lesson's video did not pass its check (...). The camera's pieces are kept. To make it again, free: ... finish-video "..."` | Something in the video was wrong (a picture that does not decode at a join, its length). The pieces are kept; run the command, or menu choice 3's V. If it fails again, report the line. |
-| `The lesson's video was not made: ClassScribe's camera process did not say how far it had got for 2 minutes, so it was ended. ...` | The camera process hung while it made the video. The pieces are kept; run `finish-video` with the command given. |
-| `The lesson's video was not made: ....mp4, the older video, is open in another program, such as a video player, so the new one, which passed its check, could not take its place (...). It stays as ....mp4.partial until the next making. Close it, then make the video again. ...` | A player (or another program) had the older video open while it was made again; ClassScribe tried three times, a second apart. Close the player and run the `finish-video` command given, or menu choice 3's V. The older video and the pieces are as they were. |
+| `The lesson's video was not made: ClassScribe's camera process made no headway on the video for 2 minutes, so it was ended as stuck. ...` | A call inside Windows' media layer never returned while the video was written or checked: the camera process says its progress again only while the work moves, so a stuck one goes quiet and is ended. The pieces are kept; run `finish-video` with the command given. If it repeats on the same lesson, report the line. |
+| `The lesson's video was not made: ....mp4, the older video, is open in another program (a video player, or ClassScribe sending it to Google Drive), so the new one, which passed its check, could not take its place (...). It stays as ....mp4.partial until the next making. Close the player, or wait for the upload to end, then make the video again. ...` | A player (or another program) had the older video open while it was made again, or ClassScribe's own upload was sending it to Drive; ClassScribe tried three times, a second apart. Close the player, or wait for the upload, and run the `finish-video` command given, or menu choice 3's V. The older video and the pieces are as they were. |
+| `The video of ... is not made again now: ClassScribe is sending its older video, ....mp4, to Google Drive, and the new one could not take its place meanwhile. Once the upload is done, make it again, free: ...` | A continued lesson stopped, or `finish-video` was run, while the upload after the earlier part still sends the older video (with `Drive:LessonVideos` on), or holds it while it waits for the lesson to stop recording and to be transcribed; such an upload counts as going on however long it waits. Nothing is made now; the older video and the pieces stay. Once the upload has ended (the window says `... is on Google Drive`), run the command given, or menu choice 3's V, or the report's V at the next start. |
 | `... cannot be read (...), so it is left out of the lesson's video`, then `... could not be read, so its picture is in no video; it stays on this laptop. Delete it by hand once you no longer need it` | That piece holds no picture Windows can read, often one whose camera process ended before it wrote anything. The video is made from the others; the piece is kept, small as such a piece usually is. Delete it by hand when you are sure you do not need it. |
 | `The lesson's video was not made: ... could not be opened now (...), so the video was not made without its picture. ...` | Another program (a scanner, a player) held a piece, or the older video, while the video was made. Every piece is kept; run the `finish-video` command given once it has let go. |
 | `The lesson's video was not made: ....mp4, the older video, cannot be read (...), and its picture before the first camera piece is in no piece, so a new video would lose it. ...` | The older video of a continued lesson is damaged, and its first part's pieces are gone. Move the older video out of the lesson's folder (keep it), then run `finish-video` to make a video from the pieces alone. |
+| `The lesson's video was not made: ....mp4, the older video, holds the picture of every camera piece here already (... is older than it), so there is nothing to add to it, and it stays as it is. ...` | The pieces here are the ones the older video was made from (kept for Drive, or left behind when they could not be deleted), so a new video would add nothing and could drop picture only the older one holds. Nothing to do. To make a video from the pieces alone all the same, move the older video out of the folder (keep it), then run `finish-video`. |
+| `... is older than ....mp4, which holds its picture already, so it is left out; the older video's picture is used instead, up to the first newer piece` | Normal for a continued lesson whose earlier pieces are still there: the earlier part's picture comes from the older video, the new part's from its pieces. |
+| `The lesson's video was not made: The lesson's sound could not all be read: ..._part2.wav is not a readable WAV file, so the video was not made; its picture would be out of step with the sound after it. ...` | A `.wav` part of the lesson is damaged. The sound read for the video skips it, as the transcript's upload does (`Skipping ...: it is not a readable WAV file`), so the video's sound would be shorter than the lesson and every later piece's picture would come early. The pieces are kept. If you can replace the part (from Drive, say), run `finish-video`; to make the video without it all the same, move the damaged part out of the folder first, and know that the sound after it runs early. |
 | `The lesson's video was cancelled; the camera's pieces are kept. To make it later, free: ...` | Ctrl+C after the stop cancelled the video with the transcript. Run the command when you want the video. |
+| `Only the lesson's video remains to be made (Ctrl+C cancels it; its pieces are kept for finish-video)` | Normal: the transcript is saved (or the record-only recording complete), and the video is still being made; the title shows `MAKING VIDEO 40%`. Wait for it, or press Ctrl+C to leave it for `finish-video`. |
+| `The lesson's video was not made: an unexpected failure (...); the camera's pieces are kept. To make it again, free: ...` | Not expected: something failed around the camera process that makes the video, rather than in it. The recording and its transcript are as they were (the run ends as its transcript did); run the command given. If it repeats, report the line. |
 | `The camera wrote no picture in this lesson, so it has no video to make; the sound is kept` | The camera never gave a picture (not connected, refused). The lesson's sound is kept and transcribed as usual. |
 | `The sound of this lesson is on Google Drive only, so its video cannot be made again here.` (finish-video, exit code 1) | free-space deleted the `.wav` files. Download them from Drive into the lesson's folder, then run `finish-video` again. |
 | `... has its video, ....mp4, and no camera pieces left to make it again from.` or `... has no camera pieces, so it has no picture to make a video of.` (exit code 1) | Its pieces were deleted once the video passed its check, or it was recorded without the camera. Nothing to make. |
@@ -3237,12 +3271,16 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Google Drive: paused while "..." records`, then `Google Drive: going on, now that "..." has stopped recording` | Normal: an upload of an earlier class waits between pieces while a class records, so that the class is not held up, and goes on by itself. |
 | `Google Drive: paused while "..." is transcribed`, then `Google Drive: going on, now that "..." is done` | Normal: an upload waits while a class is transcribed, or a lesson's video made, so that the transcript's upload to ElevenLabs has the connection to itself. |
 | `Sending the lesson's video (2.4 GB) to Google Drive; at this connection's speed so far, about 30 minutes.` | Normal, with `Drive:LessonVideos` on: the lesson's video goes up last, after everything else of the recording. |
+| `<base>.mp4 (2.4 GB) does not fit in Google Drive's room (1.1 GB free), so it stays on this laptop for now; it goes up with a later upload once there is room, and the rest of <base> is up` | Drive has too little room for the lesson's video; everything else of the recording is up. Free room on Drive (or buy more), then 9 > U or `drive upload`; left alone, the upload after a class tries again a day later. The camera's pieces stay on the laptop until the video is safe on Drive. |
 | `... is having its lesson video made now; it goes up once it has stopped` | `finish-video` is making the lesson's video; the recording goes up with the next upload. |
 | `The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: ...` (a lesson's start) | Lesson videos stay off Drive by default. Run the command to send them too (they are large: about 2.3 GB an hour at 720p). |
 | `The camera's pieces of ... stay: ....mp4 differs from its copy on Google Drive ...` (free-space) | The video on the laptop is not the one on Drive (made again since, say). The pieces are kept; upload the lesson (9 > U, or `drive upload`), which sends the new video as a new revision of its copy, and free-space deletes them once that copy matches. |
 | `Freed the camera's 2 pieces of ... (...): its lesson video is on Google Drive, checked, in ...; the video stays here too` | Normal: the pieces kept for Drive went once its copy of the video was checked. |
 | `The lesson video of ... is still to be made, so none of its audio or camera pieces were deleted: ...` (free-space) | A camera piece is newer than the lesson's video, or there is no video, so free-space keeps the lesson whole. Run the `finish-video` command the line gives, then free-space again. If you do not want the video, delete the `.cam*.mp4` pieces by hand first. |
 | `... is newer than the lesson video of ..., which does not hold it, so it stays on this laptop` (free-space) | That piece's picture is in no video, and the sound to make one is gone from the laptop. Download the `.wav` files from Drive into the lesson's folder and run `finish-video`, or delete the piece by hand if you do not need it. |
+| `... is in no video: it was left out when the lesson video of ... was made, so it stays on this laptop. Delete it by hand once you no longer need it` (free-space) | The making could not read that piece (its line said so then), so no video holds its picture, and free-space keeps it. Delete it by hand when you are sure you do not need it. |
+| `The camera's pieces of ... stay: the list of the pieces its video was made from, ....mp4.pieces.txt, cannot be read (...)` (free-space) | Another program holds the list beside the video. Close it and run free-space again. |
+| `....mp4.pieces.txt, the list of the pieces the video was made from, could not be written (...); free-space will go by the pieces' times instead, and may delete a piece left out of the video` | The folder refused the small list file beside the video. The video is made all the same; before free-space, delete by hand any piece the making said it left out. |
 | `Another ClassScribe is uploading to Google Drive; ... waits and goes up after it` | Nothing to do: one upload runs at a time, and the one running takes this recording before it stops. `... is on Drive already, unchanged since it went up` instead means nothing of it needed to go up. |
 | `<base> waits to go up to Google Drive: ...`, `<problem> 2 recordings wait to go up to Google Drive after the next class, or with menu choice 9 > U, or ClassScribe drive upload.` | It goes up later; the reason is in the line. To send it now, press U in the report at the start, or 9 > U, or run `drive upload`. With `Drive:Enabled` set to `false` the line ends `... to go up to Google Drive with menu choice 9 > U, or ClassScribe drive upload.`, since nothing goes up after a class then. |
 | `<file> did not go up to Google Drive: ...`, `<file> could not be read to go up to Google Drive: ...` | That file waits, with Drive's words or Windows' reason, and the recording's other files went up. The next upload tries it again. |
@@ -3252,7 +3290,7 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Google Drive takes no more uploads today (...). Upload again tomorrow.` | Google lets each account upload 750 GB in 24 hours ([Google's limits](https://knowledge.workspace.google.com/admin/drive/storage-and-upload-limits-for-google-workspace)). Upload tomorrow with 9 > U; after a class, ClassScribe tries again no sooner than a day later. |
 | `<file> does not match Drive's MD5 after it went up (here ..., ... bytes; on Drive ..., ... bytes); sending it again as a new revision` | The copy that arrived differs from the file, so it is sent once more, as a new revision of ClassScribe's own copy. `<file> still does not match Drive's MD5 after it was sent again; it goes up again with the next upload.` leaves the recording waiting; the next upload tries again. |
 | `<file> on this laptop differs from its copy on Google Drive, which ClassScribe never replaces: only a text file that has grown, or a lesson's video made again, goes up again, as a new revision. The copy on Drive stays as it is`, `A different <file> is already in My Drive > ... on Google Drive; ClassScribe never replaces it, so this one did not go up` | The file changed on the laptop after it went up, or Drive holds another file of that name. The copy on Drive stays as it is; only a text file that has grown, or a lesson's video made again, goes up again. To keep the laptop's version on Drive as well, upload it yourself under another name. |
-| `<base>.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy` | Normal, with `Drive:LessonVideos` on: a continued lesson's video, or one made with `finish-video`, replaces its copy on Drive as a new revision of the same file. Once it is checked there, free-space can delete the camera's pieces. |
+| `<base>.mp4 was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy, kept for ever` | Normal, with `Drive:LessonVideos` on: a continued lesson's video, or one made with `finish-video`, replaces its copy on Drive as a new revision of the same file, and Drive keeps the older video for ever under Manage versions (it still counts against your room there). Once it is checked there, free-space can delete the camera's pieces. |
 | `<file>'s copy on Google Drive is no longer there, or is in the trash, so it goes up again as a new file; ClassScribe takes nothing out of the trash` | Nothing to do: the grown file goes up again, and the copy in the trash stays there. |
 | `<base> is being recorded now; it goes up once it has stopped`, `<base> is being transcribed now; it goes up once it has stopped`, `<file> is open in another program, as while it is being recorded; <base> goes up once it is closed` | Nothing to do: it waits and goes up after it has stopped. For another program holding a file, close that program. |
 | `Google Drive answered with an upload address for <file> that is not its own, so nothing was sent there.`, `The upload of <file> begun earlier names an address that is not Google Drive's own at Drive:ApiBaseUrl and Drive:ApiVersion as they are now, so it is not used; the upload starts again` | ClassScribe sends a file only to Google Drive's own address, at the version of its API that `Drive:ApiVersion` names. Nothing was sent elsewhere; the file goes up with the next upload, or starts again from the beginning. An upload begun before `Drive:ApiVersion` changed starts again, since its address names the version it began under. If it happens again, check `Drive:ApiBaseUrl` and `Drive:ApiVersion`; `ClassScribe settings reset Drive:ApiVersion` puts the version back. |

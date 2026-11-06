@@ -116,8 +116,12 @@ advice after a format error (10 A).
   exception Gulzar allowed: a new revision of its own copy of a text file that has grown (a log, the
   marks, an answer laid out anew; `RecordingUpload` sends a revision only when the text file is
   larger than Drive's copy, and to its copy that is still there outside the trash, or to repair its own
-  copy whose MD5 check failed), and, as teach-video 8 asks, a new revision of its own verified copy of a
-  lesson's video (`<base>.mp4`) made again, larger or smaller; never of a `.wav`. Deleting local files,
+  copy whose MD5 check failed), and, as teach-video 8 asks and Gulzar chose on 29 October 2026 (the 0.5.0
+  review's answer 4 (b)), a new revision of its own verified copy of a lesson's video (`<base>.mp4`) made again, larger
+  or smaller, sent with Drive's `keepRevisionForever=true` (`UploadTarget.KeepRevisionForever`, set for that revision
+  alone, through `DriveClient.StartRevisionAsync`), so that Drive keeps the older video for ever instead of purging it
+  after 30 days as it does a text file's older revision (`FakeGoogle` counts them as `RevisionsKeptForever`, and
+  `RecordingUploadTests` pins which revisions carry the parameter); never of a `.wav`. Deleting local files,
   by `drive free-space` or by hand, never touches Drive. A test run turns on the AppContext switches
   `RoamingFolder.RefuseTheRealFolderSwitch`, `RuntimeFolder.RefuseTheRealFolderSwitch` and
   `ClassFolders.RefuseTheRealFolderSwitch` (`TestGuards`,
@@ -353,8 +357,8 @@ advice after a format error (10 A).
   name planted by something else: Q twice still stops the video); `RecordCommand.WriteSource` (a source
   file that cannot be written must not cost the recording); `ClassFolders.VideoOf` and
   `TranscriptionWorkflow.VideoOf` (a source file that cannot be read leaves the recording described,
-  and its paid answer laid out, as a class's); `DriveRoom.ReadAsync` (Drive's room only adds a line to
-  the plan); and `CommandLineTree.YouTubeProblems` (a `--list` file that cannot be read is a mistake of
+  and its paid answer laid out, as a class's); `DriveRoom.ReadForUploadAsync` (Drive's room only adds a line to
+  the plan, or keeps a lesson's video known not to fit off Drive); and `CommandLineTree.YouTubeProblems` (a `--list` file that cannot be read is a mistake of
   the command line, said with the others).
 - Windows audio objects: the device check (`WasapiLoopbackCaptureProvider`'s two listings, once a
   second for the whole class) goes through ClassScribe's own declarations in
@@ -922,10 +926,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   real adapter in a temporary folder or the existing fakes, in `DrivePortTests`, `YouTubePortTests` and `CameraPortTests`)
   bring it to 4,990, and stop point S4's fixes (`IFileProbe.Describe`, one look at a file for `RecordingUpload.IsKnownInSync`;
   the loopback answer's contract pinned on both sides; in `FileProbeTests`, `RecordingUploadTests`, `LoopbackReceiverTests`
-  and `GoogleSignInTests`) to 4,994, all passing. The trial move's 80 architecture tests (`ArchitectureTests`,
+  and `GoogleSignInTests`) to 4,994, all passing, and 5,056 after 0.5.0's merge-back and the review's fixes (the records
+  and the tests' guard on the recordings folder, the camera's, and the lesson's video's, merged into `develop` on
+  5 November), all passing. The trial move's 80 architecture tests (`ArchitectureTests`,
   `ArchitectureRulesTests` and `RepositoryLayoutTests`' checks of the four project folders, in
   `design\final\architecture-analysis\trial`, where the move and namespace scripts are) wait for slice 4 to commit them,
-  which makes 5,074. The uploads by
+  which makes 5,136. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -970,7 +976,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
   4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, 4 min 24 s for 4,966 with slice 3b4's,
   4 min 27 s for 4,969 with stop point S3's fixes, 4 min 28 s for 4,990 with slice 3c's ports, 4 min 27 s for 4,994 with
-  stop point S4's fixes, plus the build).
+  stop point S4's fixes, 4 min 23 s for 5,056 after 0.5.0's merge-back and the review's fixes on 5 November, plus the
+  build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1466,8 +1473,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (`RecorderLog.NamedFile`, as a recorder after its class or a run in the window), is written and
   flushed just before the `.log` goes up, so Drive's copy holds it, and is said once. Each try clears
   `LastError` as it begins, and every write of an upload stamps `UploadManifest.UpdatedUtc` (a queue
-  clears it), so `IsBeingUploaded(now)` (waiting, tried, no error, written within `GoingOnWithin`, 5
-  minutes) tells an upload going on now, in any process, and a recording queued again right after
+  clears it, unless the upload goes on now, which the queue leaves as it is), and an upload held up
+  between pieces, as while a class records or is transcribed, writes the manifest every
+  `RecordingUpload.StillGoingOnEvery` (1 minute; `FileWatch.BeforePieceAsync`, the pending wait's timer
+  going with the pause), so `IsBeingUploaded(now)` (waiting, tried, no error, written within `GoingOnWithin`, 5
+  minutes) tells an upload going on now, in any process, a paused one hours into its pause included,
+  and a recording queued again right after
   its upload is not taken for one; `BytesOnDrive` says how much Drive has. `ResumableUpload`: pieces of `Drive:ChunkMegabytes` MiB
   (`PieceSize` for tests), each `PieceContent` with its Content-Range streamed from the open file;
   308 confirms by its `Range`, 200/201 completes; a passing failure (Unreachable or Busy: 408, 429,
@@ -1915,35 +1926,68 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   camera process, `CameraFinishJob` refuses a recording without its `.wav` here or with a `.mp4.partial` being written,
   deletes a stale partial with a line, leaves an unreadable piece out with a warning (and keeps it after the video: only the
   pieces it read are deleted), fails with every piece kept when Windows cannot open a source now (`CouldNotOpenNow`: an
-  IOException, UnauthorizedAccessException or FACILITY_WIN32 COM error) or an older video cannot be read, logs the plan, sends `progress`
-  at each new percent or every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking), and on a pass renames
+  IOException, UnauthorizedAccessException or FACILITY_WIN32 COM error) or an older video cannot be read, leaves out a piece
+  older than a readable older video and beginning before its end (which holds its picture: a leftover an earlier making
+  could not delete, or one kept for Drive; a piece beginning at or past the older video's `Facts.Length` is fresh whatever
+  its write time says) when the older video's picture is used before the first newer piece, with a line, and fails with the older
+  video kept when no newer piece is left ("holds the picture of every camera piece here already", review 3.2), logs the plan, sends `progress`
+  at each new percent, and the same percent again every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking)
+  only while its work has moved since the last line (the writer's ten-thousandths, the check's frames decoded through
+  `ILessonVideoMedia.Check`'s progress), so that a Media Foundation call that never returns goes quiet and the maker's
+  `ProgressLimit` ends it (review 3.3), fails with the pieces kept when the mix skipped a damaged `.wav` part
+  (`MixedSound.Skipped`: the sound written would be shorter than the lesson's, which the check cannot tell, review 3.14), and on a pass renames
   the partial (`PutInPlaceAsync`: `RenameTries` 3, a second apart, while a player or scanner holds a file open; then failed
   with why, the checked partial kept for the next making to delete, the older video and the pieces as they were) and deals
   with the pieces: kept when the job's `KeepPieces` says the video goes to Drive (a line), else
   deleted with a line; a failure deletes the partial and keeps the pieces, with the free `finish-video` command; a cancel
   is 130. In the window or recorder, `LessonVideoMaker` (transient, `CameraServices`) starts the camera process with a
   finish job and gives a `LessonVideoResult` (`Made`, `Failed`, `Cancelled`; ended after `ProgressLimit` 2 min without a
-  line, `CancelWait` 15 s, `SendLimit` 5 s, `DisposeWait` 5 s) and says the end (`MadeLine`: watch it before publishing).
+  line, "made no headway on the video for 2 minutes, so it was ended as stuck", `CancelWait` 15 s, `SendLimit` 5 s,
+  `DisposeWait` 5 s) and says the end (`MadeLine`: watch it before publishing).
   `RecordCommand` sets the run file to `Transcribing` at a camera run's stop (the state now covers the video's making),
   starts the video beside the transcription (`StartTheLessonVideo`; no pieces is a warning) with
-  `LessonVideoDrive.KeepsPieces`, and waits for it on every end; the first lesson's start line says how to turn on
+  `LessonVideoDrive.KeepsPieces`, and waits for it on every end (`WaitForTheLessonVideoAsync`: once only the video
+  remains, record-only from the stop or the transcript saved, it says `RecordCommand.OnlyTheVideoRemains` and publishes
+  the maker's progress as `RecorderState.VideoPercent`, a last field with a default, which `TitleText` shows as `MAKING
+  VIDEO 40%` with a green bar in place of TRANSCRIBING, review 3.17; and it catches whatever the maker's task throws,
+  which the maker never does by design, says the video was not made with the `finish-video` command, and lets the run end
+  as its transcript did, never as TranscriptFailed, review 3.4); a remake, at a continued lesson's stop or by
+  `finish-video`, is left for later with `LessonVideoDrive.UploadGoingOnLine` while an older video exists and
+  `IDriveAutoUpload.IsUploadingNow` (the manifest's `IsBeingUploaded`) says ClassScribe's own upload of the recording goes
+  on, since that upload holds the older video open and the new one could not take its place (review 3.5; the job's
+  rename failure names both a player and the upload). The continued lesson is the case that matters: the pass after its
+  first part waits between pieces while the second part records and, after its stop, while it is transcribed
+  (`DriveUploadPass.PauseWhileRecordingAsync`, `HoldingUp` takes `IsTranscribingNow` too), and that wait writes the
+  manifest every minute while the queue at the second part's start leaves the stamp, so the stop finds the upload going
+  on hours later (`DriveAutoUploadTests.A_paused_upload_still_counts_as_going_on`); the first lesson's start line says how to turn on
   `Drive:LessonVideos` (`LessonVideoDrive.StartLine`). `finish-video <path> [--no-open]` (`FinishVideoCommand`,
   `ICommandRunner.FinishVideoAsync`) makes it again, free, decided from the files alone (`ClassFolders.LessonVideoStateOf`:
   `None`, `Made`, `NotMade` when a piece is newer than the video or there is none), refusing a lesson being recorded or
-  made, one without pieces, and one whose sound is on Drive only (`SoundOnDriveOnly`), with keep-awake
+  made, one whose older video ClassScribe's own upload sends now (above), one without pieces, and one whose sound is on
+  Drive only (`SoundOnDriveOnly`), with keep-awake
   (`StayAwake.LessonVideoReason`), then Drive's upload of that recording. The start-up report offers V after an outcome
   whose video was not made (`LessonRuns`, `StartupAction.MakeVideo`, T only when the recording can be transcribed); a
   lesson in Transcribing with only its video left (`LessonRuns.OnlyItsVideoLeft`: record-only, or its transcript saved) is
   worded as its video cut off in the report, the starter's lost recorder, attach and the window-busy lines; menu
   choice 3 notes `lesson video` or `lesson video not made yet` (as `list` does) and takes V before a number. Drive:
   `Drive:LessonVideos` (false) sends `<base>.mp4` last, streamed as `video/mp4` with a line of its size and time, never
-  the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`); the pass also waits while a class is
+  the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`), and only after `RecordingUpload` has read
+  `IDriveRoom.ReadForUploadAsync` (the room for an upload under way: read whatever `Drive:Enabled` says, since 9 > U and
+  `drive upload` send with the uploads after each class off too; `ReadAsync`, a plan's, still answers nothing then): a
+  video known not to fit in Drive's free room stays with a warning (`does not fit in Google Drive's room`),
+  the rest goes up and the recording waits with `NextAttemptUtc` a day later, as Drive full does; a room unknown (not
+  signed in, or Drive out of reach) lets it go up as before (teach-video 8, review 3.16); the pass also waits while a class is
   transcribed (N13); `LocalAudioFreer.FreePiecesAsync` deletes the pieces once the video is verified on Drive, only those
-  not newer than it (a newer one stays, named), and `FreeAsync` refuses a lesson whose video is `NotMade` while its sound is
+  the finish job listed beside it in `RecordingFiles.LessonVideoPieces` (`<base>.mp4.pieces.txt`, written when the pieces
+  are kept for Drive, never one of the recording's files, deleted by the freer once every piece it names is gone and by the
+  job when it deletes the pieces; a piece left out of the video as unreadable is not in it and stays, named, review 3.15;
+  without a list, those not newer than the video; a list that cannot be read keeps them all, with why) and never a newer
+  one (it stays, named), and `FreeAsync` refuses a lesson whose video is `NotMade` while its sound is
   here, deleting nothing (`LocalAudioFreer.VideoStillToMake`, with the `finish-video` command). There is no
   `folders.lock` or `MoveJournal` on develop, so `finish-video` and V check neither. Fakes: `FakeLessonVideoMedia`
-  (`TestDoubles.LessonVideo.cs`: `Holds`, `Unreadable`, `HoldWrite`, `WriteFailure`, `CheckAnswer`, `Written`, `Checks`,
-  the sound's samples). Tests: `LessonVideoPlanTests`, `LessonVideoFilesTests`, `CameraFinishJobTests` (the real host over
+  (`TestDoubles.LessonVideo.cs`: `Holds`, `Unreadable`, `Unopenable`, `HoldWrite`, `Creep` (the held writing moved on below
+  the next percent), `HoldCheck`, `WriteFailure`, `CheckAnswer`, `Written`, `Checks`, the sound's samples). Tests:
+  `LessonVideoPlanTests`, `LessonVideoFilesTests`, `CameraFinishJobTests` (the real host over
   the fake media on the manual clock), `LessonVideoMakerTests`, `LessonVideoMediaTests` (WindowsMedia: pieces from the
   real piece writer, a size change encoded again, a continued lesson, IDR-only sync samples, the check's failures),
   `LessonVideoDriveTests`, `RecordCommandTests.LessonVideo.cs`, `FinishVideoCommandTests`, `FinishVideoCommandLineTests`,
@@ -2268,8 +2312,9 @@ each constructor that takes a port, and what the trial move made the one-project
   `DriveAutoUpload.cs` (`IDriveAutoUpload`, `DriveAutoUpload`: the queue at a run's start and the
   upload after it, and after a transcript made later), `DriveQueueReport.cs` (`DriveWaiting`,
   `DriveQueueReport`: the menu's header line and the report's), `DriveRoom.cs` (`IDriveRoom`,
-  `DriveRoom`, `DriveSpace`: Drive's room from the about call, for a YouTube plan; null when not set up,
-  signed out, `Drive:Enabled` off or Drive out of reach), and `DriveServices` (`AddDrive`, Google's clients and the
+  `DriveRoom`, `DriveSpace`: Drive's room from the about call, `ReadAsync` for a YouTube plan, null with `Drive:Enabled`
+  off, and `ReadForUploadAsync` before a lesson's video goes up, whatever `Drive:Enabled` says; both null when not set up,
+  signed out or Drive out of reach), and `DriveServices` (`AddDrive`, Google's clients and the
   adapters, called from `InfrastructureServices` after the transcription's) with `DriveUseCases` (`AddDriveUseCases`, the
   use cases, called from `ApplicationServices`).
 - `src/ClassScribe/YouTube` (registered by `YouTubeServices.AddYouTube`, its adapters, and `YouTubeUseCases.AddYouTubeUseCases`,

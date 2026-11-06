@@ -38,6 +38,25 @@ public class DriveRoomTests
         Assert.That(_world.Google.Requests, Is.Empty);
     }
 
+    /// <summary>
+    /// For an upload under way the room is read with the uploads after each class off too, since menu choice 9 and drive upload
+    /// send all the same (review of 3.16); not signed in, there is still none, and Google is asked nothing.
+    /// </summary>
+    [Test]
+    public async Task For_an_upload_under_way_the_room_is_read_with_Drive_off_too()
+    {
+        _world.Options.Set(new DriveOptions { Enabled = false });
+        Assert.That(await Room().ReadForUploadAsync(CancellationToken.None), Is.Null, "not signed in");
+        Assert.That(_world.Google.Requests, Is.Empty);
+
+        _world.SignedIn();
+        _world.Google.StorageLimit = 15_000_000_000;
+        _world.Google.StorageUsage = 14_000_000_000;
+
+        Assert.That(await Room().ReadForUploadAsync(CancellationToken.None), Is.EqualTo(new DriveSpace(14_000_000_000, 15_000_000_000)));
+        Assert.That(await Room().ReadAsync(CancellationToken.None), Is.Null, "a plan's read still answers nothing with Drive off");
+    }
+
     /// <summary>Signed in, the about call's storage is Drive's room: its usage, its limit, and what is free between them.</summary>
     [Test]
     public async Task Signed_in_the_storage_is_the_room()

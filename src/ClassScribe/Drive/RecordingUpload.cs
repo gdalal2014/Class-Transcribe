@@ -52,12 +52,14 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 /// the temporary upload copy, and with Drive:Upload WithoutAudio not its .wav files; files in the folder that are not the
 /// recording's, such as the class's PDFs, are never touched. In this order: the transcripts, ElevenLabs' answers, the
 /// marks, the class's audio, the microphone's, the log, and last a lesson's finished video, only with Drive:LessonVideos on
-/// (see <see cref="SendsLessonVideo"/>), streamed as the audio is; never the camera's pieces. Each file's MD5 is worked out once and kept in the manifest
+/// (see <see cref="SendsLessonVideo"/>), streamed as the audio is, and only once Drive's room, read first, is unknown or
+/// fits it: a video known not to fit stays here with a line, the recording waiting with its next try after a class a day
+/// later (teach-video 8; review 3.16); never the camera's pieces. Each file's MD5 is worked out once and kept in the manifest
 /// (<see cref="IUploadManifests"/>) with its size and the time it was last written, and after its last piece the copy on
 /// Drive is checked against Drive's own size and MD5; one that differs is sent again once, as a new revision. A file already
 /// checked goes up no more; a text file that has grown since (a log, the marks, an answer laid out anew), and a lesson's
-/// video made again since (teach-video 8), go up as a new revision of the same file on Drive; nothing else on Drive is ever
-/// replaced, deleted or trashed. A file deleted from the
+/// video made again since (teach-video 8; its revision kept for ever on Drive, answer 4 (b)), go up as a new revision of
+/// the same file on Drive; nothing else on Drive is ever replaced, deleted or trashed. A file deleted from the
 /// laptop after its copy was checked is safe on Drive, not missing. With no manifest, Drive's files in the folder are
 /// adopted by name and MD5, so nothing goes up twice. A recording being recorded or transcribed now is passed over and left
 /// in the queue, and so is one whose audio another program holds open. One whose folder is not there waits only while its
@@ -77,6 +79,7 @@ public sealed partial class RecordingUpload(
     IRecordingFolder recordings,
     IFileProbe probe,
     IRunLog log,
+    IDriveRoom room,
     IOptionsSnapshot<DriveOptions> options,
     IOptionsSnapshot<YouTubeOptions> youTube,
     TimeProvider time,
@@ -84,6 +87,14 @@ public sealed partial class RecordingUpload(
 {
     /// <summary>How long a recording waits after Drive said it takes nothing more, before an upload after a class tries it again.</summary>
     public static readonly TimeSpan WaitWhenFull = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// How often an upload held up between pieces, as while a class records or is transcribed, writes its manifest all the
+    /// same, so that it still counts as going on (see <see cref="UploadManifest.IsBeingUploaded"/>): well within
+    /// <see cref="UploadManifest.GoingOnWithin"/>, so that a continued lesson's stop, hours into the pause, still finds the
+    /// upload of its first part going on and leaves its video for later (review of 3.5).
+    /// </summary>
+    public static readonly TimeSpan StillGoingOnEvery = TimeSpan.FromMinutes(1);
 
     /// <summary>ERROR_SHARING_VIOLATION as an HRESULT: another program holds the file in a way that does not allow this open.</summary>
     private const int SharingViolation = unchecked((int)0x80070020);
@@ -108,6 +119,9 @@ public sealed partial class RecordingUpload(
 
     /// <summary>The manifests, for the steps of a run.</summary>
     private IUploadManifests Manifests => manifests;
+
+    /// <summary>Drive's room, read before a lesson's video goes up, whatever Drive:Enabled says (teach-video 8; review 3.16), for the steps of a run.</summary>
+    private IDriveRoom Room => room;
 
     /// <summary>The clock, for the steps of a run.</summary>
     private TimeProvider Time => time;
@@ -413,6 +427,7 @@ public sealed partial class RecordingUpload(
                 pending.Count == 1 ? "file" : "files", Sizes.Describe(pending.Sum(path => owner.Probe.Length(path))), location.Path);
 
             string? problem = null;
+            DateTimeOffset? nextAttempt = null;
             var said = false;
             foreach (var path in pending)
             {
@@ -427,7 +442,23 @@ public sealed partial class RecordingUpload(
                     said = true;
                 }
 
-                if (RecordingFiles.IsLessonVideo(path)) owner.Logger.LogInformation("{Line}", SendingTheVideo(owner.Probe.Length(path), SpeedSoFar()));
+                if (RecordingFiles.IsLessonVideo(path))
+                {
+                    // Drive's room first (teach-video 8): a video known not to fit stays here, the rest goes up, and the recording
+                    // waits as it does when Drive is full, rather than the whole pass ending on it (review 3.16); read for an
+                    // upload under way, so with the uploads after each class off too, since 9 > U and drive upload send then.
+                    var size = owner.Probe.Length(path);
+                    if (await owner.Room.ReadForUploadAsync(cancellationToken) is { Free: { } free } && free < size)
+                    {
+                        var noRoom = $"{Path.GetFileName(path)} ({Sizes.Describe(size)}) does not fit in Google Drive's room ({Sizes.Describe(free)} free), so it stays on this laptop for now";
+                        owner.Logger.LogWarning("{NoRoom}; it goes up with a later upload once there is room, and the rest of {Recording} is up", noRoom, files.BaseName);
+                        problem ??= noRoom;
+                        nextAttempt = owner.Time.GetUtcNow() + WaitWhenFull;
+                        continue;
+                    }
+
+                    owner.Logger.LogInformation("{Line}", SendingTheVideo(size, SpeedSoFar()));
+                }
 
                 try
                 {
@@ -459,19 +490,20 @@ public sealed partial class RecordingUpload(
                 }
             }
 
-            return Finish(problem, alreadyThere: false, said);
+            return Finish(problem, alreadyThere: false, said, nextAttempt);
         }
 
         /// <summary>
         /// Ends the upload: done, with the line that says where the recording is on Drive, unless <paramref name="said"/>
-        /// says it went into the log before the log went up; or waiting, with <paramref name="problem"/>.
+        /// says it went into the log before the log went up; or waiting, with <paramref name="problem"/>, and the next try
+        /// after a class no sooner than <paramref name="nextAttempt"/> when one is given (a lesson's video that does not fit).
         /// <paramref name="alreadyThere"/> says that nothing had to go up.
         /// </summary>
-        private RecordingUploadResult Finish(string? problem, bool alreadyThere, bool said = false)
+        private RecordingUploadResult Finish(string? problem, bool alreadyThere, bool said = false, DateTimeOffset? nextAttempt = null)
         {
             if (problem is not null)
             {
-                _manifest = _manifest with { State = UploadState.Waiting, LastError = problem };
+                _manifest = _manifest with { State = UploadState.Waiting, LastError = problem, NextAttemptUtc = nextAttempt };
                 Save();
                 owner.Logger.LogWarning("{Recording} waits to go up to Google Drive: {Problem}", files.BaseName, problem);
                 return new RecordingUploadResult(files, RecordingOutcome.Waiting, problem);
@@ -565,7 +597,8 @@ public sealed partial class RecordingUpload(
         /// either, the folder on Drive is looked through for a copy of the same name, which is adopted when it is the same.
         /// Media (<paramref name="media"/>: audio, or a lesson's video) is never sent as a revision, but for a lesson's finished
         /// video (<paramref name="lessonVideo"/>) made again since its copy was checked, as a continued lesson's by
-        /// finish-video: it goes up whole as a new revision of that copy, larger or smaller (teach-video 8), which is said.
+        /// finish-video: it goes up whole as a new revision of that copy, larger or smaller (teach-video 8), kept for ever on
+        /// Drive (keepRevisionForever, Gulzar's answer 4 (b) of 29 October 2026 to the 0.5.0 review), which is said.
         /// </summary>
         private async Task<UploadTarget?> TargetOfAsync(ManifestFile entry, string name, bool media, bool lessonVideo, DriveFolderPath location, CancellationToken cancellationToken)
         {
@@ -580,8 +613,9 @@ public sealed partial class RecordingUpload(
 
                 if (await CheckAsync(entry.DriveId, name, cancellationToken) is { Trashed: false })
                 {
-                    if (lessonVideo) owner.Logger.LogInformation("{Name} was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy", name);
-                    return new UploadTarget(name, null, entry.DriveId);
+                    // A remade lesson video's revision is kept for ever on Drive, so the older video is never purged (answer 4 (b)).
+                    if (lessonVideo) owner.Logger.LogInformation("{Name} was made again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy, kept for ever", name);
+                    return new UploadTarget(name, null, entry.DriveId, KeepRevisionForever: lessonVideo);
                 }
 
                 owner.Logger.LogInformation("{Name}'s copy on Google Drive is no longer there, or is in the trash, so it goes up again as a new file; ClassScribe takes nothing out of the trash", name);
@@ -682,6 +716,9 @@ public sealed partial class RecordingUpload(
         /// <summary>Notes the session of the file <paramref name="name"/>, for an upload that goes on later where this one stopped.</summary>
         public void Note(string name, UploadSession? session) => Put(Entry(name) with { Session = session });
 
+        /// <summary>Writes the manifest as it is, stamped now, so that an upload held up between pieces still counts as going on.</summary>
+        public void StillGoingOn() => Save();
+
         /// <summary>
         /// Takes in a queue another ClassScribe wrote meanwhile (see <see cref="UploadManifest.TimesQueued"/>), so that no write
         /// of this upload undoes it and the end of the upload knows of it.
@@ -714,7 +751,8 @@ public sealed partial class RecordingUpload(
 
     /// <summary>
     /// What one file's upload tells as it goes: each change of its session goes into the manifest, and every tenth of a file
-    /// larger than one piece is said, with how fast it goes; before each piece, whatever the upload waits for.
+    /// larger than one piece is said, with how fast it goes; before each piece, whatever the upload waits for, with the
+    /// manifest written every <see cref="StillGoingOnEvery"/> while it waits, so that the upload still counts as going on.
     /// </summary>
     private sealed class FileWatch(Run run, string name, long size, Func<CancellationToken, Task> beforePiece, TimeProvider time, ILogger logger) : IUploadWatch
     {
@@ -723,7 +761,34 @@ public sealed partial class RecordingUpload(
         private int _tenthsSaid;
 
         /// <inheritdoc />
-        public Task BeforePieceAsync(CancellationToken cancellationToken) => beforePiece(cancellationToken);
+        public async Task BeforePieceAsync(CancellationToken cancellationToken)
+        {
+            var wait = beforePiece(cancellationToken);
+            if (wait.IsCompleted)
+            {
+                await wait;
+                return;
+            }
+
+            // Held up, as while a class records or is transcribed, which may last hours: the manifest is written every so
+            // often meanwhile, so that the upload still counts as going on in any process (a lesson's video is not made again
+            // while its older one is held open here, review of 3.5). The pending wait's timer goes with the pause.
+            using var over = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            try
+            {
+                while (await Task.WhenAny(wait, Task.Delay(StillGoingOnEvery, time, over.Token)) != wait)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    run.StillGoingOn();
+                }
+            }
+            finally
+            {
+                over.Cancel();
+            }
+
+            await wait;
+        }
 
         /// <inheritdoc />
         public void SessionChanged(UploadSession? session)
