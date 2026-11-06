@@ -1,5 +1,6 @@
 using System.Net;
-using ClassScribe.Drive;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Drive;
 
 namespace ClassScribe.Tests;
 

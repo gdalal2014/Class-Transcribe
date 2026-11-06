@@ -1,5 +1,7 @@
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Storage;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

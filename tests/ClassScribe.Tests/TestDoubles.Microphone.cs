@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
 
 namespace ClassScribe.Tests;
 

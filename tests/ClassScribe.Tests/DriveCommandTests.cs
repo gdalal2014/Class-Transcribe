@@ -1,7 +1,9 @@
 using System.Net;
-using ClassScribe.Commands;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Drive;
+using ClassScribe.Core;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Infrastructure.Drive;
 
 namespace ClassScribe.Tests;
 

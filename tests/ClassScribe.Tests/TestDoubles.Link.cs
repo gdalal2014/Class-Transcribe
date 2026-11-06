@@ -1,8 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

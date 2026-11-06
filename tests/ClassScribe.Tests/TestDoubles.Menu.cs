@@ -1,7 +1,7 @@
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Runs;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClassScribe.Tests;

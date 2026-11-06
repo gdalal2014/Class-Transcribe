@@ -1,6 +1,7 @@
 using System.Net;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Infrastructure.Transcription;
 using Refit;
 
 namespace ClassScribe.Tests;

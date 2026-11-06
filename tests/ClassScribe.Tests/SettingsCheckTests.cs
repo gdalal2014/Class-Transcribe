@@ -1,9 +1,13 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Drive;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Drive;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;

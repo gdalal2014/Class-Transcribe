@@ -1,5 +1,6 @@
 using System.Net;
-using ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
 using Refit;

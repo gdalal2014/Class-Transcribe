@@ -1,7 +1,9 @@
 using System.Text.RegularExpressions;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

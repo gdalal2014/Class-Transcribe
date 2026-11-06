@@ -1,5 +1,6 @@
-using ClassScribe.Camera;
-using ClassScribe.Camera.Windows;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Camera.Windows;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

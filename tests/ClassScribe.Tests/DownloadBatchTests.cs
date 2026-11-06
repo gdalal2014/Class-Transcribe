@@ -1,12 +1,14 @@
 using System.Net;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.YouTube;
 using Moq;
 
 namespace ClassScribe.Tests;

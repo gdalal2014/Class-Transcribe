@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
-using ClassScribe.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Infrastructure.Audio;
 using NAudio.Wave;
 
 namespace ClassScribe.Tests;

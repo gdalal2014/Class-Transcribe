@@ -1,9 +1,8 @@
 using System.Collections;
 using System.ComponentModel;
-using ClassScribe.Camera;
-using ClassScribe.Camera.Windows;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Recorder;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Camera.Windows;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

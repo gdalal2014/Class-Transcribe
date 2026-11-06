@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
 
 namespace ClassScribe.Tests;
 

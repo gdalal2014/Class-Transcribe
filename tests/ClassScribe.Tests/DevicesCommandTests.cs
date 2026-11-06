@@ -1,9 +1,11 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Commands;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

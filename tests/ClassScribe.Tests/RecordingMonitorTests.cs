@@ -1,11 +1,14 @@
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 

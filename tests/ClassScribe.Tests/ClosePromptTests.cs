@@ -1,4 +1,4 @@
-using ClassScribe.Commands;
+using ClassScribe.Cli.Commands;
 
 namespace ClassScribe.Tests;
 

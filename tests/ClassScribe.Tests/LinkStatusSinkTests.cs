@@ -1,9 +1,10 @@
 using System.Text.Json;
-using ClassScribe.Commands;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Hosts.Recorder;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

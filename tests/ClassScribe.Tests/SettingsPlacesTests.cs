@@ -1,4 +1,5 @@
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Infrastructure.Settings;
 
 namespace ClassScribe.Tests;
 

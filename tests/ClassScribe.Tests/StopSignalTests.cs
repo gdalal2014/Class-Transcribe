@@ -1,7 +1,6 @@
 using System.Runtime.Versioning;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Recorder;
 
 namespace ClassScribe.Tests;
 

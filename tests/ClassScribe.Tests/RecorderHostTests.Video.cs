@@ -1,10 +1,11 @@
 using System.Diagnostics;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
-using ClassScribe.YouTube;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

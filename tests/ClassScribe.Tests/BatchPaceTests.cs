@@ -1,6 +1,5 @@
-using ClassScribe.Recorder;
-using ClassScribe.YouTube;
-using Microsoft.Extensions.Logging.Abstractions;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Recorder;
 
 namespace ClassScribe.Tests;
 

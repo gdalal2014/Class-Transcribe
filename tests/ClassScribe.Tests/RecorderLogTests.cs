@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
-using ClassScribe.Recorder;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Infrastructure.Logging;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

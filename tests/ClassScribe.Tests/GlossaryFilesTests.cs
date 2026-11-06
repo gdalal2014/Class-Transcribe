@@ -1,7 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Transcription;
 
 namespace ClassScribe.Tests;
 

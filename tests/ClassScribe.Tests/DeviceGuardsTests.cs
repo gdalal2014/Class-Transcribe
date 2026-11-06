@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
-using ClassScribe.Audio.Windows;
-using ClassScribe.Desktop;
+using ClassScribe.Infrastructure.Audio.Windows;
+using ClassScribe.Infrastructure.Desktop;
 
 namespace ClassScribe.Tests;
 

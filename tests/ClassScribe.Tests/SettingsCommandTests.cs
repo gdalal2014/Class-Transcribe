@@ -1,7 +1,9 @@
 using System.Text.Json.Nodes;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Settings;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 

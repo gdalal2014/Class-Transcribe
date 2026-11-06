@@ -1,7 +1,10 @@
 using System.Net;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Transcription;
 using NAudio.Wave;
 
 namespace ClassScribe.Tests;

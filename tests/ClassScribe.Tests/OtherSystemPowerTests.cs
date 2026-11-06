@@ -1,4 +1,4 @@
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
 
 namespace ClassScribe.Tests;
 

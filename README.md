@@ -36,7 +36,7 @@ downloaded with yt-dlp (see [YouTube videos](#youtube-videos)).
    ```
 4. For classes, publish a copy of ClassScribe outside OneDrive and start that copy, not `dotnet run`:
    ```powershell
-   dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"
+   dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"
    ```
    Make a shortcut to `%LOCALAPPDATA%\Programs\ClassScribe\ClassScribe.exe` (see
    [A program to double-click](#a-program-to-double-click)). A recording started from that copy runs
@@ -151,7 +151,7 @@ and how to free room on the laptop afterwards.
 ## Use it
 
 ```powershell
-dotnet run --project src/ClassScribe
+dotnet run --project src/ClassScribe.Cli
 ```
 
 ClassScribe starts with a menu. Press the number of what you want:
@@ -986,7 +986,7 @@ ClassScribe --help                                                      # the co
 `ClassScribe` here stands for the published `ClassScribe.exe` (see
 [Set up once](#set-up-once)), by its full path when it is not in the current folder, as in
 `& "$env:LOCALAPPDATA\Programs\ClassScribe\ClassScribe.exe" record ...`. With
-`dotnet run --project src/ClassScribe -- record ...` the same lines work, but the recording then
+`dotnet run --project src/ClassScribe.Cli -- record ...` the same lines work, but the recording then
 runs in the window, and closing the window ends it.
 
 In short: `record "<name>" SOURCE [--output "<folder>"] [--mic ["<microphone>"] [--mic-follows <app>|auto|none]]
@@ -1263,7 +1263,7 @@ file, say, or changed the `Transcript` settings. Press R in menu choice 3 or 4 f
 has a transcript, or run `rebuild`:
 
 ```powershell
-dotnet run --project src/ClassScribe -- rebuild "C:\path\to\recording folder or file"
+dotnet run --project src/ClassScribe.Cli -- rebuild "C:\path\to\recording folder or file"
 ```
 
 `rebuild` takes a folder (its newest recording with a saved answer, in it or in its date folders, so
@@ -2508,9 +2508,9 @@ the new default. Before each change ClassScribe keeps the file as it was in
 Until you change something, ClassScribe reads the defaults, from the `appsettings.json` shipped
 beside the program, and the menu says so. Once your own file is there, every ClassScribe you start
 reads it, `dotnet run` included. Before that, `dotnet run` reads the copy in
-`src\ClassScribe\bin\Debug\net10.0-windows10.0.19041.0`, which a build makes from
-`src\ClassScribe\appsettings.json` and replaces only when that file is the newer of the two. So edit
-`src\ClassScribe\appsettings.json` and build again (`dotnet run` builds each time it starts), or edit
+`src\ClassScribe.Cli\bin\Debug\net10.0-windows10.0.19041.0`, which a build makes from
+`src\ClassScribe.Cli\appsettings.json` and replaces only when that file is the newer of the two. So edit
+`src\ClassScribe.Cli\appsettings.json` and build again (`dotnet run` builds each time it starts), or edit
 the copy itself, which a build then leaves alone until the project's file changes again. While the
 project's file is newer than the copy and differs from it, the menu and each command say so in a
 `WARNING` line, and the change does not count until the build.
@@ -2663,7 +2663,7 @@ ClassScribe settings list --json | ConvertFrom-Json                 # the same, 
 ClassScribe settings get Recording:OutputFolder                     # one value, alone; a list's items a line each
 ClassScribe settings set Recording:OutputFolder "D:\Classes"        # change one setting
 ClassScribe settings set YouTube:CourseChannels "@Channel1" "@Channel2"   # a list: all its items
-ClassScribe settings set Logging:LogLevel:ClassScribe.Drive Debug   # one entry of the log levels
+ClassScribe settings set Logging:LogLevel:ClassScribe.Infrastructure.Drive Debug   # one entry of the log levels
 ClassScribe settings set Recording:CameraOffsets:OBSBOT -60          # one camera's offset, in milliseconds
 ClassScribe settings reset Recording:Device                         # back at its default, written into your file
 ClassScribe settings reset --all                                    # every setting; your saved classes are kept
@@ -2760,7 +2760,7 @@ the audio goes on arriving while it stops, so a minute past the limit is still s
 Publish ClassScribe as a folder outside OneDrive, as [Set up once](#set-up-once) says:
 
 ```powershell
-dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"
+dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"
 ```
 
 Keep `ClassScribe.exe` together with the files beside it, and make a shortcut to it: right-click
@@ -2920,7 +2920,7 @@ words you see.
 | `... could not be read: ...` | Another program, such as OneDrive or an editor, held the settings file for longer than a moment, or Windows would not let ClassScribe read it. Close that program, then choose again, or run the command again. |
 | `appsettings.json cannot be read: ...` | The file is valid JSON, but not in the shape settings take: the same setting written twice in one section, say, or something other than `{ ... }` around them all. Fix what the message names, then choose again. |
 | `WARNING  The settings in ... passed the check, but a part of ClassScribe could not read them, so the settings before them stay`, then `A part of ClassScribe could not use these settings: ...` | The file passed every check ClassScribe knows, yet a part of ClassScribe refused a value as the settings were read in; the reason follows. The settings as they were before stay in force, and the choice or command is refused as for any other problem with the file. Fix what the reason names, then choose again or run the command again; if it names nothing you changed, report the line. |
-| `WARNING  src\ClassScribe\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0-windows10.0.19041.0`. Build again, or edit that copy, for the change to count. |
+| `WARNING  src\ClassScribe.Cli\appsettings.json has changed since the last build` | Under `dotnet run`, ClassScribe reads the copy in `bin\Debug\net10.0-windows10.0.19041.0`. Build again, or edit that copy, for the change to count. |
 | `ClassScribe could not start.` and `An environment variable sets a value ClassScribe cannot use` | Change or remove the variable the message names (the setting's name, with `__` for each colon), then start ClassScribe again. |
 | `ClassScribe shows its menu only when someone can type into its window` | ClassScribe was started without a command from a script, or with its input redirected. Give it a command, such as `record` or `list`; the help follows the message. |
 | `Could not be read now: ...` under a list of `devices`, below an app or a microphone, `Which apps hold each microphone could not be read now: ...`, and `Not everything could be read from Windows just now` at the end | Windows did not give that list, or one app's session in it, at that moment; the rest is complete. The line names the app when Windows did (`Zoom's audio session`, `(Zoom, pid 9090)`) and the Windows call that failed (`GetState: ...`). Run `devices` again. If it keeps saying so, quit the other apps that use sound (Zoom, Teams, Discord, WhatsApp, tray icons included) and run it again; if it still does, restart Windows. A recording goes on beside one app's session that cannot be read; when that app is the one your microphone follows, see `Cannot read zoom's microphone session` below. |
@@ -3376,7 +3376,11 @@ in its `.log` too.
 ## Layout
 
 ```
-src/ClassScribe/
+src/ClassScribe.Core/, src/ClassScribe.Application/, src/ClassScribe.Infrastructure/, src/ClassScribe.Cli/
+                  the four projects, which share src/Directory.Build.props (the version among its lines): the
+                  records and rules in Core, the use cases in Application, Windows, the vendors and the files in
+                  Infrastructure, and the menu, the command line and the hosts in Cli, whose exe is still
+                  ClassScribe.exe. The folders below are each split among them by what they hold.
     Program.cs, AppHost.cs, App.cs    start-up: the settings read and checked, then a command or the menu
     Settings/         the settings, where they live (your own folder, the defaults beside the program),
                       the one writer of your file, the saved classes, the API key from the environment,

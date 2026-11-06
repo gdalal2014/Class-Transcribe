@@ -1,6 +1,6 @@
 using System.Runtime.Versioning;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

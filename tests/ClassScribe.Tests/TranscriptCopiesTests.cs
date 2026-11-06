@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Text;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

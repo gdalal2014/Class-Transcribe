@@ -1,4 +1,5 @@
-using ClassScribe.Transcription;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Infrastructure.Transcription;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

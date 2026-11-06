@@ -1,3 +1,5 @@
+using ClassScribe.Core;
+
 namespace ClassScribe.Tests;
 
 /// <summary>How lengths and positions are written.</summary>

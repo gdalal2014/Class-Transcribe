@@ -1,10 +1,14 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
-using ClassScribe.Link;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Camera;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Tests;
 

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;

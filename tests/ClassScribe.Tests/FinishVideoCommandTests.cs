@@ -1,9 +1,14 @@
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 

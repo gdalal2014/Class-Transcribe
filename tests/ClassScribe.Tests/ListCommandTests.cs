@@ -1,8 +1,9 @@
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

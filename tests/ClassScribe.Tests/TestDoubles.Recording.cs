@@ -1,7 +1,7 @@
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 
 namespace ClassScribe.Tests;
 

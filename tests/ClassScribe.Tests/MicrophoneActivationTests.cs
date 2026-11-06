@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Windows;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Audio.Windows;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 

@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Windows;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Audio.Windows;
 
 namespace ClassScribe.Tests;
 

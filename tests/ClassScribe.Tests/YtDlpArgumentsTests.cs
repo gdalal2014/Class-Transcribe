@@ -1,5 +1,6 @@
-using ClassScribe.Recorder;
-using ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.YouTube;
 
 namespace ClassScribe.Tests;
 

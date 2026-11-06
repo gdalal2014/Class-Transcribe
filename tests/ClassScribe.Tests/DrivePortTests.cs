@@ -1,8 +1,13 @@
 using System.Security.Cryptography;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Storage;
+using ClassScribe.Cli;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Drive;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClassScribe.Tests;

@@ -1,6 +1,10 @@
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
-using ClassScribe.Storage;
+using ClassScribe.Application.Camera;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Camera;
 
 namespace ClassScribe.Tests;
 

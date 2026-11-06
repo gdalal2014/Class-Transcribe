@@ -1,7 +1,8 @@
 using System.Text.Json.Nodes;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Transcription;
 
 namespace ClassScribe.Tests;
 

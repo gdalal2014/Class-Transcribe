@@ -1,5 +1,6 @@
-using ClassScribe.Drive;
-using ClassScribe.Settings;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Settings;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;

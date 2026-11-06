@@ -1,13 +1,13 @@
 using System.Text;
-using ClassScribe.Commands;
-using Microsoft.Extensions.Configuration;
+using ClassScribe.Application.Commands;
+using ClassScribe.Cli;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.Options;
 using Moq;
-using ClassScribe.Settings;
 
 namespace ClassScribe.Tests;
 

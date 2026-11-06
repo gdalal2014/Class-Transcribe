@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Runs;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Desktop;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Extensions.Logging.Abstractions;
 using Win32Exception = System.ComponentModel.Win32Exception;
 

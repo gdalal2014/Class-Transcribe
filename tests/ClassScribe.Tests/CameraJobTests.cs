@@ -1,4 +1,7 @@
-using ClassScribe.Camera;
+using ClassScribe.Application.Camera;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Camera;
 
 namespace ClassScribe.Tests;
 

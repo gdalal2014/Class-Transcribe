@@ -2,10 +2,12 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Text;
-using ClassScribe.Audio;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Transcription;
 using ClassScribe.DryRun;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
 using Microsoft.Extensions.Logging.Abstractions;
 using Refit;
 

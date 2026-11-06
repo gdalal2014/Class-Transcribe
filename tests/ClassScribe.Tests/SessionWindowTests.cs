@@ -2,8 +2,8 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

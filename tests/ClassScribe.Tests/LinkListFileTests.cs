@@ -1,5 +1,6 @@
 using System.Text;
-using ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.YouTube;
 
 namespace ClassScribe.Tests;
 

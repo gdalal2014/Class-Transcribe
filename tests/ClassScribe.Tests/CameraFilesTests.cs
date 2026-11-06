@@ -1,7 +1,8 @@
-﻿using ClassScribe.Audio;
-using ClassScribe.Drive;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Drive;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

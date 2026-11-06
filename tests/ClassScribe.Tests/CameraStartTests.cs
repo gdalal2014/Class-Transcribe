@@ -1,11 +1,14 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using Microsoft.Extensions.Logging.Abstractions;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
 
 namespace ClassScribe.Tests;
 

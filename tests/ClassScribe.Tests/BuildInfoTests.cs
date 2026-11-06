@@ -1,4 +1,5 @@
-using ClassScribe.Link;
+using ClassScribe.Application;
+using ClassScribe.Infrastructure.Link;
 
 namespace ClassScribe.Tests;
 

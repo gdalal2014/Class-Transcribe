@@ -1,12 +1,16 @@
-using ClassScribe.Audio;
-using ClassScribe.YouTube;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.Transcription;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 

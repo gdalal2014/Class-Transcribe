@@ -1,6 +1,6 @@
-using ClassScribe.Audio;
-using ClassScribe.Drive;
-using ClassScribe.Storage;
+using ClassScribe.Application.Drive;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
 
 namespace ClassScribe.Tests;
 

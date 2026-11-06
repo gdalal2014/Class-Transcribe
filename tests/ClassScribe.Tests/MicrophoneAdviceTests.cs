@@ -1,9 +1,13 @@
 using System.Runtime.Versioning;
 using System.Security;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClassScribe.Tests;

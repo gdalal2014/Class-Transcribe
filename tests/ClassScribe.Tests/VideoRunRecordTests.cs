@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using ClassScribe.Recorder;
-using ClassScribe.YouTube;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.Recorder;
 
 namespace ClassScribe.Tests;
 

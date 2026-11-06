@@ -1,5 +1,5 @@
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Recorder;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Core.Audio.Timeline;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

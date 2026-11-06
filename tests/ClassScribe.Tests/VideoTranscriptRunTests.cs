@@ -1,12 +1,15 @@
 using System.Net;
-using ClassScribe.Audio;
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
-using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.Transcription;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 

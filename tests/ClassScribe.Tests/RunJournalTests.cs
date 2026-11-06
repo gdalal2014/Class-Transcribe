@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 

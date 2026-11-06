@@ -1,6 +1,6 @@
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Win32;
 
 namespace ClassScribe.Tests;

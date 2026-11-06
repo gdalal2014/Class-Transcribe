@@ -1,9 +1,10 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Commands;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Moq;
 

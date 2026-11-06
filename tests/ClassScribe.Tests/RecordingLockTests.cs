@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using ClassScribe.Recorder;
+using ClassScribe.Infrastructure.Recorder;
 
 namespace ClassScribe.Tests;
 

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- ClassScribe's own domain, with no package and nothing of Windows: a plain target proves it at every build (architecture 1.2). -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>ClassScribe.Core</RootNamespace>
+  </PropertyGroup>
+
+  <!-- A file that reaches for a file or the network here writes its own using line, so that it is visible (architecture 1.4). -->
+  <ItemGroup>
+    <Using Remove="System.IO" />
+    <Using Remove="System.Net.Http" />
+  </ItemGroup>
+
+</Project>

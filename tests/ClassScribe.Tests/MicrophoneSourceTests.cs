@@ -1,8 +1,11 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Audio;
 
 namespace ClassScribe.Tests;
 

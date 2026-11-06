@@ -1,5 +1,5 @@
 using System.Text;
-using ClassScribe.Transcription;
+using ClassScribe.Core.Transcription;
 
 namespace ClassScribe.Tests;
 

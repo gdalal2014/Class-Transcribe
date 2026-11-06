@@ -1,8 +1,8 @@
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 using Moq;
 
 namespace ClassScribe.Tests;

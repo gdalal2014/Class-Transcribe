@@ -1,6 +1,7 @@
-using ClassScribe.Commands;
-using ClassScribe.Settings;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Cli.Commands;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 

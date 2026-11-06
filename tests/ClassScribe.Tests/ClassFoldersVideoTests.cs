@@ -1,7 +1,9 @@
-using ClassScribe.Audio;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.YouTube;
 
 namespace ClassScribe.Tests;
 

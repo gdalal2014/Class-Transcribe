@@ -1,9 +1,12 @@
 using System.Runtime.Versioning;
 using System.Text;
-using ClassScribe.Commands;
-using ClassScribe.Drive;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Drive;
+using ClassScribe.Cli;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Drive;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -99,7 +102,7 @@ public class DriveSecretsTests
         var secrets = _world.Google.Secrets;
         Assert.That(_world.Google.Refreshes, Is.EqualTo(1), "the status renewed the token");
         Assert.That(secrets, Has.Count.GreaterThanOrEqualTo(7), "the client secret, a code, a state, a verifier, a refresh token and two access tokens");
-        Assert.That(_logs.Lines, Has.Some.Matches<(string Category, LogLevel Level, string Text)>(line => line.Level == LogLevel.Debug && line.Category.StartsWith("ClassScribe.Drive", StringComparison.Ordinal)),
+        Assert.That(_logs.Lines, Has.Some.Matches<(string Category, LogLevel Level, string Text)>(line => line.Level == LogLevel.Debug && line.Category.Contains(".Drive.", StringComparison.Ordinal)),
             "the Drive classes' Debug lines were kept");
 
         foreach (var secret in secrets)

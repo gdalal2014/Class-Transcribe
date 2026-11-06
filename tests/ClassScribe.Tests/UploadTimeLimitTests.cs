@@ -1,7 +1,8 @@
 using System.Buffers.Binary;
-using ClassScribe.Audio;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Audio;
+using ClassScribe.Infrastructure.Audio;
 using NAudio.Wave;
 
 namespace ClassScribe.Tests;

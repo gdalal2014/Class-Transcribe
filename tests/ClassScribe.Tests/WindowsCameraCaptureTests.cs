@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
-using ClassScribe.Camera;
-using ClassScribe.Camera.Windows;
+using ClassScribe.Application.Camera;
+using ClassScribe.Infrastructure.Camera.Windows;
 
 namespace ClassScribe.Tests;
 

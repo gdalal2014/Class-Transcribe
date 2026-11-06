@@ -1,5 +1,5 @@
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Windows;
+using ClassScribe.Infrastructure.Audio.Windows;
 using NAudio.CoreAudioApi;
 
 namespace ClassScribe.Tests;

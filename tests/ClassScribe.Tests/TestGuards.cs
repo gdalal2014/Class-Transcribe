@@ -1,8 +1,9 @@
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 

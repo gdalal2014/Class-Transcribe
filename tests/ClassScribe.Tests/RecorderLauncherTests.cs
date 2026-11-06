@@ -1,8 +1,9 @@
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Recorder;
 
 namespace ClassScribe.Tests;
 

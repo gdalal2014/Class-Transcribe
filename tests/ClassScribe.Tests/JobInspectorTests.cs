@@ -1,6 +1,6 @@
 using System.Runtime.Versioning;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Win32Exception = System.ComponentModel.Win32Exception;
 
 namespace ClassScribe.Tests;

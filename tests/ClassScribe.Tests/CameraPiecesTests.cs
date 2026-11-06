@@ -1,5 +1,5 @@
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
 
 namespace ClassScribe.Tests;
 

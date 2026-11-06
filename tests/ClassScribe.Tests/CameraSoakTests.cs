@@ -1,12 +1,16 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;
@@ -97,7 +101,7 @@ public sealed class CameraSoakTests
     {
         var factory = new TrackSetFactory(new FakeCaptureProvider(), _microphones, new FakeMicrophoneSessions(), new FakeMicrophoneUsageRecord(), new FakeProcessNames(),
             new FakeOwnProcesses(Laptop.OwnProcess), new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), new WavTrackWriterFactory(), _freezes, TestOptions.Create(new RecordingOptions()), TestOptions.Create(new TranscriptOptions()), _time,
-            NullLoggerFactory.Instance, cameraRecorder: new CameraRecorder(new FakeCameraProvider(), _starter, _time, NullLoggerFactory.Instance));
+            NullLoggerFactory.Instance, cameraRecorder: new CameraRecorder(new FakeCameraProvider(), _starter, new FileProbe(), _time, NullLoggerFactory.Instance));
         var plan = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT", "320x240"));
         var microphone = _microphones.Prepare(new FakeAudioCapture(Pcm16KMono, Obsbot.Name, Obsbot.Id) { DeliversContinuously = true });
         using var recording = (TrackSet)factory.Create(plan, new RecordingClock(_time));
@@ -164,7 +168,7 @@ public sealed class CameraSoakTests
     {
         var factory = new TrackSetFactory(new FakeCaptureProvider(), _microphones, new FakeMicrophoneSessions(), new FakeMicrophoneUsageRecord(), new FakeProcessNames(),
             new FakeOwnProcesses(Laptop.OwnProcess), new ClassFolders(TestOptions.Create(new RecordingOptions()), _time, NullLogger<ClassFolders>.Instance), new WavTrackWriterFactory(), _freezes, TestOptions.Create(new RecordingOptions()), TestOptions.Create(new TranscriptOptions()), _time,
-            NullLoggerFactory.Instance, cameraRecorder: new CameraRecorder(new FakeCameraProvider(), _starter, _time, NullLoggerFactory.Instance));
+            NullLoggerFactory.Instance, cameraRecorder: new CameraRecorder(new FakeCameraProvider(), _starter, new FileProbe(), _time, NullLoggerFactory.Instance));
         var plan = new SourcePlan(RecordingMode.Microphone, null, new MicrophoneChoice("OBSBOT"), new CameraChoice("OBSBOT", "320x240"));
         using var letGo = new ManualResetEventSlim();
         var microphone = _microphones.Prepare(new FakeAudioCapture(Pcm16KMono, Obsbot.Name, Obsbot.Id) { DeliversContinuously = true, DisposeGate = letGo });

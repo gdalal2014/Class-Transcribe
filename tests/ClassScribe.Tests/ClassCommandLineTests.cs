@@ -1,5 +1,6 @@
-using ClassScribe.Commands;
-using ClassScribe.Settings;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Commands;
 using Moq;
 
 namespace ClassScribe.Tests;

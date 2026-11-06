@@ -1,5 +1,5 @@
-using ClassScribe.Commands;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Commands;
+using ClassScribe.Infrastructure.YouTube;
 
 namespace ClassScribe.Tests;
 

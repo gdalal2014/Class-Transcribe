@@ -1,8 +1,13 @@
 using System.Net;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Cli;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Refit;

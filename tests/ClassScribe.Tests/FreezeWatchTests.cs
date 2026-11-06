@@ -1,6 +1,7 @@
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Recorder;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 

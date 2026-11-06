@@ -1,8 +1,11 @@
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Runs;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

@@ -1,12 +1,15 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Drive;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Tests;
 

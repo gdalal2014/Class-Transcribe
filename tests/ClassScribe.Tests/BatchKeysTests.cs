@@ -1,4 +1,4 @@
-using ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
 
 namespace ClassScribe.Tests;
 

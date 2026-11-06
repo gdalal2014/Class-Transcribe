@@ -1,4 +1,4 @@
-using ClassScribe.Settings;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;

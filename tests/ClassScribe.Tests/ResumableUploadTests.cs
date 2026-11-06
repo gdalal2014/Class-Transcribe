@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
-using ClassScribe.Drive;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Drive;
 
 namespace ClassScribe.Tests;
 

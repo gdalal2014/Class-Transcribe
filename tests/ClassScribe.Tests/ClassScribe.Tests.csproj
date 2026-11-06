@@ -10,6 +10,9 @@
     <!-- The compiler then reports a test class or method without an XML summary (CS1591), and fails the build over it. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+    <!-- The root .editorconfig's rule runs in the build here too: a using line nothing needs (IDE0005) is a warning,
+         which the 0-warnings build refuses (architecture 10.3). -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- The hang guard: a run that takes too long fails instead of hanging (see ClassScribe.Tests.runsettings). -->
     <RunSettingsFilePath>$(MSBuildProjectDirectory)\ClassScribe.Tests.runsettings</RunSettingsFilePath>
     <!-- The dry-run kit's stand-in for ElevenLabs is compiled in below without its one line of program, which this
@@ -38,7 +41,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ClassScribe\ClassScribe.csproj" />
+    <ProjectReference Include="..\..\src\ClassScribe.Cli\ClassScribe.Cli.csproj" />
   </ItemGroup>
 
 </Project>
