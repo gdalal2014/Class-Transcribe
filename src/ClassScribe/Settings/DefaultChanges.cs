@@ -30,7 +30,7 @@ public static class DefaultChanges
     /// </summary>
     public static IReadOnlyList<DefaultChange> Rows { get; } =
     [
-        new("Recording:MicrophoneFollows", "chrome", FollowRule.AnyWord, Version: ""),
+        new("Recording:MicrophoneFollows", "chrome", FollowRule.AnyWord, Version: "0.5.0"),
         new("ElevenLabs:KeytermsFile", "keyterms.txt", "", Version: "")
     ];
 
