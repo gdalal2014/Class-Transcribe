@@ -14,7 +14,8 @@ namespace ClassScribe.Tests;
 /// own checks, dot-sourced into a hidden Windows PowerShell 5.1 of the test's own (which runs nothing of the dry run when
 /// dot-sourced), over temporary folders only. The run files and log lines the checks read are made by ClassScribe's own
 /// writers (<see cref="RecorderJson"/> and <see cref="RecorderLogProvider"/>), so a change to what the app writes fails
-/// here rather than leaving the kit unable to find its run.
+/// here rather than leaving the kit unable to find its run. The functions the class launcher keeps copies of (the files
+/// a publish lacks, the swap of an install, the start once) are tested here too, since the launcher is outside git.
 /// </summary>
 [TestFixture]
 public class DryRunScriptTests
@@ -72,6 +73,13 @@ public class DryRunScriptTests
 
     /// <summary>The root of a drive letter that names no drive on this computer now, as an unplugged USB drive's does.</summary>
     private static string MissingDrive() => Enumerable.Range('D', 23).Select(letter => $"{(char)letter}:\\").Last(root => !Directory.Exists(root));
+
+    /// <summary>Writes <paramref name="text"/> to <paramref name="path"/>, making its folder first.</summary>
+    private static void WriteFile(string path, string text)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, text);
+    }
 
     /// <summary>
     /// Writes a run file as ClassScribe writes it, a <see cref="RunRecord"/> through <see cref="RecorderJson"/>, and returns
@@ -701,5 +709,234 @@ public class DryRunScriptTests
             "no transcript problems: ",
             "no transcript notes: "
         }));
+    }
+
+    /// <summary>
+    /// The kit finds the worktree's project file by the file, never its folder, the new layout first: src\ClassScribe.Cli\
+    /// ClassScribe.Cli.csproj, even while an old src\ClassScribe with only bin and obj is still there, as a worktree that
+    /// checked out the move has; the older src\ClassScribe\ClassScribe.csproj of a branch from before the move; the new one
+    /// when both are there; and none when neither is, so that the dry run refuses instead of publishing a folder without a
+    /// project (architecture 9.5, 10.2).
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_kit_finds_the_project_file_of_either_layout()
+    {
+        string Worktree(string name, bool newLayout, bool oldProject, bool oldFolder)
+        {
+            var root = Path.Combine(_folder.Path, name);
+            if (newLayout) WriteFile(Path.Combine(root, "src", "ClassScribe.Cli", "ClassScribe.Cli.csproj"), "<Project />");
+            if (oldProject) WriteFile(Path.Combine(root, "src", "ClassScribe", "ClassScribe.csproj"), "<Project />");
+            if (oldFolder)
+            {
+                WriteFile(Path.Combine(root, "src", "ClassScribe", "bin", "stale.txt"), "left behind by git mv");
+                WriteFile(Path.Combine(root, "src", "ClassScribe", "obj", "stale.txt"), "left behind by git mv");
+            }
+
+            return root;
+        }
+
+        var moved = Worktree("moved", newLayout: true, oldProject: false, oldFolder: true);
+        var older = Worktree("older", newLayout: false, oldProject: true, oldFolder: false);
+        var both = Worktree("both", newLayout: true, oldProject: true, oldFolder: false);
+        var none = Worktree("none", newLayout: false, oldProject: false, oldFolder: true);
+
+        var lines = await PowerShellAsync($$"""
+            foreach ($worktree in @({{Quoted(moved)}}, {{Quoted(older)}}, {{Quoted(both)}}, {{Quoted(none)}})) {
+                $project = Get-ClassScribeProject -Worktree $worktree
+                "$(Split-Path -Leaf $worktree): $(if ($project) { $project.Substring($worktree.Length + 1) } else { 'none' })"
+            }
+            """);
+
+        Assert.That(lines, Is.EqualTo(new[]
+        {
+            @"moved: src\ClassScribe.Cli\ClassScribe.Cli.csproj",
+            @"older: src\ClassScribe\ClassScribe.csproj",
+            @"both: src\ClassScribe.Cli\ClassScribe.Cli.csproj",
+            "none: none"
+        }));
+    }
+
+    /// <summary>
+    /// After a publish, the kit names every file the build needs that is not in the folder: the exe's own four, and each
+    /// runtime and native file ClassScribe.deps.json lists, by file name however deep the package put it (the DLL named when
+    /// one is missing, as a DLL the virus scanner took away is); nothing for a complete folder; and without a deps.json the
+    /// four of the exe alone. The class launcher's copy of the function is this one (architecture 9.4).
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_kit_names_each_file_a_published_build_lacks()
+    {
+        var published = Path.Combine(_folder.Path, "published");
+        WriteFile(Path.Combine(published, "ClassScribe.deps.json"), """
+            {
+              "runtimeTarget": { "name": ".NETCoreApp,Version=v10.0/win-x64", "signature": "" },
+              "targets": {
+                ".NETCoreApp,Version=v10.0": {},
+                ".NETCoreApp,Version=v10.0/win-x64": {
+                  "ClassScribe/0.5.0": { "dependencies": { "ClassScribe.Infrastructure": "0.5.0" }, "runtime": { "ClassScribe.dll": {} } },
+                  "ClassScribe.Infrastructure/0.5.0": { "runtime": { "ClassScribe.Infrastructure.dll": {} } },
+                  "NAudio.Core/2.2.1": { "runtime": { "lib/netstandard2.0/NAudio.Core.dll": { "assemblyVersion": "2.2.1.0", "fileVersion": "2.2.1.0" } } },
+                  "Some.Native/1.0.0": { "native": { "runtimes/win-x64/native/some-native.dll": { "fileVersion": "1.0.0.0" } } }
+                }
+              },
+              "libraries": {}
+            }
+            """);
+        foreach (var name in new[] { "ClassScribe.exe", "ClassScribe.dll", "ClassScribe.runtimeconfig.json", "NAudio.Core.dll" }) WriteFile(Path.Combine(published, name), "x");
+        var bare = Path.Combine(_folder.Path, "bare");
+        foreach (var name in new[] { "ClassScribe.exe", "ClassScribe.dll" }) WriteFile(Path.Combine(bare, name), "x");
+        var empty = Path.Combine(_folder.Path, "empty");
+        Directory.CreateDirectory(empty);
+
+        var lines = await PowerShellAsync($$"""
+            $published = {{Quoted(published)}}
+            "missing $((Get-MissingPublishFiles -Folder $published) -join ', ')"
+            Set-Content -LiteralPath (Join-Path $published 'ClassScribe.Infrastructure.dll') -Value 'x'
+            Set-Content -LiteralPath (Join-Path $published 'some-native.dll') -Value 'x'
+            "complete $(@(Get-MissingPublishFiles -Folder $published).Count)"
+            "bare $((Get-MissingPublishFiles -Folder {{Quoted(bare)}}) -join ', ')"
+            "empty $((Get-MissingPublishFiles -Folder {{Quoted(empty)}}) -join ', ')"
+            """);
+
+        Assert.That(lines, Is.EqualTo(new[]
+        {
+            "missing ClassScribe.Infrastructure.dll, some-native.dll",
+            "complete 0",
+            "bare ClassScribe.deps.json, ClassScribe.runtimeconfig.json",
+            "empty ClassScribe.exe, ClassScribe.dll, ClassScribe.deps.json, ClassScribe.runtimeconfig.json"
+        }));
+    }
+
+    /// <summary>
+    /// The launcher's swap, tested here since the launcher is outside git (architecture 9.4): a new build beside the install
+    /// is swapped in whole (the install becomes .previous, an older .previous goes), so that "the version installed before" is
+    /// always a whole install; after a failed start the swap back puts the old build in place and the new one aside; and a
+    /// folder in use (a file held open in the new build, or in the install, as a ClassScribe started meanwhile holds one)
+    /// leaves everything as it was, with why.
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_kit_swaps_an_install_in_whole_or_leaves_it_as_it_was()
+    {
+        // Each build is told by a file named after it, so that a folder whose file is held open can still be told apart.
+        var installed = Path.Combine(_folder.Path, "ClassScribe");
+        WriteFile(Path.Combine(installed, "version-old.txt"), "");
+        WriteFile(Path.Combine(installed + ".next", "version-new.txt"), "");
+        WriteFile(Path.Combine(installed + ".previous", "version-older.txt"), "");
+        WriteFile(Path.Combine(installed + ".previous.old", "version-oldest.txt"), "");
+        var busyNew = Path.Combine(_folder.Path, "BusyNew");
+        var busyCurrent = Path.Combine(_folder.Path, "BusyCurrent");
+        foreach (var busy in new[] { busyNew, busyCurrent })
+        {
+            WriteFile(Path.Combine(busy, "version-old.txt"), "");
+            WriteFile(Path.Combine(busy + ".next", "version-new.txt"), "");
+            WriteFile(Path.Combine(busy + ".previous", "version-older.txt"), "");
+        }
+
+        WriteFile(Path.Combine(busyNew + ".next", "held.txt"), "held open by a ClassScribe started meanwhile");
+        WriteFile(Path.Combine(busyCurrent, "held.txt"), "held open by a ClassScribe started meanwhile");
+        using var heldNew = File.Open(Path.Combine(busyNew + ".next", "held.txt"), FileMode.Open, FileAccess.Read, FileShare.None);
+        using var heldCurrent = File.Open(Path.Combine(busyCurrent, "held.txt"), FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var lines = await PowerShellAsync($$"""
+            function State($folder) {
+                $parts = foreach ($ending in @('', '.next', '.previous', '.previous.old')) {
+                    $build = @(Get-ChildItem -LiteralPath "$folder$ending" -Filter 'version-*.txt' -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName.Substring('version-'.Length) })
+                    "$(if ($ending) { $ending } else { 'installed' })=$(if ($build.Count) { $build -join '+' } else { '-' })"
+                }
+                "$(Split-Path -Leaf $folder): $($parts -join ' ')"
+            }
+            $installed = {{Quoted(installed)}}
+            "swapped $(Switch-Install -New "$installed.next" -Current $installed -Previous "$installed.previous")"
+            State $installed
+            "back $(Switch-Install -New "$installed.previous" -Current $installed -Previous "$installed.next")"
+            State $installed
+            foreach ($busy in @({{Quoted(busyNew)}}, {{Quoted(busyCurrent)}})) {
+                "left $(Switch-Install -New "$busy.next" -Current $busy -Previous "$busy.previous")"
+                State $busy
+            }
+            """);
+
+        Assert.That(lines.Take(4), Is.EqualTo(new[]
+        {
+            "swapped True",
+            "ClassScribe: installed=new .next=- .previous=old .previous.old=-",
+            "back True",
+            "ClassScribe: installed=old .next=new .previous=- .previous.old=-"
+        }));
+        Assert.That(lines.Skip(4).Where(line => !line.StartsWith("  The install could not be swapped (", StringComparison.Ordinal)), Is.EqualTo(new[]
+        {
+            "left False",
+            "BusyNew: installed=old .next=new .previous=older .previous.old=-",
+            "left False",
+            "BusyCurrent: installed=old .next=new .previous=older .previous.old=-"
+        }));
+        Assert.That(lines.Count(line => line.StartsWith("  The install could not be swapped (", StringComparison.Ordinal)), Is.EqualTo(2), "each refusal says why");
+    }
+
+    /// <summary>
+    /// The kit starts a build once to see that it loads, as the launcher starts a new install: --version on a build that has
+    /// it, whose one line is read; an older build without --version is started with list over an empty folder, which is
+    /// removed again; a build that fails both did not start. Batch files play the builds here, so that no test starts a
+    /// real ClassScribe; the only real ClassScribe.exe the kit's tests start is the stand-in of DryRunWholeTests.
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_kit_starts_a_build_once_and_reads_its_version()
+    {
+        var current = _folder.File("current.cmd");
+        File.WriteAllText(current, "@echo off\r\nif \"%~1\"==\"--version\" (echo 0.5.0+abc1234-dry& exit /b 0)\r\nexit /b 2\r\n");
+        var older = _folder.File("older.cmd");
+        File.WriteAllText(older, "@echo off\r\nif \"%~1\"==\"list\" (if exist \"%~3\\\" exit /b 0)\r\necho Unknown option: %~1\r\nexit /b 2\r\n");
+        var broken = _folder.File("broken.cmd");
+        File.WriteAllText(broken, "@echo off\r\necho Could not load file or assembly ClassScribe.Infrastructure 1>&2\r\nexit /b 1\r\n");
+
+        var lines = await PowerShellAsync($$"""
+            $checks = @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'ClassScribe-check-*' -Directory).Count
+            foreach ($program in @({{Quoted(current)}}, {{Quoted(older)}}, {{Quoted(broken)}})) {
+                $answer = Test-Installed -Program $program
+                "$(Split-Path -Leaf $program): started $($answer.Started), version [$($answer.Version)]"
+            }
+            "check folders left: $(@(Get-ChildItem -LiteralPath $env:TEMP -Filter 'ClassScribe-check-*' -Directory).Count - $checks)"
+            """);
+
+        Assert.That(lines, Is.EqualTo(new[]
+        {
+            "current.cmd: started True, version [0.5.0+abc1234-dry]",
+            "older.cmd: started True, version []",
+            "broken.cmd: started False, version []",
+            "check folders left: 0"
+        }));
+    }
+
+    /// <summary>
+    /// Which settings a build reads is told by the name CLASSSCRIBE_SETTINGS_FOLDER in its ClassScribe*.dll files, as a .NET
+    /// string (UTF-16) or as ASCII: in ClassScribe.Infrastructure.dll from the move into four projects on, in ClassScribe.dll
+    /// before it; a build that names it nowhere, the name in another DLL, and a folder that is not there do not count.
+    /// </summary>
+    [Test]
+    [Category("WindowsProcess")]
+    public async Task The_kit_looks_for_the_settings_folder_variable_in_every_ClassScribe_dll()
+    {
+        var naming = Encoding.Unicode.GetBytes("...SettingsPlaces reads CLASSSCRIBE_SETTINGS_FOLDER first...");
+        var silent = Encoding.Unicode.GetBytes("...nothing of the kind in here...");
+        var moved = Path.Combine(_folder.Path, "moved");
+        var older = Path.Combine(_folder.Path, "older");
+        var before = Path.Combine(_folder.Path, "before");
+        foreach (var folder in new[] { moved, older, before }) Directory.CreateDirectory(folder);
+        File.WriteAllBytes(Path.Combine(moved, "ClassScribe.dll"), silent);
+        File.WriteAllBytes(Path.Combine(moved, "ClassScribe.Infrastructure.dll"), naming);
+        File.WriteAllBytes(Path.Combine(older, "ClassScribe.dll"), Encoding.ASCII.GetBytes("CLASSSCRIBE_SETTINGS_FOLDER"));
+        File.WriteAllBytes(Path.Combine(before, "ClassScribe.dll"), silent);
+        File.WriteAllBytes(Path.Combine(before, "NAudio.Core.dll"), naming);
+
+        var lines = await PowerShellAsync($$"""
+            foreach ($folder in @({{Quoted(moved)}}, {{Quoted(older)}}, {{Quoted(before)}}, {{Quoted(Path.Combine(_folder.Path, "missing"))}})) {
+                "$(Split-Path -Leaf $folder) $(Test-BuildReadsSettingsFolder -Folder $folder)"
+            }
+            """);
+
+        Assert.That(lines, Is.EqualTo(new[] { "moved True", "older True", "before False", "missing False" }));
     }
 }

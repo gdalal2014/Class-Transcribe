@@ -11,14 +11,20 @@ editor's job. The script:
      side copy's own report would otherwise act on, or while the side copy runs;
   2. lists %LOCALAPPDATA%\ClassScribe, %APPDATA%\ClassScribe and %USERPROFILE%\ClassScribe (names, sizes, times), and
      reads each run file's last update, by which ClassScribe prunes it;
-  3. publishes the worktree it lives in (or -Source) to %LOCALAPPDATA%\Programs\ClassScribe-Dry, never single-file and
-     never through an installer; with -Exe it uses that exe instead;
+  3. publishes the worktree it lives in (or -Source) to %LOCALAPPDATA%\Programs\ClassScribe-Dry, from its project file
+     (src\ClassScribe.Cli\ClassScribe.Cli.csproj, or the older src\ClassScribe\ClassScribe.csproj of a branch from before
+     the move into four projects), never single-file and never through an installer, and checks that every file the
+     build needs is there (the exe's four and each file ClassScribe.deps.json names: one the virus scanner took away is
+     named); with -Exe it uses that exe instead;
   4. unless -Real, starts the stand-in for ElevenLabs (ElevenLabsStub.cs) on a free port of 127.0.0.1, tied to this
      script's process, so that it ends with the dry run even when this window is closed with its X;
   5. sets, in its own process only (never at user scope): a dummy ELEVENLABS_API_KEY (with -Real, the user-scope key,
      after a typed YES), ElevenLabs__BaseUrl at the stand-in, Drive__Enabled=false, and CLASSSCRIBE_SETTINGS_FOLDER at a
      folder of the dry run's own, seeded with a copy of %APPDATA%\ClassScribe\appsettings.json when there is one, and
-     with each glossary it (or -Setting) names by a relative path, copied from %APPDATA%\ClassScribe;
+     with each glossary it (or -Setting) names by a relative path, copied from %APPDATA%\ClassScribe; then starts the
+     copy once in that environment with --version, whose answer must be the build its file says (an older build without
+     --version is started with list over an empty folder instead), so that a DLL that is missing or blocked fails the
+     dry run here, before anything records;
   6. starts the window: record "<Name>" --app <App> --mic "<Mic>" --mic-follows <Follows> --new
      --output "%USERPROFILE%\ClassScribe dry runs", and waits until the run is over and the window is closed;
   7. checks the run file (the recorder ran separately, the transcript was saved, the run was seen), the transcript and
@@ -532,6 +538,128 @@ function Test-FileHoldsText {
     return $false
 }
 
+# True when the build in Folder reads CLASSSCRIBE_SETTINGS_FOLDER: the variable's name is in one of its ClassScribe*.dll
+# files (ClassScribe.dll in a build from before the move into four projects, ClassScribe.Infrastructure.dll from it on).
+# Builds before saved classes and the settings folder (build plan step 1) name it nowhere, and read only the
+# appsettings.json beside their exe.
+function Test-BuildReadsSettingsFolder {
+    param([Parameter(Mandatory = $true)][string]$Folder)
+
+    foreach ($dll in @(Get-ChildItem -LiteralPath $Folder -Filter 'ClassScribe*.dll' -File -ErrorAction SilentlyContinue)) {
+        if (Test-FileHoldsText -Path $dll.FullName -Text 'CLASSSCRIBE_SETTINGS_FOLDER') { return $true }
+    }
+    return $false
+}
+
+# The ClassScribe project file of the worktree at Worktree: the new layout's, src\ClassScribe.Cli\ClassScribe.Cli.csproj,
+# else the older src\ClassScribe\ClassScribe.csproj, so that the kit still dry-runs a branch from before the move into
+# four projects; null when neither is there. The project file decides, never its folder: a folder left with only bin and
+# obj outlives a move (architecture 10.2). The class launcher looks the same way.
+function Get-ClassScribeProject {
+    param([Parameter(Mandatory = $true)][string]$Worktree)
+
+    foreach ($relative in @('src\ClassScribe.Cli\ClassScribe.Cli.csproj', 'src\ClassScribe\ClassScribe.csproj')) {
+        $project = Join-Path $Worktree $relative
+        if (Test-Path -LiteralPath $project -PathType Leaf) { return $project }
+    }
+    return $null
+}
+
+# The files a published build needs that are not in Folder: the exe's own four (ClassScribe.exe, ClassScribe.dll,
+# ClassScribe.deps.json and ClassScribe.runtimeconfig.json), and every runtime and native file ClassScribe.deps.json
+# lists, by file name, as publishing flattens them (the other projects' DLLs, NAudio, Refit and the rest). The list comes
+# from the build itself, so it never needs updating when a package is added; without a deps.json the four are checked
+# alone. A file the virus scanner took away is caught here. The class launcher (Start-Class.ps1, outside git) keeps
+# copies of this function, of Switch-Install and of Test-Installed, so this kit is where they are tested (architecture
+# 9.4 and 9.5, DryRunScriptTests).
+function Get-MissingPublishFiles {
+    param([Parameter(Mandatory = $true)][string]$Folder)
+
+    $needed = @('ClassScribe.exe', 'ClassScribe.dll', 'ClassScribe.deps.json', 'ClassScribe.runtimeconfig.json')
+    $deps = Join-Path $Folder 'ClassScribe.deps.json'
+    if (Test-Path -LiteralPath $deps) {
+        $json = Get-Content -LiteralPath $deps -Raw | ConvertFrom-Json
+        foreach ($target in $json.targets.PSObject.Properties) {
+            foreach ($library in $target.Value.PSObject.Properties) {
+                foreach ($kind in 'runtime', 'native') {
+                    $assets = $library.Value.$kind
+                    if ($assets) { foreach ($asset in $assets.PSObject.Properties) { $needed += [IO.Path]::GetFileName($asset.Name) } }
+                }
+            }
+        }
+    }
+    @($needed | Select-Object -Unique | Where-Object { -not (Test-Path -LiteralPath (Join-Path $Folder $_)) })
+}
+
+# The launcher's swap of an install, whole: renames Current to Previous and New to Current, so that the install is never
+# written into and "the version installed before" is always a whole install. An older Previous is first set aside as
+# Previous.old and removed only once the swap is done. True when done; false when a folder was in use (a ClassScribe
+# started meanwhile), with everything put back as it was. The kit itself publishes into a side folder it removed first,
+# so it does not swap; the function lives here, beside Get-MissingPublishFiles, to be tested (architecture 9.5).
+function Switch-Install {
+    param([Parameter(Mandatory = $true)][string]$New, [Parameter(Mandatory = $true)][string]$Current, [Parameter(Mandatory = $true)][string]$Previous)
+
+    $old = "$Previous.old"
+    try {
+        if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction Stop }
+        if (Test-Path -LiteralPath $Previous) { Rename-Item -LiteralPath $Previous -NewName (Split-Path $old -Leaf) -ErrorAction Stop }
+        if (Test-Path -LiteralPath $Current) { Rename-Item -LiteralPath $Current -NewName (Split-Path $Previous -Leaf) -ErrorAction Stop }
+        Rename-Item -LiteralPath $New -NewName (Split-Path $Current -Leaf) -ErrorAction Stop
+        if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }
+        return $true
+    }
+    catch {
+        # Deliberately not rethrown: a rename that failed (a folder in use) is the answer, false, once what was renamed
+        # before it is put back: the install as Current again, and the older Previous as Previous.
+        if (-not (Test-Path -LiteralPath $Current) -and (Test-Path -LiteralPath $Previous)) {
+            Rename-Item -LiteralPath $Previous -NewName (Split-Path $Current -Leaf) -ErrorAction SilentlyContinue
+        }
+        if (-not (Test-Path -LiteralPath $Previous) -and (Test-Path -LiteralPath $old)) {
+            Rename-Item -LiteralPath $old -NewName (Split-Path $Previous -Leaf) -ErrorAction SilentlyContinue
+        }
+        Write-Line "  The install could not be swapped ($($_.Exception.Message))." Yellow
+        return $false
+    }
+}
+
+# Starts the program once, as a check that it loads with every DLL it needs: --version on builds that have it (0.5.0 on),
+# else list over an empty folder, which builds the whole program too. It is started through Start-Process, waited for,
+# with its input redirected from an empty file, so that nothing waits for a key, and its output and errors to files,
+# read back: Windows PowerShell 5.1 runs a program built without a console (the tests' stand-in) detached when it is
+# called with &, neither waiting for it nor reading it (the class launcher's copy calls the real exe, a console program,
+# with & and a piped empty string, and answers true or false alone). Returns Started (it ran to exit code 0), Version
+# (the last line --version wrote, trimmed; empty for a build without --version) and Said (what the last start wrote,
+# for the line that reports a failed one).
+function Test-Installed {
+    param([Parameter(Mandatory = $true)][string]$Program)
+
+    $work = Join-Path $env:TEMP ('ClassScribe-check-' + [Guid]::NewGuid().ToString('N'))
+    $empty = Join-Path $work 'empty'
+    New-Item -ItemType Directory -Path $empty -Force | Out-Null
+    $input = Join-Path $work 'input.txt'
+    Set-Content -LiteralPath $input -Value '' -Encoding Ascii
+    $output = Join-Path $work 'output.txt'
+    $errors = Join-Path $work 'errors.txt'
+    $said = @()
+    try {
+        foreach ($arguments in @(@('--version'), @('list', '--output', (ConvertTo-Argument $empty)))) {
+            $process = Start-Process -FilePath $Program -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
+                -RedirectStandardInput $input -RedirectStandardOutput $output -RedirectStandardError $errors
+            $wrote = @(Get-Content -LiteralPath $output -ErrorAction SilentlyContinue | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+            $said = $wrote + @(Get-Content -LiteralPath $errors -ErrorAction SilentlyContinue | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+            if ($process.ExitCode -ne 0) { continue }
+            if ($arguments[0] -eq '--version') {
+                if ($wrote.Count -gt 0) { return [pscustomobject]@{ Started = $true; Version = $wrote[-1]; Said = $said } }
+            }
+            else {
+                return [pscustomobject]@{ Started = $true; Version = ''; Said = $said }
+            }
+        }
+        return [pscustomobject]@{ Started = $false; Version = ''; Said = $said }
+    }
+    finally { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 # The record command line of the dry run, as arguments.
 function Get-RecordArguments {
     param([string]$Name, [string]$App, [string]$Mic, [bool]$NoMic, [string]$Follows, [string]$Class, [string]$Camera, [bool]$Short, [string]$Output)
@@ -746,8 +874,9 @@ function Invoke-DryRun {
         $sourceFolder = [IO.Path]::GetFullPath($(if ($Source) { $Source } else { Join-Path $PSScriptRoot '..\..' }))
         $appName = if ($App) { $App } elseif ($Player) { 'ClassScribeTestPlayer' } else { 'chrome' }
         $followed = if ($Follows) { $Follows } else { $appName }
-        if (-not $Exe -and -not (Test-Path -LiteralPath (Join-Path $sourceFolder 'src\ClassScribe\ClassScribe.csproj'))) {
-            Write-Line "No ClassScribe worktree at $sourceFolder (src\ClassScribe\ClassScribe.csproj): give -Source <worktree>, or -Exe <installed exe>." Red
+        $project = if ($Exe) { $null } else { Get-ClassScribeProject -Worktree $sourceFolder }
+        if (-not $Exe -and -not $project) {
+            Write-Line "No ClassScribe worktree at $sourceFolder (no src\ClassScribe.Cli\ClassScribe.Cli.csproj, nor the older src\ClassScribe\ClassScribe.csproj): give -Source <worktree>, or -Exe <installed exe>." Red
             return 2
         }
         if ($Exe -and -not (Test-Path -LiteralPath $Exe -PathType Leaf)) { Write-Line "No exe at $Exe." Red; return 2 }
@@ -825,8 +954,8 @@ function Invoke-DryRun {
         else {
             if (Test-Path -LiteralPath $side) { Remove-Item -LiteralPath $side -Recurse -Force }
             $revision = if ($commit) { "$commit-dry" } else { 'unknown-dry' }
-            Write-Line "Publishing to $side (about a minute)..."
-            $arguments = @('publish', (ConvertTo-Argument (Join-Path $sourceFolder 'src\ClassScribe')), '-c', 'Release', '-r', 'win-x64',
+            Write-Line "Publishing $(Split-Path -Leaf $project) to $side (about a minute)..."
+            $arguments = @('publish', (ConvertTo-Argument $project), '-c', 'Release', '-r', 'win-x64',
                 '--self-contained', 'false', '-o', (ConvertTo-Argument $side), "-p:SourceRevisionId=$revision",
                 '-p:ContinuousIntegrationBuild=true', '--disable-build-servers', '-nologo') -join ' '
             $publish = Start-Process -FilePath 'dotnet' -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
@@ -837,9 +966,10 @@ function Invoke-DryRun {
                 $problems.Add("The publish failed (exit code $($publish.ExitCode)); see $(Join-Path $folder 'publish.log').")
                 return 1
             }
-            Start-Sleep -Seconds 2
-            if (-not (Test-Path -LiteralPath $exePath)) {
-                $problems.Add("$exePath was missing after the publish: Bitdefender may have quarantined it. Allow that exe in Bitdefender and start the dry run again.")
+            Start-Sleep -Seconds 3   # the virus scanner's look at the new files
+            $missing = @(Get-MissingPublishFiles -Folder $side)
+            if ($missing.Count -gt 0) {
+                $problems.Add("After the publish, $side is missing $($missing -join ', '): Bitdefender may have quarantined them (its quarantine list says). Allow $exePath in Bitdefender, restore what it took, and start the dry run again.")
                 return 1
             }
         }
@@ -881,7 +1011,7 @@ function Invoke-DryRun {
             Write-Line "Set for this dry run only: a dummy key, ElevenLabs__BaseUrl $($standIn.Url), Drive__Enabled false, CLASSSCRIBE_SETTINGS_FOLDER."
         }
         $ownSettings = Join-Path (Split-Path -Parent $exePath) 'appsettings.json'
-        if (Test-FileHoldsText -Path (Join-Path (Split-Path -Parent $exePath) 'ClassScribe.dll') -Text 'CLASSSCRIBE_SETTINGS_FOLDER') {
+        if (Test-BuildReadsSettingsFolder -Folder (Split-Path -Parent $exePath)) {
             $what = if (Test-Path -LiteralPath $userSettings) { 'a copy of your settings file' } else { 'empty: you have no settings file in %APPDATA%\ClassScribe' }
             Write-Line "Settings: this build reads them from $settingsFolder ($what)."
         }
@@ -889,6 +1019,21 @@ function Invoke-DryRun {
             Write-Line "Settings: this build reads only its own $ownSettings; it does not read CLASSSCRIBE_SETTINGS_FOLDER, which comes with saved classes and the settings folder (build plan, step 1)."
         }
         foreach ($item in $settings) { Write-Line "  For this dry run only: $item" }
+
+        # The copy started once, in this environment, as the class launcher starts a new install (architecture 9.5):
+        # --version on builds that have it, whose answer must be the build its file says, else list over an empty folder.
+        # A DLL that is missing or blocked, or a build that cannot be put together, fails here, before anything records.
+        $smoke = Test-Installed -Program $exePath
+        if (-not $smoke.Started) {
+            $why = if (@($smoke.Said).Count) { ' It said: ' + ((@($smoke.Said) | Select-Object -Last 3) -join ' / ') } else { '' }
+            $problems.Add("$exePath did not start cleanly (neither --version nor list over an empty folder ran to exit code 0): a DLL beside it may be missing or blocked by Bitdefender, or the build cannot start.$why")
+            return 1
+        }
+        if ($smoke.Version -and $smoke.Version -ne $build) {
+            $problems.Add("$exePath answered --version with $($smoke.Version), but its file says $build, so the exe and its DLLs are not of one build.")
+            return 1
+        }
+        Write-Line "Started once: $(if ($smoke.Version) { "--version answered $($smoke.Version)" } else { 'this build has no --version; list over an empty folder ran' })."
 
         # The options this build has.
         if ($Class -or $Camera) {

@@ -584,7 +584,8 @@ plan wins.
   with `--no-ff` when green and reviewed, so `git revert -m 1 <merge>` takes it out again (and reverting that revert
   brings it back). A feature goes into `develop` only when it may reach a class with the next release.
 - A release is `release/<version>`, cut from `develop` once its steps are merged, one open at a time. The cut is meant
-  to be one commit: the `<Version>` line in `src/ClassScribe/ClassScribe.csproj` (and, from step 1, the version of each
+  to be one commit: the `<Version>` line in `src/Directory.Build.props`, which the four projects share (before the move
+  of architecture slice 4 it was in `src/ClassScribe/ClassScribe.csproj`) (and, from step 1, the version of each
   `DefaultChanges` row left empty); 0.5.0's took two (`1bebef6`, whose `DefaultChangesTests` failed on the row's version,
   then `5daac45`), so the suite is run on the cut before its dry run. Its checklist names the vendors' defaults (architecture 7.1): one the release moves
   (an address, an API version, the model, a price, one of ElevenLabs' limits) has a `DefaultChanges` row, as
@@ -597,7 +598,22 @@ plan wins.
   `Start-Class.ps1 -Name "Mantiq" -NoRecord`, away from any class (from step 2, the installer).
 - A hotfix is `hotfix/<version>`, from `main` (or from the head of a release `main` is about to reach), with its own
   weekday dry run (short when the fix is narrow), finished as a release is, then merged into `develop` and into a release
-  then open.
+  then open. In the window from the move (architecture slice 4, `feature/layers-move`) until the release that carries
+  it reaches `main`, a hotfix from `main`, which still has the old layout, is not merged into `develop` (architecture
+  10.5): each of its commits is cherry-picked without committing (`git cherry-pick -n`), each file it changed is found
+  at its new path through the path map, `move-map.tsv` in `C:\Users\gdala\OneDrive\Documents\ClassScribe
+  design\design\final\architecture-analysis\move` (one row per file: old path, new path, project; the file's new
+  namespace and using lines come from the file itself), the edit is made there by hand where the pick could not place
+  it, the suite is run (`WindowsAudio` too for an audio file), and the result is committed as `Apply hotfix <version>
+  on develop`, naming the hotfix's commits. Its change to `<Version>` in `ClassScribe.csproj`, which `develop` no longer
+  has, is resolved by keeping the deletion and setting the version in `src/Directory.Build.props`; a file the hotfix
+  adds stays at its old path, where `RepositoryLayoutTests` names it, and is moved with `git mv` to its project and
+  given its namespace. `release/0.5.0` (`5daac45`), left open and frozen while the move was made, is treated the same:
+  a later fix to it is applied on `develop` by hand along the map. The move leaves `src\ClassScribe\bin` and `obj`
+  (ignored, with generated `.cs` files in `obj`) and empty folders behind in every worktree that checks it out
+  (architecture 10.2): slice 4 deleted them in its own worktree; in the main checkout they go, with Gulzar's OK, after
+  the release that carries the move is fast-forwarded to `main`. `RepositoryLayoutTests` skips `bin` and `obj`, and the
+  launcher and the kit find the project by its file, not its folder, so that is tidying, not a need.
 - Versions: every release takes a new minor number, a hotfix the next patch number of the release it fixes. Version
   strings are set only on release and hotfix branches, never on a feature branch. 0.3.3 is `43ba9c6` with no version
   line, so its build shows `1.0.0+<commit>`.
@@ -610,11 +626,20 @@ plan wins.
   to double-click" and on the card beside his launchers, `C:\Users\gdala\ClassScribe\Way back to 0.4.0.txt`.
 - Dry runs, and every manual run of a side build, go through the kit in `tools\dry-run` (its `README.md`).
   `Start-DryRun.cmd`, double-clicked by Gulzar in Explorer so that the window and its recorder start outside any job,
-  publishes the worktree to `%LOCALAPPDATA%\Programs\ClassScribe-Dry` (never through an installer, never single-file),
+  publishes the worktree to `%LOCALAPPDATA%\Programs\ClassScribe-Dry` (its project found by file,
+  `Get-ClassScribeProject`: `src\ClassScribe.Cli\ClassScribe.Cli.csproj`, or the older `src\ClassScribe\ClassScribe.csproj`
+  of a branch from before the move, so the kit still dry-runs one, and a worktree with neither is refused; never through
+  an installer, never single-file), checks that every file the build needs is there (`Get-MissingPublishFiles`: the
+  exe's four and each runtime and native file `ClassScribe.deps.json` names, by file name; one that is missing is
+  named, with Bitdefender's quarantine as the likely cause, as the missing exe was before),
   starts the stand-in for ElevenLabs (`ElevenLabsStub.cs`, a .NET 10 file-based app on 127.0.0.1), sets a dummy key,
   `ElevenLabs__BaseUrl`, `Drive__Enabled=false` and `CLASSSCRIBE_SETTINGS_FOLDER` in its own process only (never at
   user scope; builds before saved classes and the settings folder (build plan step 1) read only the `appsettings.json`
-  beside their exe and pass over the variable, and the kit says which the build reads), runs `record ... --new --output
+  beside their exe and pass over the variable, and the kit says which the build reads, by looking for the variable's
+  name in every `ClassScribe*.dll`, `Test-BuildReadsSettingsFolder`), starts the copy once in that environment
+  (`Test-Installed`: `--version`, whose answer must be the build the exe's file says; an older build without
+  `--version` is started with `list` over an empty folder; a DLL missing or blocked fails the dry run here, before
+  anything records), runs `record ... --new --output
   "%USERPROFILE%\ClassScribe dry runs"` (`-Mic` is `OBSBOT` by default, as his launcher records, so a dry run takes the
   path a class takes; `-Mic "Microphone Array"` on a laptop without one), checks the run
   file (`home` `Separate`), the transcript, the recording's log and the stand-in's log, compares the listings of
@@ -626,7 +651,16 @@ plan wins.
   log lines with the app's own writers (`RecorderJson`, `RecorderLogProvider.Text`), so a change to either that the
   script does not follow fails them. `-Real` (billed) and `-Player` (plays a clip aloud
   through the test player) are only at Gulzar's word, which the script asks him to type. Agents stop every ClassScribe
-  process they started before a session ends, and leave none running over a class time.
+  process they started before a session ends, and leave none running over a class time. The class launcher
+  `Start-Class.ps1` (outside git) keeps copies of the kit's `Get-MissingPublishFiles`, `Switch-Install` (its swap of a
+  new install into place, which the kit defines beside the others and does not use, since it publishes into a side
+  folder it removed first) and `Test-Installed`, so the kit is where they are tested (`DryRunScriptTests`, and the whole
+  path with a publish in the Explicit `DryRunWholeTests`). The kit's `Test-Installed` starts the program through
+  `Start-Process`, waited for, with its input, output and errors redirected to files, and returns the version it read:
+  Windows PowerShell 5.1 runs a program built without a console, such as the tests' stand-in, detached when it is called
+  with `&`, neither waiting for it nor reading it, which the launcher's copy does to the real exe, a console program,
+  answering true or false alone; and the kit's catch in `Switch-Install` carries the `Deliberately not rethrown` comment
+  its tests ask for.
 - Everything in `tools\` (and in `installer\` once it exists) is ASCII only, with no byte-order mark: Windows PowerShell
   5.1 reads a script without one in the ANSI code page. Scripts there run under Windows PowerShell 5.1 (no `&&`, `??`
   or ternaries). `DryRunScriptTests` fails on any byte above 127, parses every `.ps1` with 5.1's own parser, and fails
@@ -650,32 +684,32 @@ dotnet test --filter TestCategory=DryRunKit                            # Explici
 dotnet build --no-incremental --disable-build-servers                  # when other builds run at the same time; must report 0 warnings
 tools\dry-run\Start-DryRun.cmd                                         # a dry run of this worktree; Gulzar double-clicks it in Explorer (tools\dry-run\README.md)
 dotnet run tools\dry-run\ElevenLabsStub.cs -- 0 "<log>" --ready "<file>"   # the stand-in for ElevenLabs on 127.0.0.1 alone; the kit starts it itself
-dotnet run --project src/ClassScribe                                   # the menu (a recording then runs in the window)
-dotnet run --project src/ClassScribe -- record "Kalam" --device auto --output "<folder>"       # record; Q twice stops and transcribes
-dotnet run --project src/ClassScribe -- record-only "Kalam" --app chrome --output "<folder>"   # record only
-dotnet run --project src/ClassScribe -- record "Kalam" --app chrome --mic --mic-follows chrome --output "<folder>"   # the class and the microphone
-dotnet run --project src/ClassScribe -- record "Kalam" --in-person --output "<folder>"         # the microphone alone, in person
-dotnet run --project src/ClassScribe -- mic-check --seconds 600        # watch what apps do with the microphone; opens nothing
-dotnet run --project src/ClassScribe -- camera-check "OBSBOT"                   # the cameras and the set-up; opens the camera for 5 s, shared, only after a typed Y (the user's word only)
-dotnet run --project src/ClassScribe -- transcribe "C:\path\to\folder-or-file"   # --no-open opens nothing; --output for a file
-dotnet run --project src/ClassScribe -- transcribe "<path>" --again    # one with a transcript; billed again
-dotnet run --project src/ClassScribe -- transcribe "<path>" --keyterms "<file>"   # another glossary for this transcript, or --keyterms none
-dotnet run --project src/ClassScribe -- rebuild "C:\path\to\folder-or-file"      # free, from the saved .json; --no-open
-dotnet run --project src/ClassScribe -- finish-video "C:\path\to\lesson"         # a lesson's video made again, free, from its pieces; --no-open
-dotnet run --project src/ClassScribe -- list                           # the recordings, newest first; --output
-dotnet run --project src/ClassScribe -- devices                        # the devices and apps with sound
-dotnet run --project src/ClassScribe -- settings list                  # every setting; set a CLASSSCRIBE_SETTINGS_FOLDER first, so his real settings stay as they are
-dotnet run --project src/ClassScribe -- class list                     # the saved classes; class add|set|rename|remove change his file: ask first
-dotnet run --project src/ClassScribe -- drive status                   # the Google sign-in; asks Google (ask Gulzar first)
-dotnet run --project src/ClassScribe -- drive signin --client "<file>" # a real Google sign-in in the browser: Gulzar's to make
-dotnet run --project src/ClassScribe -- drive signout                  # revoke, forget the token, keep the client
-dotnet run --project src/ClassScribe -- drive upload "<file or folder>" # a real upload to Google: Gulzar's to make; no path: the queue
-dotnet run --project src/ClassScribe -- drive free-space "<file or folder>" --yes   # deletes local .wav once Drive has them, checked
-dotnet run --project src/ClassScribe -- youtube check                  # yt-dlp, Deno, FFmpeg, FFprobe: paths, versions, age; local only
-dotnet run --project src/ClassScribe -- youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "<folder>" --yes   # records as it plays; Enter before each video; a real Chrome window and YouTube (ask first)
-dotnet run --project src/ClassScribe -- youtube --list "<file>" --name "Risala" --output "<folder>" --download --plan     # reads each video with yt-dlp, prints the plan (reaches YouTube: ask first)
-dotnet run --project src/ClassScribe -- record --help                  # help per command; --help, -h, -?, /?, help <command>
-dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"
+dotnet run --project src/ClassScribe.Cli                                   # the menu (a recording then runs in the window)
+dotnet run --project src/ClassScribe.Cli -- record "Kalam" --device auto --output "<folder>"       # record; Q twice stops and transcribes
+dotnet run --project src/ClassScribe.Cli -- record-only "Kalam" --app chrome --output "<folder>"   # record only
+dotnet run --project src/ClassScribe.Cli -- record "Kalam" --app chrome --mic --mic-follows chrome --output "<folder>"   # the class and the microphone
+dotnet run --project src/ClassScribe.Cli -- record "Kalam" --in-person --output "<folder>"         # the microphone alone, in person
+dotnet run --project src/ClassScribe.Cli -- mic-check --seconds 600        # watch what apps do with the microphone; opens nothing
+dotnet run --project src/ClassScribe.Cli -- camera-check "OBSBOT"                   # the cameras and the set-up; opens the camera for 5 s, shared, only after a typed Y (the user's word only)
+dotnet run --project src/ClassScribe.Cli -- transcribe "C:\path\to\folder-or-file"   # --no-open opens nothing; --output for a file
+dotnet run --project src/ClassScribe.Cli -- transcribe "<path>" --again    # one with a transcript; billed again
+dotnet run --project src/ClassScribe.Cli -- transcribe "<path>" --keyterms "<file>"   # another glossary for this transcript, or --keyterms none
+dotnet run --project src/ClassScribe.Cli -- rebuild "C:\path\to\folder-or-file"      # free, from the saved .json; --no-open
+dotnet run --project src/ClassScribe.Cli -- finish-video "C:\path\to\lesson"         # a lesson's video made again, free, from its pieces; --no-open
+dotnet run --project src/ClassScribe.Cli -- list                           # the recordings, newest first; --output
+dotnet run --project src/ClassScribe.Cli -- devices                        # the devices and apps with sound
+dotnet run --project src/ClassScribe.Cli -- settings list                  # every setting; set a CLASSSCRIBE_SETTINGS_FOLDER first, so his real settings stay as they are
+dotnet run --project src/ClassScribe.Cli -- class list                     # the saved classes; class add|set|rename|remove change his file: ask first
+dotnet run --project src/ClassScribe.Cli -- drive status                   # the Google sign-in; asks Google (ask Gulzar first)
+dotnet run --project src/ClassScribe.Cli -- drive signin --client "<file>" # a real Google sign-in in the browser: Gulzar's to make
+dotnet run --project src/ClassScribe.Cli -- drive signout                  # revoke, forget the token, keep the client
+dotnet run --project src/ClassScribe.Cli -- drive upload "<file or folder>" # a real upload to Google: Gulzar's to make; no path: the queue
+dotnet run --project src/ClassScribe.Cli -- drive free-space "<file or folder>" --yes   # deletes local .wav once Drive has them, checked
+dotnet run --project src/ClassScribe.Cli -- youtube check                  # yt-dlp, Deno, FFmpeg, FFprobe: paths, versions, age; local only
+dotnet run --project src/ClassScribe.Cli -- youtube "https://youtu.be/abcdefghijk" --name "Risala" --output "<folder>" --yes   # records as it plays; Enter before each video; a real Chrome window and YouTube (ask first)
+dotnet run --project src/ClassScribe.Cli -- youtube --list "<file>" --name "Risala" --output "<folder>" --download --plan     # reads each video with yt-dlp, prints the plan (reaches YouTube: ask first)
+dotnet run --project src/ClassScribe.Cli -- record --help                  # help per command; --help, -h, -?, /?, help <command>
+dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\ClassScribe"
 ```
 
 - Classes run from the published copy (never single-file), with a Bitdefender ATD exception for that
@@ -854,10 +888,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `DryRunStandInTests` run the stand-in, compiled into the tests from `tools\dry-run\ElevenLabsStub.cs`
   with `DRY_RUN_KIT_TESTS` (which leaves out its one line of program), on 127.0.0.1 with ClassScribe's
   own preparer, client and reader; and the Explicit `DryRunKit` category (`DryRunWholeTests`) builds a
-  stand-in ClassScribe.exe without a window, which records nothing, and runs the whole dry run with
-  it in temporary folders, and builds the test player without starting it (about half a minute:
-  before merging a change to `tools\dry-run`, and never within an hour of a class, since a process
-  named ClassScribe runs for a few seconds).
+  stand-in ClassScribe.exe without a window, which records nothing and answers `--version`, and runs
+  the whole dry run with it in temporary folders, once as `-Exe` and once published by the kit itself
+  from a stand-in worktree in the new layout (`src\ClassScribe.Cli\ClassScribe.Cli.csproj` beside an old
+  `src\ClassScribe` holding only `bin` and `obj`), and builds the test player without starting it (about
+  a minute: before merging a change to `tools\dry-run`, and never within an hour of a class, since a
+  process named ClassScribe runs for a few seconds).
   `EndToEndTests` also covers in person from the command line, the class with the microphone
   following chrome through a cycle of listening and not (mixed by the real preparer), and
   `mic-check --seconds 1`, a download batch of two videos over `FakeToolRunner`, `StubHttpHandler` and
@@ -933,7 +969,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   file an exact rename, then each project's namespaces given its name) adds the trial move's architecture tests
   (`ArchitectureTests` with its seven checks, check 5 on the namespaces among them; `ArchitectureRulesTests`;
   `RepositoryLayoutTests`' checks of the four project folders; the move script, its map `move-map.tsv` and the namespace
-  script are in `design\final\architecture-analysis\move`), which makes 5,136, all passing. The uploads by
+  script are in `design\final\architecture-analysis\move`), which makes 5,136, all passing, and 5,141 with the kit's
+  tests of the launcher's functions and of the project file of either layout (slice 4's step 4). The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -1256,7 +1293,7 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   file is `%APPDATA%\ClassScribe\appsettings.json` (`SettingsPlaces`, decided at every read by
   `Current()`: the user's file when it is there; else, once `%LOCALAPPDATA%\ClassScribe\settings-home.txt`
   marks that it was made, the Missing state, which reads the defaults beside the program, says so
-  (`DescribeMissing`) and refuses every change; else the shipped `src/ClassScribe/appsettings.json`
+  (`DescribeMissing`) and refuses every change; else the shipped `src/ClassScribe.Cli/appsettings.json`
   beside the exe, the template, under `dotnet run` the copy in `bin\Debug\net10.0-windows10.0.19041.0`,
   where the menu warns when the project's file is newer). `CLASSSCRIBE_SETTINGS_FOLDER` names another
   user folder, for dry runs, and the menu says so. `SettingsWriter` is the one writer of that file
@@ -1577,7 +1614,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `ElevenLabsAnswer` and `rebuild` must keep reading pretty-printed answers. His run file
   `20261017-140441Z-af758de8.json` in `%LOCALAPPDATA%\ClassScribe\runs` still names the old
   `Mantiq_10_17_2026` folder; it looks finished, but if the start-up report ever names it, that is why.
-- YouTube, what both paths share (design `youtube.md` section 2; `src/ClassScribe/YouTube`): `youtube`
+- YouTube, what both paths share (design `youtube.md` section 2; the `YouTube` folders of `src/ClassScribe.Core`,
+  `src/ClassScribe.Application` and `src/ClassScribe.Infrastructure`): `youtube`
   and menu choice Y (`YouTubeMenu`: links pasted or a dragged list file, the course with Enter taking
   `YouTubeMenuMemory.LastCourse`, R or D, T or O, Esc back at every step; R leaves out playlist and
   `/live/` links and refuses more than 10), through `ICommandRunner.YouTubeAsync`, `YouTubeMenuAsync`
@@ -2403,7 +2441,9 @@ each constructor that takes a port, and what the trial move made the one-project
   `WindowsSystemTimes`.
 - `tools/dry-run`: the dry-run kit (its `README.md`): `Start-DryRun.cmd` and `Start-DryRun.ps1` (dot-sourced, it
   defines its functions and runs nothing; `Invoke-DryRun -Roots` takes the folders, `Get-DryRunRoots` gives this
-  user's), `ElevenLabsStub.cs` (the stand-in for ElevenLabs: `SoundFinder`, `StandInTranscript`, `StandInUpload`,
+  user's; `Get-ClassScribeProject` finds the project file of either layout; `Get-MissingPublishFiles`, `Switch-Install`
+  and `Test-Installed` are the class launcher's functions, tested here; `Test-BuildReadsSettingsFolder` looks for the
+  settings folder's variable in every `ClassScribe*.dll`), `ElevenLabsStub.cs` (the stand-in for ElevenLabs: `SoundFinder`, `StandInTranscript`, `StandInUpload`,
   `StandInServer`, `StandInProgram`, in a block namespace `ClassScribe.DryRun`), `TestPlayer\` (plays a clip aloud as the
   class, only with `-Player`; not in the solution) and a `.gitattributes` that keeps `.cmd` and `.ps1` in CRLF.
 - `tests/ClassScribe.Tests`: NUnit and Moq. Hand-written fakes for the device, keyboard, clock and

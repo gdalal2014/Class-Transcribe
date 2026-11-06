@@ -5,11 +5,12 @@ namespace ClassScribe.Tests;
 /// <summary>
 /// The whole dry run (tools\dry-run\Start-DryRun.ps1), in a hidden Windows PowerShell 5.1 of the test's own, with every
 /// folder it reads or writes in a temporary folder. The window is a stand-in ClassScribe.exe built here, a program
-/// without a window that plays a run as the real one leaves it: a run file, a recording's files, one request for a
-/// transcript and one read of the account sent to the kit's stand-in for ElevenLabs on 127.0.0.1, and a line in the
-/// recorder's log. The kit's test player is built too, and never started. Nothing is recorded and nothing is played.
-/// Explicit: it builds those programs and the stand-in, which takes about half a minute; run it before merging a change
-/// to tools\dry-run.
+/// without a window that answers --version with its build and plays a run as the real one leaves it: a run file, a
+/// recording's files, one request for a transcript and one read of the account sent to the kit's stand-in for ElevenLabs
+/// on 127.0.0.1, and a line in the recorder's log. One case has the kit publish the stand-in itself, from a worktree in
+/// the new layout (src\ClassScribe.Cli), and check the files and the start as it does for a branch. The kit's test player
+/// is built too, and never started. Nothing is recorded and nothing is played. Explicit: it builds those programs and the
+/// stand-in, which takes about a minute; run it before merging a change to tools\dry-run.
 /// </summary>
 [TestFixture]
 [Explicit("Builds a stand-in ClassScribe.exe and runs the whole dry run with it: about half a minute")]
@@ -18,14 +19,21 @@ public class DryRunWholeTests
 {
     /// <summary>The stand-in ClassScribe: what each mode makes it do is in its comments.</summary>
     private const string FakeProgram = """
-        // A stand-in ClassScribe.exe for DryRunWholeTests: it plays a dry run's window and recorder as the run files show
-        // them, without recording anything. DRY_RUN_FAKE_DATA is its %LOCALAPPDATA%\ClassScribe, DRY_RUN_FAKE_USER its
-        // %USERPROFILE%\ClassScribe. DRY_RUN_FAKE_MODE: good; inwindow, which records "in the window" and leaves a stray
-        // file in the user's folder; or glossary, which says in its log and its .glossary.json that it sent the glossary the
-        // dry run's settings folder holds, two terms.
+        // A stand-in ClassScribe.exe for DryRunWholeTests: it answers --version with its build, as the real one does, and
+        // plays a dry run's window and recorder as the run files show them, without recording anything. DRY_RUN_FAKE_DATA
+        // is its %LOCALAPPDATA%\ClassScribe, DRY_RUN_FAKE_USER its %USERPROFILE%\ClassScribe. DRY_RUN_FAKE_MODE: good;
+        // inwindow, which records "in the window" and leaves a stray file in the user's folder; or glossary, which says in
+        // its log and its .glossary.json that it sent the glossary the dry run's settings folder holds, two terms.
         using System.Diagnostics;
+        using System.Reflection;
         using System.Text;
         using System.Text.Json;
+
+        if (args.Length > 0 && args[0] == "--version")
+        {
+            Console.WriteLine(Assembly.GetEntryAssembly()!.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
+            return 0;
+        }
 
         var data = Environment.GetEnvironmentVariable("DRY_RUN_FAKE_DATA")!;
         var mode = Environment.GetEnvironmentVariable("DRY_RUN_FAKE_MODE") ?? "good";
@@ -106,6 +114,19 @@ public class DryRunWholeTests
         return 0;
         """;
 
+    /// <summary>The stand-in's project: a program without a window, whose exe is named ClassScribe as the real one is.</summary>
+    private const string FakeProject = """
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup>
+            <OutputType>WinExe</OutputType>
+            <TargetFramework>net10.0</TargetFramework>
+            <Nullable>enable</Nullable>
+            <ImplicitUsings>enable</ImplicitUsings>
+            <AssemblyName>ClassScribe</AssemblyName>
+          </PropertyGroup>
+        </Project>
+        """;
+
     private static TempFolder _build = null!;
     private static string _fakeExe = null!;
     private TempFolder _folder = null!;
@@ -118,17 +139,7 @@ public class DryRunWholeTests
         var project = Path.Combine(_build.Path, "project");
         Directory.CreateDirectory(project);
         await File.WriteAllTextAsync(Path.Combine(project, "Program.cs"), FakeProgram);
-        await File.WriteAllTextAsync(Path.Combine(project, "ClassScribe.csproj"), """
-            <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup>
-                <OutputType>WinExe</OutputType>
-                <TargetFramework>net10.0</TargetFramework>
-                <Nullable>enable</Nullable>
-                <ImplicitUsings>enable</ImplicitUsings>
-                <AssemblyName>ClassScribe</AssemblyName>
-              </PropertyGroup>
-            </Project>
-            """);
+        await File.WriteAllTextAsync(Path.Combine(project, "ClassScribe.csproj"), FakeProject);
         var output = Path.Combine(_build.Path, "bin");
         var start = new ProcessStartInfo("dotnet") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var argument in new[] { "build", project, "-o", output, "--disable-build-servers", "-nologo" }) start.ArgumentList.Add(argument);
@@ -177,13 +188,16 @@ public class DryRunWholeTests
         }
         """;
 
-    /// <summary>Runs the whole dry run with the stand-in ClassScribe in <paramref name="mode"/>, and returns its output and exit code.</summary>
-    private async Task<(int Code, string Output)> DryRunAsync(string mode)
+    /// <summary>
+    /// Runs the whole dry run with the stand-in ClassScribe in <paramref name="mode"/>, as -Exe, or published by the kit from
+    /// the stand-in worktree at <paramref name="source"/> when one is given (-Source), and returns its output and exit code.
+    /// </summary>
+    private async Task<(int Code, string Output)> DryRunAsync(string mode, string? source = null)
     {
         var script = Path.GetFullPath(Path.Combine(TestContext.CurrentContext.TestDirectory, "..", "..", "..", "..", "..", "tools", "dry-run", "Start-DryRun.ps1"));
         var commands = $$"""
             . {{WindowsPowerShell.Quoted(script)}}
-            $Exe = {{WindowsPowerShell.Quoted(_fakeExe)}}
+            {{(source is null ? $"$Exe = {WindowsPowerShell.Quoted(_fakeExe)}" : $"$Source = {WindowsPowerShell.Quoted(source)}")}}
             [Environment]::SetEnvironmentVariable('DRY_RUN_FAKE_DATA', {{WindowsPowerShell.Quoted(Root("LocalAppData"))}}, 'Process')
             [Environment]::SetEnvironmentVariable('DRY_RUN_FAKE_USER', {{WindowsPowerShell.Quoted(Root("UserProfile"))}}, 'Process')
             [Environment]::SetEnvironmentVariable('DRY_RUN_FAKE_MODE', '{{mode}}', 'Process')
@@ -205,11 +219,11 @@ public class DryRunWholeTests
     private string DryRunFolder() => Directory.GetDirectories(Root("DryRuns")).Single();
 
     /// <summary>
-    /// A build that behaves passes: the window gets the dry run's command line (the OBSBOT's microphone by default, as the
-    /// class launcher records) and its environment (a dummy key, the
-    /// stand-in's address, Drive off, the settings folder), the stand-in answers one transcript with its keyterms, the run
-    /// file passes, the log's warning is shown, the only changes are the run file and the recorder's log, the result is
-    /// recorded as PASS in runs.log, and the script's own process has its environment back.
+    /// A build that behaves passes: the copy is started once and answers --version with the build its file says, the window
+    /// gets the dry run's command line (the OBSBOT's microphone by default, as the class launcher records) and its
+    /// environment (a dummy key, the stand-in's address, Drive off, the settings folder), the stand-in answers one
+    /// transcript with its keyterms, the run file passes, the log's warning is shown, the only changes are the run file and
+    /// the recorder's log, the result is recorded as PASS in runs.log, and the script's own process has its environment back.
     /// </summary>
     [Test]
     public async Task A_build_that_behaves_passes()
@@ -218,6 +232,7 @@ public class DryRunWholeTests
 
         Assert.That(code, Is.EqualTo(0), output);
         Assert.That(output, Does.Contain("The dry run passed.").And.Contain("WARNING  A warning to read").And.Contain("New runs\\20261020-200000Z-"));
+        Assert.That(output, Does.Contain("Build 1.0.0").And.Contain("Started once: --version answered 1.0.0."));
         Assert.That(output, Does.Contain("key after restored"));
         var facts = File.ReadAllLines(Directory.GetFiles(Root("Recordings"), "*.facts.txt", SearchOption.AllDirectories).Single());
         Assert.That(facts[0..2], Is.EqualTo(new[] { "key dummy", "drive false" }));
@@ -230,6 +245,40 @@ public class DryRunWholeTests
         Assert.That(record, Does.Contain("  PASS  ").And.Contain("all checks passed").And.Contain(DryRunFolder()));
         Assert.That(File.ReadAllText(Path.Combine(DryRunFolder(), "result.txt")), Does.Contain("Note: 1 warning or error line(s) in the recording's log"));
         Assert.That(Directory.Exists(Root("Side")), Is.False, "nothing was published with -Exe");
+    }
+
+    /// <summary>
+    /// A build the kit publishes itself, from a worktree in the new layout, passes (architecture 9.5): the project file is
+    /// found as src\ClassScribe.Cli\ClassScribe.Cli.csproj while an old src\ClassScribe with only bin and obj is still there
+    /// (as a worktree that checked out the move has), the kit publishes it to the side folder with the commit it could not
+    /// read as unknown, finds every file the build names, reads the build from the exe, starts the copy once and gets the
+    /// same build from --version, runs the dry run on it, and removes the side copy at the end.
+    /// </summary>
+    [Test]
+    public async Task A_build_published_from_a_worktree_in_the_new_layout_passes()
+    {
+        var worktree = Path.Combine(_folder.Path, "worktree");
+        var project = Path.Combine(worktree, "src", "ClassScribe.Cli");
+        Directory.CreateDirectory(project);
+        await File.WriteAllTextAsync(Path.Combine(project, "Program.cs"), FakeProgram);
+        await File.WriteAllTextAsync(Path.Combine(project, "ClassScribe.Cli.csproj"), FakeProject);
+        foreach (var left in new[] { "bin", "obj" })
+        {
+            Directory.CreateDirectory(Path.Combine(worktree, "src", "ClassScribe", left));
+            await File.WriteAllTextAsync(Path.Combine(worktree, "src", "ClassScribe", left, "stale.txt"), "left behind by git mv");
+        }
+
+        var (code, output) = await DryRunAsync("good", source: worktree);
+
+        Assert.That(code, Is.EqualTo(0), output);
+        Assert.That(output, Does.Contain($"Publishing ClassScribe.Cli.csproj to {Root("Side")} (about a minute)..."));
+        Assert.That(output, Does.Contain("Build 1.0.0+unknown-dry").And.Contain("Started once: --version answered 1.0.0+unknown-dry.").And.Contain("The dry run passed."));
+        Assert.That(output, Does.Contain($"Removed the side copy {Root("Side")}."));
+        Assert.That(Directory.Exists(Root("Side")), Is.False, "the side copy is removed at the end");
+        var facts = File.ReadAllLines(Directory.GetFiles(Root("Recordings"), "*.facts.txt", SearchOption.AllDirectories).Single());
+        Assert.That(facts[5], Is.EqualTo("answer 200 account 200"));
+        var record = File.ReadAllLines(Path.Combine(Root("DryRuns"), "runs.log")).Single();
+        Assert.That(record, Does.Contain("  PASS  ").And.Contain("build 1.0.0+unknown-dry"));
     }
 
     /// <summary>

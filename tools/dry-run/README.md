@@ -64,11 +64,18 @@ Options can follow the `.cmd` from a terminal, as for the script:
    there now, which every start leaves alone, does not count. It refuses too while the side copy still runs.
 2. It lists `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` and `%USERPROFILE%\ClassScribe` (names, sizes, times),
    and reads each run file's last update (its heartbeat), by which ClassScribe prunes it.
-3. It publishes the worktree to `%LOCALAPPDATA%\Programs\ClassScribe-Dry`: `dotnet publish src\ClassScribe -c Release
-   -r win-x64 --self-contained false -p:SourceRevisionId=<commit>-dry -p:ContinuousIntegrationBuild=true
-   --disable-build-servers`, never single-file and never through an installer, so your class launchers, the installed
-   copy and the installer's build folder are not touched. Bitdefender may question the new exe the first time; allow
-   that exe if it does.
+3. It publishes the worktree to `%LOCALAPPDATA%\Programs\ClassScribe-Dry`: `dotnet publish
+   src\ClassScribe.Cli\ClassScribe.Cli.csproj -c Release -r win-x64 --self-contained false
+   -p:SourceRevisionId=<commit>-dry -p:ContinuousIntegrationBuild=true --disable-build-servers`, never single-file and
+   never through an installer, so your class launchers, the installed copy and the installer's build folder are not
+   touched. The project file is found, never its folder: the new layout's `src\ClassScribe.Cli\ClassScribe.Cli.csproj`
+   first, else the older `src\ClassScribe\ClassScribe.csproj`, so the kit still dry-runs a branch from before the move
+   into four projects, and a worktree with neither is refused. After the publish it checks that every file the build
+   needs is there: the exe's own four (`ClassScribe.exe`, `ClassScribe.dll`, `ClassScribe.deps.json`,
+   `ClassScribe.runtimeconfig.json`) and each runtime and native file `ClassScribe.deps.json` names, by file name (the
+   other projects' DLLs, NAudio, Refit and the rest; the list comes from the build itself). A file that is missing is named,
+   with Bitdefender's quarantine as the likely cause and what to do. Bitdefender may question the new exe, or one of the
+   new DLLs, the first time; allow that exe if it does.
 4. Unless `-Real`, it starts the stand-in for ElevenLabs (below) on a free port of 127.0.0.1, tied to the script's own
    process: closing the dry run's window with its X ends the stand-in too.
 5. In its own process only, never at user scope, inherited by the window and its recorder: a dummy `ELEVENLABS_API_KEY`
@@ -77,7 +84,11 @@ Options can follow the `.cmd` from a terminal, as for the script:
    `%APPDATA%\ClassScribe\appsettings.json` when you have one. They end with the script. Each glossary those settings
    (or `-Setting`) name by a relative path, `ElevenLabs:KeytermsFile` and each saved class's `KeytermsFile`, is copied
    from `%APPDATA%\ClassScribe` into that folder, as a class would read it there; one named by a full path or with
-   `%APPDATA%` is read where it is, never copied, and your settings folder is only read.
+   `%APPDATA%` is read where it is, never copied, and your settings folder is only read. Then it starts the copy once, in
+   that environment, with `--version`: the answer must be the build the exe's file says (an older build without
+   `--version` is started with `list` over an empty folder instead), so a DLL that is missing or blocked, or a build that
+   cannot be put together, fails the dry run here, before anything records. This is what the class launcher does with a
+   new install before a class starts on it.
 6. It starts the window: `record "Dry run" --app chrome --mic OBSBOT --mic-follows chrome --new --output
    "%USERPROFILE%\ClassScribe dry runs"`, and tells you what to do: play a lecture in Chrome and speak for part of it,
    M once, P twice, close the window once (the recorder goes on), press O in the dry run's window (the side copy opens
@@ -113,8 +124,9 @@ which keep your settings in your own folder. Builds before it, 0.4.0 among them,
 `appsettings.json` beside their exe: for a dry run, the side
 copy's own, which is the branch's file as published, never your installed copy's. The kit still sets the variable (those
 builds pass over it) and says which of the two the build reads, by looking for the variable's name in its
-`ClassScribe.dll`. A setting a dry run needs, in any build, goes in with `-Setting`, as an environment override, which
-every build reads after its files.
+`ClassScribe*.dll` files (`ClassScribe.Infrastructure.dll` from the move into four projects on, `ClassScribe.dll` before
+it). A setting a dry run needs, in any build, goes in with `-Setting`, as an environment override, which every build
+reads after its files.
 
 ## The stand-in for ElevenLabs
 
@@ -154,3 +166,11 @@ The script builds and starts it only with `-Player <clip>`, after you type PLAY.
 - The kit changes nothing that is built for a class, and nothing outside its own folders but the run file and the
   recorder's log lines that any run of ClassScribe writes.
 - No variable is ever set at user scope; the key is never printed.
+- `Get-MissingPublishFiles`, `Switch-Install` (the launcher's swap of a new install into place, which the kit defines
+  beside the other two and does not use itself, since it publishes into a side folder it removed first) and
+  `Test-Installed` are the class launcher's functions: `Start-Class.ps1`, outside git, keeps copies of them, so the kit
+  is where they are tested (`DryRunScriptTests`; the whole path, publish included, in the Explicit `DryRunWholeTests`).
+  The kit's `Test-Installed` starts the program through `Start-Process`, waited for, with its input, output and errors
+  redirected to files, and returns the version it read: Windows PowerShell 5.1 runs a program built without a console,
+  such as the tests' stand-in, detached when it is called with `&`, neither waiting for it nor reading it. The
+  launcher's copy calls the real exe, a console program, with `&` and a piped empty string, and answers true or false.
