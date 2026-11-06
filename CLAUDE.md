@@ -688,8 +688,8 @@ plan wins.
 - A release is `release/<version>`, cut from `develop` once its steps are merged, one open at a time. The cut is meant
   to be one commit: the `<Version>` line in `src/Directory.Build.props`, which the four projects share (before the move
   of architecture slice 4 it was in `src/ClassScribe/ClassScribe.csproj`) (and, from step 1, the version of each
-  `DefaultChanges` row left empty); 0.5.0's took two (`1bebef6`, whose `DefaultChangesTests` failed on the row's version,
-  then `5daac45`), so the suite is run on the cut before its dry run. Its checklist names the vendors' defaults (architecture 7.1): one the release moves
+  `DefaultChanges` row left empty); the first 0.5.0 cut (`release/0.5.0-first`) took two (`1bebef6`, whose `DefaultChangesTests`
+  failed on the row's version, then `5daac45`), and the second cut was one commit with its tests in step, so the suite is run on the cut before its dry run. Its checklist names the vendors' defaults (architecture 7.1): one the release moves
   (an address, an API version, the model, a price, one of ElevenLabs' limits) has a `DefaultChanges` row, as
   `DefaultChangesTests.A_vendors_default_that_moves_needs_a_row` demands. Then its weekday dry run through the kit, from the release's own worktree, which
   records the commit it tested. The finish: `main` merged into it first when `main` holds a hotfix it lacks, and the
@@ -1342,7 +1342,7 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   with exit 1 while the user's file is missing). A changed default
   needs a row in `DefaultChanges.Rows` (old, new, version), which `settings list` and the menu's header
   show for a file holding the old one (`Recording:MicrophoneFollows`, `chrome` to `auto`, is the
-  first; `ElevenLabs:KeytermsFile`, `keyterms.txt` to `""`, the second, shown as `newer default: ""`). A vendor's default
+  first; `ElevenLabs:KeytermsFile`, `keyterms.txt` to `""`, the second, shown as `newer default: "" (since 0.5.0)`). A vendor's default
   that moves needs one too: `DefaultChangesTests.A_vendors_default_that_moves_needs_a_row` holds the addresses, the API
   versions, the model, the prices and ElevenLabs' limits to the defaults they first shipped with, or to a row. Saved classes are `Classes:<name>:<field>` in the same file (`SavedClasses`, a singleton
   reading `IConfiguration` at each use, behind `ISavedClasses` for the use cases and the menus; `ClassFields.All` in order; unknown fields kept; each class
