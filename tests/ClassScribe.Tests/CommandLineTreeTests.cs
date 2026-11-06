@@ -1060,6 +1060,20 @@ public class CommandLineTreeTests
     }
 
     /// <summary>
+    /// A folder given to --output that is too long to read in a line and holds a character no path may hold is refused for the
+    /// character, by its length and its start, never the whole value.
+    /// </summary>
+    [Test]
+    public async Task An_output_too_long_to_quote_with_a_bad_character_is_said_by_its_length_and_start()
+    {
+        var longValue = @"C:\" + new string('a', 39_996) + "|";
+
+        AssertRefused(await RunAsync("record", "Kalam", "--device", "auto", "--output", longValue));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--output takes a folder, such as \"D:\\Classes\"; the one given, a value 40,000 characters long, starting \"C:\\{new string('a', 37)}...\", has a character Windows does not allow in a path: < > \" | ? *" }));
+    }
+
+    /// <summary>
     /// A folder given to --output that is short as written but longer than any path once its environment variables are
     /// expanded, as the run expands them, is refused in the same words, by the length of the path the run would use: from
     /// PowerShell, which leaves %X% alone, it would otherwise pass the command line and fail as the class starts.

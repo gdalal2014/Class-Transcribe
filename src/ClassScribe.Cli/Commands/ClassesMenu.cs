@@ -11,7 +11,6 @@ using ClassScribe.Core.Camera;
 using ClassScribe.Core.Runs;
 using ClassScribe.Core.Settings;
 using ClassScribe.Infrastructure.Settings;
-using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Cli.Commands;
 
@@ -231,7 +230,7 @@ public sealed class ClassesMenu(ISavedClasses classes, SettingsPlaces places, IC
                 // Taken as Recording:OutputFolder takes a path: a relative one from the user's folder, not the window's current one.
                 // One that holds a character no path may hold, or whose full path is longer than any path can be, names no
                 // folder: it goes on as typed, for the saved classes' check to refuse in its own words, never thrown here.
-                folder = answeredFolder.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || FolderPaths.TooLong(answeredFolder) is not null
+                folder = answeredFolder.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || folders.TooLong(answeredFolder) is not null
                     ? answeredFolder
                     : folders.RootFor(answeredFolder);
             }

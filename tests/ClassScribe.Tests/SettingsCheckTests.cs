@@ -598,6 +598,25 @@ public class SettingsCheckTests
     }
 
     /// <summary>
+    /// A \\?\ folder, which Path.GetFullPath passes as it is whatever its length, fits at 32,766 characters and is refused at
+    /// 32,767, as any other; and a value written in quotes is measured and shown without them.
+    /// </summary>
+    [Test]
+    public void An_extended_folder_is_held_to_the_same_limit_and_quotes_are_not_shown()
+    {
+        var quoted = "\"C:\\" + new string('q', 39_997) + "\"";
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = @"\\?\C:\" + new string('e', 32_759) }), Is.Empty, "32,766 characters fit");
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = @"\\?\C:\" + new string('e', 32_760) }).Single(),
+                Does.StartWith("Recording:OutputFolder names a folder whose full path is 32,767 characters long"), "32,767 do not");
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = quoted }).Single(),
+                Does.StartWith($"Recording:OutputFolder names a folder whose full path is 40,000 characters long, starting \"C:\\{new string('q', 37)}...\";"));
+        });
+    }
+
+    /// <summary>
     /// A recordings folder that becomes longer than any path only once its environment variables are expanded is refused
     /// too, its start shown as written; one with a character no path may hold gets that problem alone, however long.
     /// </summary>

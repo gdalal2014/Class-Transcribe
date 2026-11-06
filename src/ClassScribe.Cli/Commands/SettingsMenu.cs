@@ -2,6 +2,7 @@ using ClassScribe.Application.Commands;
 using ClassScribe.Application.Settings;
 using ClassScribe.Application.Storage;
 using ClassScribe.Core.Camera;
+using ClassScribe.Core.Settings;
 using ClassScribe.Core.Storage;
 using ClassScribe.Infrastructure.Settings;
 using ClassScribe.Infrastructure.Storage;
@@ -77,7 +78,10 @@ public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, I
 
         if (typed.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || typed.IndexOfAny(['<', '>', '|', '?', '*']) >= 0)
         {
-            ui.WriteLine($"\"{typed}\" is not a folder's path: it has a character Windows does not allow in a path.");
+            // A value too long to read in a line is said by its length and its start, as a folder longer than any path is.
+            ui.WriteLine(LongValues.TooLongToQuote(typed)
+                ? $"The path typed, {LongValues.Described(typed)}, is not a folder's path: it has a character Windows does not allow in a path."
+                : $"\"{typed}\" is not a folder's path: it has a character Windows does not allow in a path.");
             return;
         }
 

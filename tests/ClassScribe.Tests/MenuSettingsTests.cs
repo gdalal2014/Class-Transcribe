@@ -281,6 +281,25 @@ public class MenuSettingsTests
     }
 
     /// <summary>
+    /// A folder typed at the S screen that is too long to read in a line and holds a character no path may hold is refused
+    /// for the character, in words that give its length and its start, never the whole of it; nothing is saved.
+    /// </summary>
+    [Test]
+    public async Task A_folder_too_long_to_quote_with_a_bad_character_is_refused_by_its_length_and_start()
+    {
+        var typed = @"C:\" + new string('a', 39_996) + "|";
+        _files.Writer.Set("Recording:OutputFolder", _recordings.Path);
+        _ui.Type('1');
+        _ui.TypeLine(typed);
+
+        await SettingsMenu().RunAsync();
+
+        Assert.That(_files.UserValue("Recording:OutputFolder")!.GetValue<string>(), Is.EqualTo(_recordings.Path));
+        Assert.That(_ui.Screen, Does.Contain($"The path typed, a value 40,000 characters long, starting \"C:\\{new string('a', 37)}...\", is not a folder's path: it has a character Windows does not allow in a path."));
+        Assert.That(_ui.Screen.Contains(typed, StringComparison.Ordinal), Is.False, "never the whole value");
+    }
+
+    /// <summary>
     /// After a pick in choice 7, S keeps it as the default: the mode, the microphone picked and the app it follows, through
     /// the writer; any other key keeps it until ClassScribe is closed and writes nothing.
     /// </summary>

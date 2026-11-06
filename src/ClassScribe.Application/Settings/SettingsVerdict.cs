@@ -1,4 +1,4 @@
-using System.Globalization;
+using ClassScribe.Core.Settings;
 
 namespace ClassScribe.Application.Settings;
 
@@ -8,18 +8,14 @@ namespace ClassScribe.Application.Settings;
 /// <param name="InPlace">The value the recording uses in its place: an environment variable's, or the default.</param>
 public sealed record DroppedSetting(string Key, string? Refused, string InPlace)
 {
-    /// <summary>The longest refused value the line quotes whole; a longer one, such as a folder longer than any path, is said by its length and its start.</summary>
-    public const int LongestQuoted = 80;
-
-    /// <summary>How many characters of a refused value too long to quote the line shows, as the problem of a folder longer than any path shows.</summary>
-    public const int ShownStart = 40;
-
     /// <summary>
     /// What a recording's first lines say of it, after the file's path: the refused value quoted, or, when it is longer than
-    /// <see cref="LongestQuoted"/>, its length and its first <see cref="ShownStart"/> characters, never the whole of it.
+    /// any ordinary path (<see cref="LongValues.LongestQuoted"/>), such as a folder longer than any path, its length and its
+    /// first <see cref="LongValues.ShownStart"/> characters, never the whole of it. Every real path is quoted whole, its file
+    /// name included.
     /// </summary>
-    public string Describe(string path) => Refused is { Length: > LongestQuoted } tooLong
-        ? string.Create(CultureInfo.InvariantCulture, $"{Key} is a value {tooLong.Length:N0} characters long, starting \"{tooLong[..ShownStart]}...\", in {path}, which the check refuses; this recording uses {InPlace} in its place.")
+    public string Describe(string path) => LongValues.TooLongToQuote(Refused)
+        ? $"{Key} is {LongValues.Described(Refused!)}, in {path}, which the check refuses; this recording uses {InPlace} in its place."
         : $"{Key} is \"{Refused}\" in {path}, which the check refuses; this recording uses {InPlace} in its place.";
 }
 
