@@ -249,6 +249,51 @@ public class ClassesMenuTests
     }
 
     /// <summary>
+    /// A recordings folder typed for a class whose full path is longer than any path can be is handed on as typed, not
+    /// thrown, so that class set refuses it in the saved classes' check's words, as it refuses a folder with a character no
+    /// path may hold.
+    /// </summary>
+    [Test]
+    public async Task A_folder_longer_than_any_path_typed_for_a_class_is_handed_on_as_typed()
+    {
+        var longValue = @"C:\" + new string('a', 39_997);
+        _ui.Type('e', '2');
+        _ui.TypeLine("");
+        _ui.Type('\r', '\r', '\r');
+        _ui.TypeLine("");
+        _ui.TypeLine($"\"{longValue}\"");
+        _ui.Type('\r');
+        _ui.TypeLine("");
+
+        await RunAsync();
+
+        var set = (ClassRequest.Set)_changed.Single();
+        Assert.That(set.Choices.Output, Is.EqualTo(longValue));
+    }
+
+    /// <summary>
+    /// A folder typed for a class that is longer than any path and also holds a character no path may hold is handed on as
+    /// typed too, never thrown in the middle of the choice, so that class set refuses it in the saved classes' own words.
+    /// </summary>
+    [Test]
+    public async Task A_folder_too_long_with_a_character_no_path_may_hold_is_handed_on_as_typed()
+    {
+        var badValue = @"C:\" + new string('a', 39_997) + "|x";
+        _ui.Type('e', '2');
+        _ui.TypeLine("");
+        _ui.Type('\r', '\r', '\r');
+        _ui.TypeLine("");
+        _ui.TypeLine($"\"{badValue}\"");
+        _ui.Type('\r');
+        _ui.TypeLine("");
+
+        await RunAsync();
+
+        var set = (ClassRequest.Set)_changed.Single();
+        Assert.That(set.Choices.Output, Is.EqualTo(badValue));
+    }
+
+    /// <summary>
     /// E on a class in person with a camera: Enter keeps it in person with its microphone, and N at the camera question
     /// takes the camera and its size away, so the class records your microphone alone; the rest by Enter is kept.
     /// </summary>
@@ -341,7 +386,7 @@ public class ClassesMenuTests
         var set = (ClassRequest.Set)_changed.Single();
         var fields = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { [ClassFields.Course] = "Broken", [ClassFields.App] = "chrome", [ClassFields.Device] = "Speakers" };
         Assert.That(set.Choices.ApplyTo(fields), Is.Null);
-        Assert.That(SavedClass.Check("Broken", fields).Class, Is.EqualTo(new SavedClass("Broken", "Broken", RecordingMode.Class, new ClassSource.Automatic(), null, null, null, true, null, null)));
+        Assert.That(SavedClass.Check("Broken", fields, FolderPaths.TooLong).Class, Is.EqualTo(new SavedClass("Broken", "Broken", RecordingMode.Class, new ClassSource.Automatic(), null, null, null, true, null, null)));
     }
 
     /// <summary>D and a number removes the class after Y, and keeps it for any other key.</summary>

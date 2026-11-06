@@ -260,6 +260,27 @@ public class MenuSettingsTests
     }
 
     /// <summary>
+    /// A folder typed at the S screen whose full path is longer than any path can be (here one environment variable that
+    /// grows long) is refused there, as one with a character no path may hold is, in words that give its length and its
+    /// start; nothing is saved and the menu goes on.
+    /// </summary>
+    [Test]
+    public async Task A_folder_longer_than_any_path_typed_in_S_is_refused()
+    {
+        const string variable = "CLASSSCRIBE_TEST_LONG_FOLDER";
+        using var _ = new TemporaryVariable(variable, new string('v', 20_000));
+        _files.Writer.Set("Recording:OutputFolder", _recordings.Path);
+        _ui.Type('1');
+        _ui.TypeLine($@"C:\%{variable}%\%{variable}%");
+
+        await SettingsMenu().RunAsync();
+
+        Assert.That(_files.UserValue("Recording:OutputFolder")!.GetValue<string>(), Is.EqualTo(_recordings.Path));
+        Assert.That(_ui.Screen, Does.Contain($"The path typed names a folder whose full path is 40,004 characters long, starting \"C:\\%{variable}%\\%{variable[..5]}...\"; no path on Windows can be longer than 32,766 characters."));
+        Assert.That(_ui.Screen, Does.Not.Contain("would go to"));
+    }
+
+    /// <summary>
     /// After a pick in choice 7, S keeps it as the default: the mode, the microphone picked and the app it follows, through
     /// the writer; any other key keeps it until ClassScribe is closed and writes nothing.
     /// </summary>

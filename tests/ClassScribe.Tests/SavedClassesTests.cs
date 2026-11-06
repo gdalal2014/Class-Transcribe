@@ -3,6 +3,7 @@ using ClassScribe.Core.Audio.Microphones;
 using ClassScribe.Core.Runs;
 using ClassScribe.Core.Settings;
 using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;
@@ -19,7 +20,7 @@ public class SavedClassesTests
 
     /// <summary>A class checked from <paramref name="fields"/> under the name Mantiq.</summary>
     private static SavedClassEntry Check(params (string Field, string Value)[] fields) =>
-        SavedClass.Check("Mantiq", fields.ToDictionary(field => field.Field, field => (string?)field.Value, StringComparer.OrdinalIgnoreCase));
+        SavedClass.Check("Mantiq", fields.ToDictionary(field => field.Field, field => (string?)field.Value, StringComparer.OrdinalIgnoreCase), FolderPaths.TooLong);
 
     /// <summary>
     /// A class of the class alone from an app, of the class and the microphone following the app, and in person with a
@@ -58,7 +59,7 @@ public class SavedClassesTests
         var fields = given.Split(';').Select(pair => pair.Split('=')).ToDictionary(pair => pair[0], pair => (string?)pair[1], StringComparer.OrdinalIgnoreCase);
         fields.TryAdd("Course", "Mantiq");
 
-        var entry = SavedClass.Check("Mantiq", fields);
+        var entry = SavedClass.Check("Mantiq", fields, FolderPaths.TooLong);
 
         Assert.That(entry.Usable, Is.False);
         Assert.That(entry.Problems, Has.Member(problem));
@@ -69,10 +70,64 @@ public class SavedClassesTests
     [Test]
     public void A_course_is_required_and_names_must_be_folder_names()
     {
-        Assert.That(SavedClass.Check("Mantiq", new Dictionary<string, string?>()).Problems, Is.EqualTo(new[] { "Course is empty; it names the recording's folder and files, such as Mantiq." }));
-        Assert.That(SavedClass.Check("Mantiq.", new Dictionary<string, string?> { ["Course"] = "Mantiq" }).Usable, Is.False);
-        Assert.That(SavedClass.Check("Mantiq", new Dictionary<string, string?> { ["Course"] = new string('a', 81) }).Problems.Single(),
+        Assert.That(SavedClass.Check("Mantiq", new Dictionary<string, string?>(), FolderPaths.TooLong).Problems, Is.EqualTo(new[] { "Course is empty; it names the recording's folder and files, such as Mantiq." }));
+        Assert.That(SavedClass.Check("Mantiq.", new Dictionary<string, string?> { ["Course"] = "Mantiq" }, FolderPaths.TooLong).Usable, Is.False);
+        Assert.That(SavedClass.Check("Mantiq", new Dictionary<string, string?> { ["Course"] = new string('a', 81) }, FolderPaths.TooLong).Problems.Single(),
             Is.EqualTo("Course is 81 characters long; it may be at most 80."));
+    }
+
+    /// <summary>
+    /// The check in Core works out no path itself: the folder's length is the rule it is handed, asked only for a folder
+    /// that is set and holds no character a path may not hold, and its words follow the field's name.
+    /// </summary>
+    [Test]
+    public void The_folder_length_is_the_rule_the_check_is_handed()
+    {
+        var asked = new List<string>();
+
+        // A stand-in for the storage's rule: notes each folder it is asked about, and finds only "far" too long.
+        string? Rule(string folder)
+        {
+            asked.Add(folder);
+            return folder == "far" ? "is too far" : null;
+        }
+
+        var far = SavedClass.Check("Mantiq", new Dictionary<string, string?> { ["Course"] = "Mantiq", ["OutputFolder"] = " far " }, Rule);
+        var near = SavedClass.Check("Mantiq", new Dictionary<string, string?> { ["Course"] = "Mantiq", ["OutputFolder"] = "D:\\Classes" }, Rule);
+        var none = SavedClass.Check("Mantiq", new Dictionary<string, string?> { ["Course"] = "Mantiq" }, Rule);
+        var bad = SavedClass.Check("Mantiq", new Dictionary<string, string?> { ["Course"] = "Mantiq", ["OutputFolder"] = "D:\\a\tb" }, Rule);
+
+        Assert.That(far.Problems.Single(), Is.EqualTo("OutputFolder is too far. Give it the folder's own path, such as D:\\Classes, or leave it empty for Recording:OutputFolder."));
+        Assert.That((near.Usable, none.Usable, bad.Usable), Is.EqualTo((true, true, false)));
+        Assert.That(asked, Is.EqualTo(new[] { "far", "D:\\Classes" }));
+    }
+
+    /// <summary>
+    /// A class whose own recordings folder has a full path longer than any path on Windows can be is unusable, as one with a
+    /// character no path may hold is, in words that give the length and the value's start and say how to fix it, while the
+    /// other classes stay usable; a long folder that fits passes.
+    /// </summary>
+    [Test]
+    public void A_class_folder_longer_than_any_path_makes_that_class_unusable()
+    {
+        var classes = Classes(new()
+        {
+            ["Classes:Mantiq:Course"] = "Mantiq",
+            ["Classes:Mantiq:App"] = "chrome",
+            ["Classes:Mantiq:OutputFolder"] = @"C:\" + new string('a', 39_997),
+            ["Classes:Kalam:Course"] = "Kalam",
+            ["Classes:Kalam:App"] = "chrome",
+            ["Classes:Kalam:OutputFolder"] = @"D:\" + new string('k', 300)
+        }).All();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(classes.Single(entry => entry.Name == "Mantiq").Problems, Is.EqualTo(new[]
+            {
+                $"OutputFolder names a folder whose full path is 40,000 characters long, starting \"C:\\{new string('a', 37)}...\"; no path on Windows can be longer than 32,766 characters. Give it the folder's own path, such as D:\\Classes, or leave it empty for Recording:OutputFolder."
+            }));
+            Assert.That(classes.Single(entry => entry.Name == "Kalam").Usable, Is.True);
+        });
     }
 
     /// <summary>

@@ -81,6 +81,7 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
         const string recordingSection = RecordingOptions.SectionName;
         var recording = Bind<RecordingOptions>(configuration, recordingSection, problems);
         CheckPath(problems, Name(recordingSection, nameof(RecordingOptions.OutputFolder)), recording.OutputFolder);
+        CheckFolderLength(problems, Name(recordingSection, nameof(RecordingOptions.OutputFolder)), recording.OutputFolder);
         CheckRange(problems, Name(recordingSection, nameof(RecordingOptions.FlushSeconds)), recording.FlushSeconds, 1);
         CheckRange(problems, Name(recordingSection, nameof(RecordingOptions.SilenceWarningSeconds)), recording.SilenceWarningSeconds, 1);
         CheckRange(problems, Name(recordingSection, nameof(RecordingOptions.StatusIntervalSeconds)), recording.StatusIntervalSeconds, 1);
@@ -479,8 +480,8 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     /// not the classes'; and at most one about another program's sync folder, the first that holds of OneDrive, Google
     /// Drive for desktop (a drive labelled Google Drive, or a path through My Drive) and Dropbox (a folder its info.json
     /// names), which upload a recording again and again while it grows. A path that cannot be a path is a problem of its
-    /// own (see <see cref="FindProblems"/>), not a place to look up; nor is one longer than any path can be (see
-    /// <see cref="NamedRoot"/>), which brings no warning.
+    /// own (see <see cref="FindProblems"/>), not a place to look up; nor is one longer than any path can be, also a problem
+    /// of its own (see <see cref="CheckFolderLength"/>), which brings no warning (see <see cref="NamedRoot"/>).
     /// </summary>
     private IEnumerable<string> FolderWarnings(string name, string? value)
     {
@@ -500,8 +501,10 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     /// <summary>
     /// The folder a recordings folder setting of <paramref name="value"/> names, without a separator at its end, as the
     /// warnings look at it: never refused, since they only say where it is, and read or write nothing there. Null for a value
-    /// longer than any path can be, a hand edit the check puts no limit on, which names no place: this runs behind every read
-    /// of the settings, the start's and the gate's included, so it must not throw.
+    /// longer than any path can be, which names no place. The check refuses such a value (Recording:OutputFolder by
+    /// <see cref="CheckFolderLength"/>, a saved class's by its own check, which makes that class unusable), but the warnings
+    /// are worked out beside the problems on every read of the settings, a refused file and a file with an unusable class
+    /// included, the start's and the gate's among them, so this must not throw.
     /// </summary>
     private static string? NamedRoot(string? value)
     {
@@ -512,8 +515,8 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
         catch (PathTooLongException)
         {
             // Deliberately not rethrown: a value longer than any path can be names no place to warn about, as a path with a
-            // character no path may hold does not; thrown, it would stop the start, the gate and the class commands over a
-            // warning. Where such a folder is used, it fails there as before.
+            // character no path may hold does not, and it is a problem of its own (CheckFolderLength, SavedClass.Check);
+            // thrown, it would stop the start, the gate and the class commands over a warning.
             return null;
         }
     }
@@ -758,6 +761,19 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     {
         if (path is not null && path.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
             problems.Add($"{name} holds a tab, a line break or another character that cannot be part of a path. {PathAdvice}");
+    }
+
+    /// <summary>
+    /// Adds a problem when the recordings folder <paramref name="path"/> names, as <see cref="ClassFolders.RootNamedBy"/>
+    /// works it out, is longer than any path on Windows can be (see <see cref="FolderPaths.TooLong(string?)"/>): every class
+    /// would fail as it starts, and whatever reads the recordings folder once ClassScribe runs. The words give the length and
+    /// the value's start, never the whole of it, which may be any length. A value with a character no path may hold is
+    /// <see cref="CheckPath"/>'s problem alone.
+    /// </summary>
+    private static void CheckFolderLength(Found problems, string name, string? path)
+    {
+        if (FolderPaths.TooLong(path) is { } tooLong)
+            problems.Add($"{name} {tooLong}. Write the folder's own path, such as D:\\Classes, or leave it empty for %USERPROFILE%\\ClassScribe.");
     }
 
     /// <summary>The full name of a setting, such as Recording:FlushSeconds.</summary>

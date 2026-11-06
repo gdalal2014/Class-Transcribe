@@ -235,6 +235,34 @@ public class ClassCommandTests
     }
 
     /// <summary>
+    /// class add and class set --output with a recordings folder longer than any path can be (as menu C's question or an
+    /// environment variable could give it) are refused before anything is written, with exit 2 and the check's words, as a
+    /// folder with a character no path may hold is; the class set keeps its folder.
+    /// </summary>
+    [Test]
+    public void Add_and_set_refuse_a_folder_longer_than_any_path()
+    {
+        var longValue = @"C:\" + new string('a', 39_997);
+        Run(new ClassRequest.Add("Kalam", new ClassChoices { Source = new SourceGiven(SourceOption.App, "chrome"), Output = @"D:\Classes" }));
+
+        var added = Run(new ClassRequest.Add("Mantiq", Mantiq with { Output = longValue }));
+        var set = Run(new ClassRequest.Set("Kalam", new ClassChoices { Output = longValue }));
+        var tab = Run(new ClassRequest.Set("Kalam", new ClassChoices { Output = "D:\\\tClasses" }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That((added, set, tab), Is.EqualTo((2, 2, 2)));
+            Assert.That(_files.UserValue("Classes:Mantiq"), Is.Null);
+            Assert.That(_files.UserValue("Classes:Kalam:OutputFolder")!.GetValue<string>(), Is.EqualTo(@"D:\Classes"));
+            Assert.That(_files.Log.Problems, Has.Member(
+                $"The saved class \"Mantiq\" would not be usable: OutputFolder names a folder whose full path is 40,000 characters long, starting \"C:\\{new string('a', 37)}...\"; no path on Windows can be longer than 32,766 characters. Give it the folder's own path, such as D:\\Classes, or leave it empty for Recording:OutputFolder."));
+            Assert.That(_files.Log.Problems, Has.Some.StartsWith("The saved class \"Kalam\" would not be usable: OutputFolder names a folder whose full path is 40,000 characters long"));
+            Assert.That(_files.Log.Problems, Has.Member("The saved class \"Kalam\" would not be usable: OutputFolder holds a tab, a line break or another character that cannot be part of a path."));
+            Assert.That(_files.Log.Problems.Count(problem => problem.Contains(longValue, StringComparison.Ordinal)), Is.Zero, "never the whole value");
+        });
+    }
+
+    /// <summary>
     /// class set changes a class by its options in groups: --app replaces the source and the app followed; --clear empties a
     /// field; fields a later build wrote stay; an unknown class is exit 2 with the saved ones.
     /// </summary>
@@ -276,13 +304,14 @@ public class ClassCommandTests
     }
 
     /// <summary>
-    /// A saved class whose own recordings folder is longer than any path can be (a hand edit; the check puts no limit on its
-    /// length) is listed and shown all the same, as text and as JSON, with exit 0, which the launcher reads, and nothing on
-    /// standard error, rather than "could not be read"; class set --course on it changes the course and says what follows,
-    /// without the line about where the old course's recordings are, since the folder names no place.
+    /// A saved class whose own recordings folder is longer than any path can be (a hand edit) cannot be used, as one with a
+    /// character no path may hold cannot: it is listed with exit 0 and shown with exit 2, which the launcher reads, as text
+    /// and as JSON, with the check's words and nothing on standard error, rather than "could not be read"; class set
+    /// --course on it changes the course all the same, since the problem was there before, and says what follows without the
+    /// line about where the old course's recordings are, since the folder names no place.
     /// </summary>
     [Test]
-    public void A_class_folder_longer_than_any_path_still_lists_shows_and_changes_its_course()
+    public void A_class_folder_longer_than_any_path_lists_shows_unusable_and_changes_its_course()
     {
         var longValue = new string('a', 40_000);
         _files.WriteUser($$"""{ "Classes": { "Mantiq": { "Course": "Mantiq", "App": "chrome", "OutputFolder": "{{longValue}}" } } }""");
@@ -300,13 +329,14 @@ public class ClassCommandTests
 
         Assert.Multiple(() =>
         {
-            Assert.That((listed, shown, listedJson, shownJson, changed), Is.EqualTo((0, 0, 0, 0, 0)));
+            Assert.That((listed, shown, listedJson, shownJson, changed), Is.EqualTo((0, 2, 0, 2, 0)));
             Assert.That(showLines, Has.Member($"  OutputFolder = {longValue}"));
+            Assert.That(string.Join("\n", showLines), Does.Contain("OutputFolder names a folder whose full path is "));
             Assert.That(listJson, Has.Count.EqualTo(1));
             foreach (var json in new[] { listJson[0]!, showJson })
             {
                 Assert.That(json["name"]!.GetValue<string>(), Is.EqualTo("Mantiq"));
-                Assert.That(json["usable"]!.GetValue<bool>(), Is.True);
+                Assert.That(json["usable"]!.GetValue<bool>(), Is.False);
                 Assert.That(json["fields"]!["OutputFolder"]!.GetValue<string>(), Is.EqualTo(longValue));
             }
 
