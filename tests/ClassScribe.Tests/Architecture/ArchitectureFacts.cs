@@ -45,8 +45,9 @@ public sealed record TypeUse(string Type, string? Member, IReadOnlyList<string> 
 
 /// <summary>
 /// Reads the facts of a built assembly with System.Reflection.Metadata, which is part of the shared framework (architecture
-/// 2.4): the assembly references, the type and member references of every signature, attribute and base type, and the
-/// operands of each method's IL. It loads nothing and runs nothing: the file is read as bytes.
+/// 2.4): the assembly references, the type and member references of every signature, attribute and base type, the
+/// operands of each method's IL and the type each of its catch clauses names. It loads nothing and runs nothing: the file is
+/// read as bytes.
 /// </summary>
 public static class ArchitectureFacts
 {
@@ -185,10 +186,19 @@ public static class ArchitectureFacts
             _ => null,
         };
 
-        /// <summary>Reads a method body's IL and notes every type and member its operands name, and the types of its locals.</summary>
+        /// <summary>
+        /// Reads a method body's IL and notes every type and member its operands name, the types of its locals, and the type each
+        /// catch clause names, which sits in the body's exception regions alone: a catch without a variable leaves no local and
+        /// no operand (a finally, a fault and a filter name no type there; a filter's test is IL, read with the rest).
+        /// </summary>
         private void ReadBody(MethodBodyBlock body)
         {
             if (!body.LocalSignature.IsNil) metadata.GetStandaloneSignature(body.LocalSignature).DecodeLocalSignature(names, null);
+            foreach (var region in body.ExceptionRegions)
+            {
+                if (region.Kind == ExceptionRegionKind.Catch) AddType(region.CatchType);
+            }
+
             var il = body.GetILReader();
             while (il.RemainingBytes > 0)
             {

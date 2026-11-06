@@ -223,11 +223,18 @@ advice after a format error (10 A).
   project referencing a Windows one is refused with NU1201), and the architecture test in
   `tests/ClassScribe.Tests/Architecture` (architecture 2.4; question 7: no analyzer package) checks what the build cannot.
   `ArchitectureFacts` reads the four built assemblies from the test's output folder with `System.Reflection.Metadata` (the
-  assembly references, the type and member references, each method's IL), and the pure `ArchitectureRules.Check` judges
+  assembly references, the type and member references, each method's IL and locals, and the type each catch clause names,
+  which sits in the method's exception regions alone; `CatchClausePlant` in the test project pins that the reader sees
+  it), and the pure `ArchitectureRules.Check` judges
   seven checks, each with its test in `ArchitectureTests` and planted cases in `ArchitectureRulesTests`: (1) the
   references, Core the framework alone, Application Core and `Microsoft.Extensions.Logging.Abstractions`, `Options`,
   `DependencyInjection.Abstractions` and `Primitives` (`ApplicationPackages`), Infrastructure never the Cli, none the
-  tests, so a package such as NAudio or Refit added to an inner project fails here; (2) banned in Core and Application:
+  tests, so any package added to an inner project fails here, one named `System.*` included: the framework is told by
+  name (`IsFramework`: `System`, `System.*`, `netstandard`, `mscorlib`) less the files beside the four in the test's
+  output folder (`AppAssemblies.PackagesBeside()`; the build copies every package there and never the shared framework,
+  which the runtime loads from the dotnet folder), so `System.CommandLine` or `System.Security.Cryptography.ProtectedData`
+  (Windows' DPAPI) referenced by Core or Application counts as a package, and
+  `The_packages_beside_the_four_are_read` pins that the set read holds those two; (2) banned in Core and Application:
   `System.IO.File`, `Directory`, `FileInfo`, `DirectoryInfo`, `FileSystemInfo`, `FileStream`, `RandomAccess`, `DriveInfo`
   and `FileSystemWatcher`, a `StreamReader` or `StreamWriter` opened by a path, every member of `Path` but the string work
   in `AllowedPathMembers` (`Combine`, `Join`, `GetFileName`, `GetFileNameWithoutExtension`, `GetExtension`,
@@ -260,7 +267,11 @@ advice after a format error (10 A).
   `ClassScribe.Cli.Commands`, `ClassScribe.Cli.Hosts.Recorder`; the tests keep `ClassScribe.Tests`), and so do the log
   categories of every `ILogger<T>` (`ClassScribe.Infrastructure.Drive.DriveClient` and the like), which no written line
   carries: `DriveSecretsTests` matches Drive's by `.Drive.`, and the one example of a `Logging:LogLevel` entry, in the
-  settings command's help and the README, names `ClassScribe.Infrastructure.Drive`.
+  settings command's help and the README, names `ClassScribe.Infrastructure.Drive`. The log applies an entry to every
+  category that starts with it, so an entry under `ClassScribe.` that none of the four root namespaces starts with or is
+  started by (`ClassScribe.Drive`, written before the move) filters nothing: `SettingsCheck.FindWarnings` warns about it
+  once, naming the roots (`SettingsCheck.LogCategoryRoots`, pinned to `ArchitectureRules.RootNamespaces`) and the
+  `settings reset` command; `ClassScribe` alone still covers everything.
 - HTTP APIs are called through Refit interfaces registered with `AddRefitGeneratedClient` (Refit's
   source-generated client, given the `ElevenLabsJson` System.Text.Json context), not requests built
   by hand with `HttpClient`. Google's are `IGoogleOAuthApi` (`GoogleOAuthJson`, snake_case: token and
@@ -991,7 +1002,7 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   `GoogleWorld`, and a batch of two videos recorded as they play through the real `RecorderHost`
   (the window's settings point `YouTube:OEmbedBaseUrl` at the stub; the recorder gets
   `FakeVideoWindows` and a `VideoPlayback` over the test's processes). Nothing is played or recorded. The suite holds
-  5,141 tests after the move into four projects (architecture slices 4 and 5), all passing. The uploads by
+  5,146 tests after the move into four projects and the S5 review's fixes (architecture slices 4 and 5), all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -1027,8 +1038,8 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
-  four and a half minutes (4 min 33 s for 5,141 tests after the move into four projects, architecture slices 4
-  and 5, on 6 November 2026, plus the build).
+  four and a half minutes (4 min 30 s for 5,146 tests after the move into four projects and the S5 review's fixes,
+  architecture slices 4 and 5, on 6 November 2026, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1353,7 +1364,8 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   gives program, user and state folders in temporary folders, and `FakeOutputFolderFacts` stands in
   for the folders' facts. Environment overrides such as
   `ElevenLabs__BaseUrl` work; one that fails the check stops the start, since it cannot be fixed
-  while ClassScribe runs. Warnings are given once per process: a key in the settings, an API version
+  while ClassScribe runs. Warnings are given once per process: a key in the settings, a `Logging:LogLevel` entry under
+  `ClassScribe.` that names no part of ClassScribe (see the log categories above), an API version
   other than the one the build was written for, a limit of ElevenLabs' above its own, a safety stop or a
   video's limit held by the file limit (see the vendors' values below), and a
   recordings folder (`Recording:OutputFolder` or a class's `OutputFolder`) inside OneDrive, Google

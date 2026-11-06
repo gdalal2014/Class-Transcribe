@@ -35,8 +35,19 @@ public class ArchitectureRulesTests
         ];
     }
 
-    /// <summary>The violations of the four assemblies given, with the exe's constant right.</summary>
-    private static IReadOnlyList<Violation> Check(IReadOnlyList<AssemblyFacts> assemblies) => ArchitectureRules.Check(assemblies, "ClassScribe.dll");
+    /// <summary>
+    /// What sits as files beside the four in an output folder: the packages, two of them named System.*, and the tests;
+    /// never the framework, which the runtime loads from the dotnet folder.
+    /// </summary>
+    private static readonly IReadOnlySet<string> Packages = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "NAudio.Core", "NAudio.Wasapi", "Refit", "Refit.HttpClientFactory", "System.CommandLine", "System.Security.Cryptography.ProtectedData",
+        "Microsoft.Extensions.Logging.Abstractions", "Microsoft.Extensions.Options", "Microsoft.Extensions.DependencyInjection.Abstractions", "Microsoft.Extensions.Primitives",
+        "Microsoft.Extensions.Configuration.Abstractions", "Microsoft.Extensions.Hosting", "ClassScribe.Tests",
+    };
+
+    /// <summary>The violations of the four assemblies given, with the exe's constant right and the usual files beside them.</summary>
+    private static IReadOnlyList<Violation> Check(IReadOnlyList<AssemblyFacts> assemblies) => ArchitectureRules.Check(assemblies, "ClassScribe.dll", Packages);
 
     /// <summary>Asserts one violation of <paramref name="check"/> naming <paramref name="type"/>, and no other.</summary>
     private static void AssertOne(IReadOnlyList<AssemblyFacts> assemblies, int check, string type)
@@ -161,7 +172,7 @@ public class ArchitectureRulesTests
         AssertOne(Four(cliReference: "ClassScribe.Tests"), 1, ArchitectureRules.Cli);
     }
 
-    /// <summary>Check 1: the framework's own assemblies, Application's packages and the inner projects are allowed.</summary>
+    /// <summary>Check 1: the framework's own assemblies (which are not beside the four), Application's packages and the inner projects are allowed.</summary>
     [Test]
     public void The_references_the_rule_allows_pass()
     {
@@ -169,7 +180,25 @@ public class ArchitectureRulesTests
         AssertNone(Four(coreReference: "netstandard"));
         AssertNone(Four(applicationReference: "System.Net.Primitives"));
         AssertNone(Four(infrastructureReference: "Microsoft.Extensions.Hosting"));
+        AssertNone(Four(infrastructureReference: "System.Security.Cryptography.ProtectedData"));
         AssertNone(Four(cliReference: "ClassScribe.Infrastructure"));
+    }
+
+    /// <summary>
+    /// Check 1: a package named System.*, which sits as a file beside the four where the framework never does, is no part of
+    /// the framework: Core referencing System.Security.Cryptography.ProtectedData (Windows' DPAPI) and Application referencing
+    /// it or System.CommandLine fail, as NAudio or Refit would; with no such file beside the four the same name passes as the
+    /// framework's, which is why <see cref="ArchitectureTests.The_packages_beside_the_four_are_read"/> checks the set read.
+    /// </summary>
+    [Test]
+    public void A_package_named_like_the_framework_fails_check_1()
+    {
+        AssertOne(Four(coreReference: "System.Security.Cryptography.ProtectedData"), 1, ArchitectureRules.Core);
+        AssertOne(Four(applicationReference: "System.Security.Cryptography.ProtectedData"), 1, ArchitectureRules.Application);
+        AssertOne(Four(applicationReference: "System.CommandLine"), 1, ArchitectureRules.Application);
+        Assert.That(ArchitectureRules.IsFramework("System.CommandLine", Packages), Is.False);
+        Assert.That(ArchitectureRules.IsFramework("System.CommandLine", new HashSet<string>()), Is.True, "told apart by the file beside the four alone");
+        Assert.That(ArchitectureRules.IsFramework("System.Text.Json", Packages), Is.True);
     }
 
     /// <summary>Check 5: a type with its old namespace in the Cli assembly, as a file merged into the wrong project would have.</summary>
@@ -211,8 +240,8 @@ public class ArchitectureRulesTests
     {
         var renamed = Four().Select(assembly => assembly.Name == ArchitectureRules.Cli ? assembly with { Name = "ClassScribe.Cli" } : assembly).ToList();
 
-        Assert.That(ArchitectureRules.Check(renamed, "ClassScribe.dll").Select(violation => violation.Check), Is.EqualTo(new[] { 7 }));
-        Assert.That(ArchitectureRules.Check(Four(), "ClassScribe.Cli.dll").Select(violation => (violation.Check, violation.Type, violation.Member)), Is.EqualTo(new[] { (7, "ProgramFiles", "Dll") }));
+        Assert.That(ArchitectureRules.Check(renamed, "ClassScribe.dll", Packages).Select(violation => violation.Check), Is.EqualTo(new[] { 7 }));
+        Assert.That(ArchitectureRules.Check(Four(), "ClassScribe.Cli.dll", Packages).Select(violation => (violation.Check, violation.Type, violation.Member)), Is.EqualTo(new[] { (7, "ProgramFiles", "Dll") }));
     }
 
     /// <summary>A violation prints its check, its assembly, its type and member, and the reason.</summary>

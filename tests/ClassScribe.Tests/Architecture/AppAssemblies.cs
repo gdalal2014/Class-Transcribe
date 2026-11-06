@@ -18,4 +18,20 @@ public static class AppAssemblies
 
     /// <summary>The path of each assembly's file in the test's output folder, innermost first.</summary>
     public static IReadOnlyList<string> Paths => All.Select(assembly => assembly.Location).ToList();
+
+    /// <summary>
+    /// The names of the assemblies that sit as files beside the four in the test's output folder: every package the solution
+    /// uses (NAudio, Refit, System.CommandLine, System.Security.Cryptography.ProtectedData and the rest) and the test host's
+    /// own, never the shared framework, which the runtime loads from the dotnet folder. By them the architecture test's check 1
+    /// tells a package named System.* from the framework.
+    /// </summary>
+    public static IReadOnlySet<string> PackagesBeside()
+    {
+        var folder = Path.GetDirectoryName(Paths[0])!;
+        var four = All.Select(assembly => assembly.GetName().Name).ToHashSet(StringComparer.Ordinal);
+        return Directory.EnumerateFiles(folder, "*.dll")
+            .Select(file => Path.GetFileNameWithoutExtension(file))
+            .Where(name => !four.Contains(name))
+            .ToHashSet(StringComparer.Ordinal);
+    }
 }
