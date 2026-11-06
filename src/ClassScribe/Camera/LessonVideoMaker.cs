@@ -13,7 +13,9 @@ namespace ClassScribe.Camera;
 /// once a lesson has stopped (beside its transcript), and for the window's finish-video, menu choice 3's V and the report's
 /// V: one path for all. It sends the job, writes the process's log lines into its own log under the category Camera, hands
 /// on how far it has got, and gives the process <see cref="ProgressLimit"/> without a progress line before it ends it, so
-/// that nothing waits on a stuck video for long. The caller's cancel (Ctrl+C after the stop) is sent as cancel, and a
+/// that nothing waits on a stuck video for long: the job sends a line at each new percent, and the same percent again only
+/// while its work has moved since, so a call inside Windows that never returns goes quiet and is ended here (review 3.3). The
+/// caller's cancel (Ctrl+C after the stop) is sent as cancel, and a
 /// process that does not end within <see cref="CancelWait"/> is ended. It says the end: the video with its length and size
 /// and a word to watch it before publishing it, or why it was not made and how to make it again, free. It never throws but
 /// for an argument; the sound and the transcript never depend on it.
@@ -121,10 +123,11 @@ public sealed class LessonVideoMaker(ICameraProcessStarter starter, IRecordingFo
         }
         catch (OperationCanceledException)
         {
-            // Deliberately not rethrown: a camera process silent for ProgressLimit is stuck; it is ended, and that is the answer.
+            // Deliberately not rethrown: a camera process that made no headway for ProgressLimit is stuck (the job says its
+            // progress again only while its work moves, review 3.3); it is ended, and that is the answer.
             process.Kill();
             return new LessonVideoResult(LessonVideoOutcome.Failed,
-                Why: string.Create(CultureInfo.InvariantCulture, $"ClassScribe's camera process did not say how far it had got for {ProgressLimit.TotalMinutes:0} minutes, so it was ended"));
+                Why: string.Create(CultureInfo.InvariantCulture, $"ClassScribe's camera process made no headway on the video for {ProgressLimit.TotalMinutes:0} minutes, so it was ended as stuck"));
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException or ObjectDisposedException)
         {

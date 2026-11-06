@@ -45,7 +45,7 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     /// <summary>How often the job looks at how far the writing has got.</summary>
     public static readonly TimeSpan LookEvery = TimeSpan.FromSeconds(1);
 
-    /// <summary>How often a progress line goes out while the writing goes on, even when the percent stands still, so that the starter's time limit never ends a slow but working job.</summary>
+    /// <summary>How often the same percent is said again while the work moves below the next one, so that the starter's time limit never ends a slow but working job; a job that stands still says nothing more.</summary>
     public static readonly TimeSpan ProgressEvery = TimeSpan.FromSeconds(10);
 
     /// <summary>
@@ -59,6 +59,9 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
 
     /// <summary>How far the writing has got, from 0 to 1, in ten-thousandths, as the media work says it.</summary>
     private int _progress;
+
+    /// <summary>How many of the frames the check decodes it has decoded so far, as the media work says it.</summary>
+    private int _checked;
 
     /// <summary>True once a send found the starter gone: nothing more is sent.</summary>
     private volatile bool _starterGone;
@@ -337,30 +340,35 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     private static bool CouldNotOpenNow(Exception ex) =>
         ex is IOException or UnauthorizedAccessException || (ex is System.Runtime.InteropServices.COMException com && ((com.HResult >> 16) & 0x1FFF) == 7);
 
-    /// <summary>Writes the video on the thread pool, saying how far it has got (see <see cref="FollowAsync"/>).</summary>
+    /// <summary>Writes the video on the thread pool, saying how far it has got (see <see cref="FollowAsync"/>): the percent from the writer's ten-thousandths, which also tell whether it moves.</summary>
     private async Task WriteAsync(LessonVideoPlan plan, MixedSound sound, string path)
     {
         await SendAsync(CameraProtocol.Progress, new CameraProgress(0), CameraJson.Default.CameraProgress);
         await FollowAsync(Task.Run(() => media.Write(plan, sound, path, fraction => Volatile.Write(ref _progress, (int)Math.Clamp(fraction * 10_000, 0, 10_000)), _cancel.Token)),
-            () => Math.Min(98, Volatile.Read(ref _progress) / 100));
+            () => Math.Min(98, Volatile.Read(ref _progress) / 100), () => Volatile.Read(ref _progress));
     }
 
     /// <summary>
     /// Waits for <paramref name="work"/>, saying how far the job has got, as <paramref name="percent"/> gives it, at every new
-    /// percent and at least every <see cref="ProgressEvery"/> while it stands still, so that the starter's time limit never
-    /// ends a slow but working job; then returns, or throws what <paramref name="work"/> threw.
+    /// percent, and the same percent again every <see cref="ProgressEvery"/> only while <paramref name="moved"/>, the work's own
+    /// finer count, has changed since the last line: a slow but working job is never ended by the starter's time limit, while
+    /// one stuck inside a call that never returns goes quiet, and the limit ends it (review 3.3). Then returns, or throws
+    /// what <paramref name="work"/> threw.
     /// </summary>
-    private async Task FollowAsync(Task work, Func<int> percent)
+    private async Task FollowAsync(Task work, Func<int> percent, Func<long> moved)
     {
         var lastPercent = -1;
+        var lastMoved = long.MinValue;
         var lastSent = time.GetTimestamp();
         while (!work.IsCompleted)
         {
             await Task.WhenAny(work, Task.Delay(LookEvery, time));
             var now = percent();
-            if (now == lastPercent && time.GetElapsedTime(lastSent) < ProgressEvery) continue;
+            var sofar = moved();
+            if (now == lastPercent && (sofar == lastMoved || time.GetElapsedTime(lastSent) < ProgressEvery)) continue;
 
             lastPercent = now;
+            lastMoved = sofar;
             lastSent = time.GetTimestamp();
             await SendAsync(CameraProtocol.Progress, new CameraProgress(now), CameraJson.Default.CameraProgress);
         }
@@ -369,15 +377,15 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     }
 
     /// <summary>
-    /// Checks the video on the thread pool, saying 99% at least every <see cref="ProgressEvery"/> meanwhile, since a check
-    /// that must decode from an IDR far back takes its time; a check that throws is a check failed, in words.
+    /// Checks the video on the thread pool, saying 99% once and again every <see cref="ProgressEvery"/> while its frames
+    /// decode, since a check that must decode from an IDR far back takes its time; a check that throws is a check failed, in words.
     /// </summary>
     private async Task<string?> CheckAsync(string path, LessonVideoCheck check)
     {
         try
         {
-            var checking = Task.Run(() => media.Check(path, check));
-            await FollowAsync(checking, () => 99);
+            var checking = Task.Run(() => media.Check(path, check, decoded => Volatile.Write(ref _checked, decoded)));
+            await FollowAsync(checking, () => 99, () => Volatile.Read(ref _checked));
             return await checking;
         }
         catch (Exception ex)

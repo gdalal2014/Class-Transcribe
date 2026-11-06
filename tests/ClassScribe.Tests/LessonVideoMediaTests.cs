@@ -85,7 +85,7 @@ public sealed class LessonVideoMediaTests
     private string? MakeAndCheck(LessonVideoPlan plan)
     {
         using (var sound = Mix()) _media.Write(plan, sound, _files.LessonVideoPartial, _ => { }, CancellationToken.None);
-        return _media.Check(_files.LessonVideoPartial, new LessonVideoCheck(plan.End, plan.FramesToCheck));
+        return _media.Check(_files.LessonVideoPartial, new LessonVideoCheck(plan.End, plan.FramesToCheck), _ => { });
     }
 
     /// <summary>A piece is described by its size, its H.264 sequence header and its length.</summary>
@@ -151,7 +151,7 @@ public sealed class LessonVideoMediaTests
         var plan = Plan(2);
 
         Assert.That(MakeAndCheck(plan), Is.Null);
-        Assert.That(_media.Check(_files.LessonVideoPartial, new LessonVideoCheck(TimeSpan.FromSeconds(2), [TimeSpan.FromSeconds(0.5), TimeSpan.FromSeconds(1.2), TimeSpan.FromSeconds(1.9)])),
+        Assert.That(_media.Check(_files.LessonVideoPartial, new LessonVideoCheck(TimeSpan.FromSeconds(2), [TimeSpan.FromSeconds(0.5), TimeSpan.FromSeconds(1.2), TimeSpan.FromSeconds(1.9)]), _ => { }),
             Is.Null);
     }
 
@@ -238,7 +238,7 @@ public sealed class LessonVideoMediaTests
         var plan = Plan(1);
         using (var sound = Mix()) _media.Write(plan, sound, _files.LessonVideoPartial, _ => { }, CancellationToken.None);
 
-        var answer = _media.Check(_files.LessonVideoPartial, new LessonVideoCheck(TimeSpan.FromSeconds(3), plan.FramesToCheck));
+        var answer = _media.Check(_files.LessonVideoPartial, new LessonVideoCheck(TimeSpan.FromSeconds(3), plan.FramesToCheck), _ => { });
 
         Assert.That(answer, Does.StartWith("it is 1.0").And.EndWith("seconds long, not 3.000 as its sound is"));
     }
@@ -249,7 +249,7 @@ public sealed class LessonVideoMediaTests
     {
         File.WriteAllText(_files.LessonVideoPartial, "not a video");
 
-        Assert.That(_media.Check(_files.LessonVideoPartial, new LessonVideoCheck(TimeSpan.FromSeconds(1), [TimeSpan.Zero])), Does.StartWith("Windows cannot open it"));
+        Assert.That(_media.Check(_files.LessonVideoPartial, new LessonVideoCheck(TimeSpan.FromSeconds(1), [TimeSpan.Zero]), _ => { }), Does.StartWith("Windows cannot open it"));
     }
 
     /// <summary>

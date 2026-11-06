@@ -116,7 +116,7 @@ public sealed class LessonVideoMakerTests
 
         var result = await making;
         Assert.That(result.Outcome, Is.EqualTo(LessonVideoOutcome.Failed));
-        Assert.That(result.Why, Is.EqualTo("ClassScribe's camera process did not say how far it had got for 2 minutes, so it was ended"));
+        Assert.That(result.Why, Is.EqualTo("ClassScribe's camera process made no headway on the video for 2 minutes, so it was ended as stuck"));
         Assert.That(starter.Started.Single().Process.Killed, Is.True);
         Assert.That(_time.GetUtcNow() - TestRuns.Start, Is.GreaterThanOrEqualTo(LessonVideoMaker.ProgressLimit));
     }

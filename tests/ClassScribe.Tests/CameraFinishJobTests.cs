@@ -473,9 +473,26 @@ public sealed class CameraFinishJobTests
         Assert.That(seen.Of<CameraFailed>().Single().Why, Does.StartWith("The lesson's video could not be written (There is not enough space on the disk"));
     }
 
-    /// <summary>While the writing takes its time, a progress line goes out at least every ten seconds, so that the starter's limit never ends it.</summary>
+    /// <summary>
+    /// Moves the clock by <paramref name="by"/>, a look at a time, letting the job's loop take each look (its next wait is a
+    /// new timer) before the next, so that what the job sends meanwhile is what it would send in that much time.
+    /// </summary>
+    private async Task AdvanceAsync(TimeSpan by)
+    {
+        for (var moved = TimeSpan.Zero; moved < by; moved += CameraFinishJob.LookEvery)
+        {
+            var timers = _time.TimersMade;
+            _time.Advance(CameraFinishJob.LookEvery);
+            await Wait.UntilAsync(() => _time.TimersMade > timers);
+        }
+    }
+
+    /// <summary>
+    /// While a slow writing creeps on below the next percent, the same percent is said again every ten seconds, so that the
+    /// starter's limit never ends a working job: the line follows the work's own progress, not the clock alone (review 3.3).
+    /// </summary>
     [Test]
-    public async Task Progress_is_said_at_least_every_ten_seconds()
+    public async Task Progress_is_said_again_every_ten_seconds_while_the_writing_moves()
     {
         Piece(0);
         using var gate = new ManualResetEventSlim();
@@ -485,9 +502,55 @@ public sealed class CameraFinishJobTests
         await _time.AdvanceUntilAsync(() => _media.Writing && seen.Of<CameraProgress>().Any(progress => progress.Percent == 50), CameraFinishJob.LookEvery, timeoutSeconds: 30);
         var before = seen.Of<CameraProgress>().Count;
 
-        await _time.AdvanceUntilAsync(() => seen.Of<CameraProgress>().Count > before, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        _media.Creep();
+        await AdvanceAsync(CameraFinishJob.ProgressEvery);
+        await Wait.UntilAsync(() => seen.Of<CameraProgress>().Count > before);
 
-        Assert.That(seen.Of<CameraProgress>()[^1].Percent, Is.EqualTo(50), "the same percent, said again");
+        Assert.That(seen.Of<CameraProgress>()[^1].Percent, Is.EqualTo(50), "the same percent, said again, since the work moved");
+        gate.Set();
+        await _time.AdvanceUntilAsync(() => host.IsCompleted, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        Assert.That(await host, Is.EqualTo(CameraProtocol.DoneExitCode));
+    }
+
+    /// <summary>
+    /// A writing whose progress stands still is said no more: a Media Foundation call that never returns would otherwise be
+    /// kept alive for ever by the repeated line, and the starter's two-minute limit is what ends it (review 3.3).
+    /// </summary>
+    [Test]
+    public async Task A_writing_that_stands_still_is_said_no_more()
+    {
+        Piece(0);
+        using var gate = new ManualResetEventSlim();
+        _media.HoldWrite = gate;
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Finish());
+        await _time.AdvanceUntilAsync(() => _media.Writing && seen.Of<CameraProgress>().Any(progress => progress.Percent == 50), CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        var before = seen.Of<CameraProgress>().Count;
+
+        await AdvanceAsync(3 * CameraFinishJob.ProgressEvery);
+
+        Assert.That(seen.Of<CameraProgress>().Count, Is.EqualTo(before), "nothing moved, so nothing more is said");
+        gate.Set();
+        await _time.AdvanceUntilAsync(() => host.IsCompleted, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        Assert.That(await host, Is.EqualTo(CameraProtocol.DoneExitCode));
+    }
+
+    /// <summary>The check's 99 is said once, and again only as its frames decode: a check stuck on a frame is said no more (review 3.3).</summary>
+    [Test]
+    public async Task A_check_that_stands_still_is_said_no_more()
+    {
+        Piece(0);
+        using var gate = new ManualResetEventSlim();
+        _media.HoldCheck = gate;
+        await using var process = new FakeCameraProcess();
+        var (host, seen) = await StartAsync(process, Finish());
+        // 99 is said as the check begins, and once more at its first look; neither is a repeat.
+        await _time.AdvanceUntilAsync(() => seen.Of<CameraProgress>().Count(progress => progress.Percent == 99) == 2, CameraFinishJob.LookEvery, timeoutSeconds: 30);
+        var before = seen.Of<CameraProgress>().Count;
+
+        await AdvanceAsync(3 * CameraFinishJob.ProgressEvery);
+
+        Assert.That(seen.Of<CameraProgress>().Count, Is.EqualTo(before), "no frame decoded, so nothing more is said");
         gate.Set();
         await _time.AdvanceUntilAsync(() => host.IsCompleted, CameraFinishJob.LookEvery, timeoutSeconds: 30);
         Assert.That(await host, Is.EqualTo(CameraProtocol.DoneExitCode));

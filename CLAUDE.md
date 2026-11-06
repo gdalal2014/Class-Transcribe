@@ -1915,15 +1915,22 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   camera process, `CameraFinishJob` refuses a recording without its `.wav` here or with a `.mp4.partial` being written,
   deletes a stale partial with a line, leaves an unreadable piece out with a warning (and keeps it after the video: only the
   pieces it read are deleted), fails with every piece kept when Windows cannot open a source now (`CouldNotOpenNow`: an
-  IOException, UnauthorizedAccessException or FACILITY_WIN32 COM error) or an older video cannot be read, logs the plan, sends `progress`
-  at each new percent or every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking), and on a pass renames
+  IOException, UnauthorizedAccessException or FACILITY_WIN32 COM error) or an older video cannot be read, leaves out a piece
+  older than a readable older video (which holds its picture: a leftover an earlier making could not delete, or one kept
+  for Drive) when the older video's picture is used before the first newer piece, with a line, and fails with the older
+  video kept when no newer piece is left ("holds the picture of every camera piece here already", review 3.2), logs the plan, sends `progress`
+  at each new percent, and the same percent again every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking)
+  only while its work has moved since the last line (the writer's ten-thousandths, the check's frames decoded through
+  `ILessonVideoMedia.Check`'s progress), so that a Media Foundation call that never returns goes quiet and the maker's
+  `ProgressLimit` ends it (review 3.3), and on a pass renames
   the partial (`PutInPlaceAsync`: `RenameTries` 3, a second apart, while a player or scanner holds a file open; then failed
   with why, the checked partial kept for the next making to delete, the older video and the pieces as they were) and deals
   with the pieces: kept when the job's `KeepPieces` says the video goes to Drive (a line), else
   deleted with a line; a failure deletes the partial and keeps the pieces, with the free `finish-video` command; a cancel
   is 130. In the window or recorder, `LessonVideoMaker` (transient, `CameraServices`) starts the camera process with a
   finish job and gives a `LessonVideoResult` (`Made`, `Failed`, `Cancelled`; ended after `ProgressLimit` 2 min without a
-  line, `CancelWait` 15 s, `SendLimit` 5 s, `DisposeWait` 5 s) and says the end (`MadeLine`: watch it before publishing).
+  line, "made no headway on the video for 2 minutes, so it was ended as stuck", `CancelWait` 15 s, `SendLimit` 5 s,
+  `DisposeWait` 5 s) and says the end (`MadeLine`: watch it before publishing).
   `RecordCommand` sets the run file to `Transcribing` at a camera run's stop (the state now covers the video's making),
   starts the video beside the transcription (`StartTheLessonVideo`; no pieces is a warning) with
   `LessonVideoDrive.KeepsPieces`, and waits for it on every end; the first lesson's start line says how to turn on
