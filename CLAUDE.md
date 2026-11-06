@@ -367,7 +367,11 @@ advice after a format error (10 A).
   ArgumentException that stopped `devices` with the Zoom app in a meeting on 18 October); NAudio's
   calls still map, so the places that turn a failed look into a listing that says so
   (`RecordingMonitor.ClassDevice`, `BluetoothMicrophoneWatch.LookNow`, `WasapiMicrophoneSessions`,
-  `DevicesCommand.Read`) catch `AudioFailures.IsFailedResult`. `CoreAudio.Check` takes the checked
+  `DevicesCommand.Read`) catch `AudioFailures.IsFailedResult`: a `COMException` of any result, an
+  `InvalidCastException`, and the mapped `ArgumentException` of E_INVALIDARG, `UnauthorizedAccessException`
+  of E_ACCESSDENIED and `NotImplementedException` of E_NOTIMPL by their exact type and that result, with no
+  parameter named; a null or out-of-range argument, a named parameter or a derived type is a programming
+  error and fails loudly (`AudioFailuresTests`). `CoreAudio.Check` takes the checked
   expression (`CallerArgumentExpression`) and notes the call in the exception (`AudioFailures.CallKey`),
   so `AudioFailures.Describe` says `GetState: The parameter is incorrect. (0x80070057)`. In the apps
   with sound (`GetPlayingAppsListing`, a `PlayingAppsListing` with its `UnreadAudioSession`s) a
