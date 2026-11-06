@@ -38,12 +38,31 @@ public sealed class CameraFinishJobTests
     [TearDown]
     public void TearDown() => _folder.Dispose();
 
-    /// <summary>Writes a piece of the lesson beginning at <paramref name="startSeconds"/>, and returns its path.</summary>
+    /// <summary>Writes a piece of the lesson beginning at <paramref name="startSeconds"/>, written now (newer than any older video), and returns its path.</summary>
     private string Piece(double startSeconds)
     {
         var path = _files.CameraPiece(TimeSpan.FromSeconds(startSeconds));
         File.WriteAllBytes(path, [0, 0, 0, 24, (byte)'f', (byte)'t', (byte)'y', (byte)'p']);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
         return path;
+    }
+
+    /// <summary>
+    /// Writes a piece beginning at <paramref name="startSeconds"/> that an earlier making left behind: older than the older
+    /// video, which was made from it, as a piece that could not be deleted after that making.
+    /// </summary>
+    private string Leftover(double startSeconds)
+    {
+        var path = Piece(startSeconds);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddHours(-2));
+        return path;
+    }
+
+    /// <summary>Writes the lesson's older video, made an hour ago, so that a piece written now is newer than it.</summary>
+    private void OlderVideo(string content = "the older video")
+    {
+        File.WriteAllText(_files.LessonVideo, content);
+        File.SetLastWriteTimeUtc(_files.LessonVideo, DateTime.UtcNow.AddHours(-1));
     }
 
     /// <summary>The finish job for the lesson, keeping its pieces when <paramref name="keepPieces"/>.</summary>
@@ -147,7 +166,7 @@ public sealed class CameraFinishJobTests
     public async Task A_video_that_fails_its_check_is_deleted_and_the_pieces_kept()
     {
         Piece(0);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
         _media.CheckAnswer = "no frame decodes at 00:00:01.250";
 
         var (exit, seen) = await RunAsync(Finish());
@@ -170,7 +189,7 @@ public sealed class CameraFinishJobTests
     public async Task An_older_video_is_replaced_only_once_the_new_one_passed()
     {
         Piece(0);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
         using var gate = new ManualResetEventSlim();
         _media.HoldWrite = gate;
         await using var process = new FakeCameraProcess();
@@ -197,7 +216,7 @@ public sealed class CameraFinishJobTests
     public async Task An_older_video_a_player_holds_open_is_not_replaced_and_failed_says_why()
     {
         Piece(0);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
 
         int exit;
         CameraLinesSeen seen;
@@ -225,7 +244,7 @@ public sealed class CameraFinishJobTests
     public async Task An_older_video_held_for_a_moment_is_replaced_once_let_go()
     {
         Piece(0);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
         await using var scanner = new FileStream(_files.LessonVideo, FileMode.Open, FileAccess.Read, FileShare.Read);
         await using var process = new FakeCameraProcess();
         var (host, seen) = await StartAsync(process, Finish());
@@ -244,7 +263,7 @@ public sealed class CameraFinishJobTests
     public async Task A_continued_lesson_takes_the_older_video_before_its_first_piece()
     {
         var piece = Piece(1.5);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
 
         var (exit, _) = await RunAsync(Finish());
 
@@ -256,6 +275,57 @@ public sealed class CameraFinishJobTests
     }
 
     /// <summary>
+    /// A piece an earlier making left behind at 0 (it could not be deleted then), with the older video made from it: the older
+    /// video holds its picture and everything after it, which the piece alone does not, so a new video would lose that
+    /// picture (review 3.2). Nothing is made, the older video stays as it is, and failed says so and what to do.
+    /// </summary>
+    [Test]
+    public async Task A_leftover_piece_at_the_start_never_replaces_the_older_video_made_from_it()
+    {
+        var leftover = Leftover(0);
+        OlderVideo();
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(seen.Of<CameraFailed>().Single().Why, Is.EqualTo(
+                $"{BaseName}.mp4, the older video, holds the picture of every camera piece here already ({Path.GetFileName(leftover)} is older than it), so there is nothing to add to it, and it stays as it is. To make the video again from the pieces alone, move the older video out of the folder first (keep it: the pieces here may not hold all of its picture). The camera's pieces are kept"));
+            Assert.That(_media.Written, Is.Empty);
+            Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("the older video"));
+            Assert.That(File.Exists(leftover), Is.True);
+        }
+    }
+
+    /// <summary>
+    /// A continued lesson with a leftover piece in the middle of the older video's picture: the leftover is older than the
+    /// video, which holds its picture already, so it is left out with a line, and the older video's picture is used up to the
+    /// first newer piece, so that nothing the older video held is lost (review 3.2); the leftover goes with the pieces.
+    /// </summary>
+    [Test]
+    public async Task A_leftover_piece_in_the_middle_is_left_out_and_the_older_video_used_up_to_the_newer_piece()
+    {
+        var leftover = Leftover(0.5);
+        OlderVideo();
+        var fresh = Piece(1.5);
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
+            Assert.That(_media.Written.Single().Slices, Is.EqualTo(new[]
+            {
+                new PlannedSlice(_files.LessonVideo, TimeSpan.Zero, TimeSpan.FromSeconds(1.5)), new PlannedSlice(fresh, TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(0.5))
+            }));
+            Assert.That(seen.Logs, Has.Member($"{Path.GetFileName(leftover)} is older than {BaseName}.mp4, which holds its picture already, so it is left out; the older video's picture is used instead, up to the first newer piece"));
+            Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("a lesson's video"));
+            Assert.That(OnDisk.FindCameraPieces(_files), Is.Empty, "the leftover's picture is in the new video, through the older one, so it goes with the rest");
+        }
+    }
+
+    /// <summary>
     /// An older video that cannot be read, of a continued lesson whose first pieces are gone, holds the only picture before its
     /// first piece: the video is not made, rather than made without it and put in its place; failed says what to do.
     /// </summary>
@@ -263,7 +333,7 @@ public sealed class CameraFinishJobTests
     public async Task An_older_video_that_cannot_be_read_is_never_replaced_by_one_without_its_picture()
     {
         Piece(1.5);
-        File.WriteAllText(_files.LessonVideo, "the older video");
+        OlderVideo();
         _media.Unreadable(Path.GetFileName(_files.LessonVideo));
 
         var (exit, seen) = await RunAsync(Finish());

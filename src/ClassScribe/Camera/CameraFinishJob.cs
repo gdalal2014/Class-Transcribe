@@ -21,7 +21,11 @@ namespace ClassScribe.Camera;
 /// it read are deleted, with a line saying so, unless the job keeps them for Google Drive (<see cref="CameraJob.KeepPieces"/>:
 /// only when the video goes there, amendment 47); a piece left out because what it holds cannot be read is in no video, so
 /// it stays, named. A piece Windows cannot open now, or an older video that cannot be read, ends the job with every piece
-/// kept, so that no picture is lost to a video made without it. A video that fails its check, or cannot be made, is deleted, the pieces
+/// kept, so that no picture is lost to a video made without it. A piece older than the older video was there when that video
+/// was made, which holds its picture (a leftover an earlier making could not delete, or a piece kept for Drive): with the
+/// older video's picture in use before the first newer piece, such a piece is left out, with a line, and with no newer piece
+/// at all there is nothing to add, the job fails with why, and the older video stays, so that a remake from a leftover alone
+/// never drops the picture only the older video held (review 3.2). A video that fails its check, or cannot be made, is deleted, the pieces
 /// kept, and failed says why and names finish-video; a cancel does the same and ends with 130. A stale .partial, one that
 /// nothing holds open, is deleted first; one held open means another camera process is making the video, and the job is
 /// refused. Its media work goes through <see cref="ILessonVideoMedia"/>.
@@ -128,19 +132,46 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
             return await FailAsync(files, $"{files.BaseName} has no camera piece that can be read, so it has no picture to make a video of", kept: true, retry: false);
 
         LessonVideoSource? older = null;
-        if (pieces.Min(piece => piece.Start) > TimeSpan.Zero && File.Exists(files.LessonVideo))
+        List<LessonVideoSource> heldByOlder = [];
+        if (File.Exists(files.LessonVideo))
         {
-            // Its picture before the first piece is in no piece any more, so a video made without it would lose it for good.
+            var video = Path.GetFileName(files.LessonVideo);
             var (source, why, notNow) = await DescribeAsync(files.LessonVideo, TimeSpan.Zero);
-            if (source is null)
+            if (source is null && notNow)
+                return await FailAsync(files, $"{video}, the older video, could not be opened now ({why}), so the video was not made without its picture", kept: true);
+
+            if (source is null && pieces.Min(piece => piece.Start) > TimeSpan.Zero)
             {
-                return await FailAsync(files, notNow
-                    ? $"{Path.GetFileName(files.LessonVideo)}, the older video, could not be opened now ({why}), so the video was not made without its picture"
-                    : $"{Path.GetFileName(files.LessonVideo)}, the older video, cannot be read ({why}), and its picture before the first camera piece is in no piece, so a new video would lose it. Move the older video out of the folder to make one from the pieces alone",
-                    kept: true, retry: notNow);
+                // Its picture before the first piece is in no piece any more, so a video made without it would lose it for good.
+                return await FailAsync(files,
+                    $"{video}, the older video, cannot be read ({why}), and its picture before the first camera piece is in no piece, so a new video would lose it. Move the older video out of the folder to make one from the pieces alone",
+                    kept: true, retry: false);
             }
 
-            older = source;
+            if (source is not null)
+            {
+                // A piece older than the video was there when the video was made, so the video holds its picture (review 3.2): a
+                // leftover of an earlier making that could not be deleted then, or a piece kept for Drive. A video made from such
+                // a piece alone would hold its last frame where the older video has picture, so the older video's picture stands
+                // for it, and only pieces newer than the video, a continued lesson's, add anything.
+                older = source;
+                var madeUtc = File.GetLastWriteTimeUtc(files.LessonVideo);
+                heldByOlder = [.. pieces.Where(piece => File.GetLastWriteTimeUtc(piece.Path) <= madeUtc)];
+                var fresh = pieces.Except(heldByOlder).ToList();
+                if (fresh.Count == 0)
+                {
+                    return await FailAsync(files,
+                        $"{video}, the older video, holds the picture of every camera piece here already ({Named(heldByOlder)} older than it), so there is nothing to add to it, and it stays as it is. To make the video again from the pieces alone, move the older video out of the folder first (keep it: the pieces here may not hold all of its picture)",
+                        kept: true, retry: false);
+                }
+
+                if (heldByOlder.Count > 0 && fresh.Min(piece => piece.Start) > TimeSpan.Zero)
+                {
+                    foreach (var piece in heldByOlder)
+                        await LogAsync("Information", $"{Path.GetFileName(piece.Path)} is older than {video}, which holds its picture already, so it is left out; the older video's picture is used instead, up to the first newer piece");
+                    pieces = fresh;
+                }
+            }
         }
 
         var soundLength = Longest(tracks);
@@ -200,7 +231,7 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         var bytes = new FileInfo(files.LessonVideo).Length;
         await LogAsync("Information", string.Create(CultureInfo.InvariantCulture,
             $"{Path.GetFileName(files.LessonVideo)} passed its check: {Durations.Format(soundLength)}, picture and sound, a frame decoded at the start, at each of {plan.Joins.Count} {(plan.Joins.Count == 1 ? "join" : "joins")} and at the end"));
-        await DealWithThePiecesAsync(files, [.. pieces.Select(piece => piece.Path)]);
+        await DealWithThePiecesAsync(files, [.. pieces.Select(piece => piece.Path), .. heldByOlder.Select(piece => piece.Path)]);
         await SendAsync(CameraProtocol.Made, new CameraMade(files.LessonVideo, Math.Round(soundLength.TotalSeconds, 3), bytes), CameraJson.Default.CameraMade);
         return CameraProtocol.DoneExitCode;
     }
@@ -363,6 +394,15 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         var main = tracks.Main.Aggregate(TimeSpan.Zero, (length, segment) => length + ClassFolders.MeasureSegment(segment));
         var microphone = tracks.Microphone.Aggregate(TimeSpan.Zero, (length, segment) => length + ClassFolders.MeasureSegment(segment));
         return main >= microphone ? main : microphone;
+    }
+
+    /// <summary><paramref name="pieces"/> by name, with the verb: "a.cam.mp4 is", "a.cam.mp4 and b.cam.mp4 are".</summary>
+    private static string Named(IReadOnlyList<LessonVideoSource> pieces)
+    {
+        var names = pieces.Select(piece => Path.GetFileName(piece.Path)).ToList();
+        if (names.Count == 1) return $"{names[0]} is";
+
+        return $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]} are";
     }
 
     /// <summary>The line that says what the video is made from: the pieces, an older video before them, and whether the picture is passed through.</summary>

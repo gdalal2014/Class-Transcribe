@@ -1555,8 +1555,13 @@ made in a camera process of its own while the transcript is made, and the end of
   is there); menu choice 3's **V** then the lesson's number makes it; and the report at the next start
   offers **V** (`make the lesson's video now, free`).
 - **Again, free:** `ClassScribe finish-video "<the lesson's folder or one of its files>" [--no-open]` makes
-  it again in this window, from the pieces that are still there, positions before the first of them taking
-  the older video's picture. It needs the lesson's `.wav` files: after free-space it says `The sound of this
+  it again in this window, from the pieces newer than the lesson's video, with the older video's picture
+  before the first of them. A piece older than the video (one kept for Drive, or one an earlier making
+  could not delete) is in the older video already, so it is left out, with the line `... is older than
+  ....mp4, which holds its picture already, so it is left out; the older video's picture is used instead, up
+  to the first newer piece`; a lesson whose pieces are all older than its video has nothing to add, and the
+  older video stays, which is said. To make a video from the pieces alone all the same, move the older
+  video out of the folder first (keep it). It needs the lesson's `.wav` files: after free-space it says `The sound of this
   lesson is on Google Drive only, so its video cannot be made again here.` (exit 1). It refuses a lesson
   being recorded or having its video made, and one without camera pieces. Exit 0 made, 1 not made, 130
   cancelled.
@@ -3091,6 +3096,8 @@ words you see.
 | `... cannot be read (...), so it is left out of the lesson's video`, then `... could not be read, so its picture is in no video; it stays on this laptop. Delete it by hand once you no longer need it` | That piece holds no picture Windows can read, often one whose camera process ended before it wrote anything. The video is made from the others; the piece is kept, small as such a piece usually is. Delete it by hand when you are sure you do not need it. |
 | `The lesson's video was not made: ... could not be opened now (...), so the video was not made without its picture. ...` | Another program (a scanner, a player) held a piece, or the older video, while the video was made. Every piece is kept; run the `finish-video` command given once it has let go. |
 | `The lesson's video was not made: ....mp4, the older video, cannot be read (...), and its picture before the first camera piece is in no piece, so a new video would lose it. ...` | The older video of a continued lesson is damaged, and its first part's pieces are gone. Move the older video out of the lesson's folder (keep it), then run `finish-video` to make a video from the pieces alone. |
+| `The lesson's video was not made: ....mp4, the older video, holds the picture of every camera piece here already (... is older than it), so there is nothing to add to it, and it stays as it is. ...` | The pieces here are the ones the older video was made from (kept for Drive, or left behind when they could not be deleted), so a new video would add nothing and could drop picture only the older one holds. Nothing to do. To make a video from the pieces alone all the same, move the older video out of the folder (keep it), then run `finish-video`. |
+| `... is older than ....mp4, which holds its picture already, so it is left out; the older video's picture is used instead, up to the first newer piece` | Normal for a continued lesson whose earlier pieces are still there: the earlier part's picture comes from the older video, the new part's from its pieces. |
 | `The lesson's video was cancelled; the camera's pieces are kept. To make it later, free: ...` | Ctrl+C after the stop cancelled the video with the transcript. Run the command when you want the video. |
 | `The camera wrote no picture in this lesson, so it has no video to make; the sound is kept` | The camera never gave a picture (not connected, refused). The lesson's sound is kept and transcribed as usual. |
 | `The sound of this lesson is on Google Drive only, so its video cannot be made again here.` (finish-video, exit code 1) | free-space deleted the `.wav` files. Download them from Drive into the lesson's folder, then run `finish-video` again. |
