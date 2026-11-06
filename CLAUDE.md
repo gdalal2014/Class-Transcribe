@@ -1949,10 +1949,13 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `WebcamHolds` (registered in `CameraServices`; optional, so a factory without it has no webcam). At each pick
   (`TrackSet.OnMicrophonePicked`) `Follow` finds once per microphone whether it belongs to a webcam
   (`Cameras.WebcamOf`: `CameraOf` but never a virtual camera; the cameras are listed only when `Cameras.MayBeOfACamera`,
-  a container that is not the computer's own, on the pool and waited for at most `ListLimit` (5 s; while a listing hangs a
-  later pick begins none and waits for none); a list that has a problem, throws or does not come leaves the pick
-  undecided, said once per stretch, a warning only with the setting on, and is asked again at the next pick; `Follow`
-  never throws, since it runs inside the microphone's pick). With the setting on it starts a
+  a container that is not the computer's own, on the pool: with the setting on waited for at most `ListLimit` (5 s; while
+  a listing hangs a later pick begins none and waits for none), and with it off never waited for (release 0.5.0 review,
+  3.6, `ListedInTheBackground`: the pick that begins the listing decides nothing, the microphone's next look, 10 s on,
+  takes its answer, well within the 60 s the webcam zeros rule at the start needs it by, so a class's start path waits on
+  no camera list; a lesson with the picture, whose hold is passed off, lists the same way); a list that has a problem,
+  throws or does not come leaves the pick undecided, said once per stretch, a warning only with the setting on, and is
+  asked again at the next pick; `Follow` never throws, since it runs inside the microphone's pick). With the setting on it starts a
   camera process with a hold job carrying the camera's id and name alone, and `MicrophoneProviderTap`'s `beforeOpen`
   (`WebcamHold.BeforeOpen`) holds the microphone's capture until the first frame, at most `FirstFrameWait` (5 s) after the
   hold began; the track is `ClockAligned`, so the wait is padded. The hold lasts through P and V off, follows the pick to
@@ -1972,7 +1975,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   frames arriving, problem and its short words); `TrackSet.Webcam` reads it, and `MicrophoneChecks.WatchTheHold` makes
   the problem a Notice with the class, an Alert in person. Tests `CameraHoldTests` (through the real track set too: the
   job before the microphone's open, read through `IMicrophoneRecording`; a camera list that throws or never answers with
-  the setting on and off, the microphone still opening; a start that fails for any cause; the late start for an earlier
+  the setting on and off, the microphone still opening; with the setting off the pick returning at once and the webcam
+  known by the next look; the stop's line within `SendLimit`; a start that fails for any cause; the late start for an earlier
   webcam), with `FakeCameraProvider.Failure` and `Hangs` and `FakeCameraProcessStarter.HoldStart` and `StartsEntered`.
 - The webcam zeros rules (camera-first 3.4; `MicrophoneChecks.WatchWebcamZeros`), in place of today's only-silence warning
   for a microphone whose `IMicrophoneRecording.Webcam` is set, unless Windows flagged its last packet silent or Windows

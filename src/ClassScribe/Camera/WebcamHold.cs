@@ -25,7 +25,8 @@ public sealed class WebcamHolds(ICameraProvider cameras, ICameraProcessStarter s
 /// <summary>
 /// The webcam behind a recording's microphone, and its hold (camera-first 3.4). At each pick of the microphone it finds
 /// whether the microphone belongs to a webcam, by the container it shares with a camera that is neither built in nor
-/// virtual (listing the cameras opens none, and only a microphone outside the computer's own container needs them). With
+/// virtual (listing the cameras opens none, and only a microphone outside the computer's own container needs them; with
+/// the wake off they are listed in the background and the next pick takes the answer, so the pick never waits). With
 /// Recording:WakeCameraMicrophone on, it then holds that webcam's picture open, shared, through a camera process's hold
 /// job, from before the microphone's capture opens (<see cref="BeforeOpen"/> waits for the first frame, at most
 /// <see cref="FirstFrameWait"/>) until the recording stops, through P and V off; it follows the pick to another webcam, and
@@ -76,7 +77,10 @@ public sealed class WebcamHold : IWebcamHold
     /// <summary>The microphone the webcam was last decided for, by id; null before the first decision.</summary>
     private string? _decidedFor;
 
-    /// <summary>A listing of the cameras an earlier pick began, which a later pick does not begin again while it lasts; null before the first.</summary>
+    /// <summary>
+    /// A listing of the cameras an earlier pick began, which a later pick does not begin again while it lasts; null before
+    /// the first, and, with the wake off, again once a pick has taken its answer.
+    /// </summary>
     private Task<CameraList>? _listing;
 
     /// <summary>True while picks could not be decided, so that the failure is said once per stretch.</summary>
@@ -136,9 +140,11 @@ public sealed class WebcamHold : IWebcamHold
     /// The microphone <paramref name="microphone"/> was picked: whether it belongs to a webcam is found once for it, and with
     /// the wake on the hold follows: begun for its webcam, moved from another webcam, or let go for a microphone of none.
     /// A pick of none changes nothing. Runs on the thread that looked, inside the microphone's pick, so it never throws: the
-    /// cameras are listed only for a microphone outside the computer's own container, for <see cref="ListLimit"/> at most,
-    /// and a list that cannot be read, that throws or that does not come in time leaves the pick undecided, said once per
-    /// stretch (a warning with the wake on), and is asked again at the next pick. The microphone is recorded all the same.
+    /// cameras are listed only for a microphone outside the computer's own container, with the wake on for
+    /// <see cref="ListLimit"/> at most, and with it off in the background, the answer taken at the next pick
+    /// (<see cref="ListedInTheBackground"/>); a list that cannot be read, that throws or that does not come in time leaves
+    /// the pick undecided, said once per stretch (a warning with the wake on), and is asked again at the next pick. The
+    /// microphone is recorded all the same.
     /// </summary>
     public void Follow(Microphone? microphone)
     {
@@ -168,7 +174,8 @@ public sealed class WebcamHold : IWebcamHold
         CameraDevice? webcam = null;
         if (Cameras.MayBeOfACamera(microphone))
         {
-            var list = ListCameras();
+            var list = _wakeOn ? ListCameras() : ListedInTheBackground(microphone);
+            if (list is null) return;
             if (list.Problem is { } problem)
             {
                 OnUndecided(microphone, problem, null);
@@ -311,6 +318,34 @@ public sealed class WebcamHold : IWebcamHold
             // longer; the pick stays undecided, and a pick after the listing has ended asks again.
             return new CameraList([], string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Windows did not list the cameras within {ListLimit.TotalSeconds:0} seconds"));
         }
+    }
+
+    /// <summary>
+    /// With the wake off, the cameras are listed on a thread of the pool and never waited for (release 0.5.0 review, 3.6):
+    /// the microphone's pick is on a class's own start path, and nothing is held, so it must not wait on Windows' camera
+    /// list even for <see cref="ListLimit"/>. The pick that finds no listing begins one and decides nothing; the next pick,
+    /// the microphone's next look, takes its answer once it has come (the list, or what it threw, which throws here for
+    /// <see cref="Follow"/> to catch as a pick not decided, listed again at the pick after); while it is still under way,
+    /// nothing is decided and no other is begun. Null while the answer is not there yet.
+    /// </summary>
+    private CameraList? ListedInTheBackground(Microphone microphone)
+    {
+        Task<CameraList> listing;
+        lock (_gate)
+        {
+            if (_listing is null)
+            {
+                _listing = Task.Run(() => _cameras.GetCamerasAsync(CancellationToken.None));
+                _logger.LogDebug("The cameras are being listed in the background, to tell whether the microphone \"{Microphone}\" belongs to a webcam; the microphone's next look decides", microphone.Name);
+                return null;
+            }
+
+            if (!_listing.IsCompleted) return null;
+            listing = _listing;
+            _listing = null;
+        }
+
+        return listing.GetAwaiter().GetResult();
     }
 
     /// <summary>
