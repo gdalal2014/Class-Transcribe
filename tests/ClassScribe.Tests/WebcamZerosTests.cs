@@ -177,6 +177,33 @@ public partial class RecordingMonitorTests
         }));
     }
 
+    /// <summary>
+    /// OBSBOT Center is named only for an OBSBOT (release 0.5.0 review, 3.9): another make's webcam is sent to its maker's
+    /// app for its sleep and its microphone's switch, in the start rule's words either way and in the later rule's, and the
+    /// claim that the camera sends exact zeros in silence, known of the OBSBOT, is not made of it.
+    /// </summary>
+    [Test]
+    public void Another_makes_webcam_is_not_sent_to_OBSBOT_Center()
+    {
+        var logitech = new WebcamState("Logitech C920", Holding: false, HasFrames: false);
+        var recording = BeginWithWebcam();
+        recording.Webcam = logitech;
+
+        var start = Tick(WithTracks(microphone: Webcam(TimeSpan.FromSeconds(60))));
+        var awake = MicrophoneChecks.WebcamStartText(logitech with { Holding = true, HasFrames = true });
+        var later = MicrophoneChecks.WebcamLaterText(logitech);
+
+        Assert.That(Warnings(start), Is.EqualTo(new[]
+        {
+            "The microphone of the camera \"Logitech C920\" has sent only exact zeros since it opened, 1 minute ago. If the camera's light is off, the camera is asleep and its microphone off: unfold its lens or wake it, and turn off its auto sleep in its maker's app or turn on Recording:WakeCameraMicrophone. If the light is on, the room may just be quiet: a camera's noise reduction can send exact zeros in silence"
+        }));
+        Assert.That(awake, Is.EqualTo("The microphone of the camera \"Logitech C920\" has sent only exact zeros since it opened, 1 minute ago, although its camera is open and awake. Check that its microphone is on in its maker's app, and that Windows lets desktop apps use the microphone"));
+        Assert.That(later, Is.EqualTo("The microphone of the camera \"Logitech C920\" has sent only exact zeros for 2 minutes. If its light is off, the camera has fallen asleep (an open microphone does not keep it awake) and your voice is not being recorded: turn off its auto sleep in its maker's app, or turn on Recording:WakeCameraMicrophone. If the light is on, the room is quiet and nothing is lost"));
+        Assert.That(new[] { Warnings(start).Single(), awake, later }, Has.None.Contains("OBSBOT"));
+        Assert.That(MicrophoneChecks.WebcamStartText(ObsbotWebcam), Is.EqualTo(StartLine), "the OBSBOT's words are as they were");
+        Assert.That(MicrophoneChecks.WebcamLaterText(ObsbotWebcam), Is.EqualTo(LaterLine));
+    }
+
     /// <summary>The start rule is said once a capture: a new capture with the same zeros says it again.</summary>
     [Test]
     public void The_start_rule_is_said_once_a_capture()

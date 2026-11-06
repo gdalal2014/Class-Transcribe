@@ -145,6 +145,18 @@ public static class Cameras
     public static Microphone? MicrophoneOf(CameraDevice camera, IReadOnlyList<Microphone> microphones) =>
         microphones.FirstOrDefault(microphone => CameraOf(microphone, [camera]) is not null);
 
+    /// <summary>True for an OBSBOT camera, by its name: its sleep and its microphone's switch live in OBSBOT Center, which the advice then names.</summary>
+    public static bool IsObsbot(string cameraName) => cameraName.Contains("OBSBOT", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The sleep setting of the camera named <paramref name="cameraName"/>, as the advice to turn it off names it: Device
+    /// Auto Sleep in OBSBOT Center for an OBSBOT, else the camera's own in its maker's app (release 0.5.0 review, 3.9).
+    /// </summary>
+    public static string SleepSettingOf(string cameraName) => IsObsbot(cameraName) ? "Device Auto Sleep in OBSBOT Center" : "its auto sleep in its maker's app";
+
+    /// <summary>Where the microphone's own switch of the camera named <paramref name="cameraName"/> is: OBSBOT Center for an OBSBOT, else its maker's app.</summary>
+    public static string MicrophoneSwitchOf(string cameraName) => IsObsbot(cameraName) ? "in OBSBOT Center" : "in its maker's app";
+
     /// <summary>
     /// Where <paramref name="device"/> is: built in by its panel first, since a laptop's own camera usually sits on an internal
     /// USB bus too; then USB or virtual by its id; other when nothing says.

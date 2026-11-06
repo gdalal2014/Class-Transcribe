@@ -34,7 +34,8 @@ public sealed class WebcamHolds(ICameraProvider cameras, ICameraProcessStarter s
 /// <see cref="State"/> tells the run's checks which webcam it is, whether its frames arrive, and what is wrong. Nothing of
 /// the camera's side reaches the microphone's look: a camera list that throws, or that Windows has not answered within
 /// <see cref="ListLimit"/>, is a pick not decided yet, said once per stretch and asked again at the next pick, and a camera
-/// process that cannot be started, for whatever cause, is a camera that could not be opened.
+/// process that cannot be started, for whatever cause, is a camera that could not be opened. Every line to the process goes
+/// within <see cref="SendLimit"/>, else the process is ended as stuck.
 /// </summary>
 public sealed class WebcamHold : IWebcamHold
 {
@@ -52,6 +53,9 @@ public sealed class WebcamHold : IWebcamHold
 
     /// <summary>How long the stop waits for the camera process to let the camera go before it is ended.</summary>
     public static readonly TimeSpan StopWait = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long a line to the camera process may take to go out before the process counts as stuck and is ended.</summary>
+    public static readonly TimeSpan SendLimit = TimeSpan.FromSeconds(5);
 
     /// <summary>How often the hold looks at its frames.</summary>
     public static readonly TimeSpan LookEvery = TimeSpan.FromSeconds(1);
@@ -376,13 +380,12 @@ public sealed class WebcamHold : IWebcamHold
 
         try
         {
-            process.Link.SendJobAsync(new CameraJob(CameraProtocol.Version, CameraJobKind.Hold, webcam.Id, webcam.Name), CancellationToken.None)
-                .AsTask().GetAwaiter().GetResult();
+            SendWithin(process, () => process.Link.SendJobAsync(new CameraJob(CameraProtocol.Version, CameraJobKind.Hold, webcam.Id, webcam.Name), CancellationToken.None), webcam);
         }
         catch (Exception ex)
         {
-            // Deliberately not rethrown: the process ended, or its lines failed, before it read its job; it is let go, and
-            // another is started after RetryEvery.
+            // Deliberately not rethrown: the process ended, or its lines failed, before it read its job, or it did not take
+            // the job within SendLimit and was ended; it is let go, and another is started after RetryEvery.
             Discard(process);
             OnOpenProblem(generation, $"ClassScribe's camera process ended before it took its job ({ex.Message.TrimEnd('.')})", retry: true);
             return;
@@ -603,14 +606,41 @@ public sealed class WebcamHold : IWebcamHold
     }
 
     /// <summary>
-    /// Lets <paramref name="process"/> go: told to stop, given <see cref="StopWait"/> for its lines to end (it lets the camera
-    /// go first), then ended if it has not, and disposed, which closes its job.
+    /// Sends a line to <paramref name="process"/>, which holds <paramref name="webcam"/>, through <paramref name="send"/>,
+    /// waiting at most <see cref="SendLimit"/> (release 0.5.0 review, 3.7), as a lesson's camera track does with its lines: a
+    /// line to a process that stopped reading its input never goes out, and the write on its pipe cannot be cancelled, so
+    /// the process is ended, which breaks the pipe and so ends the write, and an <see cref="IOException"/> says so, as for a
+    /// process that is gone. Runs on the microphone's pick, the hold's timer or the stop, so it waits on the clock.
+    /// </summary>
+    private void SendWithin(ICameraProcess process, Func<ValueTask> send, CameraDevice webcam)
+    {
+        var sending = send().AsTask();
+        try
+        {
+            sending.WaitAsync(SendLimit, _time).GetAwaiter().GetResult();
+        }
+        catch (TimeoutException)
+        {
+            // Deliberately not rethrown as is: the camera process is stuck, so it is ended, and the timeout is handed on as what
+            // it now means, the IOException of a process that is gone, which every caller already answers (the process let go,
+            // and another started when the hold still wants one), so that the stop and the next class never wait on a line.
+            _logger.LogWarning("The camera process holding \"{Camera}\" did not take a line within {Seconds} seconds, so it was ended", webcam.Name, SendLimit.TotalSeconds);
+            process.Kill();
+            _ = sending.ContinueWith(failed => _logger.LogDebug(failed.Exception, "The line the camera process did not take failed once it was ended"), CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            throw new IOException(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The camera process did not take a line within {SendLimit.TotalSeconds:0} seconds, so it was ended"));
+        }
+    }
+
+    /// <summary>
+    /// Lets <paramref name="process"/> go: told to stop, within <see cref="SendLimit"/>, given <see cref="StopWait"/> for its
+    /// lines to end (it lets the camera go first), then ended if it has not, and disposed, which closes its job.
     /// </summary>
     private void LetGo(ICameraProcess process, Task? reading, CameraDevice webcam)
     {
         try
         {
-            process.Link.SendStopAsync(new CameraStop(0), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            SendWithin(process, () => process.Link.SendStopAsync(new CameraStop(0), CancellationToken.None), webcam);
             if (reading is not null && !reading.IsCompleted)
             {
                 using var waiting = new CancellationTokenSource();
@@ -620,7 +650,8 @@ public sealed class WebcamHold : IWebcamHold
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
-            // Deliberately not rethrown: the process has already ended or closed its lines, which is what the stop asks for.
+            // Deliberately not rethrown: the process has already ended or closed its lines, which is what the stop asks for;
+            // or it did not take the stop within SendLimit and was ended for it, said above.
             _logger.LogDebug(ex, "The camera process holding \"{Camera}\" had already gone", webcam.Name);
         }
 
@@ -629,9 +660,9 @@ public sealed class WebcamHold : IWebcamHold
         _logger.LogInformation("Let go of the picture of the camera \"{Camera}\"", webcam.Name);
     }
 
-    /// <summary>The line when the camera could not be opened, with the cause in <paramref name="words"/>.</summary>
+    /// <summary>The line when the camera could not be opened, with the cause in <paramref name="words"/>; its sleep setting is named by the camera's make (<see cref="Cameras.SleepSettingOf"/>).</summary>
     public static string CannotOpen(string camera, string words) =>
-        $"The camera \"{camera}\" could not be opened: {words}. Without its picture open the camera may fall asleep, and its microphone then sends only silence. Turn off Device Auto Sleep in OBSBOT Center, or record another microphone. ClassScribe tries again every {RetryEvery.TotalSeconds:0} seconds";
+        $"The camera \"{camera}\" could not be opened: {words}. Without its picture open the camera may fall asleep, and its microphone then sends only silence. Turn off {Cameras.SleepSettingOf(camera)}, or record another microphone. ClassScribe tries again every {RetryEvery.TotalSeconds:0} seconds";
 
     /// <summary>The line when the held picture stopped.</summary>
     public static string Stopped(string camera) =>

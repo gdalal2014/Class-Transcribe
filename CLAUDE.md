@@ -1946,7 +1946,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   hold began; the track is `ClockAligned`, so the wait is padded. The hold lasts through P and V off, follows the pick to
   another webcam or lets go for a microphone of none (the old process let go in the background), and `TrackSet.Stop` lets
   it go after the tracks have stopped, before the upload (`stop`, at most `StopWait` 5 s, then killed and disposed); leaving
-  the microphone out stops it too. A process that does not start or take its job (for any cause) or ends by itself is
+  the microphone out stops it too. Each line to the process (the job, the stop) goes within `SendLimit` (5 s), else the
+  process is killed as stuck and the send fails as an `IOException`, as `CameraTrack`'s lines do (release 0.5.0 review,
+  3.7). A process that does not start or take its job (for any cause) or ends by itself is
   started again `RetryEvery` (5 s) later; only the current webcam's start clears its starting flag, so a late start for an
   earlier webcam is let go without letting a look start a second process for the new one, and a start that finds the
   hold's process already there is let go too. The one-second timer (`Look`, which never throws: a timer thread's exception
@@ -1970,7 +1972,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   microphone's own switch (`MicrophoneChecks.WebcamStartText`). Later: `WebcamZerosAfterSound` (2 min) after sound, once a
   recording, never while the hold's frames arrive, its Notice ending when sound returns (`WebcamLaterText`). Each a Notice
   (`only zeros from the webcam's microphone`) with the class, an Alert in person. Both lengths sit beside
-  `RecordingSession.OnlyZerosAfter`. Tests in `WebcamZerosTests.cs` (partial `RecordingSessionTests` for the measure, each
+  `RecordingSession.OnlyZerosAfter`. The words name OBSBOT Center (Device Auto Sleep, the microphone's switch) only for a
+  camera whose name holds `OBSBOT` (`Cameras.IsObsbot`, `SleepSettingOf`, `MicrophoneSwitchOf`); another make is sent to
+  its maker's app, and is not said to send exact zeros in silence, which is known of the OBSBOT alone; `WebcamHold.CannotOpen`
+  names the sleep setting the same way (release 0.5.0 review, 3.9). Tests in `WebcamZerosTests.cs` (partial `RecordingSessionTests` for the measure, each
   capture counted afresh, and partial `RecordingMonitorTests` for the rules: quiet while paused, switched off or not
   listened to, the hold's problem an Alert in person, finding 4's twelve awake minutes replayed with no line).
 - The camera check (`CameraCheckCommand`, menu choice 8 then C and `camera-check ["<camera>"] [--resolution <size>]`,

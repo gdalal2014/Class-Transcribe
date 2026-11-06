@@ -1482,18 +1482,27 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
             : ("CameraHold", AttentionLevel.Alert, words.ToUpperInvariant(), problem));
     }
 
-    /// <summary>The start rule's words: what the light says, or, with the hold's frames arriving, what else to check.</summary>
+    /// <summary>
+    /// The start rule's words: what the light says, or, with the hold's frames arriving, what else to check. The sleep setting
+    /// and the microphone's switch are named by the camera's make (<see cref="Cameras.SleepSettingOf"/>,
+    /// <see cref="Cameras.MicrophoneSwitchOf"/>): OBSBOT Center for an OBSBOT alone, whose noise reduction is known to send
+    /// exact zeros in silence (finding 4); of another make that is only said to be possible.
+    /// </summary>
     public static string WebcamStartText(WebcamState webcam)
     {
         var since = $"The microphone of the camera \"{webcam.CameraName}\" has sent only exact zeros since it opened, {RecordingMonitor.Count((long)RecordingSession.WebcamZerosAtStart.TotalMinutes, "minute")} ago";
-        return webcam.Holding && webcam.HasFrames
-            ? $"{since}, although its camera is open and awake. Check that its microphone is on in OBSBOT Center, and that Windows lets desktop apps use the microphone"
-            : $"{since}. If the camera's light is off, the camera is asleep and its microphone off: unfold its lens or wake it, and turn off Device Auto Sleep in OBSBOT Center or turn on Recording:WakeCameraMicrophone. If the light is on, the room is just quiet: this camera sends exact zeros in silence";
+        if (webcam.Holding && webcam.HasFrames)
+            return $"{since}, although its camera is open and awake. Check that its microphone is on {Cameras.MicrophoneSwitchOf(webcam.CameraName)}, and that Windows lets desktop apps use the microphone";
+
+        var quiet = Cameras.IsObsbot(webcam.CameraName)
+            ? "the room is just quiet: this camera sends exact zeros in silence"
+            : "the room may just be quiet: a camera's noise reduction can send exact zeros in silence";
+        return $"{since}. If the camera's light is off, the camera is asleep and its microphone off: unfold its lens or wake it, and turn off {Cameras.SleepSettingOf(webcam.CameraName)} or turn on Recording:WakeCameraMicrophone. If the light is on, {quiet}";
     }
 
-    /// <summary>The later rule's words: the light tells a camera fallen asleep from a quiet room.</summary>
+    /// <summary>The later rule's words: the light tells a camera fallen asleep from a quiet room; the sleep setting is named by the camera's make.</summary>
     public static string WebcamLaterText(WebcamState webcam) =>
-        $"The microphone of the camera \"{webcam.CameraName}\" has sent only exact zeros for {RecordingMonitor.Count((long)RecordingSession.WebcamZerosAfterSound.TotalMinutes, "minute")}. If its light is off, the camera has fallen asleep (an open microphone does not keep it awake) and your voice is not being recorded: turn off Device Auto Sleep in OBSBOT Center, or turn on Recording:WakeCameraMicrophone. If the light is on, the room is quiet and nothing is lost";
+        $"The microphone of the camera \"{webcam.CameraName}\" has sent only exact zeros for {RecordingMonitor.Count((long)RecordingSession.WebcamZerosAfterSound.TotalMinutes, "minute")}. If its light is off, the camera has fallen asleep (an open microphone does not keep it awake) and your voice is not being recorded: turn off {Cameras.SleepSettingOf(webcam.CameraName)}, or turn on Recording:WakeCameraMicrophone. If the light is on, the room is quiet and nothing is lost";
 
     /// <summary>The evidence the gate reported since the last look: each a warning and a Notice.</summary>
     private void ReportEvidence(string app, long now, List<(LogLevel Level, string Text)> lines)

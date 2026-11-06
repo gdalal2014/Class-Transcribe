@@ -216,6 +216,41 @@ public class CameraHoldTests
         Assert.That(hold.State, Is.EqualTo(new WebcamState(LaptopCameras.Obsbot.Name, true, false, line, WebcamHold.NotOpenedShort)));
     }
 
+    /// <summary>OBSBOT Center is named only for an OBSBOT (release 0.5.0 review, 3.9): another make's camera that cannot be opened is sent to its maker's app.</summary>
+    [Test]
+    public void Another_makes_camera_that_cannot_be_opened_is_not_sent_to_OBSBOT_Center()
+    {
+        var line = WebcamHold.CannotOpen(Logitech.Name, "the camera is not connected");
+
+        Assert.That(line, Does.EndWith("Without its picture open the camera may fall asleep, and its microphone then sends only silence. Turn off its auto sleep in its maker's app, or record another microphone. ClassScribe tries again every 5 seconds"));
+        Assert.That(line, Does.Not.Contain("OBSBOT"));
+    }
+
+    /// <summary>
+    /// The stop's line to a camera process that stopped reading its input goes out within 5 seconds, or the process is ended
+    /// (release 0.5.0 review, 3.7), as a lesson's camera track does with its lines: the stop never waits on the line longer,
+    /// and the hold is let go all the same.
+    /// </summary>
+    [Test]
+    public async Task A_camera_process_that_stops_reading_its_input_is_ended_at_the_stop_within_5_seconds()
+    {
+        using var hold = Hold();
+        hold.Follow(Obsbot);
+        var played = _starter.Played.Single();
+        await WaitAsync(() => played.Job is not null);
+
+        played.Process.InputStuck = true;
+        var stopping = Task.Run(hold.Stop);
+        await WaitAsync(() => _time.UntilNextTimer == WebcamHold.SendLimit);
+        var moved = await _time.AdvanceUntilAsync(() => stopping.IsCompleted, TimeSpan.FromSeconds(1));
+        await stopping;
+
+        Assert.That(moved, Is.EqualTo(WebcamHold.SendLimit));
+        Assert.That(played.Process.Killed, Is.True);
+        Assert.That(_logs.Problems, Does.Contain($"The camera process holding \"{LaptopCameras.Obsbot.Name}\" did not take a line within 5 seconds, so it was ended"));
+        Assert.That(_logs.Messages, Does.Contain($"Let go of the picture of the camera \"{LaptopCameras.Obsbot.Name}\""));
+    }
+
     /// <summary>A camera process that ends by itself during the hold is started again 5 seconds later.</summary>
     [Test]
     public async Task A_camera_process_that_ends_is_started_again()
