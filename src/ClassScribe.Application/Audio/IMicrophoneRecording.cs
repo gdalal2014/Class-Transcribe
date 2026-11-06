@@ -1,7 +1,9 @@
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// What a recording with your microphone says about it beyond its snapshot, for the run's lines, its status line, its

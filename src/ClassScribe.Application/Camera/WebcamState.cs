@@ -1,4 +1,4 @@
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>What the run knows of the webcam whose microphone is picked now, and of its hold (camera-first 3.4).</summary>
 /// <param name="CameraName">The webcam's name, as Windows lists it.</param>

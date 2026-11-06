@@ -1,6 +1,7 @@
 using System.Text;
+using ClassScribe.Application.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>What a list of links came to.</summary>
 /// <param name="Links">The links taken, in the order given, each once.</param>

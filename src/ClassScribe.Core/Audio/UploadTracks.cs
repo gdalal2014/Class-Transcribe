@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>
 /// The tracks of a recording as they go into the upload: the main track, which is the class, or your microphone in

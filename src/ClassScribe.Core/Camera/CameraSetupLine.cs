@@ -1,4 +1,4 @@
-namespace ClassScribe.Camera;
+namespace ClassScribe.Core.Camera;
 
 /// <summary>How a set-up line stands.</summary>
 public enum CameraSetupState

@@ -2,8 +2,9 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Desktop;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>Windows' console and window functions that <see cref="ConsoleWindowSignals"/> uses, behind an interface so that tests can stand in for Windows.</summary>
 internal interface IConsoleWindowApi

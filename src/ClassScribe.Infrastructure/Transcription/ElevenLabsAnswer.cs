@@ -1,8 +1,10 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Transcription;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Infrastructure.Transcription;
 
 /// <summary>
 /// Reads ElevenLabs' speech-to-text answer: the one the client has just received, and one saved beside a recording

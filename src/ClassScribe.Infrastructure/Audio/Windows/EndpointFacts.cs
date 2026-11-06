@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>
 /// What a capture endpoint's property store says about a microphone, and what the choice of microphone reads from it:

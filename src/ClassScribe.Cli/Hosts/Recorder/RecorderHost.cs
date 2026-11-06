@@ -1,19 +1,24 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Link;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Desktop;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Cli.Hosts.Recorder;
 
 /// <summary>
 /// The recorder process: ClassScribe started as <c>ClassScribe.exe --recorder &lt;run id&gt;</c> by a window, with no

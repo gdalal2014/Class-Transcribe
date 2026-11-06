@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace ClassScribe.Camera.Windows;
+namespace ClassScribe.Infrastructure.Camera.Windows;
 
 /// <summary>
 /// IWSCProductList (iwscapi.h): Windows' Security Center's list of the security products of one kind. A dual interface whose

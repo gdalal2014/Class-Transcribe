@@ -1,9 +1,10 @@
 using System.Text;
-using ClassScribe.Audio;
-using ClassScribe.Desktop;
-using ClassScribe.Runs;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Desktop;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// Command lines the app prints for the person to run later, such as to try a transcript again, to rebuild one for free,

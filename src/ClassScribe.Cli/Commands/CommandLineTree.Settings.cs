@@ -1,7 +1,7 @@
 using System.CommandLine;
-using ClassScribe.Settings;
+using ClassScribe.Application.Commands;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>The settings command of the command line (layout-config 1.8): path, list, get, set, reset, open and fill.</summary>
 public sealed partial class CommandLineTree
@@ -110,7 +110,7 @@ public sealed partial class CommandLineTree
           ClassScribe settings get Recording:OutputFolder
           ClassScribe settings set Recording:OutputFolder "D:\Classes"
           ClassScribe settings set YouTube:CourseChannels "@Channel1" "@Channel2"
-          ClassScribe settings set Logging:LogLevel:ClassScribe.Drive Debug
+          ClassScribe settings set Logging:LogLevel:ClassScribe.Infrastructure.Drive Debug
           ClassScribe settings reset Recording:Device
           ClassScribe settings reset --all
           ClassScribe settings open

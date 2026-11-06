@@ -1,8 +1,9 @@
 using System.Globalization;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Transcription;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>
 /// Says, after a transcript, what it cost the account in credits: the account's credits are read before the upload begins

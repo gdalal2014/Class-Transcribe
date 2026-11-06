@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClassScribe.Storage;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>Where a recording stands with Google Drive.</summary>
 public enum UploadState

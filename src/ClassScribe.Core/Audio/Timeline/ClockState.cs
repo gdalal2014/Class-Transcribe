@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Timeline;
+namespace ClassScribe.Core.Audio.Timeline;
 
 /// <summary>A stretch left out of a recording's positions, from <paramref name="From"/> up to but not including <paramref name="To"/>, in units of 100 nanoseconds on the steady clock.</summary>
 /// <param name="From">Where the stretch begins.</param>

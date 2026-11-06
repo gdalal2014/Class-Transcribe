@@ -1,9 +1,10 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>When the screen is kept on while ClassScribe records and uploads (see <see cref="RecordingOptions.KeepScreenOn"/>).</summary>
 public enum KeepScreenOn

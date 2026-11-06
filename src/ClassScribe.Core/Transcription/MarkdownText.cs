@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>Text from elsewhere, such as a video's title, made safe to put into a Markdown transcript as it reads.</summary>
 public static class MarkdownText

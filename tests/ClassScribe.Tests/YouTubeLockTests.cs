@@ -1,4 +1,4 @@
-using ClassScribe.YouTube;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

@@ -1,10 +1,16 @@
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Storage;
+using ClassScribe.Cli.Desktop;
+using ClassScribe.Core;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// The hidden attach command: ClassScribe attach shows the recording in progress, and ClassScribe attach --alert &lt;run

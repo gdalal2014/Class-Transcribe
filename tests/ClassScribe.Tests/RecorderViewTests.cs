@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Runtime.Versioning;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 using Moq;
 

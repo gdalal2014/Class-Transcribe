@@ -2,11 +2,13 @@ using System.Collections;
 using System.ComponentModel;
 using System.Runtime.Versioning;
 using System.Text;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// Runs a tool, such as yt-dlp, through Windows' own CreateProcessW (design 3.2; <see cref="PipedProcess"/>, which the camera

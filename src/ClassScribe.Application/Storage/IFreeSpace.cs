@@ -1,4 +1,4 @@
-namespace ClassScribe.Storage;
+namespace ClassScribe.Application.Storage;
 
 /// <summary>How much room is left on the drive that holds a folder, for the warnings about a disk filling up during a class.</summary>
 public interface IFreeSpace

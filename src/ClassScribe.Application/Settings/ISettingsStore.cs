@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>
 /// The settings as the window keeps them (architecture 4.3): where they are read from, decided at every read (the user's

@@ -1,6 +1,6 @@
-using ClassScribe.YouTube;
+using ClassScribe.Core.YouTube;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Core.Storage;
 
 /// <summary>A recording, as the menu and the list command list it.</summary>
 /// <param name="Files">The recording's files.</param>

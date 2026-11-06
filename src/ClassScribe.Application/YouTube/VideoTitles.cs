@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// The titles of a video's window (design 4.1), as the run reads them to see the video end: YouTube writes the video's title,

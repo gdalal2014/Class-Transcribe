@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>Sentences that the report, the starter and the launcher build around a message from elsewhere, such as a run's outcome.</summary>
 public static class Sentence

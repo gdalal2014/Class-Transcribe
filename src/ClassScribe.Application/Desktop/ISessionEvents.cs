@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// What Windows says about the end of the session: a restart, a shutdown or a sign-out. A console program like ClassScribe

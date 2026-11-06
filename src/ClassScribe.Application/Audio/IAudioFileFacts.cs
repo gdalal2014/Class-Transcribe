@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// What a WAV file ClassScribe wrote says of itself, read from its header (architecture 4.3): the length of its audio,

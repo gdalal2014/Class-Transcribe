@@ -1,4 +1,4 @@
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>
 /// The yield of a YouTube video's run to a class (design 2.5): a class that starts while a video records asks the video's run

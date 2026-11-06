@@ -1,6 +1,7 @@
-using ClassScribe.Runs;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>A camera process ClassScribe started, and the lines it speaks over its standard input and output.</summary>
 public interface ICameraProcess : IAsyncDisposable

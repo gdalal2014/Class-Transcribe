@@ -1,6 +1,7 @@
 using System.Net;
+using ClassScribe.Core.Transcription;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>Sends audio to a speech-to-text service.</summary>
 public interface ITranscriptionClient

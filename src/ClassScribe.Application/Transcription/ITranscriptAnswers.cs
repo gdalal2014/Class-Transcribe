@@ -1,4 +1,6 @@
-namespace ClassScribe.Transcription;
+using ClassScribe.Core.Transcription;
+
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>
 /// ElevenLabs' answers kept beside a recording (architecture 4.3): one saved earlier read back for a rebuild, which lays

@@ -1,9 +1,10 @@
 using System.Globalization;
-using ClassScribe.Drive;
+using ClassScribe.Application.Drive;
+using ClassScribe.Core;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// The drive command, from the command line (drive signin, drive signout, drive status) and from menu choice 9: signs in to

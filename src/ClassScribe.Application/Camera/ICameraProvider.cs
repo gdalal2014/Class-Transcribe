@@ -1,6 +1,7 @@
 using System.Globalization;
+using ClassScribe.Core.Camera;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>Lists the colour cameras Windows can record from. Listing reads Windows' device lists only and never opens a camera, so no light comes on.</summary>
 public interface ICameraProvider

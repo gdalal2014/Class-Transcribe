@@ -1,10 +1,11 @@
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.YouTube;
 using Moq;
 
 namespace ClassScribe.Tests;

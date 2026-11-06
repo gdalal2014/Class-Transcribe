@@ -1,9 +1,13 @@
-using ClassScribe.Audio.Windows;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Audio.Windows;
+using ClassScribe.Infrastructure.Desktop;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Infrastructure.Audio.Microphones;
 
 /// <summary>
 /// Registers the microphone: the provider that lists the microphones and opens one, made only when something first uses

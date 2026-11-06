@@ -1,9 +1,10 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Audio;
+using ClassScribe.Infrastructure.Desktop;
 
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>
 /// Creates Windows' device enumerator for ClassScribe's own declarations, and holds what every user of those

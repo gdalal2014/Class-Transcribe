@@ -4,14 +4,14 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Recorder;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Core.YouTube;
 
-namespace ClassScribe.Runs;
+namespace ClassScribe.Core.Runs;
 
 /// <summary>
 /// Where the class's sound comes from: the output device it plays on, found by ClassScribe; one output device, chosen by

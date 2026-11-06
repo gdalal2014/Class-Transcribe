@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>
 /// The user's settings file as a tree the settings writer changes (see <see cref="ISettingsStore.Change"/>): its values found by a

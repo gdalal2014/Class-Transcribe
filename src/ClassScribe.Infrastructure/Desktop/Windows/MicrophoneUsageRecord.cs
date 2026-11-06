@@ -1,8 +1,9 @@
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>
 /// Reads Windows' record of which apps used the microphone and when: the record behind Settings, Privacy and security,

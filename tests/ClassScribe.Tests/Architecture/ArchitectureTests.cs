@@ -1,15 +1,14 @@
-using ClassScribe.Desktop;
-using ClassScribe.Storage;
+using ClassScribe.Core.Desktop;
+using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Tests;
 
 /// <summary>
-/// The checks of architecture 2.4 over the four built assemblies, read from the test's output folder with
+/// The seven checks of architecture 2.4 over the four built assemblies, read from the test's output folder with
 /// System.Reflection.Metadata (<see cref="ArchitectureFacts"/>) and judged by the pure <see cref="ArchitectureRules"/>: the
-/// assembly references, what Core and Application may not call, what Core alone may not, one version and the exe's name.
-/// Check 5, the namespaces, arrives with the commit that gives each project its namespaces (architecture 10.3, 11.7),
-/// since until then every type keeps its old one. The reader is checked too: it must see Infrastructure's disk calls,
-/// P/Invokes and COM imports, so that an empty list of violations means something.
+/// assembly references, what Core and Application may not call, what Core alone may not, the namespaces, one version and
+/// the exe's name. The reader is checked too: it must see Infrastructure's disk calls, P/Invokes and COM imports, so that
+/// an empty list of violations means something.
 /// </summary>
 [TestFixture]
 public class ArchitectureTests
@@ -56,6 +55,10 @@ public class ArchitectureTests
         Assert.That(attributes.Select(use => use.Type), Does.Contain("System.Text.Json.Serialization.JsonPolymorphicAttribute"));
         Assert.That(attributes.Select(ArchitectureRules.BannedCore), Is.All.Null);
     }
+
+    /// <summary>Check 5: every type sits in its assembly's root namespace or below.</summary>
+    [Test]
+    public void Every_type_sits_in_its_assembly_root_namespace() => AssertNone(5);
 
     /// <summary>Check 6: the four assemblies carry one informational version.</summary>
     [Test]

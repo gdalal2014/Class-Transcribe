@@ -1,8 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ClassScribe.Application.Drive;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// The answer of Google's token endpoint, to a code exchange or a refresh: the tokens on success, or Google's error and its

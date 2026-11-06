@@ -3,7 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Core.Storage;
 
 /// <summary>
 /// The names of the recordings' folders, as pure rules: a name made safe for a Windows folder, the date folders of a course

@@ -1,11 +1,12 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Settings;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>The class command of the command line (layout-config 4.4): list, show, add, set, rename and remove.</summary>
 public sealed partial class CommandLineTree

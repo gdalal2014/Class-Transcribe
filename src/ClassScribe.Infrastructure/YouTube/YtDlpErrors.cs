@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
+using ClassScribe.Application.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// Reads why a yt-dlp run failed (design 3.8). yt-dlp exits 1 whenever anything failed, so its lines say why, and they are

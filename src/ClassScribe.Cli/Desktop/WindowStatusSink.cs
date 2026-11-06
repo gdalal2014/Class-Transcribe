@@ -1,6 +1,8 @@
-using ClassScribe.Runs;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Runs;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Cli.Desktop;
 
 /// <summary>
 /// Shows each state a run publishes on a window (design 1.13): the title and the taskbar button as

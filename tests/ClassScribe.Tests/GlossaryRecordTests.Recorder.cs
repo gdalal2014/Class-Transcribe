@@ -1,8 +1,8 @@
 using System.Text.Json;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Recorder;
 
 namespace ClassScribe.Tests;
 

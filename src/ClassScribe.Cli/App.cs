@@ -1,8 +1,8 @@
-using ClassScribe.Commands;
-using ClassScribe.Runs;
+using ClassScribe.Application.Runs;
+using ClassScribe.Cli.Commands;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe;
+namespace ClassScribe.Cli;
 
 /// <summary>
 /// Runs ClassScribe's command line. The arguments are tidied and parsed first, so a mistake is written with that command's

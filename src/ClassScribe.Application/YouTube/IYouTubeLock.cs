@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// One YouTube batch at a time, across ClassScribe's windows (architecture 4.3; design 2.1): held from the start of a batch

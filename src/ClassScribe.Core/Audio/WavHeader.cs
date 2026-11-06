@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>
 /// The header of the WAV files ClassScribe writes, mono 16-bit PCM: its size, after which the audio starts, and its reading

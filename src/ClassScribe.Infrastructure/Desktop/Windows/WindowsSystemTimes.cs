@@ -1,7 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using ClassScribe.Application.Desktop;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>
 /// The computer's clocks: the steady clock and the time of day from <see cref="TimeProvider"/>, and Windows' interrupt

@@ -1,3 +1,5 @@
+using ClassScribe.Core;
+
 namespace ClassScribe.Tests;
 
 /// <summary>How sizes are written everywhere (architecture 3.15 a: the words for sizes in Core).</summary>

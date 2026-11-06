@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>How much Google Drive holds and may hold, as its about call says.</summary>
 /// <param name="Usage">How much it holds, across Drive, Gmail and Photos.</param>

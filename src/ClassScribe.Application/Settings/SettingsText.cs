@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>
 /// The bytes of appsettings.json as read at one moment, where the file is, and which file it was (see

@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>One word of a list of links, with where it stands, such as "line 3 of risala-links.txt" or "the command line".</summary>
 /// <param name="Text">The word as written.</param>

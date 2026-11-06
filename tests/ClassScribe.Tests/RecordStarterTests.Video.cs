@@ -1,7 +1,7 @@
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Commands;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.YouTube;
 
 namespace ClassScribe.Tests;
 

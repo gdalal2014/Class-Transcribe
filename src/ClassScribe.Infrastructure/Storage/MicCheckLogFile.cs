@@ -1,6 +1,7 @@
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Infrastructure.Storage;
 
 /// <summary>
 /// The microphone check's open log file: mic-check_&lt;local start time&gt;.log, opened by <see cref="MicCheckLog"/>. Each

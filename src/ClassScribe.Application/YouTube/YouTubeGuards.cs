@@ -1,6 +1,6 @@
-using ClassScribe.Recorder;
+using ClassScribe.Application.Recorder;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// What keeps a test from the real things of the YouTube feature (design 7.1): a test run turns on

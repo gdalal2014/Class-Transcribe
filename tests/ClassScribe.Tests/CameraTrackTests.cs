@@ -1,11 +1,11 @@
 using System.ComponentModel;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
-using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Desktop;
 
 namespace ClassScribe.Tests;
 

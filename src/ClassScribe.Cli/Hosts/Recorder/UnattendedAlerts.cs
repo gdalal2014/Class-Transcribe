@@ -1,12 +1,12 @@
 using System.ComponentModel;
-using ClassScribe.Desktop;
-using ClassScribe.Link;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Cli.Hosts.Recorder;
 
 /// <summary>
 /// Makes the recorder seen while no window shows its run, without a sound, as Recording:ReopenWindow says: it brings back

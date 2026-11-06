@@ -1,4 +1,4 @@
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>What one transcript cost the account, read from its credits before and after it.</summary>
 /// <param name="Credits">The credits the transcript used.</param>

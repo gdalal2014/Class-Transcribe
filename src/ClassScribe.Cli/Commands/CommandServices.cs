@@ -1,10 +1,11 @@
-using ClassScribe.Desktop;
-using ClassScribe.Runs;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Desktop;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using ClassScribe.Settings;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Registers the window's side of the commands (architecture 5.2): the console and the person's Ctrl+C, the gate, the

@@ -1,4 +1,4 @@
-namespace ClassScribe.Storage;
+namespace ClassScribe.Application.Storage;
 
 /// <summary>
 /// The room recording takes on a drive, as a run's checks of the free space count it and as a YouTube batch keeps it for the

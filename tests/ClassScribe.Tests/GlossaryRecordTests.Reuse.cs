@@ -1,9 +1,10 @@
 using System.Text;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;

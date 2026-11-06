@@ -1,9 +1,12 @@
 using System.Text.Json;
-using ClassScribe.Camera.Windows;
-using ClassScribe.Link;
-using ClassScribe.Runs;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Camera.Windows;
+using ClassScribe.Infrastructure.Link;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Cli.Hosts.Camera;
 
 /// <summary>
 /// The camera process (teach-video 6.2, amendment 24): ClassScribe started as <c>ClassScribe.exe --camera-process &lt;job

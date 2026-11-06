@@ -1,6 +1,7 @@
-using ClassScribe.Runs;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>
 /// The run files in ClassScribe's own folder (architecture 4.3; see <see cref="IRuntimeFolder.Runs"/>): the request a window

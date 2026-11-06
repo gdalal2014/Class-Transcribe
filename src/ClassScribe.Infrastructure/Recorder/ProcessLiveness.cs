@@ -3,8 +3,9 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
+using ClassScribe.Application.Recorder;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>
 /// Asks Windows whether a process runs: it opens the process with the least access there is, sees whether it has ended,

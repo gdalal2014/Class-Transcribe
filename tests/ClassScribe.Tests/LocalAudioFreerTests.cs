@@ -1,9 +1,9 @@
 using System.Net;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Drive;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
 
 namespace ClassScribe.Tests;
 

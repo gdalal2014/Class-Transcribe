@@ -1,7 +1,7 @@
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Application.Audio.Microphones;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// Registers what records, as far as it is the use cases' (architecture 5.2): the choice of what to record, the recordings a

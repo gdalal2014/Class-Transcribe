@@ -1,9 +1,9 @@
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Runs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// Registers the commands' use cases (architecture 5.2): what a run needs to record in this window or in a recorder (the

@@ -1,7 +1,8 @@
-using ClassScribe.Commands;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Drive;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Storage;
 using Moq;
 
 namespace ClassScribe.Tests;

@@ -1,7 +1,8 @@
 using System.Text.Json.Nodes;
-using ClassScribe.Settings;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Writes what the settings command answers (layout-config 1.8; architecture question 4): its refusals and warnings on

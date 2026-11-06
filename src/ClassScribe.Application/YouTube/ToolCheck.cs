@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>What the check of yt-dlp and its helpers found.</summary>
 /// <param name="Paths">The tools' paths, when all four were found and said their versions; null otherwise.</param>

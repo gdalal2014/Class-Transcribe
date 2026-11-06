@@ -1,12 +1,14 @@
 using System.Globalization;
 using System.Text.Json;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Desktop;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>
 /// A lesson's camera track in the recorder (teach-video 6.2, 6.6 to 6.8, 6.10 to 6.13): it pins the run's camera by its id,

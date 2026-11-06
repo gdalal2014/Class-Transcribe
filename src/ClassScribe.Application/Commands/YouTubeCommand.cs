@@ -1,9 +1,9 @@
-using ClassScribe.Settings;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// The youtube command and menu choice Y's batch (design 1), and youtube check, in the window, each in a scope of its own.

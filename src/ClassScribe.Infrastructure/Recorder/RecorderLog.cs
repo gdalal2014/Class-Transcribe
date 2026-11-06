@@ -1,8 +1,9 @@
 using System.Security.AccessControl;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Recorder;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>
 /// The log of the process that records: what every logger writes, through <see cref="RecorderLogProvider"/>, kept in three

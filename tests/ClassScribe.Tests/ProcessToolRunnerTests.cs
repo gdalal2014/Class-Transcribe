@@ -1,8 +1,9 @@
 using System.Collections;
 using System.Runtime.Versioning;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Desktop.Windows;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Logging.Abstractions;
 using Win32Exception = System.ComponentModel.Win32Exception;
 

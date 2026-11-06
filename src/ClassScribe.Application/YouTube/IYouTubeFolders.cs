@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// A batch's folders (architecture 4.3; design 2.12), every one derived from ClassScribe's own folder, never read from a

@@ -1,8 +1,10 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// JSON for a video's source file, generated at compile time: camelCase names, written indented and with every character as

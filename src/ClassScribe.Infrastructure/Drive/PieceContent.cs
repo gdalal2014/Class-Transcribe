@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// One piece of a file for Drive's resumable upload: the bytes from <c>offset</c> for <c>length</c> bytes of an open stream,

@@ -189,8 +189,8 @@ advice after a format error (10 A).
   refuses the reference (NU1201). NAudio still takes its
   `netstandard2.0` library, and CsWinRT's `ComWrappers` sits beside NAudio's and ClassScribe's built-in COM. The
   published folder grew from about 7 to 33 MB (`Microsoft.Windows.SDK.NET.dll` is 25 MB); trimming and Native AOT stay off.
-  In a namespace that ends in `Windows` (`ClassScribe.Audio.Windows`, `ClassScribe.Desktop.Windows`), WinRT's own namespaces
-  need `global::Windows`.
+  In a namespace that ends in `Windows` (`ClassScribe.Infrastructure.Audio.Windows`, `ClassScribe.Infrastructure.Desktop.Windows`
+  and Infrastructure's `Camera.Windows` and `Drive.Windows`), WinRT's own namespaces need `global::Windows`.
 - HTTP APIs are called through Refit interfaces registered with `AddRefitGeneratedClient` (Refit's
   source-generated client, given the `ElevenLabsJson` System.Text.Json context), not requests built
   by hand with `HttpClient`. Google's are `IGoogleOAuthApi` (`GoogleOAuthJson`, snake_case: token and
@@ -310,12 +310,13 @@ advice after a format error (10 A).
   for ClassScribe's sections: it keeps the first value for the life of the process, so an edit
   would never reach that part (`No_part_keeps_the_settings_it_read_first_for_the_whole_session`
   fails on one).
-- XML `<summary>` comments on every class and method, tests included. Both projects set
-  `GenerateDocumentationFile`, so a public type or member without one gives CS1591: an error in the
-  test project (`WarningsAsErrors`), a warning in the app (`ClassScribe.xml` is not published, as
-  `PublishDocumentationFile` is off). Keep the build at 0 warnings. The compiler does not check
-  private or internal members, so check those yourself; a local function cannot take a summary
-  (CS1587), so give it a `//` comment.
+- XML `<summary>` comments on every class and method, tests included. Every project sets
+  `GenerateDocumentationFile` (`src\Directory.Build.props` and the test project), so a public type or member without one
+  gives CS1591: an error in the test project (`WarningsAsErrors`), a warning in the app (no XML file is published, as
+  `PublishDocumentationFile` is off). Keep the build at 0 warnings. A `using` line nothing needs is a warning too
+  (IDE0005, from the root `.editorconfig`, run in the build through `EnforceCodeStyleInBuild`), so each file keeps only
+  the `using` lines it needs. The compiler does not check private or internal members, so check those yourself; a local
+  function cannot take a summary (CS1587), so give it a `//` comment.
 - Errors: log at each layer with the existing logger; rethrow with `throw;` (never `throw ex;`);
   never swallow exceptions. Google Drive's parts throw `GoogleDriveException` (a `DriveProblem` and a
   message in plain words that says what to do, never a secret) and log the details at Debug; the
@@ -929,10 +930,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   and `GoogleSignInTests`) to 4,994, all passing, and 5,056 after 0.5.0's merge-back and the review's fixes (the records
   and the tests' guard on the recordings folder, the camera's, and the lesson's video's, merged into `develop` on
   5 November), all passing. The move of architecture slice 4 (`feature/layers-move`: the source in four projects, every
-  file an exact rename) adds the trial move's architecture tests (`ArchitectureTests`, but for its check 5, the
-  namespaces, which waits for the namespace commit; `ArchitectureRulesTests`; `RepositoryLayoutTests`' checks of the four
-  project folders; the move script, its map `move-map.tsv` and the namespace script are in
-  `design\final\architecture-analysis\move`), which makes 5,135, all passing. The uploads by
+  file an exact rename, then each project's namespaces given its name) adds the trial move's architecture tests
+  (`ArchitectureTests` with its seven checks, check 5 on the namespaces among them; `ArchitectureRulesTests`;
+  `RepositoryLayoutTests`' checks of the four project folders; the move script, its map `move-map.tsv` and the namespace
+  script are in `design\final\architecture-analysis\move`), which makes 5,136, all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -2222,7 +2223,8 @@ each constructor that takes a port, and what the trial move made the one-project
   positions, the paused and cut totals, `Snapshot()`), `ClockState` (the clock's whole state, immutable, placing by the
   clock's own code; `ClockExclusion`) and `TrackPlacer` (where a packet goes on a track, the
   padding target, the drift corrections).
-- `src/ClassScribe/Audio/Microphone` (namespace `ClassScribe.Audio.Microphones`, plural on purpose: a
+- `Audio/Microphone` in each project (the namespaces `ClassScribe.Core.Audio.Microphones`,
+  `ClassScribe.Application.Audio.Microphones` and `ClassScribe.Infrastructure.Audio.Microphones`, plural on purpose: a
   `Microphone` namespace would hide the `Microphone` record): `Microphone.cs` (the contracts:
   `Microphone`, `IMicrophoneProvider`, `IMicrophoneCaptureFactory`, `MicrophoneProcessing`,
   `ClassAppMute`, `FollowRule` with `TryParse`, `Word` and `Named.Matches`, `MicrophoneGateState`),

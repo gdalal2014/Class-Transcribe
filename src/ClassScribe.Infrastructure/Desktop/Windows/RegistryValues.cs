@@ -3,8 +3,9 @@ using System.Runtime.Versioning;
 using System.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
+using ClassScribe.Application.Desktop;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>
 /// Reads values through Windows' registry: under HKEY_CURRENT_USER, where Lenovo Vantage keeps its microphone mode, Windows

@@ -1,11 +1,12 @@
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>What one upload pass came to.</summary>
 /// <param name="Recordings">Each recording it took, in order, and where it stands.</param>

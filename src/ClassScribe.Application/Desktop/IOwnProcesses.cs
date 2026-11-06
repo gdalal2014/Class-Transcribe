@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// Tells ClassScribe's own processes from other apps': this process, whether it is the window or the recorder, and

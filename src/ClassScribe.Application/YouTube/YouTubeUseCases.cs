@@ -1,7 +1,7 @@
-using ClassScribe.Commands;
+using ClassScribe.Application.Commands;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// Registers the YouTube feature's use cases and the services they drive (architecture 5.2), for both paths: per batch,

@@ -1,14 +1,15 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Extensions.Logging;
 using CodecCategory = global::Windows.Media.Core.CodecCategory;
 using CodecKind = global::Windows.Media.Core.CodecKind;
 using CodecQuery = global::Windows.Media.Core.CodecQuery;
 using CodecSubtypes = global::Windows.Media.Core.CodecSubtypes;
 
-namespace ClassScribe.Camera.Windows;
+namespace ClassScribe.Infrastructure.Camera.Windows;
 
 /// <summary>
 /// What Windows says the camera needs, read without opening a camera: its version, whether an H.264 encoder is installed

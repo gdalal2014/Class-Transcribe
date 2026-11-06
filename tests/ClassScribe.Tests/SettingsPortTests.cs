@@ -1,7 +1,10 @@
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

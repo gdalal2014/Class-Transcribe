@@ -1,8 +1,8 @@
 using System.IO;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Core.Recorder;
 
 /// <summary>
 /// A run file as a window finds it: the run as its file last says, and whether the process that records it still runs.

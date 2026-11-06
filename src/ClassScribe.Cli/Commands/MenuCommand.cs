@@ -1,15 +1,23 @@
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Settings;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ClassScribe.Transcription;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// The menu shown when ClassScribe starts without arguments. It opens with the report at the start (see

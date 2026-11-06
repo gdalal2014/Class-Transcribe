@@ -1,6 +1,7 @@
-using ClassScribe.Storage;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// Opens a track's segment files for writing (architecture 4.3): the recording's folder made, the next free part of a track

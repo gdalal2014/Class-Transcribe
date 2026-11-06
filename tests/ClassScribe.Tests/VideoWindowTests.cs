@@ -1,5 +1,6 @@
-using ClassScribe.Desktop.Windows;
-using ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Desktop.Windows;
+using ClassScribe.Infrastructure.YouTube;
 
 namespace ClassScribe.Tests;
 

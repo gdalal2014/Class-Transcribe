@@ -1,9 +1,9 @@
 using System.Net;
-using ClassScribe.Commands;
+using ClassScribe.Application.Commands;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>A sign-in that went through: the Google account, and ClassScribe's folder in its My Drive.</summary>
 /// <param name="Email">The account's email address.</param>

@@ -1,6 +1,6 @@
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>A video's window as the batch opened it: Chrome's browser process, the root of the tree a video's run records.</summary>
 /// <param name="Process">The process, with its id, its start time and its exit code once it has ended.</param>

@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>
 /// What the settings check needs to know about the folders on this computer to warn about where the recordings go

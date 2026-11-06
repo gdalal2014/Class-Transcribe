@@ -1,13 +1,17 @@
 using System.Globalization;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// Records what its source picks into WAV segment files: for the class, the output device it plays through, the one

@@ -1,4 +1,4 @@
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>One item of a transcript: a word, the spacing between words, or a tagged sound.</summary>
 public sealed record TranscriptWord(string Text, double? Start, double? End, string? Type, string? SpeakerId);

@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>Whether the followed app is taking sound from the recorded microphone, as one look saw it.</summary>
 public enum AppListening

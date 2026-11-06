@@ -1,6 +1,6 @@
 using Refit;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// Google's OAuth endpoints (base https://oauth2.googleapis.com/, Drive:OAuthBaseUrl), declared for Refit: the token

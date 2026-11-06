@@ -4,8 +4,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ClassScribe.Application.Drive;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>What Drive said to a piece of a resumable upload, or to the question how much of it Drive has.</summary>
 internal enum PieceOutcome

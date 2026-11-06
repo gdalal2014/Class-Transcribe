@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Timeline;
+namespace ClassScribe.Core.Audio.Timeline;
 
 /// <summary>
 /// Time on the recording clock, in units of 100 nanoseconds: the unit Windows stamps a packet in (the performance

@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClassScribe.Recorder;
+using ClassScribe.Infrastructure.Recorder;
 
-namespace ClassScribe.Link;
+namespace ClassScribe.Infrastructure.Link;
 
 /// <summary>
 /// JSON for the link's messages, generated at compile time. Names are written in camelCase, and choices and states by name,

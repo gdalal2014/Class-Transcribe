@@ -1,6 +1,7 @@
-using ClassScribe.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Application.Storage;
 
 /// <summary>
 /// A recording's files on disk (architecture 4.3), as its names give them (see <see cref="RecordingFiles"/>): whether it

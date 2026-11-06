@@ -1,11 +1,13 @@
 using System.Net;
-using ClassScribe.Audio;
-using ClassScribe.Settings;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Refit;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Infrastructure.Transcription;
 
 /// <summary>
 /// Gets transcripts from ElevenLabs through <see cref="IElevenLabsApi"/>. Around the call itself it

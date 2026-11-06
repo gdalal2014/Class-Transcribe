@@ -1,8 +1,9 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// One YouTube batch at a time, across ClassScribe's windows (design 2.1): &lt;RuntimeFolder&gt;\youtube\youtube.lock, held

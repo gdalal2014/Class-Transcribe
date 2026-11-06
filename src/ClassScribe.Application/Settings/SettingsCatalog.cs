@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Reflection;
 using System.Text.Json.Nodes;
-using ClassScribe.Drive;
+using ClassScribe.Application.Drive;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>What a setting holds, which decides how it is written in the file, read from the command line and shown.</summary>
 public enum SettingKind
@@ -80,8 +80,8 @@ public static class SettingsCatalog
     public static bool IsTheKey(string name) => name.Trim().Equals(ElevenLabsOptions.ApiKeySetting, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The map <paramref name="name"/> is an entry of, and the entry's name, such as Logging:LogLevel and ClassScribe.Drive
-    /// for Logging:LogLevel:ClassScribe.Drive; null when it names no map's entry.
+    /// The map <paramref name="name"/> is an entry of, and the entry's name, such as Logging:LogLevel and
+    /// ClassScribe.Infrastructure.Drive for Logging:LogLevel:ClassScribe.Infrastructure.Drive; null when it names no map's entry.
     /// </summary>
     public static (SettingKey Map, string Entry)? FindEntry(string name)
     {

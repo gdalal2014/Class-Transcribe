@@ -3,10 +3,10 @@ using System.IO.Pipes;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
-using ClassScribe.Commands;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

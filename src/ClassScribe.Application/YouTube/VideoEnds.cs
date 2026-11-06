@@ -1,6 +1,6 @@
-using ClassScribe.Recorder;
+using ClassScribe.Core.Recorder;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// How a YouTube video's recording ended, in its source file's words (design 2.3 and 4.4), from what ended its run: whether

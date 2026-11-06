@@ -1,11 +1,15 @@
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using ClassScribe.YouTube;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Runs the app's commands. Each run gets a scope of its own, made when it starts and disposed when it ends: fresh Ctrl+C

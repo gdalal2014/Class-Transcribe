@@ -1,11 +1,12 @@
 using System.Diagnostics;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Cli;
+using ClassScribe.Infrastructure.Desktop.Windows;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClassScribe.Tests;

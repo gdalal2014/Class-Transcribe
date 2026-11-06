@@ -1,11 +1,14 @@
 using System.Text.Json;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Cli;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClassScribe.Tests;

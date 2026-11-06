@@ -1,8 +1,9 @@
-using ClassScribe.Audio;
-using ClassScribe.Desktop;
-using ClassScribe.Storage;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// The recordings' audio kept on Google Drive alone, as the upload manifests tell it (<see cref="IUploadManifests"/>): a

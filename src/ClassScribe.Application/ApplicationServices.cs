@@ -1,12 +1,12 @@
-using ClassScribe.Audio;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Drive;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Application.YouTube;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClassScribe;
+namespace ClassScribe.Application;
 
 /// <summary>
 /// Registers what the use cases own (architecture 5.2), one area at a time, each from its own registration: the use cases

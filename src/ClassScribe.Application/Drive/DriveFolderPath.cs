@@ -1,4 +1,4 @@
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>A folder on Drive: its id and name, and its address in a browser.</summary>
 /// <param name="Id">Drive's id for it.</param>

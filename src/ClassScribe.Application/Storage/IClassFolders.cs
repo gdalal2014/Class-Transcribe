@@ -1,6 +1,7 @@
-using ClassScribe.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Application.Storage;
 
 /// <summary>
 /// The recordings' library (architecture 4.3): where recordings and transcripts go, under Recording:OutputFolder or the

@@ -1,9 +1,12 @@
-using ClassScribe.Audio;
-using ClassScribe.Camera;
-using ClassScribe.Runs;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Runs;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// The start of a run whose plan has a camera (teach-video 1.4 and 1.6, amendments 17 and 39), in the window, before the

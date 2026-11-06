@@ -1,6 +1,6 @@
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>
 /// How much audio one file to ElevenLabs may hold (ElevenLabs:LongestFileHours, architecture 7.2), and the limits that follow

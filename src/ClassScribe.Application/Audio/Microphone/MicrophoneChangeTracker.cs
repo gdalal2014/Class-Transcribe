@@ -1,7 +1,9 @@
 using System.Globalization;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Desktop;
 
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// The microphone check's change tracker, MicWatch's inside ClassScribe: it compares each look with the one before and

@@ -2,11 +2,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Drive;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// JSON for the manifests, generated at compile time: camelCase names, the web defaults, the states written by name, nothing

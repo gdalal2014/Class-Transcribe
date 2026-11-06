@@ -1,8 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Camera;
-using ClassScribe.Camera.Windows;
-using ClassScribe.Storage;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Camera.Windows;
+using ClassScribe.Infrastructure.Storage;
 using NAudio.MediaFoundation;
 
 namespace ClassScribe.Tests;

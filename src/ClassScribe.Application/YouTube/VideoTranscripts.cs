@@ -1,15 +1,19 @@
 using System.Globalization;
 using System.Net;
-using ClassScribe.Commands;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>One recording of a batch to transcribe.</summary>
 /// <param name="Files">The recording's files.</param>

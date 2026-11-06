@@ -1,9 +1,9 @@
 using System.Threading.Channels;
-using ClassScribe.Commands;
-using ClassScribe.Link;
+using ClassScribe.Application.Commands;
+using ClassScribe.Infrastructure.Link;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Cli.Hosts.Recorder;
 
 /// <summary>
 /// The recorder's console: it has no window, so its keys come from the windows that show the run, through the server, and

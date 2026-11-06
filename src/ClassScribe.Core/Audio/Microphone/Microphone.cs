@@ -1,10 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
-using ClassScribe.Camera;
+using ClassScribe.Core.Camera;
 
 // The folder is Audio/Microphone; the namespace is Microphones, because a namespace named Microphone would hide the
 // Microphone record from every file in the Audio namespaces, where the name would find the namespace first.
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>How Windows processes the microphone's audio before handing it over (see <c>Recording:MicrophoneProcessing</c>).</summary>
 public enum MicrophoneProcessing

@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// Reads values under HKEY_CURRENT_USER, where Lenovo Vantage keeps its microphone mode, Windows keeps the ducking preference

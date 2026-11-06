@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>Describes the raw audio a capture device delivers.</summary>
 /// <param name="SampleRate">Frames per second.</param>

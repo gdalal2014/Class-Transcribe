@@ -1,5 +1,6 @@
-using ClassScribe.Camera;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;

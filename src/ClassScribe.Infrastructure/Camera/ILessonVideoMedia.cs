@@ -1,7 +1,8 @@
-using ClassScribe.Audio;
-using ClassScribe.Camera.Windows;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Camera.Windows;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// The media work of a lesson's video, the seam between the finish job and Media Foundation (see

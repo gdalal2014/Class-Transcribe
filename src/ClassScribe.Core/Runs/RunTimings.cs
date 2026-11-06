@@ -1,4 +1,4 @@
-namespace ClassScribe.Runs;
+namespace ClassScribe.Core.Runs;
 
 /// <summary>How often a run's file is written while the run lasts, and how long it is kept once it has nothing left to tell, alike in every home of a run.</summary>
 public static class RunTimings

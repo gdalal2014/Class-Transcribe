@@ -1,5 +1,5 @@
 using System.Runtime.Versioning;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Infrastructure.Desktop.Windows;
 
 namespace ClassScribe.Tests;
 

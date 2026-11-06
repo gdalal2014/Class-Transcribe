@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>One run of a tool, such as yt-dlp: the program, its arguments as they are to reach it, and the folder it runs in.</summary>
 /// <param name="Program">The program's full path.</param>

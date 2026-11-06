@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>The tools a download needs, each by its full path.</summary>
 /// <param name="YtDlp">yt-dlp.exe.</param>

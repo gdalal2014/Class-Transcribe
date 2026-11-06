@@ -1,6 +1,7 @@
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>A running capture of one audio device, of one app's sound, or of a microphone.</summary>
 public interface IAudioCapture : IDisposable

@@ -1,7 +1,9 @@
 using System.Globalization;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core;
+using ClassScribe.Core.Transcription;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>
 /// Estimates what a transcript cost and words it for the log. ElevenLabs' answer carries no price, so the estimate is the

@@ -1,10 +1,13 @@
 using System.Text.Json;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>
 /// The run files in ClassScribe's own folder (see <see cref="RuntimeFolder.Runs"/>): the request a window hands the recorder

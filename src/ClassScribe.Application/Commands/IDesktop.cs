@@ -1,7 +1,7 @@
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Transcription;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>Shows folders and files to the person at the computer.</summary>
 public interface IDesktop

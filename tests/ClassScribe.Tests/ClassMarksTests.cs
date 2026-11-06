@@ -1,5 +1,6 @@
 using System.Text;
-using ClassScribe.Storage;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Tests;
 

@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
-using ClassScribe.Drive;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Transcription;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>
 /// Settings for YouTube videos (the youtube command and menu choice Y): where yt-dlp is, which channels' videos Gulzar may

@@ -1,4 +1,6 @@
-namespace ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
+
+namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// Lists the microphones Windows can record from, tells when they change, and opens a capture of one. Listing reads

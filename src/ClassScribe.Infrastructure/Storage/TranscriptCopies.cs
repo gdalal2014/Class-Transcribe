@@ -1,10 +1,12 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Infrastructure.Storage;
 
 /// <summary>
 /// The numbered copies of a recording's transcript, the .md of each copy, and of ElevenLabs' answer, the .json beside it

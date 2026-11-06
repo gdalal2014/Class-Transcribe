@@ -1,10 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Application;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Link;
+namespace ClassScribe.Infrastructure.Link;
 
 /// <summary>
 /// The link between a recorder and the windows that show its run: one named pipe per run, ClassScribe-&lt;run id&gt;, on

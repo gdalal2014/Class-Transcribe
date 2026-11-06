@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// ClassScribe's own Chrome window for a video (architecture 4.3; design 4.1 and 4.2), opened and closed in the batch's

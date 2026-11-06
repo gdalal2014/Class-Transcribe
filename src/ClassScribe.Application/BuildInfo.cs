@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 
-namespace ClassScribe;
+namespace ClassScribe.Application;
 
 /// <summary>
 /// What build this is: the version from the project file and the commit it was built from, read once from the

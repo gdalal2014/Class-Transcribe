@@ -1,9 +1,8 @@
 using System.Text.Json;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Recorder;
 
 namespace ClassScribe.Tests;
 

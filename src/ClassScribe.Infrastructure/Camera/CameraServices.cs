@@ -1,8 +1,9 @@
-using ClassScribe.Camera.Windows;
+using ClassScribe.Application.Camera;
+using ClassScribe.Infrastructure.Camera.Windows;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.DependencyInjection;
-using ClassScribe.Recorder;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// Registers the camera's services that reach Windows (teach-video 6, camera-first step 11; architecture 5.2). The set-up

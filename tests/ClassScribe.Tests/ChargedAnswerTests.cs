@@ -1,4 +1,5 @@
-using ClassScribe.Transcription;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Transcription;
 
 namespace ClassScribe.Tests;
 

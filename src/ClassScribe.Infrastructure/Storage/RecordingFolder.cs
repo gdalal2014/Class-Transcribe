@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Infrastructure.Storage;
 
 /// <summary>
 /// A recording's files on disk, read from its folder: the adapter of <see cref="IRecordingFolder"/>, which looks for each

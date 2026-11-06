@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Core.Settings;
 
 /// <summary>
 /// One problem the check found: the sentence that says it, starting with the setting's name, and the settings it names,

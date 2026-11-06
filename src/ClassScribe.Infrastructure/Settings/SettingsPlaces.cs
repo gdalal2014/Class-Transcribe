@@ -1,7 +1,8 @@
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Settings;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Storage;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// Where the settings and the glossary are read from, decided at every read of the settings (layout-config 1.1): the user's

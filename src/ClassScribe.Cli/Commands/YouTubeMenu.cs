@@ -1,10 +1,13 @@
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>What menu choice Y remembers for as long as the window is open: the last course named, which Enter takes again.</summary>
 public sealed class YouTubeMenuMemory

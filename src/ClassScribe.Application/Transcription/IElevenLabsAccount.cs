@@ -1,4 +1,4 @@
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>How a read of the account's credits ended.</summary>
 public enum AccountReadingKind

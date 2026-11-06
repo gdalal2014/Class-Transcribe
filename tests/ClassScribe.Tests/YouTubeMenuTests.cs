@@ -1,8 +1,6 @@
-using ClassScribe.Commands;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
-using Microsoft.Extensions.Logging.Abstractions;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Cli.Commands;
 
 namespace ClassScribe.Tests;
 

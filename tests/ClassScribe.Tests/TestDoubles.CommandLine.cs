@@ -1,8 +1,10 @@
 using System.CommandLine;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;

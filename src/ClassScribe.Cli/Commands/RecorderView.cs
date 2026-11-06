@@ -3,16 +3,23 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Threading.Channels;
-using ClassScribe.Desktop;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Desktop;
+using ClassScribe.Core;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Logging;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Shows, in this window, a run that records in a separate recorder (design 2.8). It connects to the run's recorder and

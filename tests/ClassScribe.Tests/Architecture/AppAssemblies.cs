@@ -1,4 +1,8 @@
 using System.Reflection;
+using ClassScribe.Application;
+using ClassScribe.Cli;
+using ClassScribe.Core;
+using ClassScribe.Infrastructure;
 
 namespace ClassScribe.Tests;
 

@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// The processes a process started, and those they started in turn (design 4.3): the tree of ClassScribe's video window, whose

@@ -1,4 +1,6 @@
-namespace ClassScribe.YouTube;
+using ClassScribe.Core.YouTube;
+
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>A video's source file, &lt;base&gt;.source.json beside its recording (architecture 4.3; see <see cref="VideoSource"/>), read and written whole.</summary>
 public interface IVideoSources

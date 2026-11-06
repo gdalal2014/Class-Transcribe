@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// What the use cases ask of a file or a folder on disk, behind an interface so that no test looks into the real program

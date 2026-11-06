@@ -1,15 +1,20 @@
 using System.Net;
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Core.YouTube;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>
 /// Takes recorded audio through preparation, upload and saving the transcript, and lays an answer saved earlier out again

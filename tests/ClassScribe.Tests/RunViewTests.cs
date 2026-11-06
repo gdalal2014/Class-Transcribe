@@ -1,6 +1,5 @@
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
 
 namespace ClassScribe.Tests;
 

@@ -1,6 +1,7 @@
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>Asks at the keyboard for the name of a recording about to start, until one is given or Esc is pressed.</summary>
 public sealed class RecordingNamePrompt(IConsoleUi ui)

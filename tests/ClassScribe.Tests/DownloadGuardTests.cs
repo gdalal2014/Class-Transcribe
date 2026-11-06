@@ -1,6 +1,8 @@
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.YouTube;
 
 namespace ClassScribe.Tests;
 

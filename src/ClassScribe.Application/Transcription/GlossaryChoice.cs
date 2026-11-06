@@ -1,10 +1,12 @@
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Settings;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>
 /// The one resolver of the glossary (architecture 8.2, item 5, and Gulzar's answer to question 11): every run and every

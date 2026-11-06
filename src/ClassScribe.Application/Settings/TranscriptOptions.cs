@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>Settings for how the transcript text file is laid out.</summary>
 public sealed class TranscriptOptions

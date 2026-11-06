@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>A process ClassScribe started.</summary>
 /// <param name="ProcessId">Windows' id for the process.</param>

@@ -1,8 +1,9 @@
 using System.ComponentModel;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// youtube check, and step 4 of every download batch (design 3.1): where yt-dlp, Deno, FFmpeg and FFprobe are (see

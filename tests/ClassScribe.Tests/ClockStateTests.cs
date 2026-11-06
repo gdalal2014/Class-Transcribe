@@ -1,6 +1,6 @@
 using System.Text.Json;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Camera;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Infrastructure.Camera;
 
 namespace ClassScribe.Tests;
 

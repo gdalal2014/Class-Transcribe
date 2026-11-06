@@ -1,8 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Drive;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// Opens an address in the default browser the Windows way, as a link is opened from any program. The address of a sign-in

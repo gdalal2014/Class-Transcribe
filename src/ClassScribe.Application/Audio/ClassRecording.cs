@@ -1,11 +1,12 @@
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ClassScribe.YouTube;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// A recording of the class alone, as the record command and the recording loop drive it: one session, which writes the

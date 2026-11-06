@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>What an edit of the settings file decided: the lines to say, and whether it refuses, with which exit code.</summary>
 /// <param name="Lines">What is said: what changed, or why nothing was.</param>

@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>
 /// What one look of the watch found, on the clock the microphone's packets are stamped with. The gate judges each packet

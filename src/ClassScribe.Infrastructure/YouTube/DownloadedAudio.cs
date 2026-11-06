@@ -1,12 +1,15 @@
 using System.Text.Json;
-using ClassScribe.Audio;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NAudio.Wave;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>The note of a conversion in progress, &lt;RuntimeFolder&gt;\youtube\converting.json: the recording whose files it is writing.</summary>
 /// <param name="VideoId">The video's ID.</param>

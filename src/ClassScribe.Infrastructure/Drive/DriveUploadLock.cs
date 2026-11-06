@@ -1,7 +1,8 @@
-using ClassScribe.Recorder;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// One upload to Google Drive at a time, across ClassScribe's processes: %LOCALAPPDATA%\ClassScribe\drive\upload.lock, held

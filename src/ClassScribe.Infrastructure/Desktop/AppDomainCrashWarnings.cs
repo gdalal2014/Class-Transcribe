@@ -1,4 +1,6 @@
-namespace ClassScribe.Commands;
+using ClassScribe.Application.Commands;
+
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>
 /// The warning .NET gives as an exception nobody caught takes the process down (AppDomain.UnhandledException), to each

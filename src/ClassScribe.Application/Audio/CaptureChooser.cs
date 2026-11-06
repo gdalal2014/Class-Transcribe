@@ -1,9 +1,10 @@
-using ClassScribe.Runs;
-using ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// Decides what to record, following the class source a run's request names. An app is recorded from the process that

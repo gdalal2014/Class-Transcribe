@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>
 /// Registers the camera's use cases and the services they drive (teach-video 6; architecture 5.2): the set-up lines the

@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
-using ClassScribe.Runs;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>
 /// The glossary a run or a transcript takes, before it is read: the value that named it, the file, and where it came from.

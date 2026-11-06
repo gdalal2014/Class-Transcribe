@@ -1,6 +1,7 @@
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
 
 namespace ClassScribe.Tests;
 

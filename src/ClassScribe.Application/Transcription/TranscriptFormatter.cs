@@ -1,11 +1,14 @@
 using System.Globalization;
 using System.Text;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Core.YouTube;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>
 /// Lays a transcript out as a Markdown document: a title, the recording time when known, with the number of parts

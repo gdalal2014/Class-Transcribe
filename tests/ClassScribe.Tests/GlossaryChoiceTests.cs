@@ -1,7 +1,10 @@
 using System.Text;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;

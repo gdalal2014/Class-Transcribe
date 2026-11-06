@@ -1,12 +1,17 @@
 using System.Text;
 using System.Text.Json;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Runs;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Cli.Hosts.Recorder;
+using ClassScribe.Infrastructure.Desktop.Windows;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Logging;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -14,7 +19,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 
-namespace ClassScribe;
+namespace ClassScribe.Cli;
 
 /// <summary>
 /// Puts the app together and starts it: the settings from appsettings.json, the user's own copy when there is one and

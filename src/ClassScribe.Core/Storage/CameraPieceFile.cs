@@ -1,4 +1,4 @@
-namespace ClassScribe.Storage;
+namespace ClassScribe.Core.Storage;
 
 /// <summary>A camera's piece of a lesson on disk (see <see cref="RecordingFiles.CameraPiece"/>): the file, and where on the run's clock its time 0 is, as its name says.</summary>
 /// <param name="Path">The piece's file.</param>

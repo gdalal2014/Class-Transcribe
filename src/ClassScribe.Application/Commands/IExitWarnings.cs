@@ -1,4 +1,4 @@
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>Warns a running command that the process is about to end without the usual stop.</summary>
 public interface IExitWarnings

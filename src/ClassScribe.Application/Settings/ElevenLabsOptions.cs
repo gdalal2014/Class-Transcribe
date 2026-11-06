@@ -1,6 +1,6 @@
-using ClassScribe.Transcription;
+using ClassScribe.Application.Transcription;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>Settings for the ElevenLabs speech-to-text call.</summary>
 public sealed class ElevenLabsOptions

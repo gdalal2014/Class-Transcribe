@@ -1,8 +1,11 @@
 using System.Globalization;
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// The list command: every recording under the recordings folder, in the course and date folders or flat in the folder of

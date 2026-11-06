@@ -1,4 +1,4 @@
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>A read-only stream wrapper that reports how many bytes have been read through it.</summary>
 public sealed class ProgressReadStream(Stream inner, Action<long> onProgress) : Stream

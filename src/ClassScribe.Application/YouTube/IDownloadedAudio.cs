@@ -1,6 +1,6 @@
-using ClassScribe.Storage;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// A downloaded video's sound, as ClassScribe's own WAV (architecture 4.3; design 3.7): the staged file FFmpeg made turned

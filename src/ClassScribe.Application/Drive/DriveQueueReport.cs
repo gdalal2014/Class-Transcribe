@@ -1,9 +1,11 @@
 using System.Globalization;
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>What waits to go up to Google Drive, as the report at the start offers it.</summary>
 /// <param name="Line">What waits, in words: how many recordings, which one when there is one, how much, and the last try.</param>

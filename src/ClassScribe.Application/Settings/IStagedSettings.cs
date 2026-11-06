@@ -1,4 +1,6 @@
-namespace ClassScribe.Settings;
+using ClassScribe.Core.Settings;
+
+namespace ClassScribe.Application.Settings;
 
 /// <summary>
 /// A settings file's bytes as they would be used, staged over the live sources (environment variables and the key

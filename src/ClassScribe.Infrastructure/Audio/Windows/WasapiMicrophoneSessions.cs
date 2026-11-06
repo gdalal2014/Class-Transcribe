@@ -1,10 +1,12 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>
 /// Reads, from Windows' own lists, which apps have a microphone open and whether the microphone is muted in Windows: the

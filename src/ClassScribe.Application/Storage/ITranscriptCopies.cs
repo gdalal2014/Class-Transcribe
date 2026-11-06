@@ -1,7 +1,8 @@
-using ClassScribe.Transcription;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Application.Storage;
 
 /// <summary>
 /// The numbered copies of a recording's transcript, the .md of each copy, and of ElevenLabs' answer, the .json beside it

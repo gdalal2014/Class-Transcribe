@@ -1,7 +1,8 @@
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>What the gate is opened for, which decides what it says when the settings cannot be used.</summary>
 public enum GateUse

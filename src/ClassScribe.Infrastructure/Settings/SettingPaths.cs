@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>A path setting as the adapters use it: the settings check and the searches for yt-dlp and Chrome.</summary>
 internal static class SettingPaths

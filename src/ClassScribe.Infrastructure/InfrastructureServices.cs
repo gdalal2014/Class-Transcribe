@@ -1,17 +1,17 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Audio.Microphones;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Drive;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.Transcription;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClassScribe;
+namespace ClassScribe.Infrastructure;
 
 /// <summary>
 /// Registers what Infrastructure owns (architecture 5.2), one area at a time, each from its own registration: the settings

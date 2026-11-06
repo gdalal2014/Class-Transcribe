@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>Hold-ups of a capture loop long enough to lose audio, since the last report of them.</summary>
 /// <param name="Count">How many there were.</param>

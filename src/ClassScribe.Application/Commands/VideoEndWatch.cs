@@ -1,11 +1,11 @@
-using ClassScribe.Audio;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
-using Condition = (string Name, ClassScribe.Runs.AttentionLevel Level, string Short, string Text);
+using Condition = (string Name, ClassScribe.Core.Runs.AttentionLevel Level, string Short, string Text);
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// How a YouTube video's recording ends by itself (design 4.4), checked once a second beside the class's checks, in this

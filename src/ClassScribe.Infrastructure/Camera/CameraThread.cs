@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// The camera process's own STA thread, on which every call on the camera's route is made (the probe fix's rule 5:

@@ -1,6 +1,6 @@
-using ClassScribe.Storage;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// The upload records (architecture 4.3): one manifest per recording (see <see cref="UploadManifest"/>), each written whole

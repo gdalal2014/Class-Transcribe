@@ -1,12 +1,16 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Runs;
+using ClassScribe.Cli;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClassScribe.Tests;

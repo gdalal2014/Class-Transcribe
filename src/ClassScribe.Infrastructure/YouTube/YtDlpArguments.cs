@@ -1,4 +1,6 @@
-namespace ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
+
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// yt-dlp's arguments, built here and nowhere else (design 3.3). Every call but the version's starts with one fixed set:

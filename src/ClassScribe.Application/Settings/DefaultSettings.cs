@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>
 /// The defaults that only the settings file used to hold: the Logging section. Every other value in the shipped

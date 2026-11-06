@@ -1,8 +1,9 @@
 using System.Globalization;
-using ClassScribe.Audio.Timeline;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Audio.Timeline;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// The gate that makes the microphone track follow the class app: a packet is written only when the look before its stamp

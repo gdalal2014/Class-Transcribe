@@ -1,7 +1,8 @@
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// A lesson's run, with the camera, as the report at the start, the starter and attach speak of it (teach-video 6.9): its run

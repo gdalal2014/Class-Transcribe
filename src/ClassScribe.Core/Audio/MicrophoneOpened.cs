@@ -1,6 +1,6 @@
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>A capture of a microphone that was just opened: which microphone, and how Windows processes its audio.</summary>
 /// <param name="Microphone">The microphone, as Windows lists it.</param>

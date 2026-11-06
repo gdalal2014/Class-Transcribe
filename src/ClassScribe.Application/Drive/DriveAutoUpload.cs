@@ -1,10 +1,10 @@
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// Google Drive's part in a run, in a recorder or in a window, and in a transcript made later: the uploads that happen by

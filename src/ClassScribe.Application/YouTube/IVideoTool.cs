@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// A video as its read gives it (design 3.4), with what the guard, the plan, the source file and the transcript use, worked

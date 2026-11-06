@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Win32.SafeHandles;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>One process as a snapshot of Windows' process list shows it.</summary>
 /// <param name="ParentId">The id of the process that started it. That process may have ended since, and its id gone to another.</param>

@@ -1,8 +1,9 @@
 using System.ComponentModel;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.YouTube;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// Opens and closes a video's window for the record path's batch (design 4.1 and 4.2), in the batch's window, so that a hidden

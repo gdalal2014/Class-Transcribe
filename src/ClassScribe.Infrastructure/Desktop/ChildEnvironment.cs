@@ -1,7 +1,7 @@
 using System.Collections;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>
 /// The environment ClassScribe gives a program it starts that is not ClassScribe: yt-dlp and its helpers, and Chrome for the

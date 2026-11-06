@@ -1,4 +1,6 @@
-namespace ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// The window's settings store (see <see cref="ISettingsStore"/>): where the settings are, from the places; the file's

@@ -1,7 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Desktop.Windows;
 
 namespace ClassScribe.Tests;
 

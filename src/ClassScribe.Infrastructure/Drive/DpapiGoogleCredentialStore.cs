@@ -1,10 +1,11 @@
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text.Json;
-using ClassScribe.Storage;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// The store in %APPDATA%\ClassScribe\google-drive.dat: the credentials as UTF-8 JSON, protected with Windows' data protection

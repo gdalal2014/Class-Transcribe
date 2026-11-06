@@ -1,4 +1,4 @@
-namespace ClassScribe.Runs;
+namespace ClassScribe.Core.Runs;
 
 /// <summary>What the report at the start offers to do about a run that needs a decision, or about what waits for Google Drive.</summary>
 public enum StartupAction

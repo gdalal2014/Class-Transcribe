@@ -1,7 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Desktop;
+using ClassScribe.Infrastructure.Desktop.Windows;
 
 namespace ClassScribe.Tests;
 

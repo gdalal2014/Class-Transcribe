@@ -1,8 +1,9 @@
 using System.Runtime.Versioning;
-using ClassScribe.Runs;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>
 /// The emergency stop of one run: a named event, Local\ClassScribe.Stop.&lt;run id&gt;, that the recorder waits on and any

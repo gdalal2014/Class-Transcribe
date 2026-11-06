@@ -1,11 +1,12 @@
 using System.Net.Sockets;
-using ClassScribe.Drive;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Infrastructure.Drive;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Refit;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Infrastructure.Transcription;
 
 /// <summary>
 /// Registers the transcription's parts that reach ElevenLabs and the disk (architecture 5.2): the ElevenLabs client, the

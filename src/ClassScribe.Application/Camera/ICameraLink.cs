@@ -1,6 +1,7 @@
-using ClassScribe.Audio.Timeline;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>One line from the camera process, as its record: a <see cref="CameraLog"/>, <see cref="CameraOpened"/>, <see cref="CameraPiece"/> and so on (see <see cref="CameraProtocol"/>).</summary>
 /// <param name="Type">The line's type, as the protocol names it.</param>

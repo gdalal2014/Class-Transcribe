@@ -4,11 +4,13 @@ using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading.Channels;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Link;
+namespace ClassScribe.Infrastructure.Link;
 
 /// <summary>
 /// The recorder's end of the link: it serves the windows that show its run, up to <see cref="LinkProtocol.MaxWindows"/> at

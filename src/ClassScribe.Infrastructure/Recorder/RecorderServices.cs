@@ -1,8 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Recorder;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>Registers the recorder's log, to which every logger writes as well as to the console (architecture 5.2).</summary>
 public static class RecorderServices

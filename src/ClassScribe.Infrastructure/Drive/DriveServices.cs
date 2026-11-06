@@ -1,12 +1,13 @@
-using ClassScribe.Drive.Windows;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Drive.Windows;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.Transcription;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Refit;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// Registers Google Drive's parts that reach Google, Windows and the disk (architecture 5.2): Google's OAuth and Drive

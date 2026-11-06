@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// The settings source that fills ElevenLabs:ApiKey from the ELEVENLABS_API_KEY environment variable,

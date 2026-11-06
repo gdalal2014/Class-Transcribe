@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClassScribe.Runs;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Core.Recorder;
 
 /// <summary>Where a run records.</summary>
 public enum RunHome

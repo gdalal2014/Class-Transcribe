@@ -1,11 +1,10 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

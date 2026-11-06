@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>What the gate says about one of the microphone's packets.</summary>
 public enum GateVerdict

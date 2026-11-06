@@ -1,10 +1,10 @@
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.Desktop;
 
 namespace ClassScribe.Tests;
 

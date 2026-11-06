@@ -1,9 +1,12 @@
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Storage;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// The videos fetched before (design 2.6): every video's source file under the recordings folder, in every course folder and

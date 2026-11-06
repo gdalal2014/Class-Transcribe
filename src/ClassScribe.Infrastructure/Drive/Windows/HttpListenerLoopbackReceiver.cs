@@ -2,8 +2,9 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Drive;
 
-namespace ClassScribe.Drive.Windows;
+namespace ClassScribe.Infrastructure.Drive.Windows;
 
 /// <summary>
 /// The listener for Google's redirect, on .NET's <see cref="HttpListener"/> at http://127.0.0.1:&lt;port&gt;/. A free port is

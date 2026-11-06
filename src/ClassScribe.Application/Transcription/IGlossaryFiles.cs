@@ -1,6 +1,7 @@
-using ClassScribe.Storage;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>A glossary file as it was read: where it is, its lines, and the SHA-256 of its bytes.</summary>
 /// <param name="Path">The file, as a full path.</param>

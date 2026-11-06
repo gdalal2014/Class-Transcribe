@@ -1,4 +1,4 @@
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>
 /// One recording at a time, for this user (architecture 4.3): a lock in ClassScribe's own folder, taken from just before a

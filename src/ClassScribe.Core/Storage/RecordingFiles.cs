@@ -1,11 +1,11 @@
 using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Core.YouTube;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Core.Storage;
 
 /// <summary>
 /// The files of one recording, all in its folder and named after it: the name given when it started,

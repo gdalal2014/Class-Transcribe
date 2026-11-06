@@ -1,13 +1,15 @@
 using System.ComponentModel;
 using System.Runtime.Versioning;
-using ClassScribe.Desktop;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Desktop.Windows;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Camera.Windows;
+namespace ClassScribe.Infrastructure.Camera.Windows;
 
 /// <summary>
 /// Starts camera processes through the same Windows start as the YouTube feature's tools (<see cref="PipedProcess"/>):

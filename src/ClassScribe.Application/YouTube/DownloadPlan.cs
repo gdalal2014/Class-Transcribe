@@ -1,10 +1,13 @@
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>One video of a batch, from its read to its transcript: what is known of it, what was decided, and what came of it.</summary>
 /// <param name="Number">Its place in the batch, from 1.</param>

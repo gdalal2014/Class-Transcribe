@@ -1,10 +1,14 @@
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio;
-using ClassScribe.Camera;
-using ClassScribe.Camera.Windows;
-using ClassScribe.Storage;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Camera.Windows;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.MediaFoundation;
 

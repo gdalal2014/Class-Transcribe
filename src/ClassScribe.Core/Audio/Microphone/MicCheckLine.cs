@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>One line of the microphone check's log: when it was written, what kind of line it is, and its text.</summary>
 /// <param name="At">When the line was written, in local time, which the log shows to the millisecond.</param>

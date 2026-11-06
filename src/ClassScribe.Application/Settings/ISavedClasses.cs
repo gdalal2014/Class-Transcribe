@@ -1,4 +1,6 @@
-namespace ClassScribe.Settings;
+using ClassScribe.Core.Settings;
+
+namespace ClassScribe.Application.Settings;
 
 /// <summary>
 /// The saved classes under Classes in the settings (layout-config 4.1 and 4.2; architecture 4.3), as the settings in force

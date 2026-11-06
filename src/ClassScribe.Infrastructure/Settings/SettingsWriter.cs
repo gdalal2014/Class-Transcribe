@@ -6,8 +6,11 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Settings;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// The one writer of the user's settings file (layout-config 1.6, with build-plan amendments 25 and 38): the menu's S and C,
@@ -163,7 +166,7 @@ public sealed class SettingsWriter(SettingsPlaces places, SettingsFile file, Set
     /// <summary>
     /// settings set: sets <paramref name="name"/> to <paramref name="values"/>, written as the setting's kind (a number,
     /// true or false, an enum's own name, text, or a list's items), even when that is the default, since the file is a full
-    /// copy. An entry of a map is set by its key path, such as Logging:LogLevel:ClassScribe.Drive (amendment 25). Refused
+    /// copy. An entry of a map is set by its key path, such as Logging:LogLevel:ClassScribe.Infrastructure.Drive (amendment 25). Refused
     /// with exit 2: ElevenLabs:ApiKey, an unknown name (with the nearest known one), a value of the wrong kind, and a value the
     /// check refuses, in its words.
     /// </summary>

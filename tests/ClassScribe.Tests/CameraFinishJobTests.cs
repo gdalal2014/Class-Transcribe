@@ -1,6 +1,9 @@
-using ClassScribe.Audio;
-using ClassScribe.Camera;
-using ClassScribe.Storage;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Tests;
 

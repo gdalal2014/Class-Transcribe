@@ -1,10 +1,10 @@
 using System.Globalization;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
 
-namespace ClassScribe;
+namespace ClassScribe.Infrastructure.Logging;
 
 /// <summary>
 /// Console log format for someone watching the window: the time, the message, and one line per

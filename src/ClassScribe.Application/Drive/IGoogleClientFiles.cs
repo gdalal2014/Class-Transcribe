@@ -1,4 +1,4 @@
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// Reads the client file Google offers when a client is made (Google Auth platform > Clients > Download JSON): a Desktop app

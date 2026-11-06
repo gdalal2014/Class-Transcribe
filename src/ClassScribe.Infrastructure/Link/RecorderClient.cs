@@ -2,11 +2,12 @@ using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Link;
+namespace ClassScribe.Infrastructure.Link;
 
 /// <summary>
 /// The link broke and was made again, with the recorder's process still running. The lines the window lacked follow; the

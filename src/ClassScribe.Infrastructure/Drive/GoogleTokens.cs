@@ -1,8 +1,9 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Drive;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// The access token of this process, held in memory only, never written anywhere, and the lock that lets one renewal run at

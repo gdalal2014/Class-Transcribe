@@ -1,8 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Runs;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Core.Camera;
 
 /// <summary>
 /// The camera process's role and the lines it speaks (teach-video 6.2, amendment 24): ClassScribe started as

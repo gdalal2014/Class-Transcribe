@@ -1,7 +1,8 @@
 using System.Text;
 using System.Text.Json.Nodes;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Settings;
+using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 

@@ -1,9 +1,10 @@
-using ClassScribe.Drive;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>Registers the settings: their sections, their check, and what reads appsettings.json again before each run.</summary>
 public static class SettingsServices

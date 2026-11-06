@@ -1,6 +1,7 @@
-using ClassScribe.Runs;
+using ClassScribe.Application.Runs;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>What the start of a run with a camera decided (see <see cref="ICameraPrompt"/>).</summary>
 public abstract record CameraDecision

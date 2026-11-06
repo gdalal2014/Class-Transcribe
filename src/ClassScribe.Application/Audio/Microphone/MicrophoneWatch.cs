@@ -1,8 +1,9 @@
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Audio.Timeline;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// Reads which apps have a microphone open, and whether the microphone is muted in Windows, from Windows' own lists.

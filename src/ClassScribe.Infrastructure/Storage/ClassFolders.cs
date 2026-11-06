@@ -1,12 +1,16 @@
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.YouTube;
+using ClassScribe.Infrastructure.YouTube;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Infrastructure.Storage;
 
 /// <summary>
 /// Where recordings and transcripts go: under Recording:OutputFolder, or under the recordings folder given for one run

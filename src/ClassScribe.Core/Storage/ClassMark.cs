@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Core.Storage;
 
 /// <summary>A moment marked with M while recording, or a note ClassScribe made at a moment of the recording.</summary>
 /// <param name="Number">The mark's number, counting from 1 in the order the marks were set; 0 for a note, which has none.</param>

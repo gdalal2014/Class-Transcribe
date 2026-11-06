@@ -1,8 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using ClassScribe.Drive;
-using ClassScribe.Drive.Windows;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Drive.Windows;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

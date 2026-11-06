@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>Something worth a note in the transcript at a position in the recording, such as a time the laptop slept.</summary>
 /// <param name="Position">Where in the recording, counted as <c>IRecording.Position</c> counts.</param>

@@ -1,10 +1,14 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Desktop;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// The devices command: the output devices Windows can play through, marked default or playing, and the apps with sound

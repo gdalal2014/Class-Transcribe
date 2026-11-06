@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// Where the record path's browser is (architecture 4.3; design 4.1): Chrome, as YouTube:BrowserPath names it, else as

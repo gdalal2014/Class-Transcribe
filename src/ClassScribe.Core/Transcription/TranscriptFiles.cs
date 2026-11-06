@@ -1,4 +1,4 @@
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>Where a transcript was saved: the Markdown document and ElevenLabs' answer next to it.</summary>
 public sealed record TranscriptFiles(string TranscriptPath, string JsonPath);

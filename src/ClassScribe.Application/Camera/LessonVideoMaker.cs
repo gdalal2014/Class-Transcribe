@@ -1,12 +1,15 @@
 using System.Globalization;
 using System.Text.Json;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>
 /// Makes a lesson's video (teach-video 6.9, slice 8) through a camera process of its own with a finish job, for the recorder

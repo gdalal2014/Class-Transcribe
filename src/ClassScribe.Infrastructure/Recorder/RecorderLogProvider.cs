@@ -1,8 +1,9 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using ClassScribe.Infrastructure.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>
 /// The recorder's logger provider. Each line is written in the console's plain format (see

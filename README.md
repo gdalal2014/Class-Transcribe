@@ -2663,7 +2663,7 @@ ClassScribe settings list --json | ConvertFrom-Json                 # the same, 
 ClassScribe settings get Recording:OutputFolder                     # one value, alone; a list's items a line each
 ClassScribe settings set Recording:OutputFolder "D:\Classes"        # change one setting
 ClassScribe settings set YouTube:CourseChannels "@Channel1" "@Channel2"   # a list: all its items
-ClassScribe settings set Logging:LogLevel:ClassScribe.Drive Debug   # one entry of the log levels
+ClassScribe settings set Logging:LogLevel:ClassScribe.Infrastructure.Drive Debug   # one entry of the log levels
 ClassScribe settings set Recording:CameraOffsets:OBSBOT -60          # one camera's offset, in milliseconds
 ClassScribe settings reset Recording:Device                         # back at its default, written into your file
 ClassScribe settings reset --all                                    # every setting; your saved classes are kept

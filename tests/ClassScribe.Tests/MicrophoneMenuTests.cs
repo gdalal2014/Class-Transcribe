@@ -1,8 +1,9 @@
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Commands;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Runs;
 
 namespace ClassScribe.Tests;
 

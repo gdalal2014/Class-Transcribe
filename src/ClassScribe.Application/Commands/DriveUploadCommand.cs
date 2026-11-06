@@ -1,9 +1,11 @@
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Storage;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// The drive command's uploads, from the command line (drive upload, drive free-space) and from menu choice 9: uploads a

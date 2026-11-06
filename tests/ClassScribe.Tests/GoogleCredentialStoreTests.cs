@@ -1,8 +1,9 @@
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
-using ClassScribe.Drive;
-using ClassScribe.Storage;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Drive;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

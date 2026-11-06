@@ -1,6 +1,7 @@
 using System.Globalization;
+using ClassScribe.Core.Camera;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>
 /// One named call on the camera's route (MediaCapture and its frame reader), timed: OK, failed with its HRESULT and

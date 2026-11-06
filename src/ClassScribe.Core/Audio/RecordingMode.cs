@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>What a recording holds: the class alone, the class and your microphone, or your microphone alone, in person.</summary>
 public enum RecordingMode

@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>An app taking sound from a Bluetooth microphone, as one look found it.</summary>
 /// <param name="App">The app's program without .exe, such as chrome, or "process N" when it could not be named.</param>

@@ -1,9 +1,12 @@
-using ClassScribe.Camera;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Menu choice S (layout-config 1.8 and 2, camera-first's picture size line), run through

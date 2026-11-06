@@ -1,10 +1,13 @@
 using System.Net;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Drive;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Tests;
 

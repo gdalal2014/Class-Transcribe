@@ -1,9 +1,8 @@
-using System.IO;
-using ClassScribe.Commands;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// What becomes of a lesson's video with Google Drive, as the run's settings have it (teach-video 6.9 and 8, build plan

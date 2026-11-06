@@ -1,4 +1,7 @@
-namespace ClassScribe.Audio;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio;
+
+namespace ClassScribe.Infrastructure.Audio;
 
 /// <summary>The adapter of <see cref="IAudioFileFacts"/>: a WAV file's length read from its header (see <see cref="WavHeader"/>) and its size on disk.</summary>
 public sealed class AudioFileFacts : IAudioFileFacts

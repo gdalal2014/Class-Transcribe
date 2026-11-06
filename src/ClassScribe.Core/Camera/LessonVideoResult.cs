@@ -1,4 +1,4 @@
-namespace ClassScribe.Camera;
+namespace ClassScribe.Core.Camera;
 
 /// <summary>What became of a lesson's video.</summary>
 public enum LessonVideoOutcome

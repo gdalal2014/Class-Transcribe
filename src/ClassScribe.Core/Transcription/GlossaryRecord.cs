@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>
 /// A recording's glossary record, &lt;base&gt;.glossary.json beside it (architecture 8.2, item 6): the glossary decided once,

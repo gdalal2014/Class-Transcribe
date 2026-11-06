@@ -1,4 +1,4 @@
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Core.Recorder;
 
 /// <summary>
 /// A time when ClassScribe did not run: the laptop slept, or it stayed awake while Windows held ClassScribe up, as Modern

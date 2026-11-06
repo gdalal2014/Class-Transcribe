@@ -1,6 +1,6 @@
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>A default a build changed: the setting, the default before, the default since, and the version that changed it.</summary>
 /// <param name="Key">The setting, such as Recording:MicrophoneFollows.</param>

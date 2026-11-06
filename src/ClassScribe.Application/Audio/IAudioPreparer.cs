@@ -1,4 +1,6 @@
-namespace ClassScribe.Audio;
+using ClassScribe.Core.Audio;
+
+namespace ClassScribe.Application.Audio;
 
 /// <summary>Builds the file that gets uploaded.</summary>
 public interface IAudioPreparer

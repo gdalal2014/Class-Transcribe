@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// The videos fetched before (architecture 4.3; design 2.6): every video's source file under the recordings folder, read

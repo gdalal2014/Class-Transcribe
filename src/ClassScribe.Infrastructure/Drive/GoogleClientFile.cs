@@ -1,7 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
+using ClassScribe.Application.Drive;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// Reads the client file Google offers when a client is made (Google Auth platform > Clients > Download JSON): a Desktop app

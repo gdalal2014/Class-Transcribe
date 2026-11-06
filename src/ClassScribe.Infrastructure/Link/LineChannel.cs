@@ -2,7 +2,7 @@ using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
-namespace ClassScribe.Link;
+namespace ClassScribe.Infrastructure.Link;
 
 /// <summary>
 /// One end of a connection of the link: messages go out and come in as lines of UTF-8 JSON, one message per line, each

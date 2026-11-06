@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>What Windows says about a packet of captured audio, as AUDCLNT_BUFFERFLAGS says it.</summary>
 [Flags]

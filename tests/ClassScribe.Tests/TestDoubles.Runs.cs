@@ -1,8 +1,9 @@
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Recorder;
 
 namespace ClassScribe.Tests;
 

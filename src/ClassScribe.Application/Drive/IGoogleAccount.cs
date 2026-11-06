@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// Google's answer to a code exchange or a revoke, as the sign-in reads it: the HTTP status, the tokens on success, and

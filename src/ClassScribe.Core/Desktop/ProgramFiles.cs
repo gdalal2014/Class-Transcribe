@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Core.Desktop;
 
 /// <summary>
 /// The names of ClassScribe's program and its files, the same however it was started: the window, the recorder

@@ -1,9 +1,9 @@
-using ClassScribe.Commands;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli.Hosts.Recorder;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Recorder;
 
 namespace ClassScribe.Tests;
 

@@ -2,7 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Core.Camera;
 
 /// <summary>
 /// The size of the camera's picture (amendment 39): one of the three sizes the probe measures, 480p (848x480), 720p

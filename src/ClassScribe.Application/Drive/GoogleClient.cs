@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// The Google OAuth client ClassScribe signs in with: Gulzar's own Desktop app client, from his own Google Cloud project.

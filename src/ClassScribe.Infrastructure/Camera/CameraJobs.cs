@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using ClassScribe.Link;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Link;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// The hold job (camera-first 3.4): the webcam's picture kept open, shared, from before its microphone opens until the

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Commands;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Turns Ctrl+C into a run's signals, whether it was pressed in this window or passed on to the recorder by a window that

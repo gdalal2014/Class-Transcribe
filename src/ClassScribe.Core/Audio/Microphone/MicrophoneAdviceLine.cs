@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>One line of advice at the start of a recording with the microphone.</summary>
 /// <param name="Text">The line.</param>

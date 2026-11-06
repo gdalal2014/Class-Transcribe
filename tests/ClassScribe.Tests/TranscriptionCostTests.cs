@@ -1,7 +1,7 @@
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Infrastructure.Audio;
 
 namespace ClassScribe.Tests;
 

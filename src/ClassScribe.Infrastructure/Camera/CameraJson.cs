@@ -1,8 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClassScribe.Audio.Timeline;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// JSON for the camera process's lines, generated at compile time: camelCase names, choices by name, read strictly as the

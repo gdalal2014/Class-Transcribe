@@ -1,4 +1,4 @@
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>
 /// What one transcript is estimated to have cost, from the audio ElevenLabs counted and the published API price (see

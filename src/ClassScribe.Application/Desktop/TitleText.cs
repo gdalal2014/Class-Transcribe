@@ -1,9 +1,10 @@
 using System.Globalization;
 using System.Text;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Runs;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// The window's title and taskbar button for a run's state (design 1.13): what Gulzar sees at a glance on the title

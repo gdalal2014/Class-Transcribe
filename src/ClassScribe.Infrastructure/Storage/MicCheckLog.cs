@@ -1,9 +1,13 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Application;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Infrastructure.Storage;
 
 /// <summary>
 /// The microphone check's log files, the adapter of <see cref="IMicCheckLog"/>: mic-check_&lt;local start time&gt;.log in

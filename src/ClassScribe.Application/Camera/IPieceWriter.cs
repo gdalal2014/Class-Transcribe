@@ -1,4 +1,6 @@
-namespace ClassScribe.Camera;
+using ClassScribe.Core.Camera;
+
+namespace ClassScribe.Application.Camera;
 
 /// <summary>
 /// A lesson's piece being written (teach-video 6.6): a fragmented, video-only MP4 of H.264, whose first sample is a black

@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>How a track's packets are placed in its files.</summary>
 public enum TrackPlacement

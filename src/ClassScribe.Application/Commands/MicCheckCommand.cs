@@ -1,11 +1,14 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Desktop;
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>
 /// The microphone check, MicWatch inside ClassScribe (menu choice 8, <c>ClassScribe mic-check</c>): every 250 ms it reads,

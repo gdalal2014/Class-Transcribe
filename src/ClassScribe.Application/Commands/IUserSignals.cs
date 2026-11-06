@@ -1,4 +1,4 @@
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>What the person at the keyboard has asked for: stop recording, or cancel the upload.</summary>
 public interface IUserSignals

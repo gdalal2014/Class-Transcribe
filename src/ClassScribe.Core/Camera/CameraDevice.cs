@@ -1,6 +1,6 @@
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Core.Camera;
 
 /// <summary>Where a camera is, as Windows' device lists tell it (teach-video 6.4).</summary>
 public enum CameraPlace

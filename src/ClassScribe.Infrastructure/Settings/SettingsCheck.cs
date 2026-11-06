@@ -1,15 +1,20 @@
 using System.Globalization;
 using System.Reflection;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Drive;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Settings;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Drive;
+using ClassScribe.Infrastructure.Storage;
+using ClassScribe.Infrastructure.Transcription;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// Checks settings before they are used. Settings are otherwise read only when first used, which for the transcript

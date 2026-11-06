@@ -1,4 +1,6 @@
-namespace ClassScribe.Recorder;
+using ClassScribe.Application.Recorder;
+
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>
 /// ClassScribe's own folder on this computer, %LOCALAPPDATA%\ClassScribe, which never roams and never syncs: the lock that

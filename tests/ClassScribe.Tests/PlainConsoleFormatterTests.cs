@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using ClassScribe.Infrastructure.Logging;
 
 namespace ClassScribe.Tests;
 

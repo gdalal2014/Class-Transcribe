@@ -1,9 +1,11 @@
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Windows;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Infrastructure.Audio.Microphones;
+using ClassScribe.Infrastructure.Audio.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Infrastructure.Audio;
 
 /// <summary>
 /// Registers what records, as far as it reaches Windows and the files (architecture 5.2): Windows audio, made only when

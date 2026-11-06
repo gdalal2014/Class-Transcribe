@@ -2,10 +2,11 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.YouTube;
 using Microsoft.Win32.SafeHandles;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>
 /// Windows' start of a tool, such as yt-dlp (design 3.2): the same CreateProcessW as the recorder's, given what a tool needs

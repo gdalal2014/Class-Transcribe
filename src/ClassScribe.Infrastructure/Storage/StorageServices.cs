@@ -1,7 +1,9 @@
-using ClassScribe.Recorder;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Storage;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Infrastructure.Storage;
 
 /// <summary>
 /// Registers where recordings and transcripts go, the marks set while recording, the free space of a drive, and

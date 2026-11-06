@@ -1,4 +1,4 @@
-using ClassScribe.Storage;
+using ClassScribe.Core.Storage;
 
 namespace ClassScribe.Tests;
 

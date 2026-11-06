@@ -1,11 +1,13 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>
 /// Lists the microphones Windows can record from, with what the choice of microphone needs to know about each; tells

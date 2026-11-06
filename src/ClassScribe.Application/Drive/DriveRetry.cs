@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// How a step of an upload is asked again when Google could not be reached or was busy, as Google describes it: truncated

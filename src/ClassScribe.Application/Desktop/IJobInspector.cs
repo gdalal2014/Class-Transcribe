@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// What Windows says about the job ClassScribe runs in, if any: the limits of the job it is directly in that decide

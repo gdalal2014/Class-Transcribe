@@ -1,8 +1,9 @@
 using System.Net;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Recorder;
-using ClassScribe.Storage;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Drive;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Drive;
 
 namespace ClassScribe.Tests;
 

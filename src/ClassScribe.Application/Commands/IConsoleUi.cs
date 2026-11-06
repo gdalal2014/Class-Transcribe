@@ -1,4 +1,4 @@
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>The keyboard and screen of the console window, for the menu, its prompts and the keys used while recording.</summary>
 public interface IConsoleUi

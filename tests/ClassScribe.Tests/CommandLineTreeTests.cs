@@ -1,10 +1,12 @@
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Runs;
+using ClassScribe.Application;
+using ClassScribe.Application.Commands;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Desktop;
+using ClassScribe.Core.Runs;
 using Moq;
 
 namespace ClassScribe.Tests;

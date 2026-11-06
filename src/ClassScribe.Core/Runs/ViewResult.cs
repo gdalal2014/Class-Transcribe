@@ -1,6 +1,6 @@
-using ClassScribe.Recorder;
+using ClassScribe.Core.Recorder;
 
-namespace ClassScribe.Runs;
+namespace ClassScribe.Core.Runs;
 
 /// <summary>How a window shows a run.</summary>
 public enum ViewMode

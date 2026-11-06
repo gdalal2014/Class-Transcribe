@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

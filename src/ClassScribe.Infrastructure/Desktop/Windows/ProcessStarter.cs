@@ -4,10 +4,13 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
-using ClassScribe.Commands;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core.Desktop;
+using ClassScribe.Infrastructure.YouTube;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>The creation flags ClassScribe uses, with the values Windows documents for them.</summary>
 [Flags]

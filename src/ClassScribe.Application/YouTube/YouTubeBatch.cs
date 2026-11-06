@@ -1,11 +1,11 @@
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// What every YouTube batch shares, on either path (design 2): one batch at a time under youtube.lock, the laptop kept awake

@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Core.Camera;
 
 /// <summary>What a source of a lesson's picture holds, as the media reader finds it: a camera's piece, or an older finished video.</summary>
 /// <param name="Width">The picture's width.</param>

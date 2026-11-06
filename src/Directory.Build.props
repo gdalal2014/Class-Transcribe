@@ -10,6 +10,9 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- The summaries are for reading the code: no XML file is published next to the exe. -->
     <PublishDocumentationFile>false</PublishDocumentationFile>
+    <!-- The root .editorconfig's rule runs in the build: a using line nothing needs (IDE0005) is a warning, which the
+         0-warnings build refuses, so the using lines stay those of the project's own namespaces (architecture 10.3). -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
   <!-- The tests see the internals of all four projects: the COM and P/Invoke declarations they drive through fakes, the

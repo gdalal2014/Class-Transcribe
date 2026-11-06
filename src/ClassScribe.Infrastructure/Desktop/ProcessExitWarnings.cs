@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
+using ClassScribe.Application.Commands;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>
 /// The warnings Windows and .NET give before a console process ends: the window being closed (SIGHUP,

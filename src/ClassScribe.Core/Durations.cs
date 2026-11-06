@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace ClassScribe;
+namespace ClassScribe.Core;
 
 /// <summary>
 /// Writes lengths and positions in a recording as hours, minutes and seconds, with as many hours as

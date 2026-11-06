@@ -1,4 +1,4 @@
-namespace ClassScribe.Storage;
+namespace ClassScribe.Core.Storage;
 
 /// <summary>
 /// A recording's audio that is on Google Drive, checked against Drive's MD5, and no longer on this laptop: freed to make

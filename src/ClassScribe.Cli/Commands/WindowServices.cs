@@ -1,9 +1,10 @@
-using ClassScribe.Desktop;
-using ClassScribe.Runs;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Runs;
+using ClassScribe.Infrastructure.Desktop;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Registers the window's side of a run in the background: what shows one (the view of runs and the attach command), the

@@ -1,9 +1,11 @@
-using ClassScribe.Commands;
-using ClassScribe.Settings;
+using ClassScribe.Application;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Infrastructure;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClassScribe;
+namespace ClassScribe.Cli;
 
 /// <summary>Registers the app's services, each project's own (architecture 5.2), then the window's.</summary>
 public static class ServiceCollectionExtensions

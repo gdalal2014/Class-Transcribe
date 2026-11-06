@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Settings;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// The saved classes under Classes in the settings (layout-config 4.1 and 4.2), read from the settings in force at each use,

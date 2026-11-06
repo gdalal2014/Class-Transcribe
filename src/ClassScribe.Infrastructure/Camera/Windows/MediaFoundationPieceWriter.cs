@@ -2,9 +2,11 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Runtime.Versioning;
 using NAudio.MediaFoundation;
-using ClassScribe.Storage;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Storage;
 
-namespace ClassScribe.Camera.Windows;
+namespace ClassScribe.Infrastructure.Camera.Windows;
 
 /// <summary>Makes pieces with Media Foundation's sink writer (see <see cref="MediaFoundationPieceWriter"/>).</summary>
 [SupportedOSPlatform("windows")]

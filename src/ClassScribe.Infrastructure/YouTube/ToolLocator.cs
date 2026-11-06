@@ -1,10 +1,12 @@
 using System.Security;
-using ClassScribe.Desktop;
-using ClassScribe.Settings;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>What a search for the tools found: each one's full path, or null when it was not found.</summary>
 /// <param name="YtDlp">yt-dlp.exe.</param>

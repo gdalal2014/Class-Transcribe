@@ -2,8 +2,9 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Desktop;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>Windows' functions for the job a process runs in, behind an interface so that tests can stand in for Windows.</summary>
 internal interface IJobApi

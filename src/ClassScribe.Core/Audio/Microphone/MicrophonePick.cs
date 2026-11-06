@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>The outcome of one look at the microphones.</summary>
 /// <param name="Chosen">The microphone to record, or null while there is none to record.</param>

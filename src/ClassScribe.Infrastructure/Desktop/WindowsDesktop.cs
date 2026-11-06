@@ -1,8 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Commands;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>Opens folders and files the Windows way. A failure is logged rather than thrown: showing the result is a convenience.</summary>
 public sealed class WindowsDesktop(ILogger<WindowsDesktop> logger) : IDesktop

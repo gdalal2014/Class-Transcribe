@@ -1,6 +1,7 @@
-using ClassScribe.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Settings;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>Which option named a class's source: --app, --device or --in-person.</summary>
 public enum SourceOption

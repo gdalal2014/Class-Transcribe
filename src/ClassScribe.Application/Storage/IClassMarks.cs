@@ -1,4 +1,6 @@
-namespace ClassScribe.Storage;
+using ClassScribe.Core.Storage;
+
+namespace ClassScribe.Application.Storage;
 
 /// <summary>
 /// The marks of a recording, one per line in its marks file (architecture 4.3; see <see cref="RecordingFiles.Marks"/>): a

@@ -1,6 +1,7 @@
-using ClassScribe.Recorder;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Recorder;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// The YouTube feature's folders, every one derived from ClassScribe's own folder (design 2.12), never read from a setting,

@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
-using ClassScribe.Desktop;
-using ClassScribe.Settings;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>What the settings command is asked to do (layout-config 1.8).</summary>
 public abstract record SettingsRequest

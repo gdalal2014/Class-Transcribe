@@ -1,9 +1,7 @@
 using System.Text;
-using System.Text.Json;
-using ClassScribe.Commands;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
 
 namespace ClassScribe.Tests;
 

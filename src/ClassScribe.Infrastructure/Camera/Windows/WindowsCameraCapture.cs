@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Runtime.Versioning;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Desktop;
 using BitmapSize = global::Windows.Graphics.Imaging.BitmapSize;
 using MediaCapture = global::Windows.Media.Capture.MediaCapture;
 using MediaCaptureInitializationSettings = global::Windows.Media.Capture.MediaCaptureInitializationSettings;
@@ -16,7 +18,7 @@ using MediaFrameSourceGroup = global::Windows.Media.Capture.Frames.MediaFrameSou
 using MediaFrameSourceKind = global::Windows.Media.Capture.Frames.MediaFrameSourceKind;
 using StreamingCaptureMode = global::Windows.Media.Capture.StreamingCaptureMode;
 
-namespace ClassScribe.Camera.Windows;
+namespace ClassScribe.Infrastructure.Camera.Windows;
 
 /// <summary>Makes captures of cameras over WinRT's MediaCapture (see <see cref="WindowsCameraCapture"/>).</summary>
 [SupportedOSPlatform("windows10.0.19041.0")]

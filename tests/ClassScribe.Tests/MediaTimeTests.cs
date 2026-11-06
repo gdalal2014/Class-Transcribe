@@ -1,5 +1,5 @@
 using System.Numerics;
-using ClassScribe.Audio.Timeline;
+using ClassScribe.Core.Audio.Timeline;
 
 namespace ClassScribe.Tests;
 

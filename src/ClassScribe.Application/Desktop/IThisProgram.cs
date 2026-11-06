@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// This program, as the process that runs it: the program's path and the folder of its files, which the commands printed

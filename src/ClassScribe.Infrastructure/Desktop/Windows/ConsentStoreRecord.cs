@@ -1,10 +1,10 @@
 using System.Runtime.Versioning;
 using System.Security;
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>
 /// Reads one of Windows' records of which apps used a device and when, under HKEY_CURRENT_USER's ConsentStore: the

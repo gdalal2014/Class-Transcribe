@@ -1,6 +1,7 @@
 using System.Diagnostics;
+using ClassScribe.Application.Desktop;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>Looks at the disk itself.</summary>
 public sealed class FileProbe : IFileProbe

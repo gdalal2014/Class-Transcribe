@@ -4,8 +4,10 @@ using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio;
 
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>
 /// Lists the Windows output devices with how loud each is playing, and the apps with sound open on

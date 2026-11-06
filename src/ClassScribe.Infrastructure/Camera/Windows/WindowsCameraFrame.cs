@@ -1,11 +1,12 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using ClassScribe.Core.Camera;
 using BitmapBufferAccessMode = global::Windows.Graphics.Imaging.BitmapBufferAccessMode;
 using BitmapPixelFormat = global::Windows.Graphics.Imaging.BitmapPixelFormat;
 using IMemoryBufferReference = global::Windows.Foundation.IMemoryBufferReference;
 using SoftwareBitmap = global::Windows.Graphics.Imaging.SoftwareBitmap;
 
-namespace ClassScribe.Camera.Windows;
+namespace ClassScribe.Infrastructure.Camera.Windows;
 
 /// <summary>
 /// A frame of a record job as Windows hands it over (teach-video 6.6, probe step 5): its SystemRelativeTime, and its

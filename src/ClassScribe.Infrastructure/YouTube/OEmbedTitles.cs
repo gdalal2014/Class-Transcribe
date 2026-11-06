@@ -2,9 +2,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Refit;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// YouTube's public oEmbed address (design 2.2), declared for Refit: one GET per video, with no key and no cookie, which

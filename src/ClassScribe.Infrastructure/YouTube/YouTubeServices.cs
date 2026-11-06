@@ -1,12 +1,15 @@
-using ClassScribe.Desktop;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Desktop;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Refit;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// Registers the YouTube feature's parts that reach Windows, the tools, YouTube and the disk (architecture 5.2), for both

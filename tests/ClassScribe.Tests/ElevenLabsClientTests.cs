@@ -1,8 +1,10 @@
 using System.Net;
 using System.Text.RegularExpressions;
-using ClassScribe.Audio;
-using ClassScribe.Settings;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Refit;

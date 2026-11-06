@@ -1,6 +1,6 @@
-using ClassScribe.Recorder;
+using ClassScribe.Application.Recorder;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// The computer's clocks, as <see cref="FreezeWatch"/> reads them to find a time when ClassScribe did not run,

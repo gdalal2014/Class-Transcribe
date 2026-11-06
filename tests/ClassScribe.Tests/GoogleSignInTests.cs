@@ -1,7 +1,8 @@
 using System.Net;
 using System.Web;
-using ClassScribe.Drive;
-using ClassScribe.Drive.Windows;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Drive;
+using ClassScribe.Infrastructure.Drive.Windows;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClassScribe.Tests;

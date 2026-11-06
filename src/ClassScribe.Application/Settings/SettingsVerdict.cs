@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>A setting a recording left out of a settings file that failed the check (build-plan amendment 4).</summary>
 /// <param name="Key">The setting, such as Recording:FlushSeconds.</param>

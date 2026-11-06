@@ -1,4 +1,4 @@
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>What kept something about Google Drive from working, which decides what the person is told to do.</summary>
 public enum DriveProblem

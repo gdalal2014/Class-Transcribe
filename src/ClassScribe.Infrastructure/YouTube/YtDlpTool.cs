@@ -1,4 +1,6 @@
-namespace ClassScribe.YouTube;
+using ClassScribe.Application.YouTube;
+
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// The adapter of <see cref="IVideoTool"/>: the check (<see cref="YtDlpCheck"/>), whose paths it keeps for the calls, the

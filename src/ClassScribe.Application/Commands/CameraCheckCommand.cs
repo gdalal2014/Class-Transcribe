@@ -1,15 +1,17 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>What a camera check is asked: camera-check on the command line, or menu choice 8's C, which asks for neither.</summary>
 /// <param name="NamePart">Part of a camera's name, as --camera would give it; null for the camera a lesson takes without one.</param>

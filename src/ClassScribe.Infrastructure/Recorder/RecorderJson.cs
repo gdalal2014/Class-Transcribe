@@ -1,8 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClassScribe.Runs;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>
 /// JSON for what a run writes down and hands on, generated at compile time: run files, request files, requests and the

@@ -1,9 +1,12 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Audio;
 using NAudio.MediaFoundation;
 
-namespace ClassScribe.Camera.Windows;
+namespace ClassScribe.Infrastructure.Camera.Windows;
 
 /// <summary>
 /// A lesson's video made with Media Foundation (teach-video 6.9; see <see cref="ILessonVideoMedia"/>), through NAudio's

@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>One track of a recording, written to segment files of its own.</summary>
 public enum Track

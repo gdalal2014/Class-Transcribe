@@ -1,4 +1,4 @@
-namespace ClassScribe.Storage;
+namespace ClassScribe.Infrastructure.Storage;
 
 /// <summary>
 /// ClassScribe's folder in the user's roaming application data, %APPDATA%\ClassScribe: it holds the Google client and the

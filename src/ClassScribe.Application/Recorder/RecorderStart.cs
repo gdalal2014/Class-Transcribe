@@ -1,6 +1,6 @@
-using ClassScribe.Runs;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>What a window hands the recorder it starts, as the recorder's host is built from it.</summary>
 /// <param name="RunId">The run (see <see cref="RunIds"/>).</param>

@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using ClassScribe.Audio.Timeline;
+using ClassScribe.Core.Audio.Timeline;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Core.Camera;
 
 /// <summary>
 /// How a lesson's piece is encoded (teach-video 6.5, amendment 39): the run's picture size, H.264 Main profile, the level

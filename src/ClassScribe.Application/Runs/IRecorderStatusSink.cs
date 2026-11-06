@@ -1,4 +1,6 @@
-namespace ClassScribe.Runs;
+using ClassScribe.Core.Runs;
+
+namespace ClassScribe.Application.Runs;
 
 /// <summary>Takes a run's state on every change and once a second, for the window's title and taskbar, or for the windows that show the run.</summary>
 public interface IRecorderStatusSink

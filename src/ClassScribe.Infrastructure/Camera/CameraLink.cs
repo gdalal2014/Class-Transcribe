@@ -1,7 +1,9 @@
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Link;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Link;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// The adapter of <see cref="ICameraLink"/>: the lines of <see cref="CameraProtocol"/> as <see cref="CameraLines"/> sends and

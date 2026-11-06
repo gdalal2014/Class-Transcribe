@@ -1,10 +1,11 @@
 using System.Text;
 using System.Text.Json;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Link;
-using ClassScribe.Recorder;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Cli.Hosts.Recorder;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Desktop;
+using ClassScribe.Infrastructure.Camera;
+using ClassScribe.Infrastructure.Link;
 
 namespace ClassScribe.Tests;
 

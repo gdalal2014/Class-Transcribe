@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Core.YouTube;
 
 /// <summary>The playlist a video was taken from, and its place in it.</summary>
 /// <param name="Id">The playlist's ID.</param>

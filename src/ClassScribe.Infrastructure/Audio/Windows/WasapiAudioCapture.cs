@@ -1,12 +1,14 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>
 /// Captures what one Windows output device plays, what one app plays, or what a microphone hears, through WASAPI: one

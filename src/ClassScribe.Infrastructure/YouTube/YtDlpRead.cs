@@ -2,8 +2,9 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using ClassScribe.Application.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>One format a video offers, of which only what tells the source's sample rate is read.</summary>
 /// <param name="FormatId">yt-dlp's id of the format.</param>

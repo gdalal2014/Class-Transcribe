@@ -3,8 +3,9 @@ using System.Text.RegularExpressions;
 using System.Web;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ClassScribe.Application.Drive;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// Where the pieces of a resumable upload go: the session's upload id, and for a new revision the id of the file. It comes

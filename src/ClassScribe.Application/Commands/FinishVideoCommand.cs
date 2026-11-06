@@ -1,13 +1,15 @@
-using ClassScribe.Audio;
-using ClassScribe.Camera;
-using ClassScribe.Desktop;
-using ClassScribe.Drive;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>What finish-video, menu choice 3's V and the report's V are asked: a lesson's folder or one of its files.</summary>
 /// <param name="Path">The lesson: its folder (its newest lesson with the camera is meant) or one of its files, as a full path.</param>

@@ -1,6 +1,6 @@
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Application.Storage;
 
 /// <summary>
 /// The microphone check's log files (architecture 4.3): opens a new one, named after the check's local start time in the

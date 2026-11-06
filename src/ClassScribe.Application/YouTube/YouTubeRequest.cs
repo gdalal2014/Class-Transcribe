@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>How a batch goes ahead once its plan is shown.</summary>
 public enum BatchConfirmation

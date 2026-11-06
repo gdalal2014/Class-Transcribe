@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>A video's title and channel, as YouTube's oEmbed answer gives them.</summary>
 /// <param name="Title">The title, without the spaces around it.</param>

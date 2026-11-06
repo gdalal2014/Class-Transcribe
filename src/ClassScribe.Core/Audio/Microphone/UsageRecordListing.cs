@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Core.Audio.Microphones;
 
 /// <summary>One app's entry in Windows' record of which apps used the microphone, and when.</summary>
 /// <param name="Key">The entry's key below the record's key, such as NonPackaged\C:#Program Files#Google#Chrome#Application#chrome.exe.</param>

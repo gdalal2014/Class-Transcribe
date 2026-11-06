@@ -1,6 +1,6 @@
-using ClassScribe.Recorder;
+using ClassScribe.Core.Recorder;
 
-namespace ClassScribe.Audio.Timeline;
+namespace ClassScribe.Core.Audio.Timeline;
 
 /// <summary>
 /// The one clock every track of a recording is placed on, so that the class and the microphone always agree. A position

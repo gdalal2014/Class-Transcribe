@@ -1,7 +1,7 @@
-using ClassScribe.Audio;
-using ClassScribe.Settings;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>
 /// How long one request to ElevenLabs may take, the upload and the wait for the transcript together. A long recording on

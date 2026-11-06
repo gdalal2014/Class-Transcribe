@@ -1,11 +1,13 @@
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Desktop;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>
 /// Opens a capture of a microphone by its endpoint id, asking Windows for unprocessed audio (RAW) when that is wanted:

@@ -1,6 +1,7 @@
-using ClassScribe.Runs;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// What the computer plays, as a recording session's source: the output devices and the apps that Windows lists, with the

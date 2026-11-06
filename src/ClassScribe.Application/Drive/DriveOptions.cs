@@ -1,6 +1,6 @@
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>What of a recording goes up to Google Drive (Drive:Upload).</summary>
 public enum DriveUploadScope

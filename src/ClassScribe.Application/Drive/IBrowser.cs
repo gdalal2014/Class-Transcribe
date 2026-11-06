@@ -1,4 +1,4 @@
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>Opens a web address in the person's browser, for Google's sign-in.</summary>
 public interface IBrowser

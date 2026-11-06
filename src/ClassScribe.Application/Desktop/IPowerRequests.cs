@@ -1,6 +1,6 @@
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>What ClassScribe asks Windows to keep up while it records a class and uploads it.</summary>
 [Flags]

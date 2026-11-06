@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// What ClassScribe keeps of Google: the client it signs in with, and, while it is signed in, the refresh token, the account's

@@ -1,4 +1,4 @@
-using ClassScribe.Audio.Windows;
+using ClassScribe.Infrastructure.Audio.Windows;
 
 namespace ClassScribe.Tests;
 

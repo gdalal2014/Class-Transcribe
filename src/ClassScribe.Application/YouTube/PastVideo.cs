@@ -1,6 +1,7 @@
-using ClassScribe.Storage;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.YouTube;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>A recording of a video made before, as its source file and its files say.</summary>
 /// <param name="Files">The recording's files.</param>

@@ -1,4 +1,4 @@
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>
 /// Whether the process a run file names still runs, and when the computer last started. A run file names the process that

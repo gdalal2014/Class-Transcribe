@@ -1,11 +1,13 @@
 using System.Text.Json.Nodes;
-using ClassScribe.Desktop;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core.Settings;
+using ClassScribe.Core.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>What the class command is asked to do (layout-config 4.4).</summary>
 public abstract record ClassRequest

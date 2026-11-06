@@ -1,4 +1,7 @@
-namespace ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+
+namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// Your microphone as a recording session's source: the microphones Windows lists, with the chooser picking which to

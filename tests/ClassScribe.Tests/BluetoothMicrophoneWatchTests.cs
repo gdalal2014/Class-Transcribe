@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 
 namespace ClassScribe.Tests;
 

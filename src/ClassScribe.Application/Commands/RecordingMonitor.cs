@@ -1,19 +1,24 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Recorder;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
-using ClassScribe.Transcription;
+using ClassScribe.Application.Audio;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Storage;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ClassScribe.YouTube;
-using Condition = (string Name, ClassScribe.Runs.AttentionLevel Level, string Short, string Text);
+using Condition = (string Name, ClassScribe.Core.Runs.AttentionLevel Level, string Short, string Text);
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>What one look at a running recording found (see <see cref="RecordingMonitor.Tick"/>).</summary>
 /// <param name="Lines">The lines to log, in order, each with its level.</param>

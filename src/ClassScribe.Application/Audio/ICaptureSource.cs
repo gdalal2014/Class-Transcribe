@@ -1,4 +1,6 @@
-namespace ClassScribe.Audio;
+using ClassScribe.Core.Audio;
+
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// Where a recording session's audio comes from: what can be recorded, which of it to record at each look, how to open a

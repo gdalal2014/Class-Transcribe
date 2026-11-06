@@ -1,4 +1,4 @@
-namespace ClassScribe.Runs;
+namespace ClassScribe.Core.Runs;
 
 /// <summary>
 /// The version of the link between a recorder and the windows that show its run, which every run file records beside the

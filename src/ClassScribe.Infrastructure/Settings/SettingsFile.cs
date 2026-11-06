@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// The one appsettings.json ClassScribe reads its settings from: the user's own, in the user's folder, when it is there,

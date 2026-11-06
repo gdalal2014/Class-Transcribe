@@ -1,8 +1,9 @@
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>
 /// A lesson's camera track, beside the sound (teach-video 6.6 to 6.8, slice 7): the camera process with its record job, the

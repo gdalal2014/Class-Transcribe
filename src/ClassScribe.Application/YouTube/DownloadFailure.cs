@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>What kind of failure a yt-dlp run ended with (design 3.8).</summary>
 public enum DownloadFailureKind

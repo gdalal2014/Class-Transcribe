@@ -1,4 +1,6 @@
-namespace ClassScribe.Drive;
+using ClassScribe.Application.Drive;
+
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// The adapter of <see cref="IGoogleDrive"/>: the calls to Drive (<see cref="DriveClient"/>), ClassScribe's folders there

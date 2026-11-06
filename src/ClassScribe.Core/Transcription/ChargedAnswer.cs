@@ -1,4 +1,4 @@
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>
 /// What a failed transcription says about an answer ElevenLabs had already sent, and charged for, when no transcript

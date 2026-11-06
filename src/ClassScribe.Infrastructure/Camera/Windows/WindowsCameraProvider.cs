@@ -1,11 +1,13 @@
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Camera;
 using DeviceClass = global::Windows.Devices.Enumeration.DeviceClass;
 using DeviceInformation = global::Windows.Devices.Enumeration.DeviceInformation;
 using FrameSourceGroup = global::Windows.Media.Capture.Frames.MediaFrameSourceGroup;
 using FrameSourceKind = global::Windows.Media.Capture.Frames.MediaFrameSourceKind;
 using Panel = global::Windows.Devices.Enumeration.Panel;
 
-namespace ClassScribe.Camera.Windows;
+namespace ClassScribe.Infrastructure.Camera.Windows;
 
 /// <summary>
 /// Lists the colour cameras through Windows' own device lists (teach-video 6.4): the video capture devices

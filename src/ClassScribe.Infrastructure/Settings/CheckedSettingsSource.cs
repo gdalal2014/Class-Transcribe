@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// appsettings.json, as far as it passed the check: the settings source that stands where the file's own source

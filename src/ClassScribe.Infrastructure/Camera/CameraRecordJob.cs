@@ -1,10 +1,13 @@
 using System.Globalization;
 using System.Text.Json;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Link;
-using ClassScribe.Storage;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Link;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// The record job (teach-video 6.6 to 6.12, slice 7): a lesson's picture written into one piece,

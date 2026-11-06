@@ -1,4 +1,7 @@
-namespace ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Desktop;
+
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>
 /// ClassScribe's own processes, by this process's id and its program's name: ClassScribe.exe for the installed program,

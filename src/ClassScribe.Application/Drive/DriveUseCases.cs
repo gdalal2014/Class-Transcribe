@@ -1,7 +1,7 @@
-using ClassScribe.Storage;
+using ClassScribe.Application.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// Registers Google Drive's use cases and the services they drive (architecture 5.2): the sign-in, the retries, the upload

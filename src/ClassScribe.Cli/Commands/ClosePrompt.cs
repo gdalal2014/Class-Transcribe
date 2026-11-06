@@ -1,4 +1,6 @@
-namespace ClassScribe.Commands;
+using ClassScribe.Application.Commands;
+
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Keeps a console window that was opened for ClassScribe alone open at the end, until Enter is

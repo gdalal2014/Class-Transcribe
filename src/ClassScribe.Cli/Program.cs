@@ -1,8 +1,10 @@
-using ClassScribe;
-using ClassScribe.Camera;
-using ClassScribe.Commands;
-using ClassScribe.Recorder;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Cli;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Cli.Hosts.Camera;
+using ClassScribe.Cli.Hosts.Recorder;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Settings;
 
 // A recorder, started by a window as "ClassScribe.exe --recorder <run id>" to record one class in the background: it
 // has no window, so it is handed its run before anything touches the console, and it never waits for Enter at the end,

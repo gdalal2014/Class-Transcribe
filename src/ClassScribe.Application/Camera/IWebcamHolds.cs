@@ -1,6 +1,6 @@
-using ClassScribe.Audio.Microphones;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>
 /// One recording's hold on a webcam's picture (architecture 4.3; camera-first 3.4): which webcam the picked microphone

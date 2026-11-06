@@ -1,9 +1,10 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using ClassScribe.YouTube;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.YouTube;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>
 /// The windows of ClassScribe's own Chrome for a YouTube video, from Windows itself (see <see cref="IVideoWindows"/>): the

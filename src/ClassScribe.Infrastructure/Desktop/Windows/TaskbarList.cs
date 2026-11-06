@@ -1,7 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using ClassScribe.Application.Desktop;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>Shows a state on a window's taskbar button, behind an interface so that tests can stand in for Windows.</summary>
 internal interface ITaskbarProgress : IDisposable

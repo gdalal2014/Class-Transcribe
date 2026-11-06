@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>The program behind a process, as Windows names it.</summary>
 /// <param name="Name">The program's name without .exe, such as chrome, the name <c>--app</c> and <c>Recording:MicrophoneFollows</c> match.</param>

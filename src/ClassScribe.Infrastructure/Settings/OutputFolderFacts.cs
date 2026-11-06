@@ -1,6 +1,7 @@
 using System.Text.Json;
+using ClassScribe.Application.Settings;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// The folders' facts on this computer: Directory.Exists for a folder held, DriveInfo for a drive's label, and Dropbox's

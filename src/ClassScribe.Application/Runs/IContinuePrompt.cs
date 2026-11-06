@@ -1,7 +1,8 @@
-using ClassScribe.Audio;
-using ClassScribe.Storage;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Runs;
+namespace ClassScribe.Application.Runs;
 
 /// <summary>What was decided about continuing a recording of the same name that stopped recently without a transcript.</summary>
 /// <param name="GoBack">True when Esc was pressed in the menu's question: nothing is to start.</param>

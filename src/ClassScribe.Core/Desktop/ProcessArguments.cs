@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
-using ClassScribe.Runs;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Core.Desktop;
 
 /// <summary>
 /// The words on the command lines of the processes a run starts, so that the code that starts them and the code that

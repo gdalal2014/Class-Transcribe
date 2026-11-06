@@ -1,7 +1,6 @@
-using ClassScribe.Commands;
-using ClassScribe.Desktop;
-using ClassScribe.Link;
-using ClassScribe.Runs;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
 
 namespace ClassScribe.Tests;
 

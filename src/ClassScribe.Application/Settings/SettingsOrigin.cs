@@ -1,4 +1,4 @@
-namespace ClassScribe.Settings;
+namespace ClassScribe.Application.Settings;
 
 /// <summary>Which settings file ClassScribe reads now: the user's own, the one beside the program, or none while the user's own is missing.</summary>
 public enum SettingsOrigin

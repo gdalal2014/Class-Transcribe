@@ -1,7 +1,7 @@
-using ClassScribe.Recorder;
+using ClassScribe.Application.Recorder;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// The pace of a batch's requests to YouTube (design 3.4), behind an interface so that the batch's tests need not play the

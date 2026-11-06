@@ -2,7 +2,7 @@ using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// The random values of one Google sign-in: the PKCE verifier and its S256 challenge (RFC 7636; Google's guide for desktop

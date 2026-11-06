@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>What a finished recording produced.</summary>
 /// <param name="Folder">The folder the segment files are in.</param>

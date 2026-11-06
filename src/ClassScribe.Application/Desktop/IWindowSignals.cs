@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// What the window's taskbar button shows: nothing, a bar that fills, a bar that runs back and forth, or a bar coloured

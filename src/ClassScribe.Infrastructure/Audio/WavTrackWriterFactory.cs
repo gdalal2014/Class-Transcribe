@@ -1,6 +1,8 @@
-using ClassScribe.Storage;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Infrastructure.Audio;
 
 /// <summary>
 /// The adapter of <see cref="ITrackWriterFactory"/> over <see cref="WavSegmentWriter"/>: the recording's folder is made

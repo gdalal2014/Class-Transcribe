@@ -1,4 +1,4 @@
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// One upload pass to Google Drive at a time, across ClassScribe's processes (architecture 4.3): held while an upload runs,

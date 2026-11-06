@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Recorder;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Infrastructure.Recorder;
 
 /// <summary>
 /// One recording at a time, for this user: the lock file in ClassScribe's own folder, held open without sharing from just

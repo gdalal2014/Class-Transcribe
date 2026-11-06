@@ -1,6 +1,7 @@
-using ClassScribe.Recorder;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Runs;
+namespace ClassScribe.Application.Runs;
 
 /// <summary>Shows a run in this window: what happened so far, then what happens, with the recording keys passed on to it.</summary>
 public interface IRunViewer

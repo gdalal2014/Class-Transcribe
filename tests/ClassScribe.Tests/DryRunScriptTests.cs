@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using System.Net;
 using System.Text;
 using System.Text.Json;
 using ClassScribe.DryRun;
-using ClassScribe.Recorder;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;

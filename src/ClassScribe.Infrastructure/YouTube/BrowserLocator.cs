@@ -1,10 +1,12 @@
 using System.Security;
-using ClassScribe.Desktop;
-using ClassScribe.Settings;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.YouTube;
+using ClassScribe.Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>
 /// Finds Chrome for the record path's video window (design 4.1): the chrome.exe YouTube:BrowserPath names, and nothing else

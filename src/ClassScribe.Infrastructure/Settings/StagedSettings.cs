@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Settings;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// A settings file's bytes as they would be used, staged over the live sources (environment variables and the key

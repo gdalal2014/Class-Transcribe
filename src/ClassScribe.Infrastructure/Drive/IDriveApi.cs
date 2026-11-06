@@ -1,7 +1,7 @@
 using Refit;
-using ClassScribe.Transcription;
+using ClassScribe.Infrastructure.Transcription;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// The Drive calls ClassScribe makes (base https://www.googleapis.com/, Drive:ApiBaseUrl), declared for Refit. Each takes

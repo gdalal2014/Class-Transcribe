@@ -1,8 +1,10 @@
 using System.Security;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// The advice about the microphone, for a run: the lines to log before the first audio (privacy and the class app's mute,

@@ -3,10 +3,12 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ClassScribe.Settings;
-using ClassScribe.Storage;
+using ClassScribe.Application.Transcription;
+using ClassScribe.Core.Storage;
+using ClassScribe.Core.Transcription;
+using ClassScribe.Infrastructure.Settings;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Infrastructure.Transcription;
 
 /// <summary>
 /// The glossary's files on this computer (see <see cref="IGlossaryFiles"/>): a value that names a glossary resolved through

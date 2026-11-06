@@ -1,7 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using ClassScribe.Application.Commands;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// The real console. Keys are polled rather than waited for, so a read can be abandoned the moment the

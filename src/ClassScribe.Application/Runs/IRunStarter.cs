@@ -1,4 +1,6 @@
-namespace ClassScribe.Runs;
+using ClassScribe.Core.Runs;
+
+namespace ClassScribe.Application.Runs;
 
 /// <summary>
 /// Starts a run in a scope of its own, as the menu does (architecture 4.3): the one call a YouTube batch makes to record

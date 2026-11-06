@@ -1,9 +1,12 @@
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Drive;
-using ClassScribe.Storage;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Storage;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Menu choice 9, run through <see cref="ICommandRunner.DriveMenuAsync"/>: Google Drive. It shows the sign-in's state from

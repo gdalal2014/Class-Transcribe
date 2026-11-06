@@ -1,11 +1,13 @@
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Commands;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Recorder;
+using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Infrastructure.Desktop.Windows;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>
 /// Registers ClassScribe's own Windows integration (architecture 5.2): keeping the laptop awake while it records and

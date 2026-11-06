@@ -2,8 +2,11 @@ using System.Buffers.Binary;
 using Microsoft.Extensions.Logging;
 using NAudio.Dsp;
 using NAudio.Wave;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Infrastructure.Audio;
 
 /// <summary>
 /// Resamples recorded segments to 16 kHz mono and joins them, and mixes your microphone's track into the class's

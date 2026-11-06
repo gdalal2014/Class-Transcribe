@@ -1,8 +1,9 @@
 using System.Text.Json;
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Link;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Camera;
+using ClassScribe.Infrastructure.Link;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>The lines of <see cref="CameraProtocol"/> as a starter sends and reads them.</summary>
 public static class CameraLines

@@ -1,4 +1,5 @@
-using ClassScribe.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Infrastructure.Audio;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 

@@ -1,7 +1,8 @@
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Application.Camera;
 
 /// <summary>Windows' record of which apps used a camera and when (ConsentStore\webcam), with its privacy switches. Reading it opens nothing.</summary>
 public interface ICameraUsageRecord

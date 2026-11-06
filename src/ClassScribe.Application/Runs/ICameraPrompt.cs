@@ -1,6 +1,7 @@
-using ClassScribe.Commands;
+using ClassScribe.Application.Commands;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Runs;
+namespace ClassScribe.Application.Runs;
 
 /// <summary>
 /// The camera's questions at the start of a run whose plan has a camera (architecture 4.3; teach-video 1.4 and 1.6): the

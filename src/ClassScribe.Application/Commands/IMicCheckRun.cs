@@ -1,6 +1,6 @@
-using ClassScribe.Runs;
+using ClassScribe.Application.Runs;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Application.Commands;
 
 /// <summary>What a microphone check is asked to do: mic-check on the command line, or menu choice 8, which asks for neither.</summary>
 /// <param name="StopAfter">Stop by itself after this long (--seconds); null to watch until Q or Ctrl+C.</param>

@@ -1,12 +1,14 @@
 using System.Text;
 using System.Text.Json;
-using ClassScribe.Drive;
+using ClassScribe.Application.Drive;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Configuration.Memory;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Infrastructure.Settings;
 
 /// <summary>
 /// Reads appsettings.json again and lets its values into the app's settings only once they have passed the check. The

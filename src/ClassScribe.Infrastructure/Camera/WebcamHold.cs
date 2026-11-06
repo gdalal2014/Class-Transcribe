@@ -1,9 +1,11 @@
 using System.Text.Json;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Runs;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>Makes a recording's <see cref="WebcamHold"/>, with the app's camera list and camera process starter.</summary>
 /// <param name="cameras">Lists the cameras, opening none.</param>

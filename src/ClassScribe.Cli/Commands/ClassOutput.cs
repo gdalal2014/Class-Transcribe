@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
+using ClassScribe.Application.Commands;
 
-namespace ClassScribe.Commands;
+namespace ClassScribe.Cli.Commands;
 
 /// <summary>
 /// Writes what the class command answers (layout-config 4.4; architecture question 4): its refusals on standard error,

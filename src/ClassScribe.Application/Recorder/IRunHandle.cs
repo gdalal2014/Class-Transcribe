@@ -1,7 +1,7 @@
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Core.Recorder;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>
 /// One run's file, as the process that records the run keeps it up to date (architecture 4.3; given by

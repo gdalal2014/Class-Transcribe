@@ -1,7 +1,8 @@
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// Watches, while the class is recorded, whether the class app is taking sound from a Bluetooth microphone: the headset

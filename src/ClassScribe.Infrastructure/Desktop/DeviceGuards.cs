@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>
 /// What keeps every test from a real camera or microphone (teach-video section 11): a test run turns on

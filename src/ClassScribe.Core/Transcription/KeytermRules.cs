@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Core.Transcription;
 
 /// <summary>
 /// What one request's glossary may hold (architecture 7.2 and 8.2): at most <paramref name="MaxTerms"/> terms, each shorter

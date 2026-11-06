@@ -1,6 +1,6 @@
 using Refit;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Infrastructure.Transcription;
 
 /// <summary>
 /// The ElevenLabs endpoints this app calls, declared for Refit: speech to text, for which Refit builds the multipart

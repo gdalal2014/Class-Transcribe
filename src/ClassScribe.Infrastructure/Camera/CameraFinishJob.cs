@@ -1,12 +1,17 @@
 using System.Globalization;
-using ClassScribe.Audio;
-using ClassScribe.Commands;
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Link;
-using ClassScribe.Storage;
+using ClassScribe.Application.Camera;
+using ClassScribe.Application.Commands;
+using ClassScribe.Core;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Storage;
+using ClassScribe.Infrastructure.Audio;
+using ClassScribe.Infrastructure.Desktop.Windows;
+using ClassScribe.Infrastructure.Link;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// The finish job (teach-video 6.9, slice 8): a lesson's camera pieces and the sound of its .wav tracks joined into its

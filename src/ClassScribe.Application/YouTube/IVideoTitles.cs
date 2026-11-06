@@ -1,4 +1,4 @@
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Application.YouTube;
 
 /// <summary>
 /// The titles of the record path's videos (architecture 4.3; design 2.2), read from YouTube's public oEmbed address, paced

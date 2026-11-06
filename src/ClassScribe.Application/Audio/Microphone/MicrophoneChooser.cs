@@ -1,7 +1,8 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
+using ClassScribe.Core.Audio.Microphones;
 
-namespace ClassScribe.Audio.Microphones;
+namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// Decides which microphone to record, at each look at what Windows lists. With no name, Windows' default microphone,

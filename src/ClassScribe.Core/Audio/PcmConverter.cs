@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>Turns interleaved device audio into mono 16-bit PCM, the format the recorder stores.</summary>
 public static class PcmConverter

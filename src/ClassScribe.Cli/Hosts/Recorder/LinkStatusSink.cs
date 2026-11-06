@@ -1,8 +1,9 @@
-using ClassScribe.Link;
-using ClassScribe.Runs;
+using ClassScribe.Application.Runs;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Link;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Cli.Hosts.Recorder;
 
 /// <summary>
 /// Where a run in a recorder publishes its state: to the windows that show the run, through the server, and to the alerts

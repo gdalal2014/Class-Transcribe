@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>
 /// The log of the process that records (architecture 4.3): what every logger writes, through the logging provider that

@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>An output device Windows can play through right now.</summary>
 /// <param name="Id">Windows' identifier for the device.</param>

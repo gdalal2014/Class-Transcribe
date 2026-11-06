@@ -1,7 +1,8 @@
-using ClassScribe.Desktop.Windows;
-using ClassScribe.Recorder;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Application.Recorder;
+using ClassScribe.Infrastructure.Desktop.Windows;
 
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Infrastructure.Desktop;
 
 /// <summary>The tree of a process, from one snapshot of Windows' process list (see <see cref="IProcessFamily"/>). It only reads.</summary>
 public sealed class ProcessFamily : IProcessFamily

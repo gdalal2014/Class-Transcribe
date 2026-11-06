@@ -1,9 +1,10 @@
 using System.Text.Json;
-using ClassScribe.Recorder;
+using ClassScribe.Application.Drive;
+using ClassScribe.Infrastructure.Recorder;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Drive;
+namespace ClassScribe.Infrastructure.Drive;
 
 /// <summary>
 /// ClassScribe's own folder in My Drive, which mirrors the recordings folder: a folder per course and in it one per class's

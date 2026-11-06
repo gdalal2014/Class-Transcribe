@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
-using ClassScribe.Camera;
+using ClassScribe.Application.Camera;
+using ClassScribe.Core.Camera;
 
 namespace ClassScribe.Tests;
 

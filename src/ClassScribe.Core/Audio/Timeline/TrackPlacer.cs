@@ -1,6 +1,4 @@
-using ClassScribe.Recorder;
-
-namespace ClassScribe.Audio.Timeline;
+namespace ClassScribe.Core.Audio.Timeline;
 
 /// <summary>What a session does with a packet, as <see cref="TrackPlacer.Place"/> decides it.</summary>
 public enum PlacementKind

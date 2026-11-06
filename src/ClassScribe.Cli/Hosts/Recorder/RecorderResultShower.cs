@@ -1,8 +1,9 @@
-using ClassScribe.Commands;
-using ClassScribe.Runs;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Runs;
+using ClassScribe.Core.Recorder;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Cli.Hosts.Recorder;
 
 /// <summary>
 /// How a run in a recorder shows its end. The run's own lines have said how it ended, in the log the windows show. Opening

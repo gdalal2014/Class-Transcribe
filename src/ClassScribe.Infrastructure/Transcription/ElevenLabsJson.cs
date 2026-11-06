@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Infrastructure.Transcription;
 
 /// <summary>The part of ElevenLabs' speech-to-text answer this app reads.</summary>
 public sealed record SpeechToTextResponse(

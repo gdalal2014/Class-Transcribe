@@ -1,11 +1,12 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Application.Transcription;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Infrastructure.Transcription;
 
 /// <summary>
 /// Reads the account's subscription through <see cref="IElevenLabsApi"/>, when ElevenLabs:ReadAccountUsage asks for it:

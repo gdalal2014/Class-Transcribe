@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ClassScribe.YouTube;
+namespace ClassScribe.Infrastructure.YouTube;
 
 /// <summary>Writes a command line Windows programs read back as the arguments given (the rules of CommandLineToArgvW and the C runtime).</summary>
 internal static class WindowsCommandLine

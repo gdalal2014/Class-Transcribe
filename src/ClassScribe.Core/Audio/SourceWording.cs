@@ -1,4 +1,4 @@
-namespace ClassScribe.Audio;
+namespace ClassScribe.Core.Audio;
 
 /// <summary>The words a recording session's messages use for what its source records, so that each message names it rightly.</summary>
 /// <param name="Thing">

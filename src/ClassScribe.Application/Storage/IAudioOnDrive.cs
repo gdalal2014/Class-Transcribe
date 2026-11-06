@@ -1,4 +1,6 @@
-namespace ClassScribe.Storage;
+using ClassScribe.Core.Storage;
+
+namespace ClassScribe.Application.Storage;
 
 /// <summary>What ClassScribe knows of recordings' audio kept on Google Drive alone, from what it remembers of its uploads.</summary>
 public interface IAudioOnDrive

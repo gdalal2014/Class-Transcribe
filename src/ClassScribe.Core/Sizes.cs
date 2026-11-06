@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace ClassScribe;
+namespace ClassScribe.Core;
 
 /// <summary>
 /// Writes sizes as ClassScribe prints them everywhere, of files, uploads and room on a drive: in the units Google One shows,

@@ -1,5 +1,5 @@
-using ClassScribe.Audio.Timeline;
-using ClassScribe.Recorder;
+using ClassScribe.Core.Audio.Timeline;
+using ClassScribe.Core.Recorder;
 
 namespace ClassScribe.Tests;
 

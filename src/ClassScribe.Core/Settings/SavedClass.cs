@@ -1,11 +1,11 @@
 using System.IO;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Settings;
+namespace ClassScribe.Core.Settings;
 
 /// <summary>
 /// The fields of a saved class, as the settings file writes them under Classes:&lt;name&gt; (layout-config 4.1, build-plan

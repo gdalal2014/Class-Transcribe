@@ -1,4 +1,6 @@
-namespace ClassScribe.Camera;
+using ClassScribe.Core.Camera;
+
+namespace ClassScribe.Application.Camera;
 
 /// <summary>What a camera process says when a camera cannot be opened: the kind, and the cause in words.</summary>
 public static class CameraProblems

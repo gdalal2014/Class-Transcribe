@@ -1,4 +1,4 @@
-namespace ClassScribe.Transcription;
+namespace ClassScribe.Application.Transcription;
 
 /// <summary>Where a transcription is, as whoever shows it is told (see <see cref="TranscriptionProgress"/>).</summary>
 public enum TranscriptionStep

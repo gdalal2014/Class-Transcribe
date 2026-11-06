@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace ClassScribe.Audio.Windows;
+namespace ClassScribe.Infrastructure.Audio.Windows;
 
 /// <summary>
 /// IAudioClient2, declared by ClassScribe itself. NAudio 2.2.1 declares it as inheriting IAudioClient, and built-in COM

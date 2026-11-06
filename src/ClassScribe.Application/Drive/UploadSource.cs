@@ -1,4 +1,4 @@
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>What goes up: an open stream of the file's bytes, how many there are, their MD5 as Drive writes it, and their type.</summary>
 /// <param name="Content">The bytes, from the start of the stream; it must be able to seek.</param>

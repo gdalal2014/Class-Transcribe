@@ -1,4 +1,4 @@
-namespace ClassScribe.Desktop;
+namespace ClassScribe.Application.Desktop;
 
 /// <summary>
 /// The windows of ClassScribe's own Chrome for a YouTube video (design 4.1): the titles of a process's visible top-level

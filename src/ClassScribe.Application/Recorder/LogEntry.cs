@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>One line of the recorder's log, numbered, so that a window can ask for the lines after the last one it showed.</summary>
 /// <param name="Seq">The line's number: 1 for the first line of the log, and one more for each line after it.</param>

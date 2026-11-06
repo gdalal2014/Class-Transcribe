@@ -1,10 +1,11 @@
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Camera;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Settings;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Core.Camera;
+using ClassScribe.Core.Runs;
 using Microsoft.Extensions.Options;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// What to record. The class: one app's sound, one output device chosen by part of its name or, with neither, whichever

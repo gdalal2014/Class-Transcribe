@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio.Microphones;
-using ClassScribe.Audio.Windows;
-using ClassScribe.Desktop.Windows;
+using ClassScribe.Core.Audio.Microphones;
+using ClassScribe.Infrastructure.Audio.Windows;
+using ClassScribe.Infrastructure.Desktop.Windows;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 

@@ -1,4 +1,4 @@
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>A file or folder on Drive, as the use cases read it: what Drive's own description says, without Drive's record.</summary>
 /// <param name="Id">Drive's id for it; null when Drive did not say.</param>

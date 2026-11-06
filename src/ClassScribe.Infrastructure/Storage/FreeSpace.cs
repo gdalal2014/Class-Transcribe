@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
+using ClassScribe.Application.Storage;
 
-namespace ClassScribe.Storage;
+namespace ClassScribe.Infrastructure.Storage;
 
 /// <summary>
 /// The free space of a folder's drive, as Windows reports it for the drive's root (<see cref="DriveInfo"/>). A folder whose

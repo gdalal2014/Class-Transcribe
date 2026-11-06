@@ -1,7 +1,10 @@
 using System.Text.RegularExpressions;
-using ClassScribe.Commands;
-using ClassScribe.Runs;
-using ClassScribe.Settings;
+using ClassScribe.Application.Commands;
+using ClassScribe.Application.Runs;
+using ClassScribe.Cli;
+using ClassScribe.Cli.Commands;
+using ClassScribe.Core.Runs;
+using ClassScribe.Infrastructure.Settings;
 using Moq;
 
 namespace ClassScribe.Tests;

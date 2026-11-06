@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
-using ClassScribe.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Infrastructure.Audio;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.Wave;

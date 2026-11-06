@@ -3,8 +3,9 @@ using System.Diagnostics;
 using System.Runtime;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using ClassScribe.Audio;
-using ClassScribe.Audio.Windows;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio;
+using ClassScribe.Infrastructure.Audio.Windows;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 

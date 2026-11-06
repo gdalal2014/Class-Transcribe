@@ -1,7 +1,8 @@
-using ClassScribe.Desktop;
+using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Recorder;
 using Microsoft.Extensions.Logging;
 
-namespace ClassScribe.Recorder;
+namespace ClassScribe.Application.Recorder;
 
 /// <summary>
 /// Finds the times when ClassScribe did not run. Each tick compares the steady clock with the tick before, whoever made it:

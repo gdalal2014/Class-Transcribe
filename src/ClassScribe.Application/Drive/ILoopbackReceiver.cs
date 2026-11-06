@@ -1,4 +1,4 @@
-namespace ClassScribe.Drive;
+namespace ClassScribe.Application.Drive;
 
 /// <summary>
 /// Opens the listener for Google's redirect at the end of a sign-in: on the loopback interface only, at

@@ -1,7 +1,8 @@
 using System.IO.Pipes;
 using System.Runtime.Versioning;
+using ClassScribe.Application.Desktop;
 
-namespace ClassScribe.Desktop.Windows;
+namespace ClassScribe.Infrastructure.Desktop.Windows;
 
 /// <summary>
 /// A program started as ClassScribe starts its tools and its camera process (teach-video 6.2, YouTube design 3.2): through

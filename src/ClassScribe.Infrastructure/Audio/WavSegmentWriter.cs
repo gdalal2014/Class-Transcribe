@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
+using ClassScribe.Application.Audio;
+using ClassScribe.Core.Audio;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Infrastructure.Audio;
 
 /// <summary>
 /// Writes mono 16-bit PCM to a WAV file. Each write goes to Windows at once, with no buffer of the writer's

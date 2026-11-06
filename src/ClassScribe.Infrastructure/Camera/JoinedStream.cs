@@ -1,6 +1,6 @@
-using ClassScribe.Link;
+using ClassScribe.Infrastructure.Link;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Infrastructure.Camera;
 
 /// <summary>
 /// One stream over two: reads from <paramref name="reader"/>, such as a process's standard input or the read end of a pipe,

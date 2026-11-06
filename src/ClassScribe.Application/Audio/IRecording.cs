@@ -1,7 +1,8 @@
-using ClassScribe.Runs;
-using ClassScribe.Storage;
+using ClassScribe.Core.Audio;
+using ClassScribe.Core.Runs;
+using ClassScribe.Core.Storage;
 
-namespace ClassScribe.Audio;
+namespace ClassScribe.Application.Audio;
 
 /// <summary>
 /// A recording as the record command and the recording loop drive it: from phase 2 one session for the class, from phase

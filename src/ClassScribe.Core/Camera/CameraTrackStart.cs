@@ -1,6 +1,6 @@
-using ClassScribe.Runs;
+using ClassScribe.Core.Runs;
 
-namespace ClassScribe.Camera;
+namespace ClassScribe.Core.Camera;
 
 /// <summary>Where a lesson's camera track begins: the camera, the recording's files, the position on the run's clock, and the cameras' offsets.</summary>
 /// <param name="Camera">Which camera, and the picture's size, resolved by the window.</param>
