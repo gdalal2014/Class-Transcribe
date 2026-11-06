@@ -24,8 +24,10 @@ public class CameraStartTests
     private FakeCameraUsageRecord _usage = null!;
     private TestOptions<RecordingOptions> _recording = null!;
     private SourceChoice _choice = null!;
+    private ManualTimeProvider _time = null!;
+    private RecordingLogger<CameraStart> _log = null!;
 
-    /// <summary>This laptop's cameras, set up as the camera needs, over settings with their defaults.</summary>
+    /// <summary>This laptop's cameras, set up as the camera needs, over settings with their defaults, on the manual clock.</summary>
     [SetUp]
     public void SetUp()
     {
@@ -35,11 +37,13 @@ public class CameraStartTests
         _usage = new FakeCameraUsageRecord();
         _recording = TestOptions.Create(new RecordingOptions());
         _choice = new SourceChoice(_recording);
+        _time = new ManualTimeProvider(TestRuns.Start);
+        _log = new RecordingLogger<CameraStart>();
     }
 
     /// <summary>The start over the fakes, with <paramref name="recorder"/>, this build's when null.</summary>
     private CameraStart Start(ICameraRecorder? recorder = null) =>
-        new(_cameras, recorder ?? new CameraRecorderNotBuilt(), new CameraSetupFacts(_system, _usage, new FakeRegistryValues()), _choice, _ui, NullLogger<CameraStart>.Instance);
+        new(_cameras, recorder ?? new CameraRecorderNotBuilt(), new CameraSetupFacts(_system, _usage, new FakeRegistryValues()), _choice, _ui, _time, _log);
 
     /// <summary>A request to record "Tajwid 4" in person with the OBSBOT's microphone and <paramref name="camera"/>.</summary>
     private static RecordRequest Lesson(CameraChoice? camera) =>
@@ -163,6 +167,51 @@ public class CameraStartTests
         Assert.That(_ui.Screen, Does.Contain($"Camera (none connected now: a USB camera, else the built-in front camera; 720p): {CameraStart.Prompt}"));
     }
 
+    /// <summary>
+    /// A camera list Windows does not answer holds the start 5 seconds at most (release 0.5.0 review, 3.1): the list then
+    /// says it could not be read, the start line shows why in place of "not connected now", with or without a name asked
+    /// for, and the menu asks as it would; the recorder looks for the camera itself once it records.
+    /// </summary>
+    [Test]
+    public async Task A_camera_list_that_never_answers_holds_the_start_5_seconds_at_most()
+    {
+        _cameras.Hangs = true;
+        _ui.Type('\r', '\r');
+
+        var named = Start(new ReadyRecorder()).DecideAsync(Lesson(new CameraChoice("OBSBOT")), StartOrigin.Menu);
+        await WaitAsync(() => _time.UntilNextTimer == CameraListing.Limit);
+        var moved = await _time.AdvanceUntilAsync(() => named.IsCompleted, TimeSpan.FromSeconds(1));
+        var unnamed = Start(new ReadyRecorder()).DecideAsync(Lesson(new CameraChoice(null)), StartOrigin.Menu);
+        await WaitAsync(() => _time.UntilNextTimer == CameraListing.Limit);
+        await _time.AdvanceUntilAsync(() => unnamed.IsCompleted, TimeSpan.FromSeconds(1));
+
+        Assert.That(moved, Is.GreaterThanOrEqualTo(CameraListing.Limit).And.LessThanOrEqualTo(CameraListing.Limit + TimeSpan.FromSeconds(1)));
+        Assert.That(await named, Is.EqualTo(new CameraDecision.Go(Lesson(new CameraChoice("OBSBOT", "720p")))));
+        Assert.That(await unnamed, Is.EqualTo(new CameraDecision.Go(Lesson(new CameraChoice(null, "720p")))));
+        Assert.That(_ui.Screen, Does.Contain($"Camera \"OBSBOT\" (the cameras could not be listed: Windows did not list the cameras within 5 seconds; 720p): {CameraStart.Prompt}"));
+        Assert.That(_ui.Screen, Does.Contain($"Camera (the cameras could not be listed: Windows did not list the cameras within 5 seconds; 720p): {CameraStart.Prompt}"));
+        Assert.That(_ui.Screen, Does.Not.Contain("not connected now"));
+    }
+
+    /// <summary>
+    /// An encoder query Windows does not answer holds the start 5 seconds at most too: the set-up's verdict is then not had,
+    /// which a warning says, and the start goes on, since the camera process says what is wrong once it opens the camera.
+    /// </summary>
+    [Test]
+    public async Task An_encoder_query_that_never_answers_holds_the_start_5_seconds_at_most()
+    {
+        _system.EncoderQueryHangs = true;
+
+        var deciding = Start(new ReadyRecorder()).DecideAsync(Lesson(new CameraChoice("OBSBOT")), StartOrigin.CommandLine);
+        await WaitAsync(() => _system.EncoderQueries == 1 && _time.UntilNextTimer == CameraListing.Limit);
+        var moved = await _time.AdvanceUntilAsync(() => deciding.IsCompleted, TimeSpan.FromSeconds(1));
+
+        Assert.That(moved, Is.GreaterThanOrEqualTo(CameraListing.Limit).And.LessThanOrEqualTo(CameraListing.Limit + TimeSpan.FromSeconds(1)));
+        Assert.That(await deciding, Is.EqualTo(new CameraDecision.Go(Lesson(new CameraChoice("OBSBOT", "720p")))));
+        Assert.That(_log.Problems, Is.EqualTo(new[] { CameraStart.SetupNotRead }));
+        Assert.That(_ui.Screen, Is.Empty, "the command line is the user's word already");
+    }
+
     /// <summary>A plan without a camera goes on as it is, and nothing is listed or asked.</summary>
     [Test]
     public async Task A_plan_without_a_camera_goes_on_as_it_is()
@@ -181,6 +230,17 @@ public class CameraStartTests
 
         Assert.That(refused!.Message, Is.EqualTo(CameraRecorderNotBuilt.Words));
         Assert.That(new CameraRecorderNotBuilt().NotReady, Is.EqualTo(CameraRecorderNotBuilt.Words));
+    }
+
+    /// <summary>Waits, in real time, up to 10 seconds for <paramref name="condition"/>, without moving the manual clock.</summary>
+    private static async Task WaitAsync(Func<bool> condition)
+    {
+        var deadline = Environment.TickCount64 + 10_000;
+        while (!condition())
+        {
+            if (Environment.TickCount64 > deadline) throw new TimeoutException("The expected condition was not met within 10 seconds.");
+            await Task.Delay(5);
+        }
     }
 
     /// <summary>A camera recorder that is ready, though nothing here starts it: the window never starts a camera track.</summary>

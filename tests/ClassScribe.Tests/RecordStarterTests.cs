@@ -111,7 +111,7 @@ public partial class RecordStarterTests
     /// <summary>This build's camera start over the fakes: this laptop's cameras, set up as the camera needs, and a camera's recording not built yet.</summary>
     private CameraStart NotBuiltCamera() =>
         new(new FakeCameraProvider(), new CameraRecorderNotBuilt(), new CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
-            new SourceChoice(_options), _ui, NullLogger<CameraStart>.Instance);
+            new SourceChoice(_options), _ui, _runtime.Time, NullLogger<CameraStart>.Instance);
 
     /// <summary>
     /// The camera's line comes before the continue question (amendment 17): from the menu, with a recent recording of the
@@ -728,7 +728,7 @@ public partial class RecordStarterTests
     /// <summary>This build's camera start over the fakes, ready: this laptop's cameras, set up as the camera needs, and a camera recorder that records.</summary>
     private CameraStart ReadyCamera() =>
         new(new FakeCameraProvider(), new FakeCameraRecorder(), new CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
-            new SourceChoice(_options), _ui, NullLogger<CameraStart>.Instance);
+            new SourceChoice(_options), _ui, _runtime.Time, NullLogger<CameraStart>.Instance);
 
     /// <summary>
     /// A lesson's recorder lost while it made the lesson's video, record-only or with its transcript saved already, is said to

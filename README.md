@@ -1451,7 +1451,11 @@ that Bitdefender asks about ClassScribe while you watch.
 - Before the size counts, the start refuses the camera when Windows is older than 10 version 2004,
   when Windows' privacy switches keep desktop apps from the camera, or when no H.264 encoder is
   installed, with the same words as the camera check: in the menu Enter then records the sound only;
-  on the command line nothing is recorded, exit 1.
+  on the command line nothing is recorded, exit 1. Windows' camera list and that check are each
+  given 5 seconds, since no key works while the window waits: a list that does not come is said in
+  the camera's line (`Camera "OBSBOT" (the cameras could not be listed: Windows did not list the
+  cameras within 5 seconds; 720p): ...`) and the start goes on as asked, the recorder looking for
+  the camera by itself; a check that does not come is a warning, and the start goes on.
 
 What happens while it records:
 
@@ -3056,6 +3060,8 @@ words you see.
 | `The camera "..." was refused: ... E_ACCESSDENIED ...` | Windows' camera privacy switch, or a security program, refused it. Turn on Let desktop apps access your camera in Settings > Privacy & security > Camera, and allow ClassScribe in the security program. ClassScribe tries again every 2 seconds. |
 | `The camera "..." is held by another app (...). Close it there; ClassScribe takes the camera as soon as it is free` | Another app holds the camera alone (ClassScribe only ever shares it). Close the camera in that app. |
 | `The camera "OBSBOT" is not connected, so its picture is not recording; ClassScribe looks for it every 5 seconds` | No camera of that name is plugged in. Plug it in; ClassScribe never records another camera in its place. |
+| `Camera "OBSBOT" (the cameras could not be listed: Windows did not list the cameras within 5 seconds; 720p): Enter records with the camera; S records the sound only.` (the start), or `The cameras could not be listed: Windows did not list the cameras within 5 seconds.` (menu choice 7) | Windows' camera list did not come within 5 seconds (or said why, after the colon), so the window does not know whether the camera is there, and waited no longer: no key works while it waits. Enter records with the camera as asked; the recorder looks for it by itself once it records, and says `The camera "..." is not connected ...` if it is not. In menu choice 7, Enter goes on without a camera; pick one again once the list comes. |
+| `Windows did not say within 5 seconds whether the camera's set-up allows it (its H.264 encoders were being listed), so the start goes on; the camera process says what is wrong once it opens the camera` | The set-up check (Windows' version, the privacy switches, the H.264 encoder) hung inside Windows, so the start went on with the camera as asked. If the camera cannot be used, the run says so (`The camera "..." was refused: ...`, `The camera's picture could not be written ...`) and the sound records on. Run `camera-check` after the lesson. |
 | `The camera's picture has been black for 10 seconds: is its lens covered or folded?`, with `CAM DARK` in the title (a Notice) | The picture is black, often a lens cap or a folded lens. The picture records on; it clears when the picture brightens. |
 | `ClassScribe's camera process for "..." stopped working; ClassScribe starts it again in 2 seconds. The sound records on` | The camera's own process ended, as after a driver fault; a new one writes a new piece from that moment. |
 | `The camera stopped working three times; the rest of this lesson is recorded without its picture. The sound records on` | The camera's process ended three times within 10 minutes. The lesson's sound records on to its end; record the next lesson after plugging the camera in again, or restarting the laptop. |

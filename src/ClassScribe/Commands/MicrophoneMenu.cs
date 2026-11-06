@@ -22,13 +22,14 @@ namespace ClassScribe.Commands;
 /// <param name="settings">The settings file, named in the advice.</param>
 /// <param name="recording">The run's recording settings.</param>
 /// <param name="ui">The window the questions are asked in.</param>
+/// <param name="time">The clock the wait for Windows' camera list is timed on.</param>
 /// <param name="cameras">Lists the cameras, for the camera question in person; null asks no camera question.</param>
 /// <param name="writer">
 /// Saves the pick as the default when S is pressed after it (layout-config 1.8): Recording:Mode, the microphone, the app
 /// it follows and the picture's size, as picked; null names the settings that would keep it instead, as before.
 /// </param>
 public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice choice, SettingsFile settings, IOptionsSnapshot<RecordingOptions> recording, IConsoleUi ui,
-    ICameraProvider? cameras = null, SettingsWriter? writer = null)
+    TimeProvider time, ICameraProvider? cameras = null, SettingsWriter? writer = null)
 {
     /// <summary>What the menu says once a camera is picked: it is no setting, and each start asks first.</summary>
     public const string CameraIsAsked = "The camera is no setting: it holds until ClassScribe is closed, and each start from the menu asks first (Enter records with the camera; S records the sound only).";
@@ -119,10 +120,12 @@ public sealed class MicrophoneMenu(IMicrophoneProvider microphones, SourceChoice
     /// <summary>
     /// In person: lists the colour cameras, numbered, for one to record the lesson's picture too, or Enter for none; then,
     /// for a camera picked, asks the picture's size (see <see cref="AskSizeAsync"/>). Esc, Q or Ctrl+C go back at either.
+    /// The list is waited for at most <see cref="CameraListing.Limit"/> (release 0.5.0 review, 3.1), and one that did not
+    /// come is said as a list that could not be read.
     /// </summary>
     private async Task<(bool Back, CameraDevice? Camera, CameraSize? Size)> AskCameraAsync(ICameraProvider provider)
     {
-        var list = await provider.GetCamerasAsync(CancellationToken.None);
+        var list = await provider.ListWithinAsync(CameraListing.Limit, time, CancellationToken.None);
         var listed = list.Cameras.Take(MostListed).ToList();
         ui.WriteLine("Camera, for a lesson video:");
         if (list.Problem is { } problem) ui.WriteLine($"  The cameras could not be listed: {problem}.");

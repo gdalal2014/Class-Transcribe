@@ -70,8 +70,21 @@ public sealed class FakeCameraSystem : ICameraSystem
     /// <summary>The security programs; null for "Security Center did not say".</summary>
     public IReadOnlyList<string>? Programs { get; set; } = ["Bitdefender Antivirus"];
 
+    /// <summary>True for an encoder query that never answers, as one that hangs inside Windows' codec query.</summary>
+    public bool EncoderQueryHangs { get; set; }
+
+    private int _encoderQueries;
+
+    /// <summary>How many times the encoders were asked for.</summary>
+    public int EncoderQueries => Volatile.Read(ref _encoderQueries);
+
     /// <inheritdoc />
-    public Task<bool?> HasH264EncoderAsync(CancellationToken cancellationToken) => Task.FromResult(HasH264Encoder);
+    public Task<bool?> HasH264EncoderAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _encoderQueries);
+        if (EncoderQueryHangs) return new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+        return Task.FromResult(HasH264Encoder);
+    }
 
     /// <inheritdoc />
     public IReadOnlyList<string>? SecurityPrograms() => Programs;

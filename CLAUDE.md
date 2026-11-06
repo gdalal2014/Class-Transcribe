@@ -1015,12 +1015,19 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   [--resolution <size>]`: `--camera` only with `--in-person` (`--camera records only in person in this build: give it with
   --in-person`), `--resolution` only with `--camera` (`--resolution needs --camera`) and checked by `CameraSize.TryParse`,
   each exit 2; a name right after `--camera` is pointed out as the camera's. Menu choice 7 (now "Microphone and camera"),
-  in person, lists the cameras (`MicrophoneMenu`'s optional `ICameraProvider`) and asks the size (`Picture size: Enter for
+  in person, lists the cameras (`MicrophoneMenu`'s optional `ICameraProvider`, read through `CameraListing.ListWithinAsync`
+  in `ICameraProvider.cs`: on the pool, waited for at most `CameraListing.Limit`, 5 s, on the menu's `TimeProvider`; a list
+  that does not come says `The cameras could not be listed: Windows did not list the cameras within 5 seconds.`, release
+  0.5.0 review 3.1) and asks the size (`Picture size: Enter for
   720p (your setting), 1 480p, 2 720p, 3 1080p, T to type a size`), held by `SourceChoice` (`PickMicrophone(..., camera,
   size)`, `PickedCameraResolution`, `CameraResolution`; W and N drop the camera; the header adds `with the camera "..."
   (720p)`). `RecordStarter` hands a plan with a camera to its `ICameraPrompt` (`Runs/ICameraPrompt.cs`; `CameraStart` in the
   window, scoped; before the continue question, amendment 17), which resolves the size into the request (`--resolution`, else menu 7's pick, else `Recording:CameraResolution`,
-  else 720p, so the recorder never reads it and the run file keeps it), then refuses with the set-up's first problem or
+  else 720p, so the recorder never reads it and the run file keeps it), lists the cameras and reads the set-up each within
+  `CameraListing.Limit` on its `TimeProvider` (a list that could not be read is shown in the camera's line, `Camera "OBSBOT"
+  (the cameras could not be listed: Windows did not list the cameras within 5 seconds; 720p)`, never as "not connected now";
+  a set-up read that does not come is the warning `CameraStart.SetupNotRead`, and the start goes on, since the camera
+  process says what is wrong once it opens the camera), then refuses with the set-up's first problem or
   `ICameraRecorder.NotReady`: in the menu `Camera "...": <why>. Enter records the sound only; Esc goes back.`, elsewhere
   `<why>. Nothing was recorded; leave out --camera to record the sound alone.` with exit 1; otherwise the menu asks
   `Enter records with the camera; S records the sound only.`, and the command line goes on. `ICameraRecorder`
@@ -1032,8 +1039,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `RecordRequest` and `SourcePlan` carry `[JsonExtensionData] Dictionary<string, JsonElement>? Extra` (null when nothing
   unknown was read, so records still compare equal), with a setter, not `init`: the generated reader fills init-only
   properties through the constructor, where extension data cannot go. A build older than this one still drops what it
-  does not know when it writes a run file back. Tests: `CameraMenuTests`, `CameraStartTests`, and additions to
-  `CommandLineTreeTests`, `CommandLineTests`, `RecordStarterTests`, `RequestsTests` and `TrackSetTests`.
+  does not know when it writes a run file back. Tests: `CameraMenuTests` and `CameraStartTests` (both on a
+  `ManualTimeProvider`, with `FakeCameraProvider.Hangs` and `FakeCameraSystem.EncoderQueryHangs` for the limits), and
+  additions to `CommandLineTreeTests`, `CommandLineTests`, `RecordStarterTests`, `RequestsTests` and `TrackSetTests`.
 - The run with the microphone (`RecordingMonitor`, `MicrophoneChecks`): the advice lines at the
   checks' first look (`MicrophoneAdvice.AtStart`: privacy, the `ClassAppMute` case line, the
   following line, the microphone line, then the warnings about Vantage, ducking, Bluetooth and the
