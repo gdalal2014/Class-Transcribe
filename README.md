@@ -3472,9 +3472,11 @@ makes the folder you start classes from, with `ClassScribe.Core.dll`, `ClassScri
 this repository), builds whichever project file it finds (`src\ClassScribe.Cli\ClassScribe.Cli.csproj`,
 or the older `src\ClassScribe\ClassScribe.csproj` of a version from before the four projects), publishes
 beside the install, checks that every file `ClassScribe.deps.json` names is there (Bitdefender may have
-taken one), starts the copy once with `--version`, and only then swaps the whole folder into place,
-keeping the one before as `ClassScribe.previous`; a build that fails any of these leaves the install as
-it was and says why. The dry-run kit in `tools\dry-run` holds and tests the same three checks.
+taken one), swaps the whole folder into place, keeping the one before as `ClassScribe.previous`, then
+starts the installed copy once with `--version`, from the path the Bitdefender exception names, and swaps
+back if it does not start; a build that fails any of these leaves the install as it was and says why. The
+dry-run kit in `tools\dry-run` holds and tests the same three checks (its own run publishes into a side
+folder and starts that copy, with nothing to swap).
 
 In the tests, the transcription service, the upload preparation, the command runner and the desktop
 are Moq mocks. The audio device, the microphones, the apps' microphone sessions, the keyboard, the
