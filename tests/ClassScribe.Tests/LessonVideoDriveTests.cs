@@ -220,6 +220,30 @@ public sealed class LessonVideoDriveTests
         Assert.That(Started(), Does.Contain($"{b}.mp4"));
     }
 
+    /// <summary>
+    /// With the uploads after each class off (Drive:Enabled false), the only uploads are menu choice 9's and drive upload's, and
+    /// the room is read for them all the same: a video that does not fit stays here with the rest up, rather than the pass
+    /// ending on "Google Drive is full" (review of 3.16).
+    /// </summary>
+    [Test]
+    public async Task With_the_uploads_after_each_class_off_too_little_room_still_leaves_the_video_out()
+    {
+        _world.Options.Set(new DriveOptions { LessonVideos = true, Enabled = false });
+        var video = new FileInfo(_lesson.LessonVideo).Length;
+        _world.Google.StorageLimit = _world.Google.StorageUsage + video - 1;
+
+        var result = await UploadAsync();
+
+        var b = _lesson.BaseName;
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.Outcome, Is.EqualTo(RecordingOutcome.Waiting));
+            Assert.That(result.Problem, Is.EqualTo($"{b}.mp4 ({Sizes.Describe(video)}) does not fit in Google Drive's room ({Sizes.Describe(video - 1)} free), so it stays on this laptop for now"));
+            Assert.That(Started(), Is.EqualTo(new[] { $"{b}.md", $"{b}.wav", $"{b}.log" }));
+            Assert.That(_world.Google.Destructive, Is.Empty);
+        }
+    }
+
     /// <summary>With Drive's room out of reach, the video goes up as before: the room only keeps a video that is known not to fit off Drive.</summary>
     [Test]
     public async Task With_the_room_unknown_the_video_goes_up()

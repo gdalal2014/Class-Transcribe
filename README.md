@@ -1314,8 +1314,8 @@ camera pieces and its `.mp4.partial` never go up. At the start of a lesson with 
 where its video goes; with `Drive:LessonVideos` off: `The lesson's video stays on this laptop; to send
 lesson videos to Google Drive too, run: & "...\ClassScribe.exe" settings set Drive:LessonVideos "true".
 Its camera pieces are deleted once the video passes its check.` (A free 15 GB Drive holds about six hours
-of 720p video.) Before the video goes up, Drive's room is read: with too little room for it, the video
-stays on the laptop for now, with the line `<base>.mp4 (2.4 GB) does not fit in Google Drive's room (1.1
+of 720p video.) Before the video goes up, Drive's room is read (by 9 > U and `drive upload` too, with
+`Drive:Enabled` off): with too little room for it, the video stays on the laptop for now, with the line `<base>.mp4 (2.4 GB) does not fit in Google Drive's room (1.1
 GB free), so it stays on this laptop for now; it goes up with a later upload once there is room, and the
 rest of <base> is up`; the rest of the recording goes up, and the recording waits in the queue with its
 next try after a class a day later (9 > U and `drive upload` try at once). A lesson's video made again since its copy went up (a continued lesson's, or one made

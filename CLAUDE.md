@@ -357,8 +357,8 @@ advice after a format error (10 A).
   name planted by something else: Q twice still stops the video); `RecordCommand.WriteSource` (a source
   file that cannot be written must not cost the recording); `ClassFolders.VideoOf` and
   `TranscriptionWorkflow.VideoOf` (a source file that cannot be read leaves the recording described,
-  and its paid answer laid out, as a class's); `DriveRoom.ReadAsync` (Drive's room only adds a line to
-  the plan); and `CommandLineTree.YouTubeProblems` (a `--list` file that cannot be read is a mistake of
+  and its paid answer laid out, as a class's); `DriveRoom.ReadForUploadAsync` (Drive's room only adds a line to
+  the plan, or keeps a lesson's video known not to fit off Drive); and `CommandLineTree.YouTubeProblems` (a `--list` file that cannot be read is a mistake of
   the command line, said with the others).
 - Windows audio objects: the device check (`WasapiLoopbackCaptureProvider`'s two listings, once a
   second for the whole class) goes through ClassScribe's own declarations in
@@ -1961,9 +1961,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   choice 3 notes `lesson video` or `lesson video not made yet` (as `list` does) and takes V before a number. Drive:
   `Drive:LessonVideos` (false) sends `<base>.mp4` last, streamed as `video/mp4` with a line of its size and time, never
   the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`), and only after `RecordingUpload` has read
-  `IDriveRoom`: a video known not to fit in Drive's free room stays with a warning (`does not fit in Google Drive's room`),
+  `IDriveRoom.ReadForUploadAsync` (the room for an upload under way: read whatever `Drive:Enabled` says, since 9 > U and
+  `drive upload` send with the uploads after each class off too; `ReadAsync`, a plan's, still answers nothing then): a
+  video known not to fit in Drive's free room stays with a warning (`does not fit in Google Drive's room`),
   the rest goes up and the recording waits with `NextAttemptUtc` a day later, as Drive full does; a room unknown (not
-  read, `Drive:Enabled` off, or Drive out of reach) lets it go up as before (teach-video 8, review 3.16); the pass also waits while a class is
+  signed in, or Drive out of reach) lets it go up as before (teach-video 8, review 3.16); the pass also waits while a class is
   transcribed (N13); `LocalAudioFreer.FreePiecesAsync` deletes the pieces once the video is verified on Drive, only those
   the finish job listed beside it in `RecordingFiles.LessonVideoPieces` (`<base>.mp4.pieces.txt`, written when the pieces
   are kept for Drive, never one of the recording's files, deleted by the freer once every piece it names is gone and by the
@@ -2299,8 +2301,9 @@ each constructor that takes a port, and what the trial move made the one-project
   `DriveAutoUpload.cs` (`IDriveAutoUpload`, `DriveAutoUpload`: the queue at a run's start and the
   upload after it, and after a transcript made later), `DriveQueueReport.cs` (`DriveWaiting`,
   `DriveQueueReport`: the menu's header line and the report's), `DriveRoom.cs` (`IDriveRoom`,
-  `DriveRoom`, `DriveSpace`: Drive's room from the about call, for a YouTube plan and before a lesson's video goes up;
-  null when not set up, signed out, `Drive:Enabled` off or Drive out of reach), and `DriveServices` (`AddDrive`, Google's clients and the
+  `DriveRoom`, `DriveSpace`: Drive's room from the about call, `ReadAsync` for a YouTube plan, null with `Drive:Enabled`
+  off, and `ReadForUploadAsync` before a lesson's video goes up, whatever `Drive:Enabled` says; both null when not set up,
+  signed out or Drive out of reach), and `DriveServices` (`AddDrive`, Google's clients and the
   adapters, called from `InfrastructureServices` after the transcription's) with `DriveUseCases` (`AddDriveUseCases`, the
   use cases, called from `ApplicationServices`).
 - `src/ClassScribe/YouTube` (registered by `YouTubeServices.AddYouTube`, its adapters, and `YouTubeUseCases.AddYouTubeUseCases`,

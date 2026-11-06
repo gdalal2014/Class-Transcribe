@@ -112,7 +112,7 @@ public sealed partial class RecordingUpload(
     /// <summary>The manifests, for the steps of a run.</summary>
     private IUploadManifests Manifests => manifests;
 
-    /// <summary>Drive's room, read before a lesson's video goes up (teach-video 8; review 3.16), for the steps of a run.</summary>
+    /// <summary>Drive's room, read before a lesson's video goes up, whatever Drive:Enabled says (teach-video 8; review 3.16), for the steps of a run.</summary>
     private IDriveRoom Room => room;
 
     /// <summary>The clock, for the steps of a run.</summary>
@@ -437,9 +437,10 @@ public sealed partial class RecordingUpload(
                 if (RecordingFiles.IsLessonVideo(path))
                 {
                     // Drive's room first (teach-video 8): a video known not to fit stays here, the rest goes up, and the recording
-                    // waits as it does when Drive is full, rather than the whole pass ending on it (review 3.16).
+                    // waits as it does when Drive is full, rather than the whole pass ending on it (review 3.16); read for an
+                    // upload under way, so with the uploads after each class off too, since 9 > U and drive upload send then.
                     var size = owner.Probe.Length(path);
-                    if (await owner.Room.ReadAsync(cancellationToken) is { Free: { } free } && free < size)
+                    if (await owner.Room.ReadForUploadAsync(cancellationToken) is { Free: { } free } && free < size)
                     {
                         var noRoom = $"{Path.GetFileName(path)} ({Sizes.Describe(size)}) does not fit in Google Drive's room ({Sizes.Describe(free)} free), so it stays on this laptop for now";
                         owner.Logger.LogWarning("{NoRoom}; it goes up with a later upload once there is room, and the rest of {Recording} is up", noRoom, files.BaseName);
