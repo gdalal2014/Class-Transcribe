@@ -363,9 +363,9 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
     }
 
     /// <summary>What the class <paramref name="name"/> with <paramref name="fields"/> records, in words; or why it cannot be used.</summary>
-    private static string Describe(string name, Dictionary<string, string?> fields)
+    private string Describe(string name, Dictionary<string, string?> fields)
     {
-        var entry = SavedClass.Check(name, fields);
+        var entry = SavedClass.Check(name, fields, folders.TooLong);
         return entry.Class?.Describe() ?? string.Join(" ", entry.Problems);
     }
 
@@ -386,7 +386,9 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
 
     /// <summary>
     /// The recordings folder <paramref name="outputFolder"/> names, as <see cref="IClassFolders.RootFor"/> gives it; null for
-    /// a value longer than any path can be, a hand edit the settings check puts no limit on, which names no place to look in.
+    /// a value longer than any path can be, which names no place to look in. The check refuses such a folder (it makes the
+    /// class unusable, and Recording:OutputFolder's file is refused), but class set --course still changes a class made
+    /// unusable by its own folder, so such a value can still reach this.
     /// </summary>
     private string? RootOrNone(string? outputFolder)
     {

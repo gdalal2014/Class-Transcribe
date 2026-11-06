@@ -812,7 +812,7 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
         };
         if (choices.ApplyTo(fields) is { } mix) return Refuse(parsed, $"{mix}, over the saved class \"{entry.Name}\"");
 
-        var chosen = SavedClass.Check(entry.Name, fields);
+        var chosen = SavedClass.Check(entry.Name, fields, FolderPaths.TooLong);
         if (chosen.Class is not { } ready)
             return Refuse(parsed, $"The saved class \"{entry.Name}\" cannot be used{(entry.Usable ? " with these options" : "")}: {string.Join(" ", chosen.Problems)}");
 
@@ -1133,14 +1133,17 @@ public sealed partial class CommandLineTree(ICommandRunner commands, MenuCommand
 
     /// <summary>
     /// What is wrong with <paramref name="value"/> as the folder the option <paramref name="option"/>, --output or
-    /// --log-folder, names: no value, a character Windows does not allow in a path, or a file where the folder should be.
-    /// Null for a folder that can be used, or made.
+    /// --log-folder, names: no value, a character Windows does not allow in a path, a full path longer than any path can be
+    /// (taken from the current folder, as Path.GetFullPath takes it; said by its length and its start, never the whole of
+    /// it), or a file where the folder should be. Null for a folder that can be used, or made.
     /// </summary>
     private static string? FolderProblem(string option, string? value, HashSet<string> optionNames)
     {
         if (ValueProblem(value, $"{option} needs a folder after it, such as \"D:\\Classes\"", optionNames) is { } missing) return missing;
         if (value!.IndexOfAny(NotInPaths) >= 0 || value.Any(char.IsControl))
             return $"{option} takes a folder, such as \"D:\\Classes\"; \"{value}\" has a character Windows does not allow in a path: < > \" | ? *";
+        if (FolderPaths.TooLong(value, Environment.CurrentDirectory) is { } tooLong)
+            return $"{option} takes a folder, such as \"D:\\Classes\"; the one given {tooLong}";
 
         var folder = Path.GetFullPath(value);
         return File.Exists(folder) ? $"{option} names a file, not a folder: {folder}" : null;

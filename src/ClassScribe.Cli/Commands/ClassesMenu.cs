@@ -11,6 +11,7 @@ using ClassScribe.Core.Camera;
 using ClassScribe.Core.Runs;
 using ClassScribe.Core.Settings;
 using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Cli.Commands;
 
@@ -160,8 +161,9 @@ public sealed class ClassesMenu(ISavedClasses classes, SettingsPlaces places, IC
     /// <summary>
     /// The questions of N and E, with <paramref name="current"/>'s answers for Enter when it is given, and the Lesson video
     /// preset's when <paramref name="lesson"/>: the course; what it records; the microphone, and with the class the app it
-    /// follows; in person the camera and its size; the folder; whether to transcribe it; and its own glossary (a file, N for
-    /// none, - for ElevenLabs:KeytermsFile). Null for Esc at any of them.
+    /// follows; in person the camera and its size; the folder (a full path, or as typed when it is longer than any path can
+    /// be, for class add and set to refuse); whether to transcribe it; and its own glossary (a file, N for none, - for
+    /// ElevenLabs:KeytermsFile). Null for Esc at any of them.
     /// </summary>
     private async Task<ClassChoices?> AskAsync(string name, Kept? current, bool lesson)
     {
@@ -227,7 +229,11 @@ public sealed class ClassesMenu(ISavedClasses classes, SettingsPlaces places, IC
             else
             {
                 // Taken as Recording:OutputFolder takes a path: a relative one from the user's folder, not the window's current one.
-                folder = folders.RootFor(answeredFolder);
+                // One that holds a character no path may hold, or whose full path is longer than any path can be, names no
+                // folder: it goes on as typed, for the saved classes' check to refuse in its own words, never thrown here.
+                folder = answeredFolder.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || FolderPaths.TooLong(answeredFolder) is not null
+                    ? answeredFolder
+                    : folders.RootFor(answeredFolder);
             }
         }
 

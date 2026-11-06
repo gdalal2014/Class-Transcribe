@@ -1039,6 +1039,42 @@ public class CommandLineTreeTests
         Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--output names a file, not a folder: {file}" }));
     }
 
+    /// <summary>
+    /// A folder whose full path is longer than any path can be, given to --output or --log-folder, is a mistake of the command
+    /// line, named before anything starts with exit 2 and the help, in words that give its length and its start, never the
+    /// whole value, rather than an error when the class starts. Windows' command line holds at most 32,767 characters, so such
+    /// a value reaches ClassScribe as a relative folder taken from a deep current folder, or as here, from the parser.
+    /// </summary>
+    [Test]
+    public async Task An_output_longer_than_any_path_is_refused()
+    {
+        var longValue = @"C:\" + new string('a', 39_997);
+        var words = $"names a folder whose full path is 40,000 characters long, starting \"C:\\{new string('a', 37)}...\"; no path on Windows can be longer than 32,766 characters";
+
+        AssertRefused(await RunAsync("record", "Kalam", "--device", "auto", "--output", longValue));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--output takes a folder, such as \"D:\\Classes\"; the one given {words}" }));
+
+        CreateLine();
+        AssertRefused(await RunAsync("mic-check", "--log-folder", longValue));
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--log-folder takes a folder, such as \"D:\\Classes\"; the one given {words}" }));
+    }
+
+    /// <summary>
+    /// A folder given to --output that is short as written but longer than any path once its environment variables are
+    /// expanded, as the run expands them, is refused in the same words, by the length of the path the run would use: from
+    /// PowerShell, which leaves %X% alone, it would otherwise pass the command line and fail as the class starts.
+    /// </summary>
+    [Test]
+    public async Task An_output_longer_than_any_path_once_its_variables_are_expanded_is_refused()
+    {
+        using var variable = new TemporaryVariable("CLASSSCRIBE_TEST_LONG", new string('a', 20_000));
+        const string written = @"C:\%CLASSSCRIBE_TEST_LONG%\%CLASSSCRIBE_TEST_LONG%";
+
+        AssertRefused(await RunAsync("record", "Kalam", "--device", "auto", "--output", written));
+
+        Assert.That(_line.Mistakes, Is.EqualTo(new[] { $"--output takes a folder, such as \"D:\\Classes\"; the one given names a folder whose full path is 40,004 characters long, starting \"{written[..40]}...\"; no path on Windows can be longer than 32,766 characters" }));
+    }
+
     /// <summary>A name with nothing Windows allows in a folder's name cannot name a recording.</summary>
     [Test]
     public async Task A_name_that_cannot_name_a_folder_is_refused()

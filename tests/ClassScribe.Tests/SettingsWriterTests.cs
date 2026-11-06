@@ -560,6 +560,30 @@ public class SettingsWriterTests
         Assert.That((unknown.ExitCode, unknown.Lines.Single()), Is.EqualTo((2, "There is no saved class \"Kalam\". The saved classes are: \"Mantiq\".")));
     }
 
+    /// <summary>
+    /// settings set with a recordings folder whose full path is longer than any path can be is refused before anything is
+    /// written, exit 2, in the check's words, as Recording:OutputFolder and as a saved class's OutputFolder alike; the file
+    /// keeps the folder it had.
+    /// </summary>
+    [Test]
+    public void Settings_set_refuses_a_folder_longer_than_any_path()
+    {
+        var longValue = @"C:\" + new string('a', 39_997);
+        _files.WriteUser("""{ "Recording": { "OutputFolder": "D:\\Classes" }, "Classes": { "Mantiq": { "Course": "Mantiq", "App": "chrome" } } }""");
+
+        var setting = _files.Writer.Set("Recording:OutputFolder", longValue);
+        var saved = _files.Writer.Set("Classes:Mantiq:OutputFolder", longValue);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That((setting.ExitCode, saved.ExitCode), Is.EqualTo((2, 2)));
+            Assert.That(setting.Lines[0], Does.StartWith("Recording:OutputFolder names a folder whose full path is 40,000 characters long, starting "));
+            Assert.That(saved.Lines[0], Does.StartWith("The saved class \"Mantiq\" would not be usable: OutputFolder names a folder whose full path is 40,000 characters long, starting "));
+            Assert.That(_files.UserValue("Recording:OutputFolder")!.GetValue<string>(), Is.EqualTo(@"D:\Classes"));
+            Assert.That(_files.UserValue("Classes:Mantiq:OutputFolder"), Is.Null);
+        });
+    }
+
     /// <summary>Two changes compared by their exit codes and lines.</summary>
     private static bool SameChange(SettingsChange first, SettingsChange second) => first.ExitCode == second.ExitCode && first.Lines.SequenceEqual(second.Lines);
 }

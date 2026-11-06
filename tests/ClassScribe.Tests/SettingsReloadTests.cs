@@ -153,24 +153,70 @@ public class SettingsReloadTests
     }
 
     /// <summary>
-    /// A recordings folder longer than any path can be (a hand edit), as Recording:OutputFolder or as a saved class's own
-    /// folder, is read and checked like any other value, for a choice or a command and for a recording alike: the check's
-    /// warnings, which run behind every read, throw nothing for it, so the start, the gate and the class commands answer.
+    /// Recording:OutputFolder longer than any path can be (a hand edit) is refused as a folder with a character no path may
+    /// hold is: for a choice or a command the file is refused, with the problem that names it, and the last accepted values
+    /// stay; for a recording only that setting is dropped, and the rest of the file is used. Nothing is thrown, as the check
+    /// runs behind every read.
     /// </summary>
-    [TestCase("Recording:OutputFolder")]
-    [TestCase("Classes:Mantiq:OutputFolder")]
-    public void A_folder_longer_than_any_path_is_read_without_throwing(string setting)
+    [Test]
+    public void Recording_OutputFolder_longer_than_any_path_is_refused_and_the_last_values_stay()
+    {
+        var settings = new TestSettings(_data.Path, Json(new { Recording = new { OutputFolder = @"D:\Classes" } }));
+        settings.Write(Json(new { Recording = new { OutputFolder = new string('a', 40_000), SilenceWarningSeconds = 30 } }));
+
+        var verdict = settings.Reloader.TryReload();
+        var kept = settings.Configuration["Recording:OutputFolder"];
+        var forRecording = settings.Reloader.TryReload(forRecording: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(verdict.Usable, Is.False);
+            Assert.That(verdict.Problems.Single(), Does.StartWith("Recording:OutputFolder names a folder whose full path is "));
+            Assert.That(kept, Is.EqualTo(@"D:\Classes"), "the last accepted value stays");
+            Assert.That(forRecording.Usable, Is.True);
+            Assert.That(forRecording.Dropped.Select(dropped => dropped.Key), Is.EqualTo(new[] { "Recording:OutputFolder" }));
+            Assert.That(settings.Configuration["Recording:SilenceWarningSeconds"], Is.EqualTo("30"));
+        });
+    }
+
+    /// <summary>
+    /// A saved class's own folder longer than any path can be makes that class unusable, never the file: it is read and
+    /// checked like any other value, for a choice or a command and for a recording alike, and the check's warnings, which run
+    /// behind every read, throw nothing for it, so the start, the gate and the class commands answer.
+    /// </summary>
+    [Test]
+    public void A_class_folder_longer_than_any_path_leaves_the_file_usable()
     {
         var longValue = new string('a', 40_000);
-        var settings = new TestSettings(_data.Path, setting == "Recording:OutputFolder"
-            ? Json(new { Recording = new { OutputFolder = longValue } })
-            : Json(new { Classes = new { Mantiq = new { Course = "Mantiq", App = "chrome", OutputFolder = longValue } } }));
+        var settings = new TestSettings(_data.Path, Json(new { Classes = new { Mantiq = new { Course = "Mantiq", App = "chrome", OutputFolder = longValue } } }));
 
         var verdict = settings.Reloader.TryReload();
         var forRecording = settings.Reloader.TryReload(forRecording: true);
 
         Assert.That((verdict.Usable, forRecording.Usable), Is.EqualTo((true, true)));
-        Assert.That(settings.Configuration[setting], Is.EqualTo(longValue));
+        Assert.That(settings.Configuration["Classes:Mantiq:OutputFolder"], Is.EqualTo(longValue));
+        Assert.That(new SavedClasses(settings.Configuration).Find("Mantiq")!.Usable, Is.False);
+    }
+
+    /// <summary>
+    /// The line a recording gives for Recording:OutputFolder longer than any path, dropped from the file, names the setting
+    /// and what is used in its place, and says the value by its length and its start, never the whole of it, which may be
+    /// any length; a short refused value is still quoted whole.
+    /// </summary>
+    [Test]
+    public void The_drop_line_for_a_value_too_long_to_show_gives_its_length_and_its_start()
+    {
+        var settings = new TestSettings(_data.Path, Json(new { Recording = new { OutputFolder = new string('a', 40_000), FlushSeconds = "abc" } }));
+
+        var dropped = settings.Reloader.TryReload(forRecording: true).Dropped.ToDictionary(setting => setting.Key, setting => setting.Describe("the file"));
+        var folderLine = dropped["Recording:OutputFolder"];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(folderLine.StartsWith($"Recording:OutputFolder is a value 40,000 characters long, starting \"{new string('a', 40)}...\", in the file, which the check refuses; this recording uses ", StringComparison.Ordinal), folderLine);
+            Assert.That(folderLine.Contains(new string('a', 41), StringComparison.Ordinal), Is.False, "never more than its start");
+            Assert.That(dropped["Recording:FlushSeconds"].StartsWith("Recording:FlushSeconds is \"abc\" in the file, which the check refuses; this recording uses ", StringComparison.Ordinal), dropped["Recording:FlushSeconds"]);
+        });
     }
 
     /// <summary>

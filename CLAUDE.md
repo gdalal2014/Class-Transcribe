@@ -1004,7 +1004,7 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   `GoogleWorld`, and a batch of two videos recorded as they play through the real `RecorderHost`
   (the window's settings point `YouTube:OEmbedBaseUrl` at the stub; the recorder gets
   `FakeVideoWindows` and a `VideoPlayback` over the test's processes). Nothing is played or recorded. The suite holds
-  5,152 tests after the move into four projects, the S5 review's fixes and the fix for a glossary or a recordings folder longer than any path (architecture slices 4 and 5), all passing. The uploads by
+  5,167 tests after the move into four projects, the S5 review's fixes, the fix for a glossary or a recordings folder longer than any path and the refusal of a recordings folder longer than any path (architecture slices 4 and 5), all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -1040,9 +1040,9 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
-  four and a half minutes (4 min 36 s for 5,152 tests after the move into four projects, the S5 review's fixes and
-  the fix for a glossary or a recordings folder longer than any path, architecture slices 4 and 5, on 6 November
-  2026, plus the build).
+  four and a half minutes (4 min 34 s for 5,167 tests after the move into four projects, the S5 review's fixes, the
+  fix for a glossary or a recordings folder longer than any path and the refusal of a recordings folder longer than
+  any path, architecture slices 4 and 5, on 6 November 2026, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1373,10 +1373,30 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   video's limit held by the file limit (see the vendors' values below), and a
   recordings folder (`Recording:OutputFolder` or a class's `OutputFolder`) inside OneDrive, Google
   Drive for desktop or Dropbox, at a drive's root, the user folder itself, or holding `AppData` or
-  `Windows` (`SettingsCheck.FolderWarnings`, over `IOutputFolderFacts`; a folder longer than any path can be, a hand
-  edit the check puts no limit on, brings no warning and throws nothing, as the check runs behind every read, the
-  start's and the gate's included; `class set --course` then says nothing of where the old course's recordings are;
-  recording into such a folder still fails where it is used). `SettingsReloader.Snapshot` (`ISettingsStore.Snapshot`) gives the Recording, ElevenLabs (never the
+  `Windows` (`SettingsCheck.FolderWarnings`, over `IOutputFolderFacts`; a folder longer than any path can be brings no
+  warning and throws nothing (`NamedRoot`), as the warnings are worked out beside the problems on every read, the
+  start's and the gate's included, refused or not; `class set --course` on a class with such a folder says nothing of
+  where the old course's recordings are (`ClassCommand.RootOrNone`)). A recordings folder whose full path is longer
+  than any path on Windows can be is refused as one with a character no path may hold is (Gulzar's decision of 6
+  November 2026), by one rule, `Infrastructure/Storage/FolderPaths` (`TooLong`, and `Named`, which
+  `ClassFolders.RootNamedBy` now delegates to; in Infrastructure since it reads the environment, which architecture
+  check 2 bans in Core and Application): the value with %VAR% expanded, quotes trimmed and a relative one taken from
+  the user profile is too long when `Path.GetFullPath` throws `PathTooLongException` (from 32,767 characters) or gives
+  more than `FolderPaths.LongestPath`, 32,766 (Windows' limit with the null; `GetFullPath` passes a `\\?\` path
+  whatever its length; a folder just under it passes and still fails where it is used, once the course, date and file
+  names are added); the words give the full path's length and the value's first 40 characters, never the whole value,
+  and the folder need not exist. `Recording:OutputFolder` (the file or `Recording__OutputFolder`, which then stops the
+  start) is a problem of `SettingsCheck.CheckFolderLength`, so a refused file keeps the last accepted values and a
+  recording drops the setting (`DroppedSetting.Describe` gives a refused value over 80 characters by its length and its
+  first 40: `Recording:OutputFolder is a value 40,000 characters long, starting "...", in ...`); a saved class's
+  `OutputFolder` makes that class alone unusable (`SavedClass.Check`, which is handed the rule as `folderTooLong`:
+  `FolderPaths.TooLong` from `SavedClasses` and `CommandLineTree`, `IClassFolders.TooLong` from `ClassCommand`), so
+  `class add`/`set --output` and `settings set Classes:<name>:OutputFolder` are refused with exit 2 before anything is
+  written, and menu C's folder question hands such a value (or one with a character no path may hold) on as typed, to
+  the same refusal, which names the class and changes nothing; `CommandLineTree.FolderProblem` refuses such an
+  `--output` or `--log-folder` (as written, from the current folder, then with its variables expanded as the run
+  expands them) as a mistake of the command line, exit 2; and menu S's folder question refuses it before anything is
+  saved. `SettingsReloader.Snapshot` (`ISettingsStore.Snapshot`) gives the Recording, ElevenLabs (never the
   key), Transcript, Drive (no secret is ever a setting), YouTube and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
   the recorder in the request file, and `RunJournal.WriteRequest` leaves the key out should it ever
   be in it. A recording that is running keeps the settings it started with. The microphone's

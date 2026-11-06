@@ -4,6 +4,7 @@ using ClassScribe.Application.Storage;
 using ClassScribe.Core.Camera;
 using ClassScribe.Core.Storage;
 using ClassScribe.Infrastructure.Settings;
+using ClassScribe.Infrastructure.Storage;
 using Microsoft.Extensions.Options;
 
 namespace ClassScribe.Cli.Commands;
@@ -61,7 +62,8 @@ public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, I
     /// 1: asks for the recordings folder, dragged into the window or typed (a relative path taken from the user's folder, as
     /// Recording:OutputFolder takes one), shows where the next class would go, saves it,
     /// gives the check's warnings about it (inside OneDrive, a drive's root, another program's sync folder), and says where
-    /// the recordings made before stay, since nothing moves. Enter alone or Esc goes back.
+    /// the recordings made before stay, since nothing moves. A path with a character Windows does not allow, or one whose full
+    /// path is longer than any path can be, is refused before anything is saved. Enter alone or Esc goes back.
     /// </summary>
     private async Task ChangeFolderAsync()
     {
@@ -76,6 +78,13 @@ public sealed class SettingsMenu(SettingsWriter writer, SettingsPlaces places, I
         if (typed.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || typed.IndexOfAny(['<', '>', '|', '?', '*']) >= 0)
         {
             ui.WriteLine($"\"{typed}\" is not a folder's path: it has a character Windows does not allow in a path.");
+            return;
+        }
+
+        // Said by its length and its start, as Recording:OutputFolder's check says it: never the whole value, which may be any length.
+        if (FolderPaths.TooLong(typed) is { } tooLong)
+        {
+            ui.WriteLine($"The path typed {tooLong}.");
             return;
         }
 

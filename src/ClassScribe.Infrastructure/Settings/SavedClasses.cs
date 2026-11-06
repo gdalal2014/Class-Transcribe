@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ClassScribe.Application.Settings;
 using ClassScribe.Core.Settings;
+using ClassScribe.Infrastructure.Storage;
 
 namespace ClassScribe.Infrastructure.Settings;
 
@@ -66,7 +67,7 @@ public sealed class SavedClasses(IConfiguration configuration, SettingsFile? fil
 
     /// <summary>The saved classes in <paramref name="settings"/>, each checked on its own (see <see cref="SavedClass.Check"/>).</summary>
     public static IReadOnlyList<SavedClassEntry> Read(IConfiguration settings) =>
-        [.. settings.GetSection(SettingsCatalog.ClassesSection).GetChildren().Select(child => SavedClass.Check(child.Key, Fields(child)))];
+        [.. settings.GetSection(SettingsCatalog.ClassesSection).GetChildren().Select(child => SavedClass.Check(child.Key, Fields(child), FolderPaths.TooLong))];
 
     /// <summary>The fields of one class's section, by name, ignoring case; a field holding a list or an object is passed over.</summary>
     private static IReadOnlyDictionary<string, string?> Fields(IConfigurationSection section) =>

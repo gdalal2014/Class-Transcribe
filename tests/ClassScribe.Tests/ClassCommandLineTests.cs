@@ -107,6 +107,25 @@ public class ClassCommandLineTests
         Assert.That(_line.Output.ToString(), Does.Contain("ClassScribe class list"), "the help, with its examples");
     }
 
+    /// <summary>
+    /// class add and class set --output with a folder whose full path is longer than any path can be are refused before
+    /// anything runs, with the help and exit 2, in words that give its length and its start, as one with a character no path
+    /// may hold is.
+    /// </summary>
+    [TestCase("add")]
+    [TestCase("set")]
+    public async Task An_output_longer_than_any_path_is_named_before_anything_runs(string verb)
+    {
+        var longValue = @"C:\" + new string('a', 39_997);
+
+        Assert.That(await _line.RunAsync("class", verb, "Mantiq", "--output", longValue), Is.EqualTo(2));
+
+        Assert.That(_asked, Is.Empty);
+        Assert.That(_line.Mistakes, Has.Member(
+            $"--output takes a folder, such as \"D:\\Classes\"; the one given names a folder whose full path is 40,000 characters long, starting \"C:\\{new string('a', 37)}...\"; no path on Windows can be longer than 32,766 characters"));
+        Assert.That(_line.Output.ToString(), Does.Contain("ClassScribe class list"), "the help, with its examples");
+    }
+
     /// <summary>class show's exit code 2, a class that cannot be used or is not there, is the answer, without the help; class is of its own kind.</summary>
     [Test]
     public async Task Show_answers_without_the_help_and_class_is_its_own_kind()

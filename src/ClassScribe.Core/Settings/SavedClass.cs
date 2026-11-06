@@ -102,12 +102,20 @@ public sealed record SavedClass(string Name, string Course, RecordingMode Mode, 
     /// The class <paramref name="name"/> with <paramref name="fields"/>, checked (layout-config 4.2, amendment 11): the name
     /// and the course must survive the cleaning a folder's name gets unchanged and be at most 80 characters, the course is
     /// required; the mode one of three; App and Device not both, and neither in person; the microphone and the app it follows
-    /// only with a microphone, the app never ClassScribe and never in person; the folder a path; Transcribe true or false;
-    /// the camera only in person, 1 to 200 characters; its size by <see cref="CameraSize.TryParse"/>, only with a camera.
-    /// The glossary is read as it is written and never makes the class unusable, since a glossary must never stop a
+    /// only with a microphone, the app never ClassScribe and never in person; the folder a path, without a character no path
+    /// may hold and with a full path no longer than any path can be, as <paramref name="folderTooLong"/> says; Transcribe true
+    /// or false; the camera only in person, 1 to 200 characters; its size by <see cref="CameraSize.TryParse"/>, only with a
+    /// camera. The glossary is read as it is written and never makes the class unusable, since a glossary must never stop a
     /// recording. Fields this build does not know pass.
     /// </summary>
-    public static SavedClassEntry Check(string name, IReadOnlyDictionary<string, string?> fields)
+    /// <param name="name">The class's name, its key under Classes.</param>
+    /// <param name="fields">Its fields, by name.</param>
+    /// <param name="folderTooLong">
+    /// What is wrong with an OutputFolder whose full path is longer than any path can be, in the words that follow the field's
+    /// name, or null when it fits: the storage's rule (<c>FolderPaths.TooLong</c>, or <c>IClassFolders.TooLong</c> in the use
+    /// cases), handed in because working out a full path reads the environment, which Core never does.
+    /// </param>
+    public static SavedClassEntry Check(string name, IReadOnlyDictionary<string, string?> fields, Func<string, string?> folderTooLong)
     {
         var problems = new List<string>();
 
@@ -148,6 +156,8 @@ public sealed record SavedClass(string Name, string Course, RecordingMode Mode, 
         var output = Field(ClassFields.OutputFolder);
         if (output is not null && output.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
             problems.Add("OutputFolder holds a tab, a line break or another character that cannot be part of a path.");
+        else if (output is not null && folderTooLong(output) is { } tooLong)
+            problems.Add($"OutputFolder {tooLong}. Give it the folder's own path, such as D:\\Classes, or leave it empty for Recording:OutputFolder.");
 
         var transcribe = true;
         if (Field(ClassFields.Transcribe) is { } transcribeText && !bool.TryParse(transcribeText, out transcribe))

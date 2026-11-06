@@ -28,6 +28,14 @@ public interface IClassFolders
     string RootFor(string? outputFolder);
 
     /// <summary>
+    /// What is wrong with <paramref name="outputFolder"/>, a recordings folder setting, when its full path, as
+    /// <see cref="RootFor"/> works it out, is longer than any path on Windows can be: the words that follow the setting's
+    /// name, giving its length and its start, never the whole of it. Null when it fits, is empty, or holds a character no path
+    /// may hold, which is a problem of its own. It is the rule the saved classes' check is handed.
+    /// </summary>
+    string? TooLong(string? outputFolder);
+
+    /// <summary>
     /// The files for a recording named <paramref name="name"/> starting now: the folder of that name, the course, under
     /// <paramref name="root"/>, the recordings folder given for the run (--output), or under the root when that is null; in
     /// it the date folder of the local date now, or the first of its " (2)", " (3)" and so on that holds no recording yet;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using ClassScribe.Application.Drive;
 using ClassScribe.Application.Settings;
 using ClassScribe.Application.Transcription;
@@ -562,6 +563,58 @@ public class SettingsCheckTests
 
         Assert.That(problems, Has.Count.EqualTo(1));
         Assert.That(problems[0], Does.StartWith(setting).And.Contain(@"D:\\Classes").And.Contain("D:/Classes"));
+    }
+
+    /// <summary>
+    /// Recording:OutputFolder whose full path is longer than any path on Windows can be (32,766 characters, the first length
+    /// Path.GetFullPath refuses being 32,767) is refused as a folder with a character no path may hold is, in words that give
+    /// the full path's length and the value's first 40 characters, never the whole value, and say how to fix it: a full path,
+    /// a \\?\ path, which Path.GetFullPath passes whatever its length, and a relative one taken from the user profile alike.
+    /// One a character short of the limit passes, as does a long one that fits.
+    /// </summary>
+    [Test]
+    public void A_recordings_folder_longer_than_any_path_is_refused_with_its_length_and_start()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var relative = new string('r', 32_767 - profile.Length);
+        var relativeLength = Path.Join(profile, relative).Length;
+        var full = @"C:\" + new string('a', 39_997);
+        var extended = @"\\?\C:\" + new string('e', 39_993);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = full }), Is.EqualTo(new[]
+            {
+                $"Recording:OutputFolder names a folder whose full path is 40,000 characters long, starting \"C:\\{new string('a', 37)}...\"; no path on Windows can be longer than 32,766 characters. Write the folder's own path, such as D:\\Classes, or leave it empty for %USERPROFILE%\\ClassScribe."
+            }));
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = extended }).Single(),
+                Does.StartWith($"Recording:OutputFolder names a folder whose full path is 40,000 characters long, starting \"\\\\?\\C:\\{new string('e', 33)}...\";"));
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = relative }).Single(),
+                Does.StartWith(string.Create(CultureInfo.InvariantCulture, $"Recording:OutputFolder names a folder whose full path is {relativeLength:N0} characters long, starting \"{new string('r', 40)}...\";")));
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = @"C:\" + new string('a', 32_763) }), Is.Empty, "32,766 characters fit");
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = @"C:\" + new string('a', 32_764) }), Has.Count.EqualTo(1), "32,767 do not");
+            Assert.That(Problems(new() { ["Recording:OutputFolder"] = @"D:\" + new string('a', 300) }), Is.Empty, "a long folder that fits");
+        });
+    }
+
+    /// <summary>
+    /// A recordings folder that becomes longer than any path only once its environment variables are expanded is refused
+    /// too, its start shown as written; one with a character no path may hold gets that problem alone, however long.
+    /// </summary>
+    [Test]
+    public void A_recordings_folder_too_long_once_expanded_is_refused_and_a_bad_character_is_said_alone()
+    {
+        const string variable = "CLASSSCRIBE_TEST_LONG_FOLDER";
+        using var _ = new TemporaryVariable(variable, new string('v', 20_000));
+
+        var expanded = Problems(new() { ["Recording:OutputFolder"] = $"C:\\%{variable}%\\%{variable}%" });
+        var badCharacter = Problems(new() { ["Recording:OutputFolder"] = "C:\\\t" + new string('a', 40_000) });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(expanded.Single(), Does.StartWith($"Recording:OutputFolder names a folder whose full path is 40,004 characters long, starting \"C:\\%{variable}%\\%{variable[..5]}...\";"));
+            Assert.That(badCharacter.Single(), Does.StartWith("Recording:OutputFolder holds a tab, a line break or another character that cannot be part of a path."));
+        });
     }
 
     /// <summary>

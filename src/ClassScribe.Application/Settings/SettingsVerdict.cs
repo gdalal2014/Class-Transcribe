@@ -1,13 +1,26 @@
+using System.Globalization;
+
 namespace ClassScribe.Application.Settings;
 
 /// <summary>A setting a recording left out of a settings file that failed the check (build-plan amendment 4).</summary>
 /// <param name="Key">The setting, such as Recording:FlushSeconds.</param>
-/// <param name="Refused">The value the file gave it, which the check refused.</param>
+/// <param name="Refused">The value the file gave it, which the check refused, whole.</param>
 /// <param name="InPlace">The value the recording uses in its place: an environment variable's, or the default.</param>
 public sealed record DroppedSetting(string Key, string? Refused, string InPlace)
 {
-    /// <summary>What a recording's first lines say of it, after the file's path.</summary>
-    public string Describe(string path) => $"{Key} is \"{Refused}\" in {path}, which the check refuses; this recording uses {InPlace} in its place.";
+    /// <summary>The longest refused value the line quotes whole; a longer one, such as a folder longer than any path, is said by its length and its start.</summary>
+    public const int LongestQuoted = 80;
+
+    /// <summary>How many characters of a refused value too long to quote the line shows, as the problem of a folder longer than any path shows.</summary>
+    public const int ShownStart = 40;
+
+    /// <summary>
+    /// What a recording's first lines say of it, after the file's path: the refused value quoted, or, when it is longer than
+    /// <see cref="LongestQuoted"/>, its length and its first <see cref="ShownStart"/> characters, never the whole of it.
+    /// </summary>
+    public string Describe(string path) => Refused is { Length: > LongestQuoted } tooLong
+        ? string.Create(CultureInfo.InvariantCulture, $"{Key} is a value {tooLong.Length:N0} characters long, starting \"{tooLong[..ShownStart]}...\", in {path}, which the check refuses; this recording uses {InPlace} in its place.")
+        : $"{Key} is \"{Refused}\" in {path}, which the check refuses; this recording uses {InPlace} in its place.";
 }
 
 /// <summary>What reading the settings again found: whether they can be used, what is wrong if not, and which file was read.</summary>

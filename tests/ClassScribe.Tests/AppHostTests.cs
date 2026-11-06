@@ -277,6 +277,27 @@ public class AppHostTests
         Assert.That(explanation, Does.Not.Contain("   at "), "no stack trace");
     }
 
+    /// <summary>
+    /// Recording__OutputFolder naming a folder longer than any path can be (a relative value taken from the user profile;
+    /// an environment variable itself holds at most 32,767 characters) stops the start as any value the check refuses does,
+    /// with the check's words, which give the length and the start, never the whole value.
+    /// </summary>
+    [Test]
+    public void A_recordings_folder_from_an_environment_variable_longer_than_any_path_stops_the_start()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var value = new string('a', 32_767 - profile.Length);
+        WriteSettings("""{ "Recording": { "FlushSeconds": 5 } }""");
+        using var variable = new TemporaryVariable("Recording__OutputFolder", value);
+
+        var failure = Assert.Catch(() => AppHost.Build(Places(), apiKey: "test-key").Dispose())!;
+        var explanation = AppHost.DescribeFailure(failure, Places());
+
+        Assert.That(explanation, Does.StartWith("ClassScribe could not start."));
+        Assert.That(explanation, Does.Contain("Recording:OutputFolder names a folder whose full path is ").And.Contain($"starting \"{new string('a', 40)}...\"").And.Contain("environment variable"));
+        Assert.That(explanation, Does.Not.Contain(value), "never the whole value");
+    }
+
     /// <summary>The host checks that every per-run service is taken inside a run's scope, so a slip shows at once rather than as a leak.</summary>
     [Test]
     public void A_per_run_service_cannot_be_taken_outside_a_run()

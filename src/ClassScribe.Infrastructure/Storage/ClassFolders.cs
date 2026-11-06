@@ -91,16 +91,10 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
     /// The folder Recording:OutputFolder names when it is <paramref name="outputFolder"/>, as a path and nothing more:
     /// environment variables such as %USERPROFILE% expanded and any surrounding quotes removed, a relative path taken
     /// from the user profile, and an empty one meaning a ClassScribe folder there. Never refused, for the settings'
-    /// warnings, which only say where the folder is; reading or writing there goes through <see cref="RootFor"/>.
+    /// warnings, which only say where the folder is; reading or writing there goes through <see cref="RootFor"/>. The rule is
+    /// <see cref="FolderPaths.Named"/>'s, which the settings check's refusal of a folder longer than any path shares.
     /// </summary>
-    public static string RootNamedBy(string? outputFolder)
-    {
-        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var configured = Environment.ExpandEnvironmentVariables(outputFolder ?? "").Trim().Trim('"').Trim();
-        return configured.Length == 0
-            ? Path.Combine(profile, "ClassScribe")
-            : Path.GetFullPath(configured, profile);
-    }
+    public static string RootNamedBy(string? outputFolder) => FolderPaths.Named(outputFolder);
 
     /// <summary>
     /// <paramref name="root"/> as it is, unless <see cref="RefuseTheRealFolderSwitch"/> is on and it is the real
@@ -893,6 +887,9 @@ public sealed partial class ClassFolders(IOptionsMonitor<RecordingOptions> optio
 
     /// <inheritdoc />
     string IClassFolders.RootFor(string? outputFolder) => RootFor(outputFolder);
+
+    /// <inheritdoc />
+    string? IClassFolders.TooLong(string? outputFolder) => FolderPaths.TooLong(outputFolder);
 
     /// <inheritdoc />
     bool IClassFolders.IsVideo(RecordingFiles files) => IsVideo(files);
