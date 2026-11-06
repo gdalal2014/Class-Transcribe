@@ -602,7 +602,8 @@ plan wins.
   `ElevenLabs__BaseUrl`, `Drive__Enabled=false` and `CLASSSCRIBE_SETTINGS_FOLDER` in its own process only (never at
   user scope; builds before saved classes and the settings folder (build plan step 1) read only the `appsettings.json`
   beside their exe and pass over the variable, and the kit says which the build reads), runs `record ... --new --output
-  "%USERPROFILE%\ClassScribe dry runs"`, checks the run
+  "%USERPROFILE%\ClassScribe dry runs"` (`-Mic` is `OBSBOT` by default, as his launcher records, so a dry run takes the
+  path a class takes; `-Mic "Microphone Array"` on a laptop without one), checks the run
   file (`home` `Separate`), the transcript, the recording's log and the stand-in's log, compares the listings of
   `%LOCALAPPDATA%\ClassScribe`, `%APPDATA%\ClassScribe` and `%USERPROFILE%\ClassScribe` before and after, and adds the
   result to `%LOCALAPPDATA%\ClassScribe-DryRuns\runs.log`, which a release's finish reads. It refuses while a class

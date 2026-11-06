@@ -206,9 +206,11 @@ public class DryRunScriptTests
     /// <summary>
     /// The window's command line: each argument quoted as Windows' C runtime reads it back (spaces, quotes, a trailing
     /// backslash before the closing quote, an empty value), and the record command for the class with the microphone, the
-    /// class alone in five minutes, a saved class and the camera in person; options given as one string through
-    /// Start-DryRun.cmd (a comma list, settings joined by semicolons) split into their items; and the stand-in's command
-    /// line, tied by --parent to the dry run's own process, so that it ends with the dry run even when its window is closed.
+    /// class alone in five minutes, a saved class and the camera in person; the microphone's default, the OBSBOT, as the
+    /// class launcher records, so that a dry run takes the path a class takes (the laptop's array must be asked for);
+    /// options given as one string through Start-DryRun.cmd (a comma list, settings joined by semicolons) split into their
+    /// items; and the stand-in's command line, tied by --parent to the dry run's own process, so that it ends with the dry
+    /// run even when its window is closed.
     /// </summary>
     [Test]
     [Category("WindowsProcess")]
@@ -221,6 +223,8 @@ public class DryRunScriptTests
             Line @{ Name = 'Dry run'; App = 'chrome'; Mic = 'Microphone Array'; NoMic = $true; Follows = 'chrome'; Short = $true; Output = 'C:\out' }
             Line @{ Name = 'Dry run'; Class = 'Mantiq'; Output = 'C:\out' }
             Line @{ Name = 'Dry run'; Mic = 'OBSBOT'; Camera = 'OBSBOT'; Output = 'C:\out' }
+            Line @{ Name = 'Dry run'; App = 'chrome'; Mic = $Mic; NoMic = $false; Follows = 'chrome'; Short = $false; Output = 'C:\out' }
+            "default mic [$Mic]"
             "expect $((Split-Items -Items @('.srt,.vtt', ' .md ') -Separator ',') -join '|')"
             "settings $((Split-Items -Items @('Recording:FlushSeconds=5;ElevenLabs:KeytermsFile=keyterms.txt') -Separator ';') -join '|')"
             "none $(@(Split-Items -Items @() -Separator ',').Count)"
@@ -234,6 +238,8 @@ public class DryRunScriptTests
             "record \"Dry run\" --app chrome --minutes 5 --new --output C:\\out",
             "record --class Mantiq --new --output C:\\out",
             "record \"Dry run\" --in-person OBSBOT --camera OBSBOT --new --output C:\\out",
+            "record \"Dry run\" --app chrome --mic OBSBOT --mic-follows chrome --new --output C:\\out",
+            "default mic [OBSBOT]",
             "expect .srt|.vtt|.md",
             "settings Recording:FlushSeconds=5|ElevenLabs:KeytermsFile=keyterms.txt",
             "none 0",

@@ -23,9 +23,10 @@ window, and the check below says so).
 Options can follow the `.cmd` from a terminal, as for the script:
 
 ```powershell
-.\Start-DryRun.cmd                                   # the full dry run: Chrome and the microphone array, about 15 minutes
+.\Start-DryRun.cmd                                   # the full dry run: Chrome and the OBSBOT's microphone, about 15 minutes
 .\Start-DryRun.cmd -Short -NoMic                     # five minutes of the class alone, stopped by itself
-.\Start-DryRun.cmd -Short -Mic "Microphone Array"    # five minutes with the microphone
+.\Start-DryRun.cmd -Short                            # five minutes with the microphone
+.\Start-DryRun.cmd -Mic "Microphone Array"           # the laptop's own array, on a laptop without the OBSBOT
 .\Start-DryRun.cmd -Follows none                     # the microphone written throughout, not only while Chrome listens
 .\Start-DryRun.cmd -Expect .srt,.vtt                 # files that must be beside the recording (subtitles, build plan step 5)
 .\Start-DryRun.cmd -Setting "ElevenLabs:KeytermsFile=keyterms-islamic-sciences.txt"   # copied from %APPDATA%\ClassScribe
@@ -38,7 +39,7 @@ Options can follow the `.cmd` from a terminal, as for the script:
 | `-Exe <exe>` | Runs that installed exe instead of publishing; nothing is removed at the end. |
 | `-Name "Dry run"` | The recording's name. |
 | `-App chrome` | The app whose sound is the class (`ClassScribeTestPlayer` with `-Player`). |
-| `-Mic "Microphone Array"` | The microphone, by part of its name, as your class launchers name it. |
+| `-Mic OBSBOT` | The microphone, by part of its name, as your class launcher names it. `OBSBOT` by default, so that a dry run takes the path a class takes: the camera listing at the pick, the webcam rules, the hold. On a laptop without one, `-Mic "Microphone Array"`. |
 | `-NoMic` | The class alone. |
 | `-Follows <app>` | The app the microphone follows; by default the class app; `none` writes it throughout. |
 | `-Class "<saved class>"` | `record --class`: refused by builds without saved classes (they come with build plan step 1). |
@@ -77,7 +78,7 @@ Options can follow the `.cmd` from a terminal, as for the script:
    (or `-Setting`) name by a relative path, `ElevenLabs:KeytermsFile` and each saved class's `KeytermsFile`, is copied
    from `%APPDATA%\ClassScribe` into that folder, as a class would read it there; one named by a full path or with
    `%APPDATA%` is read where it is, never copied, and your settings folder is only read.
-6. It starts the window: `record "Dry run" --app chrome --mic "Microphone Array" --mic-follows chrome --new --output
+6. It starts the window: `record "Dry run" --app chrome --mic OBSBOT --mic-follows chrome --new --output
    "%USERPROFILE%\ClassScribe dry runs"`, and tells you what to do: play a lecture in Chrome and speak for part of it,
    M once, P twice, close the window once (the recorder goes on), press O in the dry run's window (the side copy opens
    and shows the recording; A in its menu if the menu shows instead), and stop with Q twice there. About 3 seconds after
@@ -108,7 +109,7 @@ publish log, the stand-in's log, the settings folder and `result.txt`.
 ## Today's builds and the settings folder
 
 `CLASSSCRIBE_SETTINGS_FOLDER` is read only by builds with saved classes and the settings folder (build plan step 1),
-which keep your settings in your own folder. Builds before it, 0.4.0 and 0.4.1 among them, read only the
+which keep your settings in your own folder. Builds before it, 0.4.0 among them, read only the
 `appsettings.json` beside their exe: for a dry run, the side
 copy's own, which is the branch's file as published, never your installed copy's. The kit still sets the variable (those
 builds pass over it) and says which of the two the build reads, by looking for the variable's name in its

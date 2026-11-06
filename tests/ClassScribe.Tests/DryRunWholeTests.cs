@@ -205,7 +205,8 @@ public class DryRunWholeTests
     private string DryRunFolder() => Directory.GetDirectories(Root("DryRuns")).Single();
 
     /// <summary>
-    /// A build that behaves passes: the window gets the dry run's command line and its environment (a dummy key, the
+    /// A build that behaves passes: the window gets the dry run's command line (the OBSBOT's microphone by default, as the
+    /// class launcher records) and its environment (a dummy key, the
     /// stand-in's address, Drive off, the settings folder), the stand-in answers one transcript with its keyterms, the run
     /// file passes, the log's warning is shown, the only changes are the run file and the recorder's log, the result is
     /// recorded as PASS in runs.log, and the script's own process has its environment back.
@@ -222,7 +223,7 @@ public class DryRunWholeTests
         Assert.That(facts[0..2], Is.EqualTo(new[] { "key dummy", "drive false" }));
         Assert.That(facts[2], Is.EqualTo("settings " + Path.Combine(DryRunFolder(), "settings")));
         Assert.That(facts[3], Does.Match(@"^base http://127\.0\.0\.1:\d+/$"));
-        Assert.That(facts[4], Is.EqualTo($"args record|Dry run|--app|chrome|--mic|Microphone Array|--mic-follows|chrome|--new|--output|{Root("Recordings")}"));
+        Assert.That(facts[4], Is.EqualTo($"args record|Dry run|--app|chrome|--mic|OBSBOT|--mic-follows|chrome|--new|--output|{Root("Recordings")}"));
         Assert.That(facts[5], Is.EqualTo("answer 200 account 200"));
         Assert.That(File.ReadAllText(Path.Combine(DryRunFolder(), "stand-in.log")), Does.Contain("2 keyterms").And.Contain("answered 200"));
         var record = File.ReadAllLines(Path.Combine(Root("DryRuns"), "runs.log")).Single();
