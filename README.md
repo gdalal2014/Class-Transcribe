@@ -583,10 +583,11 @@ microphone's own sentence follows the length.
 The window's title shows the state at a glance, such as `REC 01:12:40 Kalam | ClassScribe`,
 `PAUSED ...`, `! NOT RECORDING (waiting for "chrome") Kalam`, `REC 01:12:40 Kalam (no sound 2 min)`,
 `REC 01:12:40 MIC MUTED Kalam` with your microphone (see [Your microphone](#your-microphone)),
-`UPLOADING 40% Kalam`, `TRANSCRIBING Kalam`, then `DONE Kalam`, `! FAILED Kalam` or
+`UPLOADING 40% Kalam`, `TRANSCRIBING Kalam`, `MAKING VIDEO 40% Tajwid 4` while only a lesson's
+video remains to be made, then `DONE Kalam`, `! FAILED Kalam` or
 `CANCELLED Kalam`, with `(stops 20:30)` while `--minutes` or the safety stop will end it, and
 `(in this window)` when the recording runs in that window. The taskbar button is green while
-recording or uploading, yellow when paused or when something is worth a look, red when something
+recording, uploading or making the video, yellow when paused or when something is worth a look, red when something
 needs attention or the run failed, and a bar runs back and forth while ClassScribe waits for
 ElevenLabs. It flashes once for each new problem that needs attention now, until the window comes
 forward; something only worth a look turns it yellow without a flash. Windows Terminal shows the
@@ -1547,7 +1548,11 @@ made in a camera process of its own while the transcript is made, and the end of
   that no picture is lost to a video made without it; the line says what to do.
 - **While it is made** the run's file says the recording is complete and being transcribed or its video
   made, so Google Drive, `transcribe` and a move wait, and the next class may start. The laptop is kept
-  awake until the video is made. **Ctrl+C** after the stop cancels the video with the transcript: the
+  awake until the video is made. While the transcript is still being made the title follows the
+  transcript (`UPLOADING 40%`, `TRANSCRIBING`); once only the video remains (record-only from the stop,
+  or the transcript saved) the line `Only the lesson's video remains to be made (Ctrl+C cancels it; its
+  pieces are kept for finish-video)` is said and the title shows `MAKING VIDEO 40%`, the taskbar's bar
+  green and filling with it. **Ctrl+C** after the stop cancels the video with the transcript: the
   unfinished file goes, the pieces stay.
 - **When it is not made** (a failed check, Ctrl+C, a camera process that makes no headway for 2 minutes,
   a crash, Windows ending the session), the pieces are kept and the line names the command that
@@ -3100,6 +3105,8 @@ words you see.
 | `... is older than ....mp4, which holds its picture already, so it is left out; the older video's picture is used instead, up to the first newer piece` | Normal for a continued lesson whose earlier pieces are still there: the earlier part's picture comes from the older video, the new part's from its pieces. |
 | `The lesson's video was not made: The lesson's sound could not all be read: ..._part2.wav is not a readable WAV file, so the video was not made; its picture would be out of step with the sound after it. ...` | A `.wav` part of the lesson is damaged. The sound read for the video skips it, as the transcript's upload does (`Skipping ...: it is not a readable WAV file`), so the video's sound would be shorter than the lesson and every later piece's picture would come early. The pieces are kept. If you can replace the part (from Drive, say), run `finish-video`; to make the video without it all the same, move the damaged part out of the folder first, and know that the sound after it runs early. |
 | `The lesson's video was cancelled; the camera's pieces are kept. To make it later, free: ...` | Ctrl+C after the stop cancelled the video with the transcript. Run the command when you want the video. |
+| `Only the lesson's video remains to be made (Ctrl+C cancels it; its pieces are kept for finish-video)` | Normal: the transcript is saved (or the record-only recording complete), and the video is still being made; the title shows `MAKING VIDEO 40%`. Wait for it, or press Ctrl+C to leave it for `finish-video`. |
+| `The lesson's video was not made: an unexpected failure (...); the camera's pieces are kept. To make it again, free: ...` | Not expected: something failed around the camera process that makes the video, rather than in it. The recording and its transcript are as they were (the run ends as its transcript did); run the command given. If it repeats, report the line. |
 | `The camera wrote no picture in this lesson, so it has no video to make; the sound is kept` | The camera never gave a picture (not connected, refused). The lesson's sound is kept and transcribed as usual. |
 | `The sound of this lesson is on Google Drive only, so its video cannot be made again here.` (finish-video, exit code 1) | free-space deleted the `.wav` files. Download them from Drive into the lesson's folder, then run `finish-video` again. |
 | `... has its video, ....mp4, and no camera pieces left to make it again from.` or `... has no camera pieces, so it has no picture to make a video of.` (exit code 1) | Its pieces were deleted once the video passed its check, or it was recorded without the camera. Nothing to make. |

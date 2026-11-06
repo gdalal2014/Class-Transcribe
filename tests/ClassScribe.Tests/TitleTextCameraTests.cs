@@ -35,6 +35,40 @@ public sealed class TitleTextCameraTests
         Assert.That(TitleText.For(Lesson(RecorderPhase.Recording, null)), Is.EqualTo("REC 01:12:40 Tajwid 4 | ClassScribe"));
     }
 
+    /// <summary>
+    /// Once only the lesson's video remains (record-only, or its transcript saved), the title says how far it has got, MAKING
+    /// VIDEO 40%, and the taskbar's bar fills with it, green (review 3.17); while the transcript is still made, the title
+    /// follows the transcript, as before.
+    /// </summary>
+    [Test]
+    public void The_title_says_MAKING_VIDEO_while_only_the_video_remains()
+    {
+        var making = Lesson(RecorderPhase.Transcribing, null) with { VideoPercent = 40 };
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(TitleText.For(making), Is.EqualTo("MAKING VIDEO 40% Tajwid 4 | ClassScribe"));
+            Assert.That(TitleText.TaskbarFor(making), Is.EqualTo(TaskbarState.Normal));
+            Assert.That(TitleText.TaskbarPercentFor(making), Is.EqualTo(40));
+            Assert.That(TitleText.For(making with { VideoPercent = 140 }), Is.EqualTo("MAKING VIDEO 100% Tajwid 4 | ClassScribe"));
+            Assert.That(TitleText.For(Lesson(RecorderPhase.Transcribing, null)), Is.EqualTo("TRANSCRIBING Tajwid 4 | ClassScribe"));
+            Assert.That(TitleText.For(Lesson(RecorderPhase.Uploading, null) with { UploadPercent = 20, VideoPercent = 40 }), Is.EqualTo("UPLOADING 20% Tajwid 4 | ClassScribe"), "the transcript first");
+        }
+    }
+
+    /// <summary>The video's percent crosses the link as a last field with a default: a state an older recorder wrote reads with none.</summary>
+    [Test]
+    public void The_video_s_percent_crosses_the_link_and_an_older_state_reads_without_it()
+    {
+        var state = Lesson(RecorderPhase.Transcribing, null) with { VideoPercent = 40 };
+        var json = System.Text.Json.JsonSerializer.Serialize(state, LinkJson.Default.RecorderState);
+        var older = System.Text.Json.JsonSerializer.Serialize(state with { VideoPercent = null }, LinkJson.Default.RecorderState).Replace(",\"videoPercent\":null", "");
+
+        Assert.That(System.Text.Json.JsonSerializer.Deserialize(json, LinkJson.Default.RecorderState), Is.EqualTo(state));
+        Assert.That(older, Does.Not.Contain("videoPercent"));
+        Assert.That(System.Text.Json.JsonSerializer.Deserialize(older, LinkJson.Default.RecorderState)!.VideoPercent, Is.Null);
+    }
+
     /// <summary>A state with the camera crosses the link and reads back; one an older recorder wrote, without the field, reads with no camera.</summary>
     [Test]
     public void The_camera_s_field_crosses_the_link_and_an_older_state_reads_without_it()

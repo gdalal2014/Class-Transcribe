@@ -138,7 +138,7 @@ public sealed class RecorderView(IConsoleUi ui, IWindowSignals window, IDesktop 
 
     /// <summary>The state a window shows a run in once it has ended with <paramref name="outcome"/>, from <paramref name="last"/>, the last state shown.</summary>
     internal static RecorderState EndedState(RecorderState last, RunOutcome outcome) =>
-        last with { Phase = PhaseOf(outcome.Kind), UploadPercent = null };
+        last with { Phase = PhaseOf(outcome.Kind), UploadPercent = null, VideoPercent = null };
 
     /// <summary>
     /// The state a window shows a run in once its recorder has ended without the run's end, from <paramref name="last"/>, the

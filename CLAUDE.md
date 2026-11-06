@@ -1934,7 +1934,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `DisposeWait` 5 s) and says the end (`MadeLine`: watch it before publishing).
   `RecordCommand` sets the run file to `Transcribing` at a camera run's stop (the state now covers the video's making),
   starts the video beside the transcription (`StartTheLessonVideo`; no pieces is a warning) with
-  `LessonVideoDrive.KeepsPieces`, and waits for it on every end; the first lesson's start line says how to turn on
+  `LessonVideoDrive.KeepsPieces`, and waits for it on every end (`WaitForTheLessonVideoAsync`: once only the video
+  remains, record-only from the stop or the transcript saved, it says `RecordCommand.OnlyTheVideoRemains` and publishes
+  the maker's progress as `RecorderState.VideoPercent`, a last field with a default, which `TitleText` shows as `MAKING
+  VIDEO 40%` with a green bar in place of TRANSCRIBING, review 3.17; and it catches whatever the maker's task throws,
+  which the maker never does by design, says the video was not made with the `finish-video` command, and lets the run end
+  as its transcript did, never as TranscriptFailed, review 3.4); the first lesson's start line says how to turn on
   `Drive:LessonVideos` (`LessonVideoDrive.StartLine`). `finish-video <path> [--no-open]` (`FinishVideoCommand`,
   `ICommandRunner.FinishVideoAsync`) makes it again, free, decided from the files alone (`ClassFolders.LessonVideoStateOf`:
   `None`, `Made`, `NotMade` when a piece is newer than the video or there is none), refusing a lesson being recorded or

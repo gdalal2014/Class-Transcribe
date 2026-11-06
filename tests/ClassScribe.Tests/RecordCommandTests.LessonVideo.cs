@@ -1,6 +1,8 @@
 using ClassScribe.Audio;
+using ClassScribe.Audio.Timeline;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
 using ClassScribe.Runs;
@@ -126,10 +128,116 @@ public partial class RecordCommandTests
             Assert.That(_power.Holding, Is.True, "the laptop is kept awake while the video is made");
         }
 
+        // Once only the video remains, the run says so, and the title shows how far the video has got (review 3.17).
+        await Wait.UntilAsync(() => _status.States.Any(state => state.VideoPercent == 50));
+        Assert.That(_log.Messages, Has.Member(RecordCommand.OnlyTheVideoRemains));
+        Assert.That(_status.Last, Is.EqualTo(_status.Last! with { Phase = RecorderPhase.Transcribing, VideoPercent = 50 }));
+        Assert.That(TitleText.For(_status.Last!), Does.StartWith("MAKING VIDEO 50% "));
+
         gate.Set();
         Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(30)), Is.EqualTo(0));
         Assert.That(RunFile().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
         Assert.That(_power.Holding, Is.False);
+        Assert.That(_status.Last, Is.EqualTo(_status.Last! with { Phase = RecorderPhase.Done, VideoPercent = null }), "the end clears the video's percent");
+    }
+
+    /// <summary>
+    /// A record-only lesson says MAKING VIDEO from its stop, since only the video remains then, and nothing of a transcript
+    /// (review 3.17).
+    /// </summary>
+    [Test]
+    public async Task A_record_only_lesson_shows_MAKING_VIDEO_from_its_stop()
+    {
+        var (media, starter, logs) = LessonVideoParts();
+        using var gate = new ManualResetEventSlim();
+        media.HoldWrite = gate;
+        var recordings = new FakeRecordingFactory();
+        var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: false));
+        await Wait.UntilAsync(() => recording.Started);
+        WriteTheLesson(recording);
+
+        _signals.RequestStop();
+        await Wait.UntilAsync(() => _status.States.Any(state => state.VideoPercent == 50));
+
+        Assert.That(TitleText.For(_status.Last!), Does.StartWith("MAKING VIDEO 50% "));
+        Assert.That(_log.Messages, Has.Member(RecordCommand.OnlyTheVideoRemains));
+        gate.Set();
+        Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(30)), Is.EqualTo(0));
+    }
+
+    /// <summary>
+    /// The maker never throws by design, but a fault of the camera's channel of a type it does not expect would fault its
+    /// task; the run's wait for the video catches it, says the video was not made with how to make it again, and lets the
+    /// run end as its transcript did, Transcribed and exit 0, never TranscriptFailed (review 3.4).
+    /// </summary>
+    [Test]
+    public async Task A_faulted_video_task_never_turns_a_saved_transcript_into_a_failed_one()
+    {
+        var logs = new TestLoggerFactory();
+        var recordings = new FakeRecordingFactory();
+        var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(new ThrowingCameraProcessStarter(), new RecordingFolder(), Printed.Commands, TimeProvider.System, logs))
+            .RunAsync(LessonRequest(transcribe: true));
+        await Wait.UntilAsync(() => recording.Started);
+        var sound = WriteTheLesson(recording);
+
+        _signals.RequestStop();
+
+        Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(30)), Is.EqualTo(0));
+        Assert.That(RunFile().Outcome?.Kind, Is.EqualTo(OutcomeKind.Transcribed));
+        Assert.That(_log.Problems, Has.Member($"The lesson's video was not made: an unexpected failure (The camera's lines cannot be read this way); the camera's pieces are kept. To make it again, free: {Printed.Commands.FinishVideo(sound)}"));
+        Assert.That(OnDisk.FindCameraPieces(recording.Files!), Has.Count.EqualTo(1));
+    }
+
+    /// <summary>A camera process whose lines throw a type the maker does not expect, as a faulted channel would, so that the maker's task faults.</summary>
+    private sealed class ThrowingCameraProcessStarter : ICameraProcessStarter
+    {
+        /// <inheritdoc />
+        public ICameraProcess Start(string jobId) => new ThrowingCameraProcess();
+
+        /// <summary>The process: its link takes the job and then throws on every receive.</summary>
+        private sealed class ThrowingCameraProcess : ICameraProcess
+        {
+            /// <inheritdoc />
+            public int ProcessId => 7777;
+
+            /// <inheritdoc />
+            public ICameraLink Link { get; } = new ThrowingLink();
+
+            /// <inheritdoc />
+            public int? ExitCode => null;
+
+            /// <inheritdoc />
+            public void Kill()
+            {
+            }
+
+            /// <inheritdoc />
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+
+        /// <summary>The link whose receive throws a <see cref="NotSupportedException"/>, which the maker does not expect.</summary>
+        private sealed class ThrowingLink : ICameraLink
+        {
+            /// <inheritdoc />
+            public ValueTask SendJobAsync(CameraJob job, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+            /// <inheritdoc />
+            public ValueTask SendStopAsync(CameraStop stop, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+            /// <inheritdoc />
+            public ValueTask SendEndAsync(CameraStop end, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+            /// <inheritdoc />
+            public ValueTask SendClockAsync(ClockState clock, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+            /// <inheritdoc />
+            public ValueTask SendSignalAsync(string type, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+            /// <inheritdoc />
+            public ValueTask<CameraLine?> ReceiveAsync(CancellationToken cancellationToken) => throw new NotSupportedException("The camera's lines cannot be read this way.");
+        }
     }
 
     /// <summary>Ctrl+C after the stop cancels the video with the transcript: the run ends cancelled, and the pieces are kept for finish-video.</summary>

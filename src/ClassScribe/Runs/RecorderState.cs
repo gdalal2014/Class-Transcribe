@@ -99,12 +99,17 @@ public sealed record MicrophoneState(string Name, bool On, bool Capturing, strin
 /// does not stop by itself. Written once by the run, whose clock knows the time zone, for the title, which has none.
 /// </param>
 /// <param name="Camera">
-/// The lesson's camera, for a run that records its picture; null for none. Last, with a default, so that a window of an
+/// The lesson's camera, for a run that records its picture; null for none. With a default, so that a window of an
 /// older build passes it over and a state from one reads without it, as <see cref="MicrophoneState"/>'s fields did.
+/// </param>
+/// <param name="VideoPercent">
+/// How far the lesson's video has got, from 0 to 100, once only the video remains to be made (record-only, or its transcript
+/// saved), shown as MAKING VIDEO 40% in place of TRANSCRIBING; null otherwise, and while the transcript is still made, whose
+/// own phases come first. Last, with a default, as <paramref name="Camera"/> is.
 /// </param>
 public sealed record RecorderState(RecorderPhase Phase, string Name, TimeSpan Position, string? Source, string? WaitingFor,
     MicrophoneState? Microphone, int? UploadPercent, DateTimeOffset? StopsAtUtc, Attention Attention, bool InWindow, string? StopsAtText = null,
-    CameraState? Camera = null);
+    CameraState? Camera = null, int? VideoPercent = null);
 
 /// <summary>The lesson's camera in a run (teach-video 6.13), for the title's CAM WAITING and CAM DARK.</summary>
 /// <param name="Name">The camera's name.</param>

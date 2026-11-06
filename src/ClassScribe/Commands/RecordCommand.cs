@@ -65,6 +65,18 @@ public sealed class RecordCommand(
     /// <summary>A lesson's video being made beside its transcript, once its sound has stopped; null for a run without the camera, or before.</summary>
     private Task<LessonVideoResult>? _lessonVideo;
 
+    /// <summary>The lesson whose video is being made, for the command that makes it again should the making fault.</summary>
+    private RecordingFiles? _lessonVideoFiles;
+
+    /// <summary>How far the lesson's video has got, from 0 to 100, as the maker last said it.</summary>
+    private int _videoPercent;
+
+    /// <summary>The state the run publishes the video's progress from once only the video remains to be made; null until then.</summary>
+    private RecorderState? _onlyTheVideo;
+
+    /// <summary>The line said once the transcript is saved, or the record-only recording complete, while the lesson's video is still being made (review 3.17).</summary>
+    public const string OnlyTheVideoRemains = "Only the lesson's video remains to be made (Ctrl+C cancels it; its pieces are kept for finish-video)";
+
     /// <summary>How a video's recording ended, when the run itself knows better than its cause, as when its window was gone before it began.</summary>
     private string? _videoEnded;
 
@@ -253,7 +265,7 @@ public sealed class RecordCommand(
             {
                 if (!continued)
                 {
-                    await WaitForTheLessonVideoAsync();
+                    await WaitForTheLessonVideoAsync(stopping);
                     return NothingRecorded(request, files, stopping, request.Video is { } nothing
                         ? $"Nothing played in ClassScribe's video window, so nothing of \"{TitleOf(nothing)}\" was kept to transcribe"
                         : $"Nothing audible was captured from \"{source}\". {WhatToCheck}");
@@ -263,7 +275,7 @@ public sealed class RecordCommand(
             }
 
             // 9. Record only.
-            await WaitForTheLessonVideoAsync();
+            await WaitForTheLessonVideoAsync(stopping);
             var kept = request.Video is { } recorded
                 ? $"The recording of \"{TitleOf(recorded)}\" is in {files.Folder}."
                 : $"The recording is in {files.Folder}. To transcribe it later, choose 3 in the menu, or run: {command}";
@@ -274,7 +286,7 @@ public sealed class RecordCommand(
 
         if (!HasKey())
         {
-            await WaitForTheLessonVideoAsync();
+            await WaitForTheLessonVideoAsync(stopping);
             var noKey =
                 $"Set {ElevenLabsOptions.ApiKeyVariable} and open a new terminal (in VS Code, quit every VS Code window and start it again; a new terminal inside it keeps the old settings). Then start ClassScribe and choose 3 in the menu, or run: {command}";
             logger.LogWarning("{Message}", noKey);
@@ -303,19 +315,59 @@ public sealed class RecordCommand(
             return;
         }
 
-        _lessonVideo = lessonVideos.MakeAsync(files, lessonDrive?.KeepsPieces ?? false, signals.Cancellation);
+        _lessonVideoFiles = files;
+        _lessonVideo = lessonVideos.MakeAsync(files, lessonDrive?.KeepsPieces ?? false, signals.Cancellation, ShowVideoProgress);
+    }
+
+    /// <summary>
+    /// The maker's progress on the lesson's video, from 0 to 100: kept, and shown in the title as MAKING VIDEO once only the
+    /// video remains to be made (see <see cref="WaitForTheLessonVideoAsync"/>); while the transcript is still made its own
+    /// phases show instead (review 3.17). Runs on the maker's thread.
+    /// </summary>
+    private void ShowVideoProgress(int percent)
+    {
+        Volatile.Write(ref _videoPercent, percent);
+        if (Volatile.Read(ref _onlyTheVideo) is { } state) Publish(state with { Phase = RecorderPhase.Transcribing, UploadPercent = null, VideoPercent = percent });
     }
 
     /// <summary>
     /// Waits for the lesson's video, when one is being made, before the run's outcome is written, so that the end can say what
-    /// became of it (the maker says it); the laptop is kept awake meanwhile, as the run holds it until it returns.
+    /// became of it (the maker says it); the laptop is kept awake meanwhile, as the run holds it until it returns. A video
+    /// still being made once the transcript is saved, or the record-only recording complete, is said to be all that remains,
+    /// and its progress goes to the title from <paramref name="stopping"/>, the state the recording stopped in, as MAKING
+    /// VIDEO 40% (review 3.17). The maker never throws by design; should its task fault all the same (a fault of the
+    /// camera's channel of a type it does not expect), that is said, with how to make the video again, and the run ends as
+    /// its transcript did, never as a failure (review 3.4).
     /// </summary>
-    private async Task WaitForTheLessonVideoAsync()
+    private async Task WaitForTheLessonVideoAsync(RecorderState stopping)
     {
         if (_lessonVideo is not { } making) return;
 
         _lessonVideo = null;
-        await making;
+        if (!making.IsCompleted)
+        {
+            logger.LogInformation("{Line}", OnlyTheVideoRemains);
+            Volatile.Write(ref _onlyTheVideo, stopping);
+            ShowVideoProgress(Volatile.Read(ref _videoPercent));
+        }
+
+        try
+        {
+            await making;
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: the maker says every end of the video itself and never throws by design, so this is a
+            // fault in the camera's channel, or in the maker, that must not turn a saved transcript into a failed run or hide
+            // the recording's end; the video is said not made, with how to make it again, and the run ends as it was going to.
+            var files = _lessonVideoFiles!;
+            logger.LogWarning(ex, "The lesson's video was not made: an unexpected failure ({Reason}); the camera's pieces are kept. To make it again, free: {Command}",
+                ex.Message.TrimEnd('.'), commandLine.FinishVideo(recordingFolder.FindSegments(files).FirstOrDefault() ?? recordingFolder.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder));
+        }
+        finally
+        {
+            Volatile.Write(ref _onlyTheVideo, null);
+        }
     }
 
     /// <summary>What to check when nothing audible reached a recording.</summary>
@@ -368,7 +420,7 @@ public sealed class RecordCommand(
             logger.LogInformation("Press Ctrl+C to cancel the upload. The recording is kept either way");
             var saved = await workflow.TranscribeRecordingAsync(files, keyterms: null, _glossary, signals.Cancellation);
             logger.LogInformation("Transcript saved to {Path}", saved.TranscriptPath);
-            await WaitForTheLessonVideoAsync();
+            await WaitForTheLessonVideoAsync(stopping);
             End(request, stopping, RecorderPhase.Done,
                 new RunOutcome(OutcomeKind.Transcribed, 0, $"Transcript saved to {saved.TranscriptPath}", saved.TranscriptPath, files.Folder, RetryCommand: null));
 
@@ -379,7 +431,7 @@ public sealed class RecordCommand(
         }
         catch (OperationCanceledException)
         {
-            await WaitForTheLessonVideoAsync();
+            await WaitForTheLessonVideoAsync(stopping);
             var cancelled = $"The transcription was cancelled. The recording is in {files.Folder}. To transcribe it later, choose 3 in the menu, or run: {command}";
             logger.LogWarning("{Message}", cancelled);
             End(request, stopping, RecorderPhase.Cancelled, new RunOutcome(OutcomeKind.Cancelled, 130, cancelled, TranscriptPath: null, files.Folder, command));
@@ -388,7 +440,7 @@ public sealed class RecordCommand(
         catch (NoAudioException)
         {
             // No hint to try again: a new try would find the same silence.
-            await WaitForTheLessonVideoAsync();
+            await WaitForTheLessonVideoAsync(stopping);
             var silent = $"Nothing audible was captured from \"{source}\", so nothing was sent to ElevenLabs, and trying again would find the same silence. {WhatToCheck}";
             logger.LogWarning("{Message}", silent);
             End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.NothingRecorded, 1, silent, TranscriptPath: null, files.Folder, RetryCommand: null));
@@ -398,7 +450,7 @@ public sealed class RecordCommand(
         {
             // No hint to try again: a new try would be refused for the same length. The error itself says how to send the
             // recording in pieces.
-            await WaitForTheLessonVideoAsync();
+            await WaitForTheLessonVideoAsync(stopping);
             var tooLong = $"The audio is safe in {files.Folder}. It is longer than ElevenLabs takes in one file, so trying again as it is would be refused the same way";
             logger.LogWarning("{Message}", tooLong);
             End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.TranscriptFailed, 1, tooLong, TranscriptPath: null, files.Folder, RetryCommand: null));
@@ -406,7 +458,7 @@ public sealed class RecordCommand(
         }
         catch (Exception ex)
         {
-            await WaitForTheLessonVideoAsync();
+            await WaitForTheLessonVideoAsync(stopping);
             var (failed, retry) = DescribeFailure(ex, files, command);
             End(request, stopping, RecorderPhase.Failed, new RunOutcome(OutcomeKind.TranscriptFailed, 1, failed, TranscriptPath: null, files.Folder, retry));
             throw;
@@ -647,7 +699,7 @@ public sealed class RecordCommand(
         bookkeeping.End(outcome);
         drive.Ended(outcome);
         Publish((stopping ?? new RecorderState(RecorderPhase.Stopping, request.Name, TimeSpan.Zero, Source: null, WaitingFor: null, Microphone: null,
-            UploadPercent: null, StopsAtUtc: null, Attention.None, bookkeeping.Home == RunHome.InWindow)) with { Phase = phase, UploadPercent = null });
+            UploadPercent: null, StopsAtUtc: null, Attention.None, bookkeeping.Home == RunHome.InWindow)) with { Phase = phase, UploadPercent = null, VideoPercent = null });
         results.Show(outcome, request.Open);
     }
 

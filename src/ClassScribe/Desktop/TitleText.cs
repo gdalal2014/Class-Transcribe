@@ -20,7 +20,8 @@ namespace ClassScribe.Desktop;
 /// Kalam</c>; a green bar, or a yellow one while paused;</item>
 /// <item>a Notice: its words in brackets after the name, <c>REC 01:12:40 Kalam (no sound 2 min)</c>; a yellow bar;</item>
 /// <item>an Alert: "!" and its words before the name, <c>! NOT RECORDING (waiting for "chrome") Kalam</c>; a red bar;</item>
-/// <item>uploading: <c>UPLOADING 40% Kalam</c>, a green bar at 40%; transcribing: <c>TRANSCRIBING Kalam</c>, a running bar;</item>
+/// <item>uploading: <c>UPLOADING 40% Kalam</c>, a green bar at 40%; transcribing: <c>TRANSCRIBING Kalam</c>, a running bar;
+/// a lesson whose video alone remains to be made: <c>MAKING VIDEO 40% Kalam</c>, a green bar at 40% (review 3.17);</item>
 /// <item>at the end: <c>DONE Kalam</c> with no bar, <c>! FAILED Kalam</c> with a red one, <c>CANCELLED Kalam</c> with no bar.</item>
 /// </list>
 /// <para>So an <see cref="Attention.Short"/> reads as upper-case words for an Alert, such as <c>CANNOT WRITE</c>, and as
@@ -69,8 +70,8 @@ public static class TitleText
 
     /// <summary>
     /// What the taskbar button shows for <paramref name="state"/>: red for an Alert or a failure, yellow for a Notice or a
-    /// pause, green while recording and uploading, a running bar while the run waits on work whose progress is not known,
-    /// and nothing once it is done or cancelled.
+    /// pause, green while recording, uploading and making the lesson's video, a running bar while the run waits on work whose
+    /// progress is not known, and nothing once it is done or cancelled.
     /// </summary>
     public static TaskbarState TaskbarFor(RecorderState state)
     {
@@ -91,6 +92,7 @@ public static class TitleText
                 RecorderPhase.Recording or RecorderPhase.NotRecording => TaskbarState.Normal,
                 RecorderPhase.Paused => TaskbarState.Paused,
                 RecorderPhase.Uploading when state.UploadPercent is not null => TaskbarState.Normal,
+                RecorderPhase.Transcribing when state.VideoPercent is not null => TaskbarState.Normal,
                 _ => TaskbarState.Indeterminate
             }
         };
@@ -98,12 +100,14 @@ public static class TitleText
 
     /// <summary>
     /// How far the taskbar button's bar is filled for <paramref name="state"/>, from 0 to 100: the upload's progress while
-    /// uploading, 100 for any other state with a bar, so that its colour fills the button, and 0 for a state without one.
+    /// uploading, the video's while only it remains to be made, 100 for any other state with a bar, so that its colour fills
+    /// the button, and 0 for a state without one.
     /// </summary>
     public static int TaskbarPercentFor(RecorderState state) => TaskbarFor(state) switch
     {
         TaskbarState.None or TaskbarState.Indeterminate => 0,
         _ when state.Phase == RecorderPhase.Uploading && state.UploadPercent is { } percent => Math.Clamp(percent, 0, 100),
+        _ when state.Phase == RecorderPhase.Transcribing && state.VideoPercent is { } video => Math.Clamp(video, 0, 100),
         _ => 100
     };
 
@@ -153,6 +157,7 @@ public static class TitleText
         RecorderPhase.Uploading => state.UploadPercent is { } percent
             ? string.Create(CultureInfo.InvariantCulture, $"UPLOADING {Math.Clamp(percent, 0, 100)}%")
             : "UPLOADING",
+        RecorderPhase.Transcribing when state.VideoPercent is { } video => string.Create(CultureInfo.InvariantCulture, $"MAKING VIDEO {Math.Clamp(video, 0, 100)}%"),
         RecorderPhase.Transcribing => "TRANSCRIBING",
         RecorderPhase.Done => "DONE",
         RecorderPhase.Failed => "! FAILED",
