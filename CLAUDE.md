@@ -1851,7 +1851,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   the repair of its fix), with the software encoder after an `Encoder` problem; the
   `MostFailures`th (3) within `FailuresWithin` (10 min) gives the picture up (`GivenUpText`). A restart's piece begins at
   the clock's position now, or, when a piece of that name is there already (two ends in one pause: the clock stands still),
-  at the next free name, a millisecond on each time (`NextFreePieceStart`, review 3.12), since the camera process refuses a
+  at the next free name, a millisecond on each time (`NextFreePieceStart`, review 3.12; it asks `IFileProbe` whether the
+  piece is there, never the disk itself, since `CameraTrack` is Application's), since the camera process refuses a
   piece that is there. Its `State`
   (`CameraTrackState`) carries the frames, the rate, capturing, dark and a `CameraConcern` in the run's words with the
   camera's name (lost, no picture as Bitdefender's block, frames that cannot be written, refused, in use, encoder or disk,

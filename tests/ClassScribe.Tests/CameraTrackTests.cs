@@ -2,6 +2,7 @@ using System.ComponentModel;
 using ClassScribe.Audio.Timeline;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
+using ClassScribe.Desktop;
 using ClassScribe.Runs;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -150,7 +151,7 @@ public sealed class CameraTrackTests
         _starter.HoldStart(0, held);
         try
         {
-            _track = new CameraTrack(Start(), _clock, _cameras, _starter, _time, _log);
+            _track = new CameraTrack(Start(), _clock, _cameras, _starter, new FileProbe(), _time, _log);
             _track.Begin();
             await WaitAsync(() => _starter.StartsEntered == 1);
 
@@ -389,7 +390,7 @@ public sealed class CameraTrackTests
             process.InputStuck = true;
             process.DisposeFailure = new InvalidOperationException("The job's handle is closed.");
         };
-        _track = new CameraTrack(Start(), _clock, _cameras, _starter, _time, _log);
+        _track = new CameraTrack(Start(), _clock, _cameras, _starter, new FileProbe(), _time, _log);
         _track.Begin();
         await WaitAsync(() => _starter.StartsEntered == 1 && _time.UntilNextTimer == CameraTrack.SendLimit);
         _starter.OnStart = null;   // the next process reads its job, as any
@@ -468,7 +469,7 @@ public sealed class CameraTrackTests
     public async Task A_camera_process_that_will_not_start_is_tried_again()
     {
         _starter.StartFailure = new Win32Exception(5, "Windows did not start the camera process: Access is denied (error 5)");
-        _track = new CameraTrack(Start(), _clock, _cameras, _starter, _time, _log);
+        _track = new CameraTrack(Start(), _clock, _cameras, _starter, new FileProbe(), _time, _log);
         _track.Begin();
 
         await WaitAsync(() => _track.State.Concern is not null);
@@ -518,7 +519,7 @@ public sealed class CameraTrackTests
     public async Task A_camera_not_connected_is_looked_for_every_5_seconds()
     {
         _cameras.Connected = [LaptopCameras.Integrated];
-        _track = new CameraTrack(Start(), _clock, _cameras, _starter, _time, _log);
+        _track = new CameraTrack(Start(), _clock, _cameras, _starter, new FileProbe(), _time, _log);
         _track.Begin();
         await WaitAsync(() => _track.State.Concern is not null);
         var concern = _track.State.Concern;
@@ -561,7 +562,7 @@ public sealed class CameraTrackTests
     /// <summary>Starts the track and waits for its first camera process to read its job.</summary>
     private async Task<PlayedCameraProcess> StartAsync(IReadOnlyDictionary<string, int>? offsets = null, TimeSpan start = default, string? folder = null)
     {
-        _track = new CameraTrack(Start(offsets, start, folder), _clock, _cameras, _starter, _time, _log);
+        _track = new CameraTrack(Start(offsets, start, folder), _clock, _cameras, _starter, new FileProbe(), _time, _log);
         _track.Begin();
         await WaitAsync(() => _starter.Played.Count == 1 && _starter.Played[0].Job is not null);
         return _starter.Played[0];

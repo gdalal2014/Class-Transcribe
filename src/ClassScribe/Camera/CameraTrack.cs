@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using ClassScribe.Audio.Timeline;
+using ClassScribe.Desktop;
 using ClassScribe.Runs;
 using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
@@ -72,6 +73,9 @@ public sealed class CameraTrack : ICameraTrack
 
     /// <summary>Starts the camera processes.</summary>
     private readonly ICameraProcessStarter _starter;
+
+    /// <summary>Asks whether a restart's piece is there already (<see cref="NextFreePieceStart"/>); the track itself never looks at the disk.</summary>
+    private readonly IFileProbe _probe;
 
     /// <summary>The clock the track is timed on.</summary>
     private readonly TimeProvider _time;
@@ -169,13 +173,17 @@ public sealed class CameraTrack : ICameraTrack
     /// <summary>What is wrong now, while it lasts.</summary>
     private CameraConcern? _concern;
 
-    /// <summary>A track for the lesson <paramref name="start"/> describes, placed on <paramref name="clock"/>; nothing runs before <see cref="Begin"/>.</summary>
-    public CameraTrack(CameraTrackStart start, RecordingClock clock, ICameraProvider cameras, ICameraProcessStarter starter, TimeProvider time, ILogger logger)
+    /// <summary>
+    /// A track for the lesson <paramref name="start"/> describes, placed on <paramref name="clock"/>, asking <paramref name="probe"/>
+    /// whether a restart's piece is there already; nothing runs before <see cref="Begin"/>.
+    /// </summary>
+    public CameraTrack(CameraTrackStart start, RecordingClock clock, ICameraProvider cameras, ICameraProcessStarter starter, IFileProbe probe, TimeProvider time, ILogger logger)
     {
         _start = start;
         _clock = clock;
         _cameras = cameras;
         _starter = starter;
+        _probe = probe;
         _time = time;
         _logger = logger;
         _nextStart = time.GetTimestamp();
@@ -536,7 +544,7 @@ public sealed class CameraTrack : ICameraTrack
     {
         var files = new RecordingFiles(_start.Folder, _start.BaseName);
         var start = position;
-        while (File.Exists(files.CameraPiece(start))) start += TimeSpan.FromMilliseconds(1);
+        while (_probe.FileExists(files.CameraPiece(start))) start += TimeSpan.FromMilliseconds(1);
         if (start != position) _logger.LogDebug("The camera's piece at {Position} is there already, so the new piece begins at {Start}", Durations.Format(position), Durations.Format(start));
         return start;
     }

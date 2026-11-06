@@ -1,4 +1,5 @@
 using ClassScribe.Audio.Timeline;
+using ClassScribe.Desktop;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Camera;
@@ -70,9 +71,10 @@ public sealed class CameraRecorderNotBuilt : ICameraRecorder
 /// </summary>
 /// <param name="cameras">Lists the cameras, opening none, to pin the run's camera by its id.</param>
 /// <param name="starter">Starts camera processes.</param>
+/// <param name="probe">Asks whether a restart's piece is there already, so that the track names it by the next free position.</param>
 /// <param name="time">The clock everything is timed on.</param>
 /// <param name="loggers">Makes the log under the category Camera.</param>
-public sealed class CameraRecorder(ICameraProvider cameras, ICameraProcessStarter starter, TimeProvider time, ILoggerFactory loggers) : ICameraRecorder
+public sealed class CameraRecorder(ICameraProvider cameras, ICameraProcessStarter starter, IFileProbe probe, TimeProvider time, ILoggerFactory loggers) : ICameraRecorder
 {
     /// <summary>The log's category for the camera's lines in a run.</summary>
     public const string LogCategory = "Camera";
@@ -83,7 +85,7 @@ public sealed class CameraRecorder(ICameraProvider cameras, ICameraProcessStarte
     /// <inheritdoc />
     public ICameraTrack Start(CameraTrackStart start, RecordingClock clock)
     {
-        var track = new CameraTrack(start, clock, cameras, starter, time, loggers.CreateLogger(LogCategory));
+        var track = new CameraTrack(start, clock, cameras, starter, probe, time, loggers.CreateLogger(LogCategory));
         track.Begin();
         return track;
     }
