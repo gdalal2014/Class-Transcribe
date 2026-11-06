@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using ClassScribe.Audio.Timeline;
 using ClassScribe.Runs;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Camera;
@@ -452,16 +453,16 @@ public sealed class CameraTrack : ICameraTrack
 
     /// <summary>
     /// Finds the camera when it is not pinned yet, then starts a camera process with a record job, its piece beginning at the
-    /// lesson's start for the first and at the clock's position now for the others, and sends it the clock and P at once.
-    /// A camera not found is said once and looked for again every <see cref="FindEvery"/>; a process that does not start is a
-    /// failure, as an end of one is.
+    /// lesson's start for the first and at the clock's position now for the others (the next free name when a piece of that
+    /// name is there, see <see cref="NextFreePieceStart"/>), and sends it the clock and P at once. A camera not found is said
+    /// once and looked for again every <see cref="FindEvery"/>; a process that does not start is a failure, as an end of one is.
     /// </summary>
     private async Task StartProcessAsync()
     {
         if (_camera is null && !await FindAsync()) return;
 
         var camera = _camera!;
-        var position = _first ? _start.StartPosition : _clock.Now();
+        var position = _first ? _start.StartPosition : NextFreePieceStart(_clock.Now());
         var job = new CameraJob(CameraProtocol.Version, CameraJobKind.Record, camera.Id, camera.Name, _start.Camera.Resolution, _offset, _start.Folder, _start.BaseName,
             position.TotalSeconds, SoftwareEncoder: _software);
         ICameraProcess process;
@@ -510,6 +511,22 @@ public sealed class CameraTrack : ICameraTrack
 
         _logger.LogDebug("Started a camera process for the picture of \"{Camera}\": process {ProcessId}, its piece from {Position}", camera.Name, process.ProcessId,
             Durations.Format(position));
+    }
+
+    /// <summary>
+    /// Where a restart's piece begins: <paramref name="position"/>, the clock's position now, unless a piece of that name is
+    /// there already (release 0.5.0 review, 3.12: the clock stands still while paused, so two camera processes that end in
+    /// one pause would name the same piece, and the camera process refuses a piece that is there rather than write over it);
+    /// then the next position, a millisecond on each time, whose name is free. A millisecond's shift places no frame
+    /// wrongly: the pieces are placed by their names, and a paused clock excludes those moments anyway.
+    /// </summary>
+    private TimeSpan NextFreePieceStart(TimeSpan position)
+    {
+        var files = new RecordingFiles(_start.Folder, _start.BaseName);
+        var start = position;
+        while (File.Exists(files.CameraPiece(start))) start += TimeSpan.FromMilliseconds(1);
+        if (start != position) _logger.LogDebug("The camera's piece at {Position} is there already, so the new piece begins at {Start}", Durations.Format(position), Durations.Format(start));
+        return start;
     }
 
     /// <summary>The run's camera, pinned by its id: found and its offset resolved, or said once as not connected.</summary>
@@ -612,8 +629,23 @@ public sealed class CameraTrack : ICameraTrack
         if (failedEncoder) _software = true;
         _logger.LogDebug("The camera process recording \"{Camera}\" ended (exit {Code})", camera.Name,
             process.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "not known");
-        await LetGoOfAsync(process);
-        Failed($"ClassScribe's camera process for \"{camera.Name}\" stopped working");
+        try
+        {
+            await LetGoOfAsync(process);
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: letting the ended process go failed in a way its own limit does not cover (its pipes
+            // or its job refused the close); the process has ended all the same, and nobody awaits this reading, so the failure
+            // would be lost. It is logged, and the camera is started again as after any end (release 0.5.0 review, 3.13).
+            _logger.LogDebug(ex, "Letting the ended camera process go failed; the camera is started again all the same");
+        }
+        finally
+        {
+            // Whatever the let-go did, the end is counted and the next start set, or the picture given up: without this the
+            // next start would stay at its maximum, and the camera would never be started again.
+            Failed($"ClassScribe's camera process for \"{camera.Name}\" stopped working");
+        }
     }
 
     /// <summary>

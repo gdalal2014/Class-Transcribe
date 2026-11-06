@@ -3,6 +3,7 @@ using ClassScribe.Audio.Timeline;
 using ClassScribe.Camera;
 using ClassScribe.Commands;
 using ClassScribe.Runs;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Tests;
@@ -321,6 +322,56 @@ public sealed class CameraTrackTests
         Assert.That(_track!.State.Concern?.Short, Is.EqualTo("CAMERA RESTARTING"));
     }
 
+    /// <summary>
+    /// A camera process that ends twice in one pause (release 0.5.0 review, 3.12): the clock stands still while paused, so the
+    /// second restart's piece would take the first restart's name, which the camera process refuses rather than write over;
+    /// the track names it by the next free position instead, a millisecond on, and the picture goes on.
+    /// </summary>
+    [Test]
+    public async Task A_second_restart_in_one_pause_takes_the_next_free_piece_name()
+    {
+        using var folder = new TempFolder();
+        var files = new RecordingFiles(folder.Path, BaseName);
+        var first = await StartAsync(folder: folder.Path);
+        _clock.Begin(MediaTime.Now(_time));
+        _time.Advance(TimeSpan.FromSeconds(30));
+        _clock.Pause();
+        _track!.Pause();
+
+        first.Process.Exit(1);
+        await _time.AdvanceUntilAsync(() => _starter.Played.Count == 2 && _starter.Played[1].Job is not null, Step);
+        var second = _starter.Played[1];
+        var secondPiece = files.CameraPiece(TimeSpan.FromSeconds(second.Job!.StartSeconds));
+        File.WriteAllBytes(secondPiece, []);   // the second process began its piece before it ended
+        second.Process.Exit(1);
+        await _time.AdvanceUntilAsync(() => _starter.Played.Count == 3 && _starter.Played[2].Job is not null, Step);
+        var third = _starter.Played[2];
+        var thirdPiece = files.CameraPiece(TimeSpan.FromSeconds(third.Job!.StartSeconds));
+
+        Assert.That(second.Job.StartSeconds, Is.EqualTo(_clock.Now().TotalSeconds).Within(0.001), "paused: the clock stands still");
+        Assert.That(thirdPiece, Is.Not.EqualTo(secondPiece), "the next free name");
+        Assert.That(File.Exists(thirdPiece), Is.False);
+        Assert.That(third.Job.StartSeconds, Is.GreaterThan(second.Job.StartSeconds).And.LessThanOrEqualTo(second.Job.StartSeconds + 0.002));
+    }
+
+    /// <summary>
+    /// A camera process that ended, and whose letting go then throws (release 0.5.0 review, 3.13), is still started again
+    /// 2 seconds later: the restart never waits on the let-go, and the failure is counted as any other.
+    /// </summary>
+    [Test]
+    public async Task A_camera_process_whose_let_go_throws_is_still_started_again()
+    {
+        var first = await StartAsync();
+        first.Process.DisposeFailure = new InvalidOperationException("The job's handle is closed.");
+
+        first.Process.Exit(1);
+        await WaitAsync(() => _track!.State.Concern?.Short == "CAMERA RESTARTING");
+        var moved = await _time.AdvanceUntilAsync(() => _starter.Played.Count == 2 && _starter.Played[1].Job is not null, Step, atMost: TimeSpan.FromSeconds(10));
+
+        Assert.That(moved, Is.GreaterThanOrEqualTo(CameraTrack.RestartAfter));
+        Assert.That(first.Process.DisposeEntered, Is.True);
+    }
+
     /// <summary>After the camera process said its encoder failed, the next one asks for Windows' software encoder.</summary>
     [Test]
     public async Task After_an_encoder_failure_the_next_process_uses_the_software_encoder()
@@ -461,14 +512,17 @@ public sealed class CameraTrackTests
         Assert.That(_log.Problems.Count(problem => problem == "Little room is left on the disk"), Is.EqualTo(1), "the track says why, once");
     }
 
-    /// <summary>A lesson of the OBSBOT at 720p into a recording, from <paramref name="start"/> on the clock, with <paramref name="offsets"/>.</summary>
-    private static CameraTrackStart Start(IReadOnlyDictionary<string, int>? offsets = null, TimeSpan start = default) =>
-        new(new CameraChoice("OBSBOT", "720p"), @"C:\Tajwid\2026-10-22", "Tajwid_2026-10-22_14-00-00Z", start, offsets);
+    /// <summary>The recording's base name.</summary>
+    private const string BaseName = "Tajwid_2026-10-22_14-00-00Z";
+
+    /// <summary>A lesson of the OBSBOT at 720p into a recording in <paramref name="folder"/> (one that is not there unless given), from <paramref name="start"/> on the clock, with <paramref name="offsets"/>.</summary>
+    private static CameraTrackStart Start(IReadOnlyDictionary<string, int>? offsets = null, TimeSpan start = default, string? folder = null) =>
+        new(new CameraChoice("OBSBOT", "720p"), folder ?? @"C:\Tajwid\2026-10-22", BaseName, start, offsets);
 
     /// <summary>Starts the track and waits for its first camera process to read its job.</summary>
-    private async Task<PlayedCameraProcess> StartAsync(IReadOnlyDictionary<string, int>? offsets = null, TimeSpan start = default)
+    private async Task<PlayedCameraProcess> StartAsync(IReadOnlyDictionary<string, int>? offsets = null, TimeSpan start = default, string? folder = null)
     {
-        _track = new CameraTrack(Start(offsets, start), _clock, _cameras, _starter, _time, _log);
+        _track = new CameraTrack(Start(offsets, start, folder), _clock, _cameras, _starter, _time, _log);
         _track.Begin();
         await WaitAsync(() => _starter.Played.Count == 1 && _starter.Played[0].Job is not null);
         return _starter.Played[0];

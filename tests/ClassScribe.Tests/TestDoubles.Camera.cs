@@ -160,6 +160,9 @@ public sealed class FakeCameraProcess : ICameraProcess
     /// <summary>True for a letting go that never finishes, as when the process cannot be ended and its error output stays open.</summary>
     public bool DisposeHangs { get; set; }
 
+    /// <summary>When set, letting the process go throws this, as a close its job or its pipes refuse would.</summary>
+    public Exception? DisposeFailure { get; set; }
+
     /// <summary>True once the starter began to let the process go.</summary>
     public bool DisposeEntered { get; private set; }
 
@@ -226,6 +229,7 @@ public sealed class FakeCameraProcess : ICameraProcess
     {
         DisposeEntered = true;
         if (DisposeHangs) await new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+        if (DisposeFailure is { } failure) throw failure;
 
         await Channel.DisposeAsync();
         if (_processEnd is not null) await _processEnd.DisposeAsync();
