@@ -1,3 +1,4 @@
+using System.Net;
 using ClassScribe.Commands;
 using ClassScribe.Drive;
 using ClassScribe.Recorder;
@@ -182,6 +183,54 @@ public sealed class LessonVideoDriveTests
 
         Assert.That(freed.Problem, Is.Null);
         Assert.That(OnDisk.FindCameraPieces(_lesson), Is.Empty);
+    }
+
+    /// <summary>
+    /// Drive's room is read before the lesson's video goes up (teach-video 8): with too little room for it, the video is left
+    /// out with a line and the rest of the lesson goes up, the recording waiting with its next try after a class a day later,
+    /// as when Drive is full, rather than the whole pass ending on "Google Drive is full" (review 3.16); with room again, the
+    /// next upload sends it.
+    /// </summary>
+    [Test]
+    public async Task Too_little_room_on_Drive_leaves_the_video_out_and_the_rest_goes_up()
+    {
+        LessonVideos(on: true);
+        var video = new FileInfo(_lesson.LessonVideo).Length;
+        _world.Google.StorageLimit = _world.Google.StorageUsage + video - 1;
+
+        var result = await UploadAsync();
+
+        var b = _lesson.BaseName;
+        var noRoom = $"{b}.mp4 ({Sizes.Describe(video)}) does not fit in Google Drive's room ({Sizes.Describe(video - 1)} free), so it stays on this laptop for now";
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.Outcome, Is.EqualTo(RecordingOutcome.Waiting));
+            Assert.That(result.Problem, Is.EqualTo(noRoom));
+            Assert.That(Started(), Does.Not.Contain($"{b}.mp4"));
+            Assert.That(Started(), Does.Contain($"{b}.md").And.Contain($"{b}.wav"));
+            Assert.That(_world.Lines, Has.Member($"{noRoom}; it goes up with a later upload once there is room, and the rest of {b} is up"));
+            var manifest = _world.Manifests().Read(_lesson)!;
+            Assert.That((manifest.State, manifest.NextAttemptUtc), Is.EqualTo((UploadState.Waiting, (DateTimeOffset?)(_world.Time.GetUtcNow() + RecordingUpload.WaitWhenFull))));
+            Assert.That(_world.Google.Destructive, Is.Empty);
+        }
+
+        _world.Google.StorageLimit = null;
+        Assert.That((await UploadAsync()).Outcome, Is.EqualTo(RecordingOutcome.Done), "with room, the video goes up with the next upload");
+        Assert.That(Started(), Does.Contain($"{b}.mp4"));
+    }
+
+    /// <summary>With Drive's room out of reach, the video goes up as before: the room only keeps a video that is known not to fit off Drive.</summary>
+    [Test]
+    public async Task With_the_room_unknown_the_video_goes_up()
+    {
+        LessonVideos(on: true);
+        _world.Google.FailWhen(request => request.Path == "/drive/v3/about", HttpStatusCode.InternalServerError, FakeGoogle.DriveError(500, "backendError", "Backend Error"), times: 20);
+
+        var result = await UploadAsync();
+
+        Assert.That(result.Outcome, Is.EqualTo(RecordingOutcome.Done));
+        Assert.That(Started(), Does.Contain($"{_lesson.BaseName}.mp4"));
+        Assert.That(_world.Lines, Has.Some.StartsWith("Google Drive's room could not be read ("));
     }
 
     /// <summary>A lesson whose video is being made, its .partial held open, waits to go up.</summary>

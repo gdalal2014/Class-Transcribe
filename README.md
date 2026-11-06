@@ -1314,7 +1314,11 @@ camera pieces and its `.mp4.partial` never go up. At the start of a lesson with 
 where its video goes; with `Drive:LessonVideos` off: `The lesson's video stays on this laptop; to send
 lesson videos to Google Drive too, run: & "...\ClassScribe.exe" settings set Drive:LessonVideos "true".
 Its camera pieces are deleted once the video passes its check.` (A free 15 GB Drive holds about six hours
-of 720p video.) A lesson's video made again since its copy went up (a continued lesson's, or one made
+of 720p video.) Before the video goes up, Drive's room is read: with too little room for it, the video
+stays on the laptop for now, with the line `<base>.mp4 (2.4 GB) does not fit in Google Drive's room (1.1
+GB free), so it stays on this laptop for now; it goes up with a later upload once there is room, and the
+rest of <base> is up`; the rest of the recording goes up, and the recording waits in the queue with its
+next try after a class a day later (9 > U and `drive upload` try at once). A lesson's video made again since its copy went up (a continued lesson's, or one made
 with `finish-video`) goes up whole, as a new revision of that copy, with the line `<base>.mp4 was made
 again since its copy went up to Google Drive, so it goes up whole, as a new revision of that copy`: an
 hour of video takes as long again to send. Google Drive keeps the older revision for 30 days, under the
@@ -3259,6 +3263,7 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Google Drive: paused while "..." records`, then `Google Drive: going on, now that "..." has stopped recording` | Normal: an upload of an earlier class waits between pieces while a class records, so that the class is not held up, and goes on by itself. |
 | `Google Drive: paused while "..." is transcribed`, then `Google Drive: going on, now that "..." is done` | Normal: an upload waits while a class is transcribed, or a lesson's video made, so that the transcript's upload to ElevenLabs has the connection to itself. |
 | `Sending the lesson's video (2.4 GB) to Google Drive; at this connection's speed so far, about 30 minutes.` | Normal, with `Drive:LessonVideos` on: the lesson's video goes up last, after everything else of the recording. |
+| `<base>.mp4 (2.4 GB) does not fit in Google Drive's room (1.1 GB free), so it stays on this laptop for now; it goes up with a later upload once there is room, and the rest of <base> is up` | Drive has too little room for the lesson's video; everything else of the recording is up. Free room on Drive (or buy more), then 9 > U or `drive upload`; left alone, the upload after a class tries again a day later. The camera's pieces stay on the laptop until the video is safe on Drive. |
 | `... is having its lesson video made now; it goes up once it has stopped` | `finish-video` is making the lesson's video; the recording goes up with the next upload. |
 | `The lesson's video stays on this laptop; to send lesson videos to Google Drive too, run: ...` (a lesson's start) | Lesson videos stay off Drive by default. Run the command to send them too (they are large: about 2.3 GB an hour at 720p). |
 | `The camera's pieces of ... stay: ....mp4 differs from its copy on Google Drive ...` (free-space) | The video on the laptop is not the one on Drive (made again since, say). The pieces are kept; upload the lesson (9 > U, or `drive upload`), which sends the new video as a new revision of its copy, and free-space deletes them once that copy matches. |

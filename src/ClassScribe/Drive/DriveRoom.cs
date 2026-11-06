@@ -13,8 +13,9 @@ public sealed record DriveSpace(long Usage, long? Limit)
 }
 
 /// <summary>
-/// Google Drive's room, for a YouTube batch's plan when the videos' audio goes up (design 2.10), behind an interface so that
-/// the batch's tests never reach Google. The real one asks Drive's about call, which drive status makes too.
+/// Google Drive's room, for a YouTube batch's plan when the videos' audio goes up (design 2.10) and before a lesson's video
+/// goes up (teach-video 8), behind an interface so that their tests never reach Google. The real one asks Drive's about
+/// call, which drive status makes too.
 /// </summary>
 public interface IDriveRoom
 {

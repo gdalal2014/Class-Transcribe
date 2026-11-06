@@ -1954,7 +1954,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   worded as its video cut off in the report, the starter's lost recorder, attach and the window-busy lines; menu
   choice 3 notes `lesson video` or `lesson video not made yet` (as `list` does) and takes V before a number. Drive:
   `Drive:LessonVideos` (false) sends `<base>.mp4` last, streamed as `video/mp4` with a line of its size and time, never
-  the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`); the pass also waits while a class is
+  the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`), and only after `RecordingUpload` has read
+  `IDriveRoom`: a video known not to fit in Drive's free room stays with a warning (`does not fit in Google Drive's room`),
+  the rest goes up and the recording waits with `NextAttemptUtc` a day later, as Drive full does; a room unknown (not
+  read, `Drive:Enabled` off, or Drive out of reach) lets it go up as before (teach-video 8, review 3.16); the pass also waits while a class is
   transcribed (N13); `LocalAudioFreer.FreePiecesAsync` deletes the pieces once the video is verified on Drive, only those
   the finish job listed beside it in `RecordingFiles.LessonVideoPieces` (`<base>.mp4.pieces.txt`, written when the pieces
   are kept for Drive, never one of the recording's files, deleted by the freer once every piece it names is gone and by the
@@ -2289,8 +2292,8 @@ each constructor that takes a port, and what the trial move made the one-project
   `DriveAutoUpload.cs` (`IDriveAutoUpload`, `DriveAutoUpload`: the queue at a run's start and the
   upload after it, and after a transcript made later), `DriveQueueReport.cs` (`DriveWaiting`,
   `DriveQueueReport`: the menu's header line and the report's), `DriveRoom.cs` (`IDriveRoom`,
-  `DriveRoom`, `DriveSpace`: Drive's room from the about call, for a YouTube plan; null when not set up,
-  signed out, `Drive:Enabled` off or Drive out of reach), and `DriveServices` (`AddDrive`, Google's clients and the
+  `DriveRoom`, `DriveSpace`: Drive's room from the about call, for a YouTube plan and before a lesson's video goes up;
+  null when not set up, signed out, `Drive:Enabled` off or Drive out of reach), and `DriveServices` (`AddDrive`, Google's clients and the
   adapters, called from `InfrastructureServices` after the transcription's) with `DriveUseCases` (`AddDriveUseCases`, the
   use cases, called from `ApplicationServices`).
 - `src/ClassScribe/YouTube` (registered by `YouTubeServices.AddYouTube`, its adapters, and `YouTubeUseCases.AddYouTubeUseCases`,

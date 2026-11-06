@@ -52,7 +52,9 @@ public sealed record RecordingUploadResult(RecordingFiles Files, RecordingOutcom
 /// the temporary upload copy, and with Drive:Upload WithoutAudio not its .wav files; files in the folder that are not the
 /// recording's, such as the class's PDFs, are never touched. In this order: the transcripts, ElevenLabs' answers, the
 /// marks, the class's audio, the microphone's, the log, and last a lesson's finished video, only with Drive:LessonVideos on
-/// (see <see cref="SendsLessonVideo"/>), streamed as the audio is; never the camera's pieces. Each file's MD5 is worked out once and kept in the manifest
+/// (see <see cref="SendsLessonVideo"/>), streamed as the audio is, and only once Drive's room, read first, is unknown or
+/// fits it: a video known not to fit stays here with a line, the recording waiting with its next try after a class a day
+/// later (teach-video 8; review 3.16); never the camera's pieces. Each file's MD5 is worked out once and kept in the manifest
 /// (<see cref="IUploadManifests"/>) with its size and the time it was last written, and after its last piece the copy on
 /// Drive is checked against Drive's own size and MD5; one that differs is sent again once, as a new revision. A file already
 /// checked goes up no more; a text file that has grown since (a log, the marks, an answer laid out anew), and a lesson's
@@ -77,6 +79,7 @@ public sealed partial class RecordingUpload(
     IRecordingFolder recordings,
     IFileProbe probe,
     IRunLog log,
+    IDriveRoom room,
     IOptionsSnapshot<DriveOptions> options,
     IOptionsSnapshot<YouTubeOptions> youTube,
     TimeProvider time,
@@ -108,6 +111,9 @@ public sealed partial class RecordingUpload(
 
     /// <summary>The manifests, for the steps of a run.</summary>
     private IUploadManifests Manifests => manifests;
+
+    /// <summary>Drive's room, read before a lesson's video goes up (teach-video 8; review 3.16), for the steps of a run.</summary>
+    private IDriveRoom Room => room;
 
     /// <summary>The clock, for the steps of a run.</summary>
     private TimeProvider Time => time;
@@ -413,6 +419,7 @@ public sealed partial class RecordingUpload(
                 pending.Count == 1 ? "file" : "files", Sizes.Describe(pending.Sum(path => owner.Probe.Length(path))), location.Path);
 
             string? problem = null;
+            DateTimeOffset? nextAttempt = null;
             var said = false;
             foreach (var path in pending)
             {
@@ -427,7 +434,22 @@ public sealed partial class RecordingUpload(
                     said = true;
                 }
 
-                if (RecordingFiles.IsLessonVideo(path)) owner.Logger.LogInformation("{Line}", SendingTheVideo(owner.Probe.Length(path), SpeedSoFar()));
+                if (RecordingFiles.IsLessonVideo(path))
+                {
+                    // Drive's room first (teach-video 8): a video known not to fit stays here, the rest goes up, and the recording
+                    // waits as it does when Drive is full, rather than the whole pass ending on it (review 3.16).
+                    var size = owner.Probe.Length(path);
+                    if (await owner.Room.ReadAsync(cancellationToken) is { Free: { } free } && free < size)
+                    {
+                        var noRoom = $"{Path.GetFileName(path)} ({Sizes.Describe(size)}) does not fit in Google Drive's room ({Sizes.Describe(free)} free), so it stays on this laptop for now";
+                        owner.Logger.LogWarning("{NoRoom}; it goes up with a later upload once there is room, and the rest of {Recording} is up", noRoom, files.BaseName);
+                        problem ??= noRoom;
+                        nextAttempt = owner.Time.GetUtcNow() + WaitWhenFull;
+                        continue;
+                    }
+
+                    owner.Logger.LogInformation("{Line}", SendingTheVideo(size, SpeedSoFar()));
+                }
 
                 try
                 {
@@ -459,19 +481,20 @@ public sealed partial class RecordingUpload(
                 }
             }
 
-            return Finish(problem, alreadyThere: false, said);
+            return Finish(problem, alreadyThere: false, said, nextAttempt);
         }
 
         /// <summary>
         /// Ends the upload: done, with the line that says where the recording is on Drive, unless <paramref name="said"/>
-        /// says it went into the log before the log went up; or waiting, with <paramref name="problem"/>.
+        /// says it went into the log before the log went up; or waiting, with <paramref name="problem"/>, and the next try
+        /// after a class no sooner than <paramref name="nextAttempt"/> when one is given (a lesson's video that does not fit).
         /// <paramref name="alreadyThere"/> says that nothing had to go up.
         /// </summary>
-        private RecordingUploadResult Finish(string? problem, bool alreadyThere, bool said = false)
+        private RecordingUploadResult Finish(string? problem, bool alreadyThere, bool said = false, DateTimeOffset? nextAttempt = null)
         {
             if (problem is not null)
             {
-                _manifest = _manifest with { State = UploadState.Waiting, LastError = problem };
+                _manifest = _manifest with { State = UploadState.Waiting, LastError = problem, NextAttemptUtc = nextAttempt };
                 Save();
                 owner.Logger.LogWarning("{Recording} waits to go up to Google Drive: {Problem}", files.BaseName, problem);
                 return new RecordingUploadResult(files, RecordingOutcome.Waiting, problem);

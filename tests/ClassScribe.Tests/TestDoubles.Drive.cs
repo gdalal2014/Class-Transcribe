@@ -1326,7 +1326,10 @@ public sealed class GoogleWorld : IDisposable
 
     /// <summary>The upload of one recording, looking at the disk through <paramref name="probe"/>, the real probe unless a test gives another.</summary>
     public RecordingUpload RecordingUpload(IFileProbe? probe = null) =>
-        new(GoogleDrive(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), new RecordingFolder(), probe ?? new FileProbe(), RecorderLog, Options, YouTube, Time, Log<RecordingUpload>());
+        new(GoogleDrive(), Retry(), Manifests(), Runtime.Journal, ClassFolders(), new RecordingFolder(), probe ?? new FileProbe(), RecorderLog, Room(), Options, YouTube, Time, Log<RecordingUpload>());
+
+    /// <summary>Drive's room, read from the in-memory Google's about call before a lesson's video goes up (its <see cref="FakeGoogle.StorageLimit"/> and usage).</summary>
+    public DriveRoom Room() => new(Store, new Lazy<IGoogleDrive>(GoogleDrive), Options, Log<DriveRoom>());
 
     /// <summary>The upload lock, in the temporary ClassScribe folder.</summary>
     public DriveUploadLock Lock() => new(Runtime.Folder, Log<DriveUploadLock>());
