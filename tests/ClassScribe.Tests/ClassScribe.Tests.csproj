@@ -38,7 +38,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ClassScribe\ClassScribe.csproj" />
+    <ProjectReference Include="..\..\src\ClassScribe.Cli\ClassScribe.Cli.csproj" />
   </ItemGroup>
 
 </Project>

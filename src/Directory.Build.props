@@ -1,0 +1,21 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- The release's one line: set only on release and hotfix branches (CLAUDE.md, git flow). -->
+    <Version>0.5.0</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- The compiler then reports a public type or member without an XML summary (CS1591). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The summaries are for reading the code: no XML file is published next to the exe. -->
+    <PublishDocumentationFile>false</PublishDocumentationFile>
+  </PropertyGroup>
+
+  <!-- The tests see the internals of all four projects: the COM and P/Invoke declarations they drive through fakes, the
+       constructors that take those fakes, and the helpers only the adapters use (architecture 1.4 and 6.2). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="ClassScribe.Tests" />
+  </ItemGroup>
+
+</Project>
