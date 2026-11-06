@@ -25,7 +25,9 @@ namespace ClassScribe.Camera;
 /// was made, which holds its picture (a leftover an earlier making could not delete, or a piece kept for Drive): with the
 /// older video's picture in use before the first newer piece, such a piece is left out, with a line, and with no newer piece
 /// at all there is nothing to add, the job fails with why, and the older video stays, so that a remake from a leftover alone
-/// never drops the picture only the older video held (review 3.2). A video that fails its check, or cannot be made, is deleted, the pieces
+/// never drops the picture only the older video held (review 3.2). A damaged .wav part, which the mix skips as the upload
+/// does, fails the job with the part named and the pieces kept, since the sound written would be shorter than the lesson's
+/// and the picture after the part out of step with it, which the check cannot tell (review 3.14). A video that fails its check, or cannot be made, is deleted, the pieces
 /// kept, and failed says why and names finish-video; a cancel does the same and ends with 130. A stale .partial, one that
 /// nothing holds open, is deleted first; one held open means another camera process is making the video, and the job is
 /// refused. Its media work goes through <see cref="ILessonVideoMedia"/>.
@@ -193,11 +195,13 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         await LogAsync("Information", Describe(files, plan, older is not null && plan.Slices[0].Path == older.Path));
         if (plan.EncodeAgain) await LogAsync("Information", $"{plan.WhyEncodeAgain}, so the whole picture is encoded again, which takes longer than joining the pieces as they are");
 
+        IReadOnlySet<string> skipped;
         try
         {
             using var sound = new AudioPreparer(new LineLogger<AudioPreparer>(this)).OpenMix(tracks, SoundRate, _cancel.Token);
             if (sound.MicrophoneLeftOut) await LogAsync("Information", "Your microphone stayed silent; the video's sound is the main track's alone");
             await WriteAsync(plan, sound, files.LessonVideoPartial);
+            skipped = sound.Skipped;
         }
         catch (OperationCanceledException)
         {
@@ -213,6 +217,17 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
             // costs nothing else; the unfinished file goes, the pieces stay, and the starter hears why.
             TryDelete(files.LessonVideoPartial);
             return await FailAsync(files, $"The lesson's video could not be written ({Words(ex)})", kept: true);
+        }
+
+        if (skipped.Count > 0)
+        {
+            // The mix passed over a damaged .wav part, as the upload does, so the sound written is shorter than the lesson's and
+            // every piece after the part is out of step with it; the check cannot tell, since a damaged part measures as nothing.
+            TryDelete(files.LessonVideoPartial);
+            var names = skipped.Select(path => Path.GetFileName(path)).Order(StringComparer.OrdinalIgnoreCase).ToList();
+            return await FailAsync(files,
+                $"The lesson's sound could not all be read: {Listed(names)} {(names.Count == 1 ? "is not a readable WAV file" : "are not readable WAV files")}, so the video was not made; its picture would be out of step with the sound after {(names.Count == 1 ? "it" : "them")}",
+                kept: true);
         }
 
         await SendAsync(CameraProtocol.Progress, new CameraProgress(99), CameraJson.Default.CameraProgress);
@@ -408,10 +423,12 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
     private static string Named(IReadOnlyList<LessonVideoSource> pieces)
     {
         var names = pieces.Select(piece => Path.GetFileName(piece.Path)).ToList();
-        if (names.Count == 1) return $"{names[0]} is";
-
-        return $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]} are";
+        return $"{Listed(names)} {(names.Count == 1 ? "is" : "are")}";
     }
+
+    /// <summary><paramref name="names"/> in a list: "a", "a and b", "a, b and c".</summary>
+    private static string Listed(IReadOnlyList<string> names) =>
+        names.Count == 1 ? names[0] : $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}";
 
     /// <summary>The line that says what the video is made from: the pieces, an older video before them, and whether the picture is passed through.</summary>
     private static string Describe(RecordingFiles files, LessonVideoPlan plan, bool withOlder)

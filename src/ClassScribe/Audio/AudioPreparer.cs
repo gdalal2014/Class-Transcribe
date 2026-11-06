@@ -463,6 +463,15 @@ public sealed class MixedSound : IDisposable
     /// <summary>True when the recording has your microphone's track but it never rose above the threshold, so only the main track is heard.</summary>
     public bool MicrophoneLeftOut { get; }
 
+    /// <summary>
+    /// The segments of either track skipped so far because they are not WAV files this app can read (each reported with a
+    /// warning as it was passed), those of a microphone left out silent not among them; whole once the sound is read to its
+    /// end. A lesson's video made over a skipped segment would be shorter than its sound and out of step after it, so the
+    /// finish job fails on any (review 3.14).
+    /// </summary>
+    public IReadOnlySet<string> Skipped =>
+        new HashSet<string>(_main.Skipped.Concat(_microphone?.Skipped ?? Enumerable.Empty<string>()), StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Reads the next samples into <paramref name="buffer"/> and returns how many: fewer only at the end, and none after it.</summary>
     public int Read(float[] buffer)
     {

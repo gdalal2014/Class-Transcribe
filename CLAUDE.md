@@ -1922,7 +1922,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   at each new percent, and the same percent again every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking)
   only while its work has moved since the last line (the writer's ten-thousandths, the check's frames decoded through
   `ILessonVideoMedia.Check`'s progress), so that a Media Foundation call that never returns goes quiet and the maker's
-  `ProgressLimit` ends it (review 3.3), and on a pass renames
+  `ProgressLimit` ends it (review 3.3), fails with the pieces kept when the mix skipped a damaged `.wav` part
+  (`MixedSound.Skipped`: the sound written would be shorter than the lesson's, which the check cannot tell, review 3.14), and on a pass renames
   the partial (`PutInPlaceAsync`: `RenameTries` 3, a second apart, while a player or scanner holds a file open; then failed
   with why, the checked partial kept for the next making to delete, the older video and the pieces as they were) and deals
   with the pieces: kept when the job's `KeepPieces` says the video goes to Drive (a line), else

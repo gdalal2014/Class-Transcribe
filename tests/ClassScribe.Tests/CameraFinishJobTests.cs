@@ -458,6 +458,32 @@ public sealed class CameraFinishJobTests
         await Wait.UntilAsync(() => seen.Logs.Contains($"The making of {BaseName}.mp4 was cancelled; the camera's pieces are kept"));
     }
 
+    /// <summary>
+    /// A damaged .wav part is skipped by the mix, as the upload skips it, which would make the video's sound shorter than the
+    /// lesson and put every later piece's picture out of step with it, while the check could not tell (the part measures as
+    /// nothing): the job fails with the part named, the unfinished video deleted and the pieces kept (review 3.14).
+    /// </summary>
+    [Test]
+    public async Task A_damaged_wav_part_fails_the_video_and_keeps_the_pieces()
+    {
+        Piece(0);
+        File.WriteAllText(_files.Segment(2), "This is not audio at all, although the name says so.");
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        var failed = seen.Of<CameraFailed>().Single().Why;
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
+            Assert.That(failed, Does.StartWith(
+                $"The lesson's sound could not all be read: {Path.GetFileName(_files.Segment(2))} is not a readable WAV file, so the video was not made; its picture would be out of step with the sound after it. The camera's pieces are kept. To make it again, free: "));
+            Assert.That(File.Exists(_files.LessonVideoPartial), Is.False);
+            Assert.That(File.Exists(_files.LessonVideo), Is.False);
+            Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
+            Assert.That(seen.Logs, Has.Some.StartsWith($"Skipping {Path.GetFileName(_files.Segment(2))}: it is not a readable WAV file"));
+        }
+    }
+
     /// <summary>A write that fails, as a full disk, deletes the unfinished video and keeps the pieces; failed says why, exit 1.</summary>
     [Test]
     public async Task A_write_that_fails_keeps_the_pieces()
