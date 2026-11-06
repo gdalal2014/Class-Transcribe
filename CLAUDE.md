@@ -1951,7 +1951,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `Drive:LessonVideos` (`LessonVideoDrive.StartLine`). `finish-video <path> [--no-open]` (`FinishVideoCommand`,
   `ICommandRunner.FinishVideoAsync`) makes it again, free, decided from the files alone (`ClassFolders.LessonVideoStateOf`:
   `None`, `Made`, `NotMade` when a piece is newer than the video or there is none), refusing a lesson being recorded or
-  made, one without pieces, and one whose sound is on Drive only (`SoundOnDriveOnly`), with keep-awake
+  made, one whose older video ClassScribe's own upload sends now (above), one without pieces, and one whose sound is on
+  Drive only (`SoundOnDriveOnly`), with keep-awake
   (`StayAwake.LessonVideoReason`), then Drive's upload of that recording. The start-up report offers V after an outcome
   whose video was not made (`LessonRuns`, `StartupAction.MakeVideo`, T only when the recording can be transcribed); a
   lesson in Transcribing with only its video left (`LessonRuns.OnlyItsVideoLeft`: record-only, or its transcript saved) is
@@ -1970,8 +1971,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   one (it stays, named), and `FreeAsync` refuses a lesson whose video is `NotMade` while its sound is
   here, deleting nothing (`LocalAudioFreer.VideoStillToMake`, with the `finish-video` command). There is no
   `folders.lock` or `MoveJournal` on develop, so `finish-video` and V check neither. Fakes: `FakeLessonVideoMedia`
-  (`TestDoubles.LessonVideo.cs`: `Holds`, `Unreadable`, `HoldWrite`, `WriteFailure`, `CheckAnswer`, `Written`, `Checks`,
-  the sound's samples). Tests: `LessonVideoPlanTests`, `LessonVideoFilesTests`, `CameraFinishJobTests` (the real host over
+  (`TestDoubles.LessonVideo.cs`: `Holds`, `Unreadable`, `Unopenable`, `HoldWrite`, `Creep` (the held writing moved on below
+  the next percent), `HoldCheck`, `WriteFailure`, `CheckAnswer`, `Written`, `Checks`, the sound's samples). Tests:
+  `LessonVideoPlanTests`, `LessonVideoFilesTests`, `CameraFinishJobTests` (the real host over
   the fake media on the manual clock), `LessonVideoMakerTests`, `LessonVideoMediaTests` (WindowsMedia: pieces from the
   real piece writer, a size change encoded again, a continued lesson, IDR-only sync samples, the check's failures),
   `LessonVideoDriveTests`, `RecordCommandTests.LessonVideo.cs`, `FinishVideoCommandTests`, `FinishVideoCommandLineTests`,
