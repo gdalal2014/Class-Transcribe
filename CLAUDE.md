@@ -267,7 +267,11 @@ advice after a format error (10 A).
   `ClassScribe.Cli.Commands`, `ClassScribe.Cli.Hosts.Recorder`; the tests keep `ClassScribe.Tests`), and so do the log
   categories of every `ILogger<T>` (`ClassScribe.Infrastructure.Drive.DriveClient` and the like), which no written line
   carries: `DriveSecretsTests` matches Drive's by `.Drive.`, and the one example of a `Logging:LogLevel` entry, in the
-  settings command's help and the README, names `ClassScribe.Infrastructure.Drive`.
+  settings command's help and the README, names `ClassScribe.Infrastructure.Drive`. The log applies an entry to every
+  category that starts with it, so an entry under `ClassScribe.` that none of the four root namespaces starts with or is
+  started by (`ClassScribe.Drive`, written before the move) filters nothing: `SettingsCheck.FindWarnings` warns about it
+  once, naming the roots (`SettingsCheck.LogCategoryRoots`, pinned to `ArchitectureRules.RootNamespaces`) and the
+  `settings reset` command; `ClassScribe` alone still covers everything.
 - HTTP APIs are called through Refit interfaces registered with `AddRefitGeneratedClient` (Refit's
   source-generated client, given the `ElevenLabsJson` System.Text.Json context), not requests built
   by hand with `HttpClient`. Google's are `IGoogleOAuthApi` (`GoogleOAuthJson`, snake_case: token and
@@ -1360,7 +1364,8 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   gives program, user and state folders in temporary folders, and `FakeOutputFolderFacts` stands in
   for the folders' facts. Environment overrides such as
   `ElevenLabs__BaseUrl` work; one that fails the check stops the start, since it cannot be fixed
-  while ClassScribe runs. Warnings are given once per process: a key in the settings, an API version
+  while ClassScribe runs. Warnings are given once per process: a key in the settings, a `Logging:LogLevel` entry under
+  `ClassScribe.` that names no part of ClassScribe (see the log categories above), an API version
   other than the one the build was written for, a limit of ElevenLabs' above its own, a safety stop or a
   video's limit held by the file limit (see the vendors' values below), and a
   recordings folder (`Recording:OutputFolder` or a class's `OutputFolder`) inside OneDrive, Google

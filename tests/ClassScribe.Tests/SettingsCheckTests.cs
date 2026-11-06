@@ -888,6 +888,47 @@ public class SettingsCheckTests
     }
 
     /// <summary>
+    /// A log level entry under ClassScribe. that no log category starts with, as one written under an area's name from before
+    /// the move into four projects (ClassScribe.Drive, ClassScribe.Commands), is warned about, under Logging:LogLevel or a
+    /// log's own section: the log applies an entry to the categories that start with it, so the level applies to nothing,
+    /// which the warning says with the four roots and how to take the entry out. It is never refused, and an entry the log
+    /// matches brings nothing: ClassScribe alone, a root, a namespace under one in any casing, the start of a root, one with
+    /// a wildcard, one without a level, and another program's.
+    /// </summary>
+    [Test]
+    public void A_log_level_entry_that_names_no_part_of_ClassScribe_is_warned_about()
+    {
+        Dictionary<string, string?> settings = new() { ["Logging:LogLevel:ClassScribe.Drive"] = "Debug", ["Logging:Console:LogLevel:ClassScribe.Commands"] = "Warning" };
+        const string roots = "ClassScribe.Core, ClassScribe.Application, ClassScribe.Infrastructure or ClassScribe.Cli (ClassScribe.Infrastructure.Drive for the calls to Google, ClassScribe.Application.Drive for the uploads)";
+
+        Assert.That(Problems(settings), Is.Empty);
+        Assert.That(Warnings(settings), Is.EquivalentTo(new[]
+        {
+            $"Logging:LogLevel:ClassScribe.Drive names no part of ClassScribe, whose log categories start with {roots}, so this level applies to nothing; ClassScribe alone covers everything. ClassScribe settings reset Logging:LogLevel:ClassScribe.Drive takes it out",
+            $"Logging:Console:LogLevel:ClassScribe.Commands names no part of ClassScribe, whose log categories start with {roots}, so this level applies to nothing; ClassScribe alone covers everything. ClassScribe settings reset Logging:Console:LogLevel:ClassScribe.Commands takes it out",
+        }));
+        Assert.That(Warnings(new()
+        {
+            ["Logging:LogLevel:ClassScribe"] = "Debug",
+            ["Logging:LogLevel:ClassScribe.Infrastructure"] = "Debug",
+            ["Logging:LogLevel:classscribe.infrastructure.drive"] = "Trace",
+            ["Logging:LogLevel:ClassScribe.Infra"] = "Debug",
+            ["Logging:LogLevel:ClassScribe.*.Drive"] = "Debug",
+            ["Logging:LogLevel:ClassScribe.Drive"] = "",
+            ["Logging:LogLevel:Microsoft.Hosting.Lifetime"] = "Warning",
+            ["Logging:Console:LogLevel:ClassScribe.Cli.Commands"] = "Information",
+        }), Is.Empty);
+    }
+
+    /// <summary>
+    /// The roots the warning judges by are the four assemblies' root namespaces as the architecture test holds them (and
+    /// checks them against the built assemblies), so a renamed project cannot leave the warning judging by an old name.
+    /// </summary>
+    [Test]
+    public void The_log_category_roots_are_the_four_assemblies_root_namespaces() =>
+        Assert.That(SettingsCheck.LogCategoryRoots, Is.EquivalentTo(ArchitectureRules.RootNamespaces.Values));
+
+    /// <summary>
     /// The glossary's limits and the longest file are refused only outside a sane range (question 10): from 1 to 10,000
     /// terms, a term shorter than 2 to 1,000 characters, 1 to 50 words, and 1 to 24 hours in one file.
     /// </summary>

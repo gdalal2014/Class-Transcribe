@@ -2648,7 +2648,11 @@ The file has a few more that rarely need changing, checked the same way: `Record
 [Where things go](#where-things-go)). The `Logging` section is read again and checked
 like the rest: each log level, under `Logging:LogLevel` (where `Default` is `Information`) or under a
 log's own section, such as `Logging:Console:LogLevel`, must be `Trace`, `Debug`, `Information`,
-`Warning`, `Error`, `Critical` or `None`.
+`Warning`, `Error`, `Critical` or `None`. An entry names a log category by its start, and the categories
+follow the four projects (`ClassScribe.Infrastructure.Drive` for the calls to Google,
+`ClassScribe.Application.Drive` for the uploads; `ClassScribe` alone covers everything), so an entry under
+`ClassScribe.` that no category starts with, such as `ClassScribe.Drive` from before the four projects,
+is warned about once: its level applies to nothing.
 
 The API key is deliberately not in this file. It is read from `ELEVENLABS_API_KEY` alone: a key
 written into `appsettings.json` is ignored, and ClassScribe warns you to remove it, so that it
@@ -2954,6 +2958,7 @@ words you see.
 | `YouTube:LongestVideoHours is 25; it must be from 0.25 to 24 (hours), such as 4.`, `YouTube:OEmbedBaseUrl is "..."; it must be an https address, such as https://www.youtube.com/, or http://127.0.0.1:<port>/ for a local stub.`, `YouTube:DriveUpload is "...", which is not Everything or WithoutAudio.` | Fix the value. |
 | `YouTube:LongestVideoHours is 6, above Recording:StopAfterHours (5), so a YouTube video's recording stops at 5 hours, at the safety stop. Make YouTube:LongestVideoHours at most 5 if that is not what you want` | A warning, given once; nothing is refused. The plan counts the shorter of the two and names it. |
 | `ElevenLabs:ApiKey is set in the settings` | Remove the key from `appsettings.json` (or an `ElevenLabs__ApiKey` variable). It is not used: ClassScribe reads the key only from `ELEVENLABS_API_KEY`. This warning comes once, at the first choice or command. |
+| `Logging:LogLevel:ClassScribe.Drive names no part of ClassScribe, whose log categories start with ClassScribe.Core, ClassScribe.Application, ClassScribe.Infrastructure or ClassScribe.Cli ..., so this level applies to nothing` | A warning, given once; nothing is refused. The log categories follow the four projects since the move into them (`ClassScribe.Infrastructure.Drive` for the calls to Google, `ClassScribe.Application.Drive` for the uploads; `ClassScribe` alone covers everything), so an entry set under an area's old name, such as `ClassScribe.Drive`, filters nothing. Set it again with the project in its name (`ClassScribe settings set Logging:LogLevel:ClassScribe.Infrastructure.Drive Debug`), or run the `settings reset` command the warning gives; `settings list` shows what your file holds. |
 | `Recording:OutputFolder is inside OneDrive` | OneDrive uploads a recording again and again while it grows, and can hold files ClassScribe needs to delete. Choose a folder outside OneDrive, such as `%USERPROFILE%\ClassScribe`. This warning, too, comes once, at the first choice or command, and refuses nothing. |
 | `Recording:OutputFolder is inside Google Drive (...)`, `... is inside Dropbox (...)` (or `Classes:<name>:OutputFolder ...` for a saved class's own folder) | Google Drive for desktop and Dropbox upload a recording again and again while it grows, and ClassScribe's own copy on Google Drive would put it there a second time. Choose a folder outside them, such as `%USERPROFILE%\ClassScribe` (menu S, then 1). A warning only, given once. |
 | `Recording:OutputFolder is the root of a drive (D:\)`, `... is your user folder itself (...)`, `... holds a folder named AppData, as a user folder does`, `... holds a folder named Windows, as Windows' own drive does` | Each course's folder would sit among folders that are not the classes'. Give the recordings a folder of their own, such as `D:\ClassScribe`. A warning only, given once. |

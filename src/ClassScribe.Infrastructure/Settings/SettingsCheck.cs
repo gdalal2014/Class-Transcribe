@@ -54,6 +54,13 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     /// <summary>The name of ClassScribe's own process, which the microphone must never follow.</summary>
     private const string OwnProcessName = "ClassScribe";
 
+    /// <summary>
+    /// The root namespaces of ClassScribe's four assemblies, which every log category starts with (an ILogger of T logs under
+    /// T's full name, ClassScribe.Infrastructure.Drive.DriveClient and the like): what <see cref="FindWarnings"/> judges a
+    /// Logging:LogLevel entry under ClassScribe. by.
+    /// </summary>
+    public static IReadOnlyList<string> LogCategoryRoots { get; } = ["ClassScribe.Core", "ClassScribe.Application", "ClassScribe.Infrastructure", "ClassScribe.Cli"];
+
     /// <summary>What Recording:MicrophoneFollows takes, for its messages.</summary>
     private const string FollowsAdvice = $"it must be part of the class app's name, such as chrome, or {FollowRule.AnyWord} (any app that holds the microphone) or {FollowRule.NoneWord} (V alone).";
 
@@ -348,7 +355,32 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
         }
 
         WarnOfTheStops(warnings, configuration);
+        WarnOfLogLevelsNamingNothing(warnings, configuration);
         return warnings;
+    }
+
+    /// <summary>
+    /// The warning for each log level entry under ClassScribe., under Logging:LogLevel or a log's own section, that no log
+    /// category starts with: the log applies an entry to every category that starts with it, so one written under an area's
+    /// name from before the move into four projects, such as ClassScribe.Drive, applies to nothing, which nothing else would
+    /// say. ClassScribe alone, an entry one of <see cref="LogCategoryRoots"/> starts with or that starts one, one with a
+    /// wildcard, one without a level and another program's are passed over.
+    /// </summary>
+    private static void WarnOfLogLevelsNamingNothing(List<string> warnings, IConfiguration configuration)
+    {
+        var roots = $"{string.Join(", ", LogCategoryRoots.Take(LogCategoryRoots.Count - 1))} or {LogCategoryRoots[^1]}";
+        foreach (var section in configuration.GetSection(LoggingSection).GetChildren())
+        {
+            var levels = section.Key.Equals("LogLevel", StringComparison.OrdinalIgnoreCase) ? section : section.GetSection("LogLevel");
+            foreach (var entry in levels.GetChildren())
+            {
+                var category = entry.Key;
+                if (string.IsNullOrEmpty(entry.Value) || category.Contains('*')) continue;
+                if (!category.StartsWith(OwnProcessName + ".", StringComparison.OrdinalIgnoreCase)) continue;
+                if (LogCategoryRoots.Any(root => category.StartsWith(root + ".", StringComparison.OrdinalIgnoreCase) || (root + ".").StartsWith(category, StringComparison.OrdinalIgnoreCase))) continue;
+                warnings.Add($"{entry.Path} names no part of ClassScribe, whose log categories start with {roots} (ClassScribe.Infrastructure.Drive for the calls to Google, ClassScribe.Application.Drive for the uploads), so this level applies to nothing; ClassScribe alone covers everything. ClassScribe settings reset {entry.Path} takes it out");
+            }
+        }
     }
 
     /// <summary>
