@@ -31,7 +31,7 @@ public static class DefaultChanges
     public static IReadOnlyList<DefaultChange> Rows { get; } =
     [
         new("Recording:MicrophoneFollows", "chrome", FollowRule.AnyWord, Version: "0.5.0"),
-        new("ElevenLabs:KeytermsFile", "keyterms.txt", "", Version: "")
+        new("ElevenLabs:KeytermsFile", "keyterms.txt", "", Version: "0.5.0")
     ];
 
     /// <summary>
