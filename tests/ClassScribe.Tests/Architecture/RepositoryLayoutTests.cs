@@ -1,14 +1,18 @@
 namespace ClassScribe.Tests;
 
 /// <summary>
-/// The repository's folders (architecture 2.4, its glossary checks arriving with slice 1, 8.2): the app ships no glossary, so
-/// none sits under src and no project file under src copies one to its output; the example glossary is kept outside src, in
-/// examples\glossary, which only the test project names. Files are listed with Directory.EnumerateFiles, so no process is
-/// started and a stray untracked file is caught too; every bin and obj folder, which builds leave, is skipped.
+/// The repository's folders (architecture 2.4): every source file under src sits in one of the four project folders, so a
+/// file a merge left at its old path is named (10.5); the app ships no glossary (its checks arriving with slice 1, 8.2), so
+/// none sits under src and no project file under src copies one to its output; the example glossary is kept outside src,
+/// in examples\glossary, which only the test project names. Files are listed with Directory.EnumerateFiles, so no process
+/// is started and a stray untracked file is caught too; every bin and obj folder, which builds leave, is skipped.
 /// </summary>
 [TestFixture]
 public class RepositoryLayoutTests
 {
+    /// <summary>The four project folders under src (architecture 1.1).</summary>
+    private static readonly string[] ProjectFolders = ["ClassScribe.Core", "ClassScribe.Application", "ClassScribe.Infrastructure", "ClassScribe.Cli"];
+
     /// <summary>The repository's root: the folder above the tests that holds ClassScribe.sln.</summary>
     private static string RepositoryRoot()
     {
@@ -32,6 +36,36 @@ public class RepositoryLayoutTests
         var name = Path.GetFileName(file);
         return name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
             && (name.Contains("keyterm", StringComparison.OrdinalIgnoreCase) || name.Contains("glossary", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Every source file under src sits in one of the four project folders: a file merged in at its old path, src\ClassScribe,
+    /// or anywhere else, is named here, to be moved to its project and given its namespace (architecture 10.5).
+    /// </summary>
+    [Test]
+    public void Every_source_file_under_src_sits_in_one_of_the_four_project_folders()
+    {
+        var root = RepositoryRoot();
+        var sources = FilesUnder(root, Path.Combine(root, "src")).Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).ToList();
+        var astray = sources.Where(file => file.Split(Path.DirectorySeparatorChar) is not [_, var project, _, ..] || !ProjectFolders.Contains(project)).ToList();
+
+        Assert.That(sources.Count, Is.GreaterThan(400));
+        Assert.That(astray, Is.Empty, string.Join(Environment.NewLine, astray));
+    }
+
+    /// <summary>Each of the four project folders holds its project file, and src holds the shared properties they build with.</summary>
+    [Test]
+    public void The_four_projects_and_the_shared_properties_are_there()
+    {
+        var root = RepositoryRoot();
+
+        Assert.That(File.Exists(Path.Combine(root, "src", "Directory.Build.props")), Is.True, "src\\Directory.Build.props");
+        foreach (var project in ProjectFolders)
+        {
+            Assert.That(File.Exists(Path.Combine(root, "src", project, project + ".csproj")), Is.True, project);
+        }
+
+        Assert.That(File.Exists(Path.Combine(root, "src", "ClassScribe", "ClassScribe.csproj")), Is.False, "the old project file is gone");
     }
 
     /// <summary>No glossary sits under src: the app ships none, and a build never puts one beside the exe.</summary>

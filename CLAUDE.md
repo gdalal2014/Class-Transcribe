@@ -928,10 +928,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   the loopback answer's contract pinned on both sides; in `FileProbeTests`, `RecordingUploadTests`, `LoopbackReceiverTests`
   and `GoogleSignInTests`) to 4,994, all passing, and 5,056 after 0.5.0's merge-back and the review's fixes (the records
   and the tests' guard on the recordings folder, the camera's, and the lesson's video's, merged into `develop` on
-  5 November), all passing. The trial move's 80 architecture tests (`ArchitectureTests`,
-  `ArchitectureRulesTests` and `RepositoryLayoutTests`' checks of the four project folders, in
-  `design\final\architecture-analysis\trial`, where the move and namespace scripts are) wait for slice 4 to commit them,
-  which makes 5,136. The uploads by
+  5 November), all passing. The move of architecture slice 4 (`feature/layers-move`: the source in four projects, every
+  file an exact rename) adds the trial move's architecture tests (`ArchitectureTests`, but for its check 5, the
+  namespaces, which waits for the namespace commit; `ArchitectureRulesTests`; `RepositoryLayoutTests`' checks of the four
+  project folders; the move script, its map `move-map.tsv` and the namespace script are in
+  `design\final\architecture-analysis\move`), which makes 5,135, all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),

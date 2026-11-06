@@ -505,9 +505,10 @@ public class SettingsReloadTests
     }
 
     /// <summary>
-    /// No part of ClassScribe takes its settings through IOptions, which keeps the values it first read for the rest of
-    /// the session, so that an edit would never reach that part. A part that lasts as long as ClassScribe reads
-    /// IOptionsMonitor each time it uses the settings; a part of a run takes IOptionsSnapshot, read once in the run's scope.
+    /// No part of ClassScribe, in any of its four assemblies, takes its settings through IOptions, which keeps the values
+    /// it first read for the rest of the session, so that an edit would never reach that part. A part that lasts as long
+    /// as ClassScribe reads IOptionsMonitor each time it uses the settings; a part of a run takes IOptionsSnapshot, read
+    /// once in the run's scope.
     /// </summary>
     [Test]
     public void No_part_keeps_the_settings_it_read_first_for_the_whole_session()
@@ -516,7 +517,7 @@ public class SettingsReloadTests
             .Select(section => typeof(IOptions<>).MakeGenericType(section))
             .ToHashSet();
 
-        var parts = typeof(AppHost).Assembly.GetTypes()
+        var parts = AppAssemblies.All.SelectMany(assembly => assembly.GetTypes())
             .SelectMany(type => type.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                 .SelectMany(constructor => constructor.GetParameters())
                 .Where(parameter => readOnce.Contains(parameter.ParameterType))
