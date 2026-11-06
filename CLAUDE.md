@@ -227,7 +227,12 @@ advice after a format error (10 A).
   seven checks, each with its test in `ArchitectureTests` and planted cases in `ArchitectureRulesTests`: (1) the
   references, Core the framework alone, Application Core and `Microsoft.Extensions.Logging.Abstractions`, `Options`,
   `DependencyInjection.Abstractions` and `Primitives` (`ApplicationPackages`), Infrastructure never the Cli, none the
-  tests, so a package such as NAudio or Refit added to an inner project fails here; (2) banned in Core and Application:
+  tests, so any package added to an inner project fails here, one named `System.*` included: the framework is told by
+  name (`IsFramework`: `System`, `System.*`, `netstandard`, `mscorlib`) less the files beside the four in the test's
+  output folder (`AppAssemblies.PackagesBeside()`; the build copies every package there and never the shared framework,
+  which the runtime loads from the dotnet folder), so `System.CommandLine` or `System.Security.Cryptography.ProtectedData`
+  (Windows' DPAPI) referenced by Core or Application counts as a package, and
+  `The_packages_beside_the_four_are_read` pins that the set read holds those two; (2) banned in Core and Application:
   `System.IO.File`, `Directory`, `FileInfo`, `DirectoryInfo`, `FileSystemInfo`, `FileStream`, `RandomAccess`, `DriveInfo`
   and `FileSystemWatcher`, a `StreamReader` or `StreamWriter` opened by a path, every member of `Path` but the string work
   in `AllowedPathMembers` (`Combine`, `Join`, `GetFileName`, `GetFileNameWithoutExtension`, `GetExtension`,

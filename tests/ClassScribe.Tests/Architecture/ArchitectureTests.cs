@@ -14,14 +14,16 @@ namespace ClassScribe.Tests;
 public class ArchitectureTests
 {
     private IReadOnlyList<AssemblyFacts> facts = [];
+    private IReadOnlySet<string> packages = new HashSet<string>();
     private IReadOnlyList<Violation> violations = [];
 
-    /// <summary>Reads the four assemblies once and runs every check.</summary>
+    /// <summary>Reads the four assemblies and the names of the files beside them once, and runs every check.</summary>
     [OneTimeSetUp]
     public void ReadTheAssemblies()
     {
         facts = AppAssemblies.Paths.Select(ArchitectureFacts.Read).ToList();
-        violations = ArchitectureRules.Check(facts, ProgramFiles.Dll);
+        packages = AppAssemblies.PackagesBeside();
+        violations = ArchitectureRules.Check(facts, ProgramFiles.Dll, packages);
     }
 
     /// <summary>The four assemblies are read, innermost first, each with its types.</summary>
@@ -32,9 +34,23 @@ public class ArchitectureTests
         Assert.That(facts.All(assembly => assembly.Types.Count > 10), Is.True);
     }
 
-    /// <summary>Check 1: Core references the framework alone, Application its three packages and Core, Infrastructure never the Cli, none the tests.</summary>
+    /// <summary>Check 1: Core references the framework alone, Application its four packages and Core, Infrastructure never the Cli, none the tests; a package named System.* is told from the framework by the files beside the four.</summary>
     [Test]
     public void Each_assembly_references_only_what_the_rule_allows() => AssertNone(1);
+
+    /// <summary>
+    /// The files beside the four are read from the output folder, the solution's two packages named System.* among them, so
+    /// that check 1 tells them from the framework, which is never there; an empty set would let every such package pass.
+    /// </summary>
+    [Test]
+    public void The_packages_beside_the_four_are_read()
+    {
+        Assert.That(packages, Is.SupersetOf(new[] { "System.CommandLine", "System.Security.Cryptography.ProtectedData", "NAudio.Core", "Refit" }));
+        Assert.That(packages, Does.Not.Contain("System.Runtime"));
+        Assert.That(packages, Does.Not.Contain("System.Text.Json"));
+        Assert.That(packages, Does.Not.Contain(ArchitectureRules.Core));
+        Assert.That(packages, Does.Not.Contain(ArchitectureRules.Cli));
+    }
 
     /// <summary>Check 2: Core and Application reach no file, process, environment, kernel object, console, network, pipe, interop, vendor or host.</summary>
     [Test]

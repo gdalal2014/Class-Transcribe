@@ -3454,8 +3454,10 @@ everything it needs from the machine, the person or a vendor; Infrastructure imp
 Windows, files, processes, pipes and web APIs; and the Cli talks to you and puts the rest together. The
 project references enforce the direction, and an architecture test in `tests/ClassScribe.Tests/Architecture`
 checks on every run what they cannot: that Core and Application make no call of their own to the disk,
-the network, a process or Windows, that no package such as NAudio or Refit has crept into them, that
-every type sits in its project's namespace, and that the four assemblies carry one version. `dotnet
+the network, a process or Windows, that no package has crept into them (not even one named like the
+framework, such as `System.CommandLine`: the files beside the four assemblies in the test's output folder,
+where every package lands and the framework never does, tell the two apart), that every type sits in its
+project's namespace, and that the four assemblies carry one version. `dotnet
 build` builds the solution and must report no warning; `dotnet test` runs the suite; `dotnet run
 --project src/ClassScribe.Cli` starts the menu (a recording then runs in the window, since `dotnet run`
 ends every program it started); and the publish line of [Set up once](#set-up-once),

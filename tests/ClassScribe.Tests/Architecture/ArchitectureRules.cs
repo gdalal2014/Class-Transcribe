@@ -93,13 +93,18 @@ public static class ArchitectureRules
         ("RefitInternalGenerated", "Refit's source generator writes its attribute here"),
     ];
 
-    /// <summary>Checks the four assemblies' facts, with <paramref name="programDll"/> the constant Core names the exe's dll by (check 7).</summary>
-    public static IReadOnlyList<Violation> Check(IReadOnlyList<AssemblyFacts> assemblies, string programDll)
+    /// <summary>
+    /// Checks the four assemblies' facts, with <paramref name="programDll"/> the constant Core names the exe's dll by (check 7)
+    /// and <paramref name="packages"/> the names of the assemblies that sit as files beside the four in the output folder,
+    /// which every package does and the shared framework never, by which check 1 tells a package named System.* from the
+    /// framework.
+    /// </summary>
+    public static IReadOnlyList<Violation> Check(IReadOnlyList<AssemblyFacts> assemblies, string programDll, IReadOnlySet<string> packages)
     {
         var found = new List<Violation>();
         foreach (var assembly in assemblies)
         {
-            CheckReferences(assembly, found);
+            CheckReferences(assembly, packages, found);
             if (assembly.Name is Core or Application)
             {
                 foreach (var type in assembly.Types) CheckInner(assembly.Name, type, found);
@@ -118,15 +123,15 @@ public static class ArchitectureRules
         return found;
     }
 
-    /// <summary>Check 1: what each assembly may reference.</summary>
-    private static void CheckReferences(AssemblyFacts assembly, List<Violation> found)
+    /// <summary>Check 1: what each assembly may reference, with <paramref name="packages"/> the files beside the four.</summary>
+    private static void CheckReferences(AssemblyFacts assembly, IReadOnlySet<string> packages, List<Violation> found)
     {
         foreach (var reference in assembly.References)
         {
             var allowed = assembly.Name switch
             {
-                Core => IsFramework(reference),
-                Application => IsFramework(reference) || reference == Core || ApplicationPackages.Contains(reference),
+                Core => IsFramework(reference, packages),
+                Application => IsFramework(reference, packages) || reference == Core || ApplicationPackages.Contains(reference),
                 Infrastructure => reference != Cli && reference != Tests,
                 Cli => reference != Tests,
                 _ => true,
@@ -135,10 +140,16 @@ public static class ArchitectureRules
         }
     }
 
-    /// <summary>True for an assembly of the shared framework: System and its parts, netstandard and mscorlib.</summary>
-    public static bool IsFramework(string assemblyName) =>
-        assemblyName == "System" || assemblyName.StartsWith("System.", StringComparison.Ordinal)
-        || assemblyName is "netstandard" or "mscorlib" or "Microsoft.CSharp" or "Microsoft.Win32.Primitives";
+    /// <summary>
+    /// True for an assembly of the shared framework: System and its parts, netstandard and mscorlib, unless a file of that
+    /// name sits beside the four (<paramref name="packages"/>), as a package named System.* does (System.CommandLine,
+    /// System.Security.Cryptography.ProtectedData, which is Windows' DPAPI) and the framework never: the build copies every
+    /// package to the output folder, and the runtime loads the framework from the dotnet folder.
+    /// </summary>
+    public static bool IsFramework(string assemblyName, IReadOnlySet<string> packages) =>
+        !packages.Contains(assemblyName)
+        && (assemblyName == "System" || assemblyName.StartsWith("System.", StringComparison.Ordinal)
+            || assemblyName is "netstandard" or "mscorlib" or "Microsoft.CSharp" or "Microsoft.Win32.Primitives");
 
     /// <summary>Check 2: what a type of Core or Application may not use.</summary>
     private static void CheckInner(string assembly, TypeFacts type, List<Violation> found)
