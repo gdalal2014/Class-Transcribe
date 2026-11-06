@@ -1920,8 +1920,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   deletes a stale partial with a line, leaves an unreadable piece out with a warning (and keeps it after the video: only the
   pieces it read are deleted), fails with every piece kept when Windows cannot open a source now (`CouldNotOpenNow`: an
   IOException, UnauthorizedAccessException or FACILITY_WIN32 COM error) or an older video cannot be read, leaves out a piece
-  older than a readable older video (which holds its picture: a leftover an earlier making could not delete, or one kept
-  for Drive) when the older video's picture is used before the first newer piece, with a line, and fails with the older
+  older than a readable older video and beginning before its end (which holds its picture: a leftover an earlier making
+  could not delete, or one kept for Drive; a piece beginning at or past the older video's `Facts.Length` is fresh whatever
+  its write time says) when the older video's picture is used before the first newer piece, with a line, and fails with the older
   video kept when no newer piece is left ("holds the picture of every camera piece here already", review 3.2), logs the plan, sends `progress`
   at each new percent, and the same percent again every `ProgressEvery` (10 s, at most 98 while writing, 99 while checking)
   only while its work has moved since the last line (the writer's ten-thousandths, the check's frames decoded through

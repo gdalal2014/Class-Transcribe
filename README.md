@@ -1573,11 +1573,12 @@ made in a camera process of its own while the transcript is made, and the end of
 - **Again, free:** `ClassScribe finish-video "<the lesson's folder or one of its files>" [--no-open]` makes
   it again in this window, from the pieces newer than the lesson's video, with the older video's picture
   before the first of them. A piece older than the video (one kept for Drive, or one an earlier making
-  could not delete) is in the older video already, so it is left out, with the line `... is older than
-  ....mp4, which holds its picture already, so it is left out; the older video's picture is used instead, up
-  to the first newer piece`; a lesson whose pieces are all older than its video has nothing to add, and the
-  older video stays, which is said. To make a video from the pieces alone all the same, move the older
-  video out of the folder first (keep it). It needs the lesson's `.wav` files: after free-space it says `The sound of this
+  could not delete) that begins before the video ends is in the older video already, so it is left out,
+  with the line `... is older than ....mp4, which holds its picture already, so it is left out; the older
+  video's picture is used instead, up to the first newer piece`; a lesson whose pieces are all older than
+  its video has nothing to add, and the older video stays, which is said. A piece that begins at or after
+  the older video's end is used whatever its date says. To make a video from the pieces alone all the same,
+  move the older video out of the folder first (keep it). It needs the lesson's `.wav` files: after free-space it says `The sound of this
   lesson is on Google Drive only, so its video cannot be made again here.` (exit 1). It refuses a lesson
   being recorded or having its video made, one whose older video ClassScribe's own upload is sending to
   Google Drive at that moment (the new one could not take its place meanwhile; the line says to make it

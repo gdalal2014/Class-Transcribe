@@ -354,6 +354,32 @@ public sealed class CameraFinishJobTests
     }
 
     /// <summary>
+    /// A piece beginning at or past the older video's end cannot be in that video, whatever its write time says (the Windows
+    /// clock set back between the two parts' makings, or pieces restored with their times kept): it is fresh, used after the
+    /// older video's picture, never left out as held by it and deleted (review of 3.2).
+    /// </summary>
+    [Test]
+    public async Task A_piece_starting_past_the_older_video_s_end_is_used_whatever_its_time()
+    {
+        OlderVideo();
+        _media.Holds($"{BaseName}.mp4", _media.Default with { Length = TimeSpan.FromSeconds(1) });
+        var later = Leftover(1);
+
+        var (exit, seen) = await RunAsync(Finish());
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
+            Assert.That(_media.Written.Single().Slices, Is.EqualTo(new[]
+            {
+                new PlannedSlice(_files.LessonVideo, TimeSpan.Zero, TimeSpan.FromSeconds(1)), new PlannedSlice(later, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))
+            }));
+            Assert.That(seen.Logs.Where(line => line.Contains("holds its picture already", StringComparison.Ordinal)), Is.Empty);
+            Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("a lesson's video"));
+        }
+    }
+
+    /// <summary>
     /// An older video that cannot be read, of a continued lesson whose first pieces are gone, holds the only picture before its
     /// first piece: the video is not made, rather than made without it and put in its place; failed says what to do.
     /// </summary>

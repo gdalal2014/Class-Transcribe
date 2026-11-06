@@ -21,11 +21,12 @@ namespace ClassScribe.Camera;
 /// it read are deleted, with a line saying so, unless the job keeps them for Google Drive (<see cref="CameraJob.KeepPieces"/>:
 /// only when the video goes there, amendment 47); a piece left out because what it holds cannot be read is in no video, so
 /// it stays, named. A piece Windows cannot open now, or an older video that cannot be read, ends the job with every piece
-/// kept, so that no picture is lost to a video made without it. A piece older than the older video was there when that video
-/// was made, which holds its picture (a leftover an earlier making could not delete, or a piece kept for Drive): with the
-/// older video's picture in use before the first newer piece, such a piece is left out, with a line, and with no newer piece
-/// at all there is nothing to add, the job fails with why, and the older video stays, so that a remake from a leftover alone
-/// never drops the picture only the older video held (review 3.2). A damaged .wav part, which the mix skips as the upload
+/// kept, so that no picture is lost to a video made without it. A piece older than the older video and beginning before it
+/// ends was there when that video was made, which holds its picture (a leftover an earlier making could not delete, or a
+/// piece kept for Drive): with the older video's picture in use before the first newer piece, such a piece is left out, with
+/// a line, and with no newer piece at all there is nothing to add, the job fails with why, and the older video stays, so that
+/// a remake from a leftover alone never drops the picture only the older video held (review 3.2); a piece beginning at or
+/// past the older video's end is fresh whatever its write time says. A damaged .wav part, which the mix skips as the upload
 /// does, fails the job with the part named and the pieces kept, since the sound written would be shorter than the lesson's
 /// and the picture after the part out of step with it, which the check cannot tell (review 3.14). A video that fails its check, or cannot be made, is deleted, the pieces
 /// kept, and failed says why and names finish-video; a cancel does the same and ends with 130. A stale .partial, one that
@@ -155,13 +156,15 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
 
             if (source is not null)
             {
-                // A piece older than the video was there when the video was made, so the video holds its picture (review 3.2): a
-                // leftover of an earlier making that could not be deleted then, or a piece kept for Drive. A video made from such
-                // a piece alone would hold its last frame where the older video has picture, so the older video's picture stands
-                // for it, and only pieces newer than the video, a continued lesson's, add anything.
+                // A piece older than the video, beginning before the video ends, was there when the video was made, so the video
+                // holds its picture (review 3.2): a leftover of an earlier making that could not be deleted then, or a piece kept
+                // for Drive. A video made from such a piece alone would hold its last frame where the older video has picture, so
+                // the older video's picture stands for it, and only pieces newer than the video, a continued lesson's, add
+                // anything. One beginning at or past the older video's end is in no part of it, whatever its write time says (the
+                // Windows clock set back between the makings, or pieces restored with their times kept), so it is fresh.
                 older = source;
                 var madeUtc = File.GetLastWriteTimeUtc(files.LessonVideo);
-                heldByOlder = [.. pieces.Where(piece => File.GetLastWriteTimeUtc(piece.Path) <= madeUtc)];
+                heldByOlder = [.. pieces.Where(piece => piece.Start < source.Facts.Length && File.GetLastWriteTimeUtc(piece.Path) <= madeUtc)];
                 var fresh = pieces.Except(heldByOlder).ToList();
                 if (fresh.Count == 0)
                 {
