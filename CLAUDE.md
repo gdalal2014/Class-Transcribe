@@ -926,10 +926,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   real adapter in a temporary folder or the existing fakes, in `DrivePortTests`, `YouTubePortTests` and `CameraPortTests`)
   bring it to 4,990, and stop point S4's fixes (`IFileProbe.Describe`, one look at a file for `RecordingUpload.IsKnownInSync`;
   the loopback answer's contract pinned on both sides; in `FileProbeTests`, `RecordingUploadTests`, `LoopbackReceiverTests`
-  and `GoogleSignInTests`) to 4,994, all passing. The trial move's 80 architecture tests (`ArchitectureTests`,
+  and `GoogleSignInTests`) to 4,994, all passing, and 5,056 after 0.5.0's merge-back and the review's fixes (the records
+  and the tests' guard on the recordings folder, the camera's, and the lesson's video's, merged into `develop` on
+  5 November), all passing. The trial move's 80 architecture tests (`ArchitectureTests`,
   `ArchitectureRulesTests` and `RepositoryLayoutTests`' checks of the four project folders, in
   `design\final\architecture-analysis\trial`, where the move and namespace scripts are) wait for slice 4 to commit them,
-  which makes 5,074. The uploads by
+  which makes 5,136. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -974,7 +976,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   with the review's repairs to them, 4 min 27 s for 4,914 with slice 3a's cuts, 4 min 29 s for 4,939 with slice 3b1's ports,
   4 min 28 s for 4,949 with slice 3b2's, 4 min 27 s for 4,957 with slice 3b3's, 4 min 24 s for 4,966 with slice 3b4's,
   4 min 27 s for 4,969 with stop point S3's fixes, 4 min 28 s for 4,990 with slice 3c's ports, 4 min 27 s for 4,994 with
-  stop point S4's fixes, plus the build).
+  stop point S4's fixes, 4 min 23 s for 5,056 after 0.5.0's merge-back and the review's fixes on 5 November, plus the
+  build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
