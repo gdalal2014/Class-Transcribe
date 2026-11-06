@@ -315,8 +315,10 @@ public sealed class RecordCommand(
             return;
         }
 
-        // A continued lesson's older video may be going up to Drive this moment (the pass after its first part resumes once
-        // the recording stops): the upload holds it open, so a new video could not take its place; it is made later (review 3.5).
+        // A continued lesson's older video may be going up to Drive this moment: the pass after its first part waits between
+        // pieces while this part records and, after its stop, while it is transcribed, and writes its manifest every minute
+        // meanwhile, so it still counts as going on; the upload holds the older video open, so a new video could not take its
+        // place; it is made later (review 3.5).
         if (probe.FileExists(files.LessonVideo) && drive.IsUploadingNow(files))
         {
             logger.LogWarning("{Line}", LessonVideoDrive.UploadGoingOnLine(files, commandLine.FinishVideo(files.Segment(1))));

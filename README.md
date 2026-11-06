@@ -1380,6 +1380,9 @@ It waits the same way while a class is transcribed, or a lesson's video made (`G
 while "Kalam" is transcribed`, then `Google Drive: going on, now that "Kalam" is done`), so that the
 transcript's own upload to ElevenLabs has the connection to itself. A lesson whose video is being made by
 `finish-video` waits too (`... is having its lesson video made now; it goes up once it has stopped`).
+An upload that waits this way still counts as going on, however long the wait (it notes that it is
+still there every minute): the menu's header keeps saying `uploading`, and a lesson's video is not made
+again while the waiting upload holds its older video open (see [The lesson's video](#the-lessons-video)).
 The laptop is kept awake meanwhile (see [Keeping the laptop awake](#keeping-the-laptop-awake)).
 
 A recording asked for again that is on Drive already and has not changed is not put back in the
@@ -1581,8 +1584,9 @@ made in a camera process of its own while the transcript is made, and the end of
   move the older video out of the folder first (keep it). It needs the lesson's `.wav` files: after free-space it says `The sound of this
   lesson is on Google Drive only, so its video cannot be made again here.` (exit 1). It refuses a lesson
   being recorded or having its video made, one whose older video ClassScribe's own upload is sending to
-  Google Drive at that moment (the new one could not take its place meanwhile; the line says to make it
-  once the upload is done), and one without camera pieces. Exit 0 made, 1 not made, 130 cancelled.
+  Google Drive at that moment, or holding while it waits for a class to stop recording or to be
+  transcribed (the new one could not take its place meanwhile; the line says to make it once the upload
+  is done), and one without camera pieces. Exit 0 made, 1 not made, 130 cancelled.
 
 ### Checking the cameras
 
@@ -3112,7 +3116,7 @@ words you see.
 | `The lesson's video was not made: The lesson's video did not pass its check (...). The camera's pieces are kept. To make it again, free: ... finish-video "..."` | Something in the video was wrong (a picture that does not decode at a join, its length). The pieces are kept; run the command, or menu choice 3's V. If it fails again, report the line. |
 | `The lesson's video was not made: ClassScribe's camera process made no headway on the video for 2 minutes, so it was ended as stuck. ...` | A call inside Windows' media layer never returned while the video was written or checked: the camera process says its progress again only while the work moves, so a stuck one goes quiet and is ended. The pieces are kept; run `finish-video` with the command given. If it repeats on the same lesson, report the line. |
 | `The lesson's video was not made: ....mp4, the older video, is open in another program (a video player, or ClassScribe sending it to Google Drive), so the new one, which passed its check, could not take its place (...). It stays as ....mp4.partial until the next making. Close the player, or wait for the upload to end, then make the video again. ...` | A player (or another program) had the older video open while it was made again, or ClassScribe's own upload was sending it to Drive; ClassScribe tried three times, a second apart. Close the player, or wait for the upload, and run the `finish-video` command given, or menu choice 3's V. The older video and the pieces are as they were. |
-| `The video of ... is not made again now: ClassScribe is sending its older video, ....mp4, to Google Drive, and the new one could not take its place meanwhile. Once the upload is done, make it again, free: ...` | A continued lesson stopped, or `finish-video` was run, while the upload after the earlier part still sends the older video (with `Drive:LessonVideos` on). Nothing is made now; the older video and the pieces stay. Once the upload has ended (the window says `... is on Google Drive`), run the command given, or menu choice 3's V, or the report's V at the next start. |
+| `The video of ... is not made again now: ClassScribe is sending its older video, ....mp4, to Google Drive, and the new one could not take its place meanwhile. Once the upload is done, make it again, free: ...` | A continued lesson stopped, or `finish-video` was run, while the upload after the earlier part still sends the older video (with `Drive:LessonVideos` on), or holds it while it waits for the lesson to stop recording and to be transcribed; such an upload counts as going on however long it waits. Nothing is made now; the older video and the pieces stay. Once the upload has ended (the window says `... is on Google Drive`), run the command given, or menu choice 3's V, or the report's V at the next start. |
 | `... cannot be read (...), so it is left out of the lesson's video`, then `... could not be read, so its picture is in no video; it stays on this laptop. Delete it by hand once you no longer need it` | That piece holds no picture Windows can read, often one whose camera process ended before it wrote anything. The video is made from the others; the piece is kept, small as such a piece usually is. Delete it by hand when you are sure you do not need it. |
 | `The lesson's video was not made: ... could not be opened now (...), so the video was not made without its picture. ...` | Another program (a scanner, a player) held a piece, or the older video, while the video was made. Every piece is kept; run the `finish-video` command given once it has let go. |
 | `The lesson's video was not made: ....mp4, the older video, cannot be read (...), and its picture before the first camera piece is in no piece, so a new video would lose it. ...` | The older video of a continued lesson is damaged, and its first part's pieces are gone. Move the older video out of the lesson's folder (keep it), then run `finish-video` to make a video from the pieces alone. |

@@ -148,9 +148,10 @@ public sealed record UploadManifest(string Folder, string BaseName)
     public DateTimeOffset? DoneUtc { get; init; }
 
     /// <summary>
-    /// When an upload of it last wrote here, as it does at each step and at each piece Drive confirms; null before the first.
-    /// A recent one, during a try that has not failed, tells an upload going on now, in this process or in another (see
-    /// <see cref="IsBeingUploaded"/>).
+    /// When an upload of it last wrote here, as it does at each step, at each piece Drive confirms, and every
+    /// <see cref="RecordingUpload.StillGoingOnEvery"/> while it is held up between pieces (as while a class records or is
+    /// transcribed); null before the first. A recent one, during a try that has not failed, tells an upload going on now, in
+    /// this process or in another (see <see cref="IsBeingUploaded"/>).
     /// </summary>
     public DateTimeOffset? UpdatedUtc { get; init; }
 
@@ -200,7 +201,8 @@ public sealed record UploadManifest(string Folder, string BaseName)
 
     /// <summary>
     /// True when an upload of it is going on at <paramref name="now"/>: it waits, a try has begun and not failed, and the
-    /// upload wrote here within <see cref="GoingOnWithin"/>. A process that ended in the middle stops counting after that.
+    /// upload wrote here within <see cref="GoingOnWithin"/>, as one held up between pieces still does every
+    /// <see cref="RecordingUpload.StillGoingOnEvery"/>. A process that ended in the middle stops counting after that.
     /// </summary>
     public bool IsBeingUploaded(DateTimeOffset now) =>
         State == UploadState.Waiting && LastTriedUtc is not null && LastError is null && UpdatedUtc is { } updated && now - updated <= GoingOnWithin;

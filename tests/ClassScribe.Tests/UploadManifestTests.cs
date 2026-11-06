@@ -63,6 +63,28 @@ public class UploadManifestTests
         Assert.That((again.State, again.QueuedUtc, again.DoneUtc, again.Files.Single().Size), Is.EqualTo((UploadState.Waiting, TestRuns.Start, (DateTimeOffset?)null, 3L)));
     }
 
+    /// <summary>
+    /// A queue during an upload that goes on, as a continued lesson's start while its first part still goes up, leaves the
+    /// upload counting as going on (review of 3.5): the stamp of its last write stays. A queue of one done, or of one whose
+    /// upload went quiet, clears it as before, so that no upload is taken to be going on from the queue alone.
+    /// </summary>
+    [Test]
+    public void A_queue_during_an_upload_leaves_it_going_on()
+    {
+        var now = _world.Time.GetUtcNow();
+        _manifests.Write(_manifests.Queue(Mantiq) with { LastTriedUtc = now.AddMinutes(-3), UpdatedUtc = now.AddMinutes(-1) });
+
+        var queued = _manifests.Queue(Mantiq);
+
+        Assert.That((queued.UpdatedUtc, queued.TimesQueued, queued.IsBeingUploaded(now)), Is.EqualTo(((DateTimeOffset?)now.AddMinutes(-1), 2, true)));
+
+        _manifests.Write(queued with { UpdatedUtc = now.AddMinutes(-6) });
+        Assert.That(_manifests.Queue(Mantiq).UpdatedUtc, Is.Null, "an upload quiet for six minutes");
+
+        _manifests.Write(queued with { State = UploadState.Done, DoneUtc = now });
+        Assert.That(_manifests.Queue(Mantiq).UpdatedUtc, Is.Null, "one done");
+    }
+
     /// <summary>A manifest reads back as it was written, its files and an upload begun included, with the states written by name.</summary>
     [Test]
     public void A_manifest_reads_back_as_written()

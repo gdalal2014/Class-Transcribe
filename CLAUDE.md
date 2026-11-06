@@ -1470,8 +1470,12 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   (`RecorderLog.NamedFile`, as a recorder after its class or a run in the window), is written and
   flushed just before the `.log` goes up, so Drive's copy holds it, and is said once. Each try clears
   `LastError` as it begins, and every write of an upload stamps `UploadManifest.UpdatedUtc` (a queue
-  clears it), so `IsBeingUploaded(now)` (waiting, tried, no error, written within `GoingOnWithin`, 5
-  minutes) tells an upload going on now, in any process, and a recording queued again right after
+  clears it, unless the upload goes on now, which the queue leaves as it is), and an upload held up
+  between pieces, as while a class records or is transcribed, writes the manifest every
+  `RecordingUpload.StillGoingOnEvery` (1 minute; `FileWatch.BeforePieceAsync`, the pending wait's timer
+  going with the pause), so `IsBeingUploaded(now)` (waiting, tried, no error, written within `GoingOnWithin`, 5
+  minutes) tells an upload going on now, in any process, a paused one hours into its pause included,
+  and a recording queued again right after
   its upload is not taken for one; `BytesOnDrive` says how much Drive has. `ResumableUpload`: pieces of `Drive:ChunkMegabytes` MiB
   (`PieceSize` for tests), each `PieceContent` with its Content-Range streamed from the open file;
   308 confirms by its `Range`, 200/201 completes; a passing failure (Unreachable or Busy: 408, 429,
@@ -1948,7 +1952,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `finish-video`, is left for later with `LessonVideoDrive.UploadGoingOnLine` while an older video exists and
   `IDriveAutoUpload.IsUploadingNow` (the manifest's `IsBeingUploaded`) says ClassScribe's own upload of the recording goes
   on, since that upload holds the older video open and the new one could not take its place (review 3.5; the job's
-  rename failure names both a player and the upload); the first lesson's start line says how to turn on
+  rename failure names both a player and the upload). The continued lesson is the case that matters: the pass after its
+  first part waits between pieces while the second part records and, after its stop, while it is transcribed
+  (`DriveUploadPass.PauseWhileRecordingAsync`, `HoldingUp` takes `IsTranscribingNow` too), and that wait writes the
+  manifest every minute while the queue at the second part's start leaves the stamp, so the stop finds the upload going
+  on hours later (`DriveAutoUploadTests.A_paused_upload_still_counts_as_going_on`); the first lesson's start line says how to turn on
   `Drive:LessonVideos` (`LessonVideoDrive.StartLine`). `finish-video <path> [--no-open]` (`FinishVideoCommand`,
   `ICommandRunner.FinishVideoAsync`) makes it again, free, decided from the files alone (`ClassFolders.LessonVideoStateOf`:
   `None`, `Made`, `NotMade` when a piece is newer than the video or there is none), refusing a lesson being recorded or

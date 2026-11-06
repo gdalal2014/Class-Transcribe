@@ -38,9 +38,10 @@ public interface IDriveAutoUpload
     Task UploadAsync(RecordingFiles files);
 
     /// <summary>
-    /// True while an upload of <paramref name="files"/> goes on now, in any process, as its manifest tells (see
-    /// <see cref="UploadManifest.IsBeingUploaded"/>): a lesson's video is not made again meanwhile, since the upload holds
-    /// the older video open and the new one could not take its place (review 3.5). Never throws.
+    /// True while an upload of <paramref name="files"/> goes on now, in any process, held up between pieces while a class
+    /// records or is transcribed included, as its manifest tells (see <see cref="UploadManifest.IsBeingUploaded"/>): a
+    /// lesson's video is not made again meanwhile, since the upload holds the older video open and the new one could not
+    /// take its place (review 3.5). Never throws.
     /// </summary>
     bool IsUploadingNow(RecordingFiles files);
 }

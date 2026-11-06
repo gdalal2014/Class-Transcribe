@@ -24,8 +24,10 @@ public interface IUploadManifests
     /// Puts <paramref name="files"/> in the queue, as waiting, and returns its manifest: a new one, queued now, or the one
     /// there, which keeps what it knows of each file. Each queue is counted (<see cref="UploadManifest.TimesQueued"/>), so
     /// that an upload going on meanwhile in another process takes the recording once more rather than leave it done; and no
-    /// upload is taken to be going on from the queue alone (see <see cref="UploadManifest.IsBeingUploaded"/>). Written at
-    /// once, so a crash or a restart keeps it in the queue.
+    /// upload is taken to be going on from the queue alone (see <see cref="UploadManifest.IsBeingUploaded"/>): the stamp of
+    /// the last write is cleared, unless an upload goes on now, which the queue leaves as it is, so that a continued lesson's
+    /// start never hides the upload of its first part (review of 3.5). Written at once, so a crash or a restart keeps it in
+    /// the queue.
     /// </summary>
     UploadManifest Queue(RecordingFiles files);
 

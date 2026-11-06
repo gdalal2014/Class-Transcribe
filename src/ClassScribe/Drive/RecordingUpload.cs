@@ -88,6 +88,14 @@ public sealed partial class RecordingUpload(
     /// <summary>How long a recording waits after Drive said it takes nothing more, before an upload after a class tries it again.</summary>
     public static readonly TimeSpan WaitWhenFull = TimeSpan.FromDays(1);
 
+    /// <summary>
+    /// How often an upload held up between pieces, as while a class records or is transcribed, writes its manifest all the
+    /// same, so that it still counts as going on (see <see cref="UploadManifest.IsBeingUploaded"/>): well within
+    /// <see cref="UploadManifest.GoingOnWithin"/>, so that a continued lesson's stop, hours into the pause, still finds the
+    /// upload of its first part going on and leaves its video for later (review of 3.5).
+    /// </summary>
+    public static readonly TimeSpan StillGoingOnEvery = TimeSpan.FromMinutes(1);
+
     /// <summary>ERROR_SHARING_VIOLATION as an HRESULT: another program holds the file in a way that does not allow this open.</summary>
     private const int SharingViolation = unchecked((int)0x80070020);
 
@@ -708,6 +716,9 @@ public sealed partial class RecordingUpload(
         /// <summary>Notes the session of the file <paramref name="name"/>, for an upload that goes on later where this one stopped.</summary>
         public void Note(string name, UploadSession? session) => Put(Entry(name) with { Session = session });
 
+        /// <summary>Writes the manifest as it is, stamped now, so that an upload held up between pieces still counts as going on.</summary>
+        public void StillGoingOn() => Save();
+
         /// <summary>
         /// Takes in a queue another ClassScribe wrote meanwhile (see <see cref="UploadManifest.TimesQueued"/>), so that no write
         /// of this upload undoes it and the end of the upload knows of it.
@@ -740,7 +751,8 @@ public sealed partial class RecordingUpload(
 
     /// <summary>
     /// What one file's upload tells as it goes: each change of its session goes into the manifest, and every tenth of a file
-    /// larger than one piece is said, with how fast it goes; before each piece, whatever the upload waits for.
+    /// larger than one piece is said, with how fast it goes; before each piece, whatever the upload waits for, with the
+    /// manifest written every <see cref="StillGoingOnEvery"/> while it waits, so that the upload still counts as going on.
     /// </summary>
     private sealed class FileWatch(Run run, string name, long size, Func<CancellationToken, Task> beforePiece, TimeProvider time, ILogger logger) : IUploadWatch
     {
@@ -749,7 +761,34 @@ public sealed partial class RecordingUpload(
         private int _tenthsSaid;
 
         /// <inheritdoc />
-        public Task BeforePieceAsync(CancellationToken cancellationToken) => beforePiece(cancellationToken);
+        public async Task BeforePieceAsync(CancellationToken cancellationToken)
+        {
+            var wait = beforePiece(cancellationToken);
+            if (wait.IsCompleted)
+            {
+                await wait;
+                return;
+            }
+
+            // Held up, as while a class records or is transcribed, which may last hours: the manifest is written every so
+            // often meanwhile, so that the upload still counts as going on in any process (a lesson's video is not made again
+            // while its older one is held open here, review of 3.5). The pending wait's timer goes with the pause.
+            using var over = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            try
+            {
+                while (await Task.WhenAny(wait, Task.Delay(StillGoingOnEvery, time, over.Token)) != wait)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    run.StillGoingOn();
+                }
+            }
+            finally
+            {
+                over.Cancel();
+            }
+
+            await wait;
+        }
 
         /// <inheritdoc />
         public void SessionChanged(UploadSession? session)
