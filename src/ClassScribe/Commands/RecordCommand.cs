@@ -315,6 +315,14 @@ public sealed class RecordCommand(
             return;
         }
 
+        // A continued lesson's older video may be going up to Drive this moment (the pass after its first part resumes once
+        // the recording stops): the upload holds it open, so a new video could not take its place; it is made later (review 3.5).
+        if (probe.FileExists(files.LessonVideo) && drive.IsUploadingNow(files))
+        {
+            logger.LogWarning("{Line}", LessonVideoDrive.UploadGoingOnLine(files, commandLine.FinishVideo(files.Segment(1))));
+            return;
+        }
+
         _lessonVideoFiles = files;
         _lessonVideo = lessonVideos.MakeAsync(files, lessonDrive?.KeepsPieces ?? false, signals.Cancellation, ShowVideoProgress);
     }

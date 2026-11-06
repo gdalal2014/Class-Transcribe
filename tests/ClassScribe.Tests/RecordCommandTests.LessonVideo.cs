@@ -287,6 +287,32 @@ public partial class RecordCommandTests
         Assert.That(_log.Messages, Has.Member(lessonVideos ? LessonVideoDrive.GoesUpLine : LessonVideoDrive.StaysHereLine(Printed.Commands)), "the start says where the video goes");
     }
 
+    /// <summary>
+    /// A continued lesson stopped while ClassScribe's own upload still sends its older video to Google Drive: the video is not
+    /// made again now, since the new one could not take the older's place meanwhile (the upload holds it open), which is
+    /// said with how to make it later; no camera process starts, the older video stays, and the run ends as it would
+    /// (review 3.5).
+    /// </summary>
+    [Test]
+    public async Task No_remake_while_the_older_video_goes_up_to_Drive()
+    {
+        var (_, starter, logs) = LessonVideoParts();
+        _drive.UploadingNow = true;
+        var recordings = new FakeRecordingFactory();
+        var recording = recordings.Enqueue(new FakeRecording(RecordingMode.Microphone) { Written = TimeSpan.FromSeconds(2) });
+        var run = CreateCommand(recordings: recordings, lessonVideos: new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, logs)).RunAsync(LessonRequest(transcribe: false));
+        await Wait.UntilAsync(() => recording.Started);
+        var sound = WriteTheLesson(recording);
+        File.WriteAllText(recording.Files!.LessonVideo, "the older video");
+
+        _signals.RequestStop();
+
+        Assert.That(await run.WaitAsync(TimeSpan.FromSeconds(30)), Is.EqualTo(0));
+        Assert.That(starter.Started, Is.Empty);
+        Assert.That(_log.Problems, Has.Member(LessonVideoDrive.UploadGoingOnLine(recording.Files, Printed.Commands.FinishVideo(sound))));
+        Assert.That(File.ReadAllText(recording.Files.LessonVideo), Is.EqualTo("the older video"));
+    }
+
     /// <summary>A lesson whose camera wrote no piece makes no video, and says so; the sound is kept as always.</summary>
     [Test]
     public async Task A_lesson_whose_camera_wrote_no_piece_makes_no_video()

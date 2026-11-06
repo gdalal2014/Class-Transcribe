@@ -1165,6 +1165,12 @@ public sealed class FakeDriveAutoUpload : IDriveAutoUpload
         _calls.Enqueue($"Upload {files.BaseName}");
         if (OnUpload is { } upload) await upload();
     }
+
+    /// <summary>What <see cref="IsUploadingNow"/> answers for every recording: false unless a test says an upload goes on.</summary>
+    public bool UploadingNow { get; set; }
+
+    /// <inheritdoc />
+    public bool IsUploadingNow(RecordingFiles files) => UploadingNow;
 }
 
 /// <summary>
@@ -1330,7 +1336,7 @@ public sealed class GoogleWorld : IDisposable
 
     /// <summary>The uploads that happen by themselves in a run, over a pass made when one runs, with Ctrl+C played by <paramref name="signals"/>.</summary>
     public DriveAutoUpload AutoUpload(FakeUserSignals? signals = null) =>
-        new(Store, Manifests(), new Lazy<DriveUploadPass>(Pass), signals ?? new FakeUserSignals(), Options, Log<DriveAutoUpload>());
+        new(Store, Manifests(), new Lazy<DriveUploadPass>(Pass), signals ?? new FakeUserSignals(), Options, Time, Log<DriveAutoUpload>());
 
     /// <summary>What the menu's header and the report at the start say of the queue, with local times in US Eastern time.</summary>
     public DriveQueueReport QueueReport() => new(Store, Manifests(), Runtime.Journal, ClassFolders(), Options, ZonedClock.Eastern(Time));

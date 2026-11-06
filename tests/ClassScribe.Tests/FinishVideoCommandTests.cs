@@ -63,7 +63,7 @@ public sealed class FinishVideoCommandTests
         var folders = new ClassFolders(recording, TimeProvider.System, NullLogger<ClassFolders>.Instance, new OnDrive(this));
         var starter = new FakeCameraProcessStarter { Run = (process, jobId) => new CameraHost { Media = _media }.RunAsync(jobId, process.ProcessStream, process.ProcessStream) };
         return new FinishVideoCommand(folders, new FileProbe(), new RecordingFolder(), new LessonVideoMaker(starter, new RecordingFolder(), Printed.Commands, TimeProvider.System, _logs),
-            new LessonVideoDrive(new FakeCredentialStore(), TestOptions.Create(new DriveOptions()), Printed.Commands), _drive, _signals, _power, new FakePowerSource(), _desktop.Object, recording, _log);
+            new LessonVideoDrive(new FakeCredentialStore(), TestOptions.Create(new DriveOptions()), Printed.Commands), _drive, Printed.Commands, _signals, _power, new FakePowerSource(), _desktop.Object, recording, _log);
     }
 
     /// <summary>What the tests say of the lesson's audio on Google Drive.</summary>
@@ -127,6 +127,21 @@ public sealed class FinishVideoCommandTests
         using (new FileStream(_files.LessonVideoPartial, FileMode.Create, FileAccess.Write, FileShare.Read))
             Assert.That(await Command().RunAsync(new FinishVideoRequest(_files.Segment(1))), Is.EqualTo(1));
         Assert.That(_log.Problems, Has.Some.StartsWith($"The video of {_files.BaseName} is being made now"));
+        Assert.That(_media.Written, Is.Empty);
+    }
+
+    /// <summary>
+    /// While ClassScribe's own upload sends the lesson's older video to Google Drive, the remake is refused, with why and when
+    /// to try again, exit 1: the new video could not take the older's place meanwhile (review 3.5).
+    /// </summary>
+    [Test]
+    public async Task A_lesson_whose_older_video_goes_up_now_is_refused()
+    {
+        File.WriteAllText(_files.LessonVideo, "the older video");
+        _drive.UploadingNow = true;
+
+        Assert.That(await Command().RunAsync(new FinishVideoRequest(_files.Segment(1))), Is.EqualTo(1));
+        Assert.That(_log.Problems, Has.Member(LessonVideoDrive.UploadGoingOnLine(_files, Printed.Commands.FinishVideo(_files.Segment(1)))));
         Assert.That(_media.Written, Is.Empty);
     }
 

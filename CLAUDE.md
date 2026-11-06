@@ -1939,7 +1939,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   the maker's progress as `RecorderState.VideoPercent`, a last field with a default, which `TitleText` shows as `MAKING
   VIDEO 40%` with a green bar in place of TRANSCRIBING, review 3.17; and it catches whatever the maker's task throws,
   which the maker never does by design, says the video was not made with the `finish-video` command, and lets the run end
-  as its transcript did, never as TranscriptFailed, review 3.4); the first lesson's start line says how to turn on
+  as its transcript did, never as TranscriptFailed, review 3.4); a remake, at a continued lesson's stop or by
+  `finish-video`, is left for later with `LessonVideoDrive.UploadGoingOnLine` while an older video exists and
+  `IDriveAutoUpload.IsUploadingNow` (the manifest's `IsBeingUploaded`) says ClassScribe's own upload of the recording goes
+  on, since that upload holds the older video open and the new one could not take its place (review 3.5; the job's
+  rename failure names both a player and the upload); the first lesson's start line says how to turn on
   `Drive:LessonVideos` (`LessonVideoDrive.StartLine`). `finish-video <path> [--no-open]` (`FinishVideoCommand`,
   `ICommandRunner.FinishVideoAsync`) makes it again, free, decided from the files alone (`ClassFolders.LessonVideoStateOf`:
   `None`, `Made`, `NotMade` when a piece is newer than the video or there is none), refusing a lesson being recorded or

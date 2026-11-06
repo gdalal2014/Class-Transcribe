@@ -67,6 +67,27 @@ public class DriveAutoUploadTests
         Assert.That(_world.Google.Requests, Is.Empty);
     }
 
+    /// <summary>
+    /// Whether the recording's upload goes on now, for a remake of a lesson's video that must not race it (review 3.5): not
+    /// without a manifest or merely queued, yes while an upload wrote the manifest within the last five minutes with no
+    /// error, no once that is older.
+    /// </summary>
+    [Test]
+    public void IsUploadingNow_says_whether_the_recording_s_upload_goes_on()
+    {
+        var auto = _world.AutoUpload(_signals);
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.False, "no manifest");
+
+        auto.Queue(_mantiq);
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.False, "queued, not tried");
+
+        _world.Manifests().Write(_world.Manifests().Read(_mantiq)! with { LastTriedUtc = _world.Time.GetUtcNow().AddMinutes(-3), UpdatedUtc = _world.Time.GetUtcNow().AddMinutes(-1) });
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.True, "an upload wrote the manifest a minute ago");
+
+        _world.Manifests().Write(_world.Manifests().Read(_mantiq)! with { UpdatedUtc = _world.Time.GetUtcNow().AddMinutes(-6) });
+        Assert.That(auto.IsUploadingNow(_mantiq), Is.False, "nothing of it for six minutes");
+    }
+
     /// <summary>Signed out, the recording still goes into the queue as its run starts, for the upload after the sign-in.</summary>
     [Test]
     public void Signed_out_the_recording_still_goes_into_the_queue()

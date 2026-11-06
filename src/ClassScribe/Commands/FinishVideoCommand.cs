@@ -19,8 +19,9 @@ public sealed record FinishVideoRequest(string Path, bool Open = true);
 /// camera pieces and its sound, in this window, through a camera process's finish job (see <see cref="LessonVideoMaker"/>),
 /// whose lines it shows. Pieces still there are used, and positions before the first of them take an older video's
 /// picture; the older video is replaced only once the new one has passed its check. It is refused, with exit 1, for a path
-/// that names no lesson, one being recorded or having its video made now (a live run's is refused by the runner), one
-/// without camera pieces, and one whose sound is on Google Drive only (after free-space). The camera's pieces are kept for
+/// that names no lesson, one being recorded or having its video made now (a live run's is refused by the runner), one whose
+/// older video ClassScribe's own upload is sending to Drive this moment (the new one could not take its place, review 3.5),
+/// one without camera pieces, and one whose sound is on Google Drive only (after free-space). The camera's pieces are kept for
 /// Drive only when the video goes there (see <see cref="LessonVideoDrive"/>). The laptop is kept awake meanwhile; Ctrl+C
 /// cancels, exit 130. Once made, the folder opens as Recording:OpenFolderWhenDone says, and what is new goes up to Drive.
 /// No folders.lock is taken and no move journal is read: neither exists in this build (build-plan amendment 7 waits for
@@ -33,6 +34,7 @@ public sealed class FinishVideoCommand(
     LessonVideoMaker maker,
     LessonVideoDrive lessonDrive,
     IDriveAutoUpload drive,
+    CommandLine commandLine,
     IUserSignals signals,
     IPowerRequests power,
     IPowerSource powerSource,
@@ -94,6 +96,8 @@ public sealed class FinishVideoCommand(
     {
         if (folders.IsLessonVideoBeingMade(files)) return $"The video of {files.BaseName} is being made now; it appears in {files.Folder} once it has passed its check.";
         if (folders.IsBeingWritten(files)) return $"{files.BaseName} is being recorded now; make its video once it has stopped.";
+        if (probe.FileExists(files.LessonVideo) && drive.IsUploadingNow(files))
+            return LessonVideoDrive.UploadGoingOnLine(files, commandLine.FinishVideo(recordings.FindSegments(files).FirstOrDefault() ?? recordings.FindSegments(files, Track.Microphone).FirstOrDefault() ?? files.Folder));
         if (recordings.FindCameraPieces(files).Count == 0)
         {
             return probe.FileExists(files.LessonVideo)

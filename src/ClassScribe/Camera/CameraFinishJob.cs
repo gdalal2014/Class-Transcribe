@@ -241,7 +241,7 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         {
             var partial = Path.GetFileName(files.LessonVideoPartial);
             return await FailAsync(files, File.Exists(files.LessonVideo)
-                ? $"{Path.GetFileName(files.LessonVideo)}, the older video, is open in another program, such as a video player, so the new one, which passed its check, could not take its place ({held}). It stays as {partial} until the next making. Close it, then make the video again"
+                ? $"{Path.GetFileName(files.LessonVideo)}, the older video, is open in another program (a video player, or ClassScribe sending it to Google Drive), so the new one, which passed its check, could not take its place ({held}). It stays as {partial} until the next making. Close the player, or wait for the upload to end, then make the video again"
                 : $"The new video, which passed its check, could not be named {Path.GetFileName(files.LessonVideo)} ({held}): another program, such as a scanner, holds it. It stays as {partial} until the next making. Make the video again",
                 kept: true);
         }

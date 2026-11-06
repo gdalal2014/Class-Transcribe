@@ -228,8 +228,8 @@ public sealed class CameraFinishJobTests
         {
             Assert.That(exit, Is.EqualTo(CameraProtocol.FailedExitCode));
             Assert.That(failed, Does.StartWith(
-                $"{BaseName}.mp4, the older video, is open in another program, such as a video player, so the new one, which passed its check, could not take its place ("));
-            Assert.That(failed, Does.Contain($"Close it, then make the video again. The camera's pieces are kept. To make it again, free: "));
+                $"{BaseName}.mp4, the older video, is open in another program (a video player, or ClassScribe sending it to Google Drive), so the new one, which passed its check, could not take its place ("));
+            Assert.That(failed, Does.Contain($"Close the player, or wait for the upload to end, then make the video again. The camera's pieces are kept. To make it again, free: "));
             Assert.That(failed, Does.Contain($"finish-video \"{_files.Segment(1)}\""));
             Assert.That(File.ReadAllText(_files.LessonVideo), Is.EqualTo("the older video"));
             Assert.That(File.Exists(_files.LessonVideoPartial), Is.True, "the checked video is kept as its .partial");
