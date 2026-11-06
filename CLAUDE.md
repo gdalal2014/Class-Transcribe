@@ -223,7 +223,9 @@ advice after a format error (10 A).
   project referencing a Windows one is refused with NU1201), and the architecture test in
   `tests/ClassScribe.Tests/Architecture` (architecture 2.4; question 7: no analyzer package) checks what the build cannot.
   `ArchitectureFacts` reads the four built assemblies from the test's output folder with `System.Reflection.Metadata` (the
-  assembly references, the type and member references, each method's IL), and the pure `ArchitectureRules.Check` judges
+  assembly references, the type and member references, each method's IL and locals, and the type each catch clause names,
+  which sits in the method's exception regions alone; `CatchClausePlant` in the test project pins that the reader sees
+  it), and the pure `ArchitectureRules.Check` judges
   seven checks, each with its test in `ArchitectureTests` and planted cases in `ArchitectureRulesTests`: (1) the
   references, Core the framework alone, Application Core and `Microsoft.Extensions.Logging.Abstractions`, `Options`,
   `DependencyInjection.Abstractions` and `Primitives` (`ApplicationPackages`), Infrastructure never the Cli, none the

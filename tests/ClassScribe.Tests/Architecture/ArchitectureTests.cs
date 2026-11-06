@@ -121,6 +121,21 @@ public class ArchitectureTests
         Assert.That(uses.Any(use => use.Type == "System.IO.FileStream" && use.Member == ".ctor" && use.Parameters.Count > 0 && use.Parameters[0] == "System.String"), Is.True, "Infrastructure opens a file by its path");
     }
 
+    /// <summary>
+    /// The reader sees the type a catch clause names, which sits in the method's exception regions alone, so that a catch of a
+    /// vendor's or the network's exception in Core or Application is a use that check 2 judges. <see cref="CatchClausePlant"/>,
+    /// in this test assembly, names DivideByZeroException in a catch clause without a variable and nowhere else.
+    /// </summary>
+    [Test]
+    public void The_reader_sees_the_type_a_catch_clause_names()
+    {
+        var tests = ArchitectureFacts.Read(typeof(CatchClausePlant).Assembly.Location);
+        var plant = tests.Types.Single(type => type.FullName == typeof(CatchClausePlant).FullName);
+
+        Assert.That(plant.Uses.Select(use => use.Type), Does.Contain("System.DivideByZeroException"));
+        Assert.That(ArchitectureRules.BannedInner(new TypeUse("System.Net.Http.HttpRequestException", null, [])), Is.Not.Null, "a catch of the network's exception is then judged");
+    }
+
     /// <summary>Fails with every violation of <paramref name="check"/>, one per line.</summary>
     private void AssertNone(int check)
     {
