@@ -1956,7 +1956,11 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `Drive:LessonVideos` (false) sends `<base>.mp4` last, streamed as `video/mp4` with a line of its size and time, never
   the pieces or the partial (`UploadManifest.OnDisk(files, withLessonVideo)`); the pass also waits while a class is
   transcribed (N13); `LocalAudioFreer.FreePiecesAsync` deletes the pieces once the video is verified on Drive, only those
-  not newer than it (a newer one stays, named), and `FreeAsync` refuses a lesson whose video is `NotMade` while its sound is
+  the finish job listed beside it in `RecordingFiles.LessonVideoPieces` (`<base>.mp4.pieces.txt`, written when the pieces
+  are kept for Drive, never one of the recording's files, deleted by the freer once every piece it names is gone and by the
+  job when it deletes the pieces; a piece left out of the video as unreadable is not in it and stays, named, review 3.15;
+  without a list, those not newer than the video; a list that cannot be read keeps them all, with why) and never a newer
+  one (it stays, named), and `FreeAsync` refuses a lesson whose video is `NotMade` while its sound is
   here, deleting nothing (`LocalAudioFreer.VideoStillToMake`, with the `finish-video` command). There is no
   `folders.lock` or `MoveJournal` on develop, so `finish-video` and V check neither. Fakes: `FakeLessonVideoMedia`
   (`TestDoubles.LessonVideo.cs`: `Holds`, `Unreadable`, `HoldWrite`, `WriteFailure`, `CheckAnswer`, `Written`, `Checks`,

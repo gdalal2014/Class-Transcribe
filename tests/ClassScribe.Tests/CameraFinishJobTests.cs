@@ -130,17 +130,45 @@ public sealed class CameraFinishJobTests
     /// <summary>Two checks are the same when they ask for the same length and the same frames.</summary>
     private static bool SameCheck(LessonVideoCheck first, LessonVideoCheck second) => first.Length == second.Length && first.FramesAt.SequenceEqual(second.FramesAt);
 
-    /// <summary>A video meant for Google Drive keeps its pieces until free-space finds it there, which a line says.</summary>
+    /// <summary>
+    /// A video meant for Google Drive keeps its pieces until free-space finds it there, which a line says, and lists them
+    /// beside the video, so that free-space knows which pieces the video holds (review 3.15).
+    /// </summary>
     [Test]
     public async Task Pieces_kept_for_Drive_stay_with_a_line()
     {
-        Piece(0);
+        var piece = Piece(0);
 
         var (exit, seen) = await RunAsync(Finish(keepPieces: true));
 
         Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
         Assert.That(OnDisk.FindCameraPieces(_files), Has.Count.EqualTo(1));
         Assert.That(seen.Logs, Has.Member($"The camera's 1 piece of {BaseName} stay on this laptop until free-space finds the video safe on Google Drive (Drive:LessonVideos)"));
+        Assert.That(File.ReadAllLines(_files.LessonVideoPieces), Is.EqualTo(new[] { Path.GetFileName(piece) }));
+    }
+
+    /// <summary>
+    /// The list beside a video kept for Drive names only the pieces the video was made from: one left out as unreadable is
+    /// not in it, so free-space keeps it (review 3.15); the list goes with the pieces when a later making deletes them.
+    /// </summary>
+    [Test]
+    public async Task The_list_of_pieces_names_only_those_the_video_was_made_from()
+    {
+        var bad = Piece(0);
+        _media.Unreadable(Path.GetFileName(bad));
+        var good = Piece(0.5);
+
+        var (exit, _) = await RunAsync(Finish(keepPieces: true));
+
+        Assert.That(exit, Is.EqualTo(CameraProtocol.DoneExitCode));
+        Assert.That(File.ReadAllLines(_files.LessonVideoPieces), Is.EqualTo(new[] { Path.GetFileName(good) }));
+
+        File.Delete(_files.LessonVideo);
+        var (again, _) = await RunAsync(Finish());
+
+        Assert.That(again, Is.EqualTo(CameraProtocol.DoneExitCode));
+        Assert.That(File.Exists(good), Is.False);
+        Assert.That(File.Exists(_files.LessonVideoPieces), Is.False, "the pieces went, and the list with them");
     }
 
     /// <summary>A piece from the software encoder, with another sequence header, has the whole picture encoded again, which a line says.</summary>

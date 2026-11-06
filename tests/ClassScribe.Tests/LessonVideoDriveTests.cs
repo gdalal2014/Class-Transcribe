@@ -262,6 +262,48 @@ public sealed class LessonVideoDriveTests
         }
     }
 
+    /// <summary>
+    /// Only the pieces the video was made from go: the finish job lists them beside the video, and a piece left out of the
+    /// video (one it could not read) is not in the list, so free-space keeps it, named, however old it is (review 3.15); the
+    /// list goes once every piece it names is gone.
+    /// </summary>
+    [Test]
+    public async Task Free_space_keeps_a_piece_the_video_was_made_without()
+    {
+        LessonVideos(on: true);
+        var leftOut = _lesson.CameraPiece(TimeSpan.FromMinutes(20));
+        File.WriteAllLines(_lesson.LessonVideoPieces, [Path.GetFileName(_lesson.CameraPiece(TimeSpan.Zero))]);
+        await UploadAsync();
+
+        var freed = await _world.Freer().FreeAsync(_lesson, CancellationToken.None);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(File.Exists(leftOut), Is.True, "its picture is in no video");
+            Assert.That(File.Exists(_lesson.CameraPiece(TimeSpan.Zero)), Is.False);
+            Assert.That(freed.Deleted, Does.Contain(Path.GetFileName(_lesson.CameraPiece(TimeSpan.Zero))));
+            Assert.That(freed.Problem, Is.EqualTo($"{Path.GetFileName(leftOut)} is in no video: it was left out when the lesson video of {_lesson.BaseName} was made, so it stays on this laptop. Delete it by hand once you no longer need it"));
+            Assert.That(File.Exists(_lesson.LessonVideoPieces), Is.False, "the list has served");
+        }
+    }
+
+    /// <summary>A list of the pieces that cannot be read now (another program holds it) keeps every piece, with why; the audio is freed as before.</summary>
+    [Test]
+    public async Task Free_space_keeps_the_pieces_while_their_list_cannot_be_read()
+    {
+        LessonVideos(on: true);
+        File.WriteAllLines(_lesson.LessonVideoPieces, [Path.GetFileName(_lesson.CameraPiece(TimeSpan.Zero))]);
+        await UploadAsync();
+
+        FreedAudio freed;
+        using (new FileStream(_lesson.LessonVideoPieces, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            freed = await _world.Freer().FreeAsync(_lesson, CancellationToken.None);
+
+        Assert.That(OnDisk.FindCameraPieces(_lesson), Has.Count.EqualTo(2));
+        Assert.That(freed.Problem, Does.StartWith($"The camera's pieces of {_lesson.BaseName} stay: the list of the pieces its video was made from, {Path.GetFileName(_lesson.LessonVideoPieces)}, cannot be read ("));
+        Assert.That(File.Exists(_lesson.Segment(1)), Is.False, "the audio is freed as before");
+    }
+
     /// <summary>Without the video on Drive, free-space keeps the pieces: they are the only other copy of the picture.</summary>
     [Test]
     public async Task Free_space_keeps_the_pieces_while_the_video_is_not_on_Drive()

@@ -303,10 +303,13 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
         var count = pieces.Count == 1 ? "1 piece" : $"{pieces.Count} pieces";
         if (job.KeepPieces)
         {
+            await ListThePiecesAsync(files, pieces);
             await LogAsync("Information", $"The camera's {count} of {files.BaseName} stay on this laptop until free-space finds the video safe on Google Drive (Drive:LessonVideos)");
             return;
         }
 
+        // The pieces go now, so a list an earlier making left for free-space has nothing left to name.
+        TryDelete(files.LessonVideoPieces);
         var deleted = 0;
         foreach (var piece in pieces)
         {
@@ -325,6 +328,26 @@ public sealed class CameraFinishJob(LineChannel channel, CameraJob job, ILessonV
 
         if (deleted > 0)
             await LogAsync("Information", $"Deleted the camera's {(deleted == 1 ? "1 piece" : $"{deleted} pieces")} of {files.BaseName}: the lesson's video passed its check, and lesson videos do not go to Google Drive (Drive:LessonVideos), so the video is the one copy of the picture kept");
+    }
+
+    /// <summary>
+    /// Writes the list of <paramref name="pieces"/>, those the video holds, beside the video (see
+    /// <see cref="RecordingFiles.LessonVideoPieces"/>), so that free-space deletes only those once the video is safe on Drive
+    /// and keeps a piece left out of the video (review 3.15). A list that cannot be written is a warning: free-space then goes
+    /// by the pieces' times, as it did before the list.
+    /// </summary>
+    private async Task ListThePiecesAsync(RecordingFiles files, IReadOnlyList<string> pieces)
+    {
+        try
+        {
+            File.WriteAllLines(files.LessonVideoPieces, pieces.Select(piece => Path.GetFileName(piece)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Deliberately not rethrown: the list only tells free-space which pieces the video holds; the video is made and
+            // checked, and without the list free-space goes by the pieces' times, which the line says.
+            await LogAsync("Warning", $"{Path.GetFileName(files.LessonVideoPieces)}, the list of the pieces the video was made from, could not be written ({Words(ex)}); free-space will go by the pieces' times instead, and may delete a piece left out of the video");
+        }
     }
 
     /// <summary>

@@ -1409,8 +1409,11 @@ with the same size and MD5), the pieces are deleted with the audio: `Freed the c
 ... (4.6 GB): its lesson video is on Google Drive, checked, in My Drive > ...; the video stays here too`.
 The finished video itself is never deleted. A video whose copy on Drive no longer matches keeps the
 pieces, with why (`The camera's pieces of ... stay: ... differs from its copy on Google Drive ...`); a
-video not on Drive keeps them too. Only the pieces the video holds go: a piece newer than the video
-stays, named (`... is newer than the lesson video of ..., which does not hold it, so it stays on this
+video not on Drive keeps them too. Only the pieces the video holds go, as the list the making left
+beside it (`<base>.mp4.pieces.txt`) names them: a piece left out of the video stays, named (`... is in no
+video: it was left out when the lesson video of ... was made, so it stays on this laptop. Delete it by
+hand once you no longer need it`), and so does a piece newer than the video (`... is newer than the
+lesson video of ..., which does not hold it, so it stays on this
 laptop`). A lesson whose video is still to be made (`lesson video not made yet` in `list`), such as a
 continued lesson whose new part's video was cut off, keeps its audio and its pieces alike, since making
 the video needs both: `The lesson video of ... is still to be made, so none of its audio or camera pieces
@@ -1541,9 +1544,11 @@ made in a camera process of its own while the transcript is made, and the end of
   to Google Drive (Drive:LessonVideos), so the video is the one copy of the picture kept`. Only when the
   video goes to Google Drive (Drive set up, `Drive:LessonVideos` on, `Drive:Upload` sending audio) are they
   kept until [free room](#free-room-on-the-laptop) finds the video safe on Drive, and deleted then with the
-  `.wav` files. The finished video itself is never deleted. A piece whose picture cannot be read (as one
+  `.wav` files; which pieces the video holds is then listed beside it, in `<base>.mp4.pieces.txt`, one
+  name a line, so free-space deletes only those (the list goes with them). The finished video itself is
+  never deleted. A piece whose picture cannot be read (as one
   whose camera process was ended before it wrote anything) is left out of the video with a line, and stays
-  on the laptop, since its picture is in no video. A piece Windows cannot open at that moment (another
+  on the laptop, since its picture is in no video, free-space included. A piece Windows cannot open at that moment (another
   program holds it), or an older video that cannot be read, stops the making with every piece kept, so
   that no picture is lost to a video made without it; the line says what to do.
 - **While it is made** the run's file says the recording is complete and being transcribed or its video
@@ -3260,6 +3265,9 @@ the recording's `.log`; the ones about the link show in the window alone.
 | `Freed the camera's 2 pieces of ... (...): its lesson video is on Google Drive, checked, in ...; the video stays here too` | Normal: the pieces kept for Drive went once its copy of the video was checked. |
 | `The lesson video of ... is still to be made, so none of its audio or camera pieces were deleted: ...` (free-space) | A camera piece is newer than the lesson's video, or there is no video, so free-space keeps the lesson whole. Run the `finish-video` command the line gives, then free-space again. If you do not want the video, delete the `.cam*.mp4` pieces by hand first. |
 | `... is newer than the lesson video of ..., which does not hold it, so it stays on this laptop` (free-space) | That piece's picture is in no video, and the sound to make one is gone from the laptop. Download the `.wav` files from Drive into the lesson's folder and run `finish-video`, or delete the piece by hand if you do not need it. |
+| `... is in no video: it was left out when the lesson video of ... was made, so it stays on this laptop. Delete it by hand once you no longer need it` (free-space) | The making could not read that piece (its line said so then), so no video holds its picture, and free-space keeps it. Delete it by hand when you are sure you do not need it. |
+| `The camera's pieces of ... stay: the list of the pieces its video was made from, ....mp4.pieces.txt, cannot be read (...)` (free-space) | Another program holds the list beside the video. Close it and run free-space again. |
+| `....mp4.pieces.txt, the list of the pieces the video was made from, could not be written (...); free-space will go by the pieces' times instead, and may delete a piece left out of the video` | The folder refused the small list file beside the video. The video is made all the same; before free-space, delete by hand any piece the making said it left out. |
 | `Another ClassScribe is uploading to Google Drive; ... waits and goes up after it` | Nothing to do: one upload runs at a time, and the one running takes this recording before it stops. `... is on Drive already, unchanged since it went up` instead means nothing of it needed to go up. |
 | `<base> waits to go up to Google Drive: ...`, `<problem> 2 recordings wait to go up to Google Drive after the next class, or with menu choice 9 > U, or ClassScribe drive upload.` | It goes up later; the reason is in the line. To send it now, press U in the report at the start, or 9 > U, or run `drive upload`. With `Drive:Enabled` set to `false` the line ends `... to go up to Google Drive with menu choice 9 > U, or ClassScribe drive upload.`, since nothing goes up after a class then. |
 | `<file> did not go up to Google Drive: ...`, `<file> could not be read to go up to Google Drive: ...` | That file waits, with Drive's words or Windows' reason, and the recording's other files went up. The next upload tries it again. |
