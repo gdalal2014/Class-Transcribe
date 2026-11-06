@@ -58,7 +58,7 @@ public class PromptPortTests
     /// <summary>The camera prompt over the window's camera start, the cameras, Windows' camera facts, its record and the registry stand-ins.</summary>
     private ICameraPrompt CameraPrompt() =>
         new CameraStart(new FakeCameraProvider(), new CameraRecorderNotBuilt(), new CameraSetupFacts(new FakeCameraSystem(), new FakeCameraUsageRecord(), new FakeRegistryValues()),
-            new SourceChoice(_options), _ui, NullLogger<CameraStart>.Instance);
+            new SourceChoice(_options), _ui, _runtime.Time, NullLogger<CameraStart>.Instance);
 
     /// <summary>
     /// Writes a recording of "Kalam" that started at 23:00:02 UTC and stopped at 23:47:02, four minutes before now, holding

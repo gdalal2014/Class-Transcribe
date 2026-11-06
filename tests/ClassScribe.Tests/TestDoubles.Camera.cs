@@ -70,8 +70,21 @@ public sealed class FakeCameraSystem : ICameraSystem
     /// <summary>The security programs; null for "Security Center did not say".</summary>
     public IReadOnlyList<string>? Programs { get; set; } = ["Bitdefender Antivirus"];
 
+    /// <summary>True for an encoder query that never answers, as one that hangs inside Windows' codec query.</summary>
+    public bool EncoderQueryHangs { get; set; }
+
+    private int _encoderQueries;
+
+    /// <summary>How many times the encoders were asked for.</summary>
+    public int EncoderQueries => Volatile.Read(ref _encoderQueries);
+
     /// <inheritdoc />
-    public Task<bool?> HasH264EncoderAsync(CancellationToken cancellationToken) => Task.FromResult(HasH264Encoder);
+    public Task<bool?> HasH264EncoderAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _encoderQueries);
+        if (EncoderQueryHangs) return new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+        return Task.FromResult(HasH264Encoder);
+    }
 
     /// <inheritdoc />
     public IReadOnlyList<string>? SecurityPrograms() => Programs;
@@ -160,6 +173,9 @@ public sealed class FakeCameraProcess : ICameraProcess
     /// <summary>True for a letting go that never finishes, as when the process cannot be ended and its error output stays open.</summary>
     public bool DisposeHangs { get; set; }
 
+    /// <summary>When set, letting the process go throws this, as a close its job or its pipes refuse would.</summary>
+    public Exception? DisposeFailure { get; set; }
+
     /// <summary>True once the starter began to let the process go.</summary>
     public bool DisposeEntered { get; private set; }
 
@@ -226,6 +242,7 @@ public sealed class FakeCameraProcess : ICameraProcess
     {
         DisposeEntered = true;
         if (DisposeHangs) await new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+        if (DisposeFailure is { } failure) throw failure;
 
         await Channel.DisposeAsync();
         if (_processEnd is not null) await _processEnd.DisposeAsync();
@@ -868,8 +885,9 @@ public sealed class CameraLinesSeen
 /// <summary>
 /// Starts <see cref="FakeCameraProcess"/>es in place of real camera processes, and keeps each with its job id; with
 /// <see cref="PlayEach"/>, each is played by a <see cref="PlayedCameraProcess"/> as a camera process would answer its
-/// starter. A start can be made to fail, as Windows' would, or be held, as one Windows is slow to make. Safe to use from any
-/// thread.
+/// starter. A start can be made to fail, as Windows' would, or be held, as one Windows is slow to make; and
+/// <see cref="OnStart"/> shapes each process before its starter sees it (its input stuck, its letting go refused). Safe to
+/// use from any thread.
 /// </summary>
 public sealed class FakeCameraProcessStarter : ICameraProcessStarter
 {
@@ -890,6 +908,13 @@ public sealed class FakeCameraProcessStarter : ICameraProcessStarter
 
     /// <summary>When set, runs as each process starts, on the thread pool, with the process and its job id: such as the real camera host over the process's own end.</summary>
     public Func<FakeCameraProcess, string, Task>? Run { get; set; }
+
+    /// <summary>
+    /// When set, runs on each process as it starts, before its starter is handed it and before <see cref="Run"/>, so that what
+    /// it sets (<see cref="FakeCameraProcess.InputStuck"/>, <see cref="FakeCameraProcess.DisposeFailure"/>) holds from the
+    /// starter's first line on.
+    /// </summary>
+    public Action<FakeCameraProcess>? OnStart { get; set; }
 
     /// <summary>When set, each start throws this, as Windows not starting the process would.</summary>
     public Exception? StartFailure { get; set; }
@@ -917,6 +942,7 @@ public sealed class FakeCameraProcessStarter : ICameraProcessStarter
         lock (_gate)
         {
             var process = new FakeCameraProcess(7001 + _started.Count);
+            OnStart?.Invoke(process);
             _started.Add((jobId, process));
             if (PlayEach) _played.Add(new PlayedCameraProcess(process));
             if (Run is { } run) _ = Task.Run(() => run(process, jobId));

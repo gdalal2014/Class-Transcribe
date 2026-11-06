@@ -25,7 +25,8 @@ public sealed class WebcamHolds(ICameraProvider cameras, ICameraProcessStarter s
 /// <summary>
 /// The webcam behind a recording's microphone, and its hold (camera-first 3.4). At each pick of the microphone it finds
 /// whether the microphone belongs to a webcam, by the container it shares with a camera that is neither built in nor
-/// virtual (listing the cameras opens none, and only a microphone outside the computer's own container needs them). With
+/// virtual (listing the cameras opens none, and only a microphone outside the computer's own container needs them; with
+/// the wake off they are listed in the background and the next pick takes the answer, so the pick never waits). With
 /// Recording:WakeCameraMicrophone on, it then holds that webcam's picture open, shared, through a camera process's hold
 /// job, from before the microphone's capture opens (<see cref="BeforeOpen"/> waits for the first frame, at most
 /// <see cref="FirstFrameWait"/>) until the recording stops, through P and V off; it follows the pick to another webcam, and
@@ -34,7 +35,8 @@ public sealed class WebcamHolds(ICameraProvider cameras, ICameraProcessStarter s
 /// <see cref="State"/> tells the run's checks which webcam it is, whether its frames arrive, and what is wrong. Nothing of
 /// the camera's side reaches the microphone's look: a camera list that throws, or that Windows has not answered within
 /// <see cref="ListLimit"/>, is a pick not decided yet, said once per stretch and asked again at the next pick, and a camera
-/// process that cannot be started, for whatever cause, is a camera that could not be opened.
+/// process that cannot be started, for whatever cause, is a camera that could not be opened. Every line to the process goes
+/// within <see cref="SendLimit"/>, else the process is ended as stuck.
 /// </summary>
 public sealed class WebcamHold : IWebcamHold
 {
@@ -52,6 +54,9 @@ public sealed class WebcamHold : IWebcamHold
 
     /// <summary>How long the stop waits for the camera process to let the camera go before it is ended.</summary>
     public static readonly TimeSpan StopWait = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long a line to the camera process may take to go out before the process counts as stuck and is ended.</summary>
+    public static readonly TimeSpan SendLimit = TimeSpan.FromSeconds(5);
 
     /// <summary>How often the hold looks at its frames.</summary>
     public static readonly TimeSpan LookEvery = TimeSpan.FromSeconds(1);
@@ -72,7 +77,10 @@ public sealed class WebcamHold : IWebcamHold
     /// <summary>The microphone the webcam was last decided for, by id; null before the first decision.</summary>
     private string? _decidedFor;
 
-    /// <summary>A listing of the cameras an earlier pick began, which a later pick does not begin again while it lasts; null before the first.</summary>
+    /// <summary>
+    /// A listing of the cameras an earlier pick began, which a later pick does not begin again while it lasts; null before
+    /// the first, and, with the wake off, again once a pick has taken its answer.
+    /// </summary>
     private Task<CameraList>? _listing;
 
     /// <summary>True while picks could not be decided, so that the failure is said once per stretch.</summary>
@@ -132,9 +140,11 @@ public sealed class WebcamHold : IWebcamHold
     /// The microphone <paramref name="microphone"/> was picked: whether it belongs to a webcam is found once for it, and with
     /// the wake on the hold follows: begun for its webcam, moved from another webcam, or let go for a microphone of none.
     /// A pick of none changes nothing. Runs on the thread that looked, inside the microphone's pick, so it never throws: the
-    /// cameras are listed only for a microphone outside the computer's own container, for <see cref="ListLimit"/> at most,
-    /// and a list that cannot be read, that throws or that does not come in time leaves the pick undecided, said once per
-    /// stretch (a warning with the wake on), and is asked again at the next pick. The microphone is recorded all the same.
+    /// cameras are listed only for a microphone outside the computer's own container, with the wake on for
+    /// <see cref="ListLimit"/> at most, and with it off in the background, the answer taken at the next pick
+    /// (<see cref="ListedInTheBackground"/>); a list that cannot be read, that throws or that does not come in time leaves
+    /// the pick undecided, said once per stretch (a warning with the wake on), and is asked again at the next pick. The
+    /// microphone is recorded all the same.
     /// </summary>
     public void Follow(Microphone? microphone)
     {
@@ -164,7 +174,8 @@ public sealed class WebcamHold : IWebcamHold
         CameraDevice? webcam = null;
         if (Cameras.MayBeOfACamera(microphone))
         {
-            var list = ListCameras();
+            var list = _wakeOn ? ListCameras() : ListedInTheBackground(microphone);
+            if (list is null) return;
             if (list.Problem is { } problem)
             {
                 OnUndecided(microphone, problem, null);
@@ -310,6 +321,34 @@ public sealed class WebcamHold : IWebcamHold
     }
 
     /// <summary>
+    /// With the wake off, the cameras are listed on a thread of the pool and never waited for (release 0.5.0 review, 3.6):
+    /// the microphone's pick is on a class's own start path, and nothing is held, so it must not wait on Windows' camera
+    /// list even for <see cref="ListLimit"/>. The pick that finds no listing begins one and decides nothing; the next pick,
+    /// the microphone's next look, takes its answer once it has come (the list, or what it threw, which throws here for
+    /// <see cref="Follow"/> to catch as a pick not decided, listed again at the pick after); while it is still under way,
+    /// nothing is decided and no other is begun. Null while the answer is not there yet.
+    /// </summary>
+    private CameraList? ListedInTheBackground(Microphone microphone)
+    {
+        Task<CameraList> listing;
+        lock (_gate)
+        {
+            if (_listing is null)
+            {
+                _listing = Task.Run(() => _cameras.GetCamerasAsync(CancellationToken.None));
+                _logger.LogDebug("The cameras are being listed in the background, to tell whether the microphone \"{Microphone}\" belongs to a webcam; the microphone's next look decides", microphone.Name);
+                return null;
+            }
+
+            if (!_listing.IsCompleted) return null;
+            listing = _listing;
+            _listing = null;
+        }
+
+        return listing.GetAwaiter().GetResult();
+    }
+
+    /// <summary>
     /// Whether <paramref name="microphone"/> belongs to a webcam could not be told, as <paramref name="why"/> says: said once
     /// per stretch, as a warning with the wake on (its camera's picture is then not held) and at Debug with it off, and
     /// asked again at the next pick, which comes at the microphone's next look.
@@ -376,13 +415,12 @@ public sealed class WebcamHold : IWebcamHold
 
         try
         {
-            process.Link.SendJobAsync(new CameraJob(CameraProtocol.Version, CameraJobKind.Hold, webcam.Id, webcam.Name), CancellationToken.None)
-                .AsTask().GetAwaiter().GetResult();
+            SendWithin(process, () => process.Link.SendJobAsync(new CameraJob(CameraProtocol.Version, CameraJobKind.Hold, webcam.Id, webcam.Name), CancellationToken.None), webcam);
         }
         catch (Exception ex)
         {
-            // Deliberately not rethrown: the process ended, or its lines failed, before it read its job; it is let go, and
-            // another is started after RetryEvery.
+            // Deliberately not rethrown: the process ended, or its lines failed, before it read its job, or it did not take
+            // the job within SendLimit and was ended; it is let go, and another is started after RetryEvery.
             Discard(process);
             OnOpenProblem(generation, $"ClassScribe's camera process ended before it took its job ({ex.Message.TrimEnd('.')})", retry: true);
             return;
@@ -603,14 +641,41 @@ public sealed class WebcamHold : IWebcamHold
     }
 
     /// <summary>
-    /// Lets <paramref name="process"/> go: told to stop, given <see cref="StopWait"/> for its lines to end (it lets the camera
-    /// go first), then ended if it has not, and disposed, which closes its job.
+    /// Sends a line to <paramref name="process"/>, which holds <paramref name="webcam"/>, through <paramref name="send"/>,
+    /// waiting at most <see cref="SendLimit"/> (release 0.5.0 review, 3.7), as a lesson's camera track does with its lines: a
+    /// line to a process that stopped reading its input never goes out, and the write on its pipe cannot be cancelled, so
+    /// the process is ended, which breaks the pipe and so ends the write, and an <see cref="IOException"/> says so, as for a
+    /// process that is gone. Runs on the microphone's pick, the hold's timer or the stop, so it waits on the clock.
+    /// </summary>
+    private void SendWithin(ICameraProcess process, Func<ValueTask> send, CameraDevice webcam)
+    {
+        var sending = send().AsTask();
+        try
+        {
+            sending.WaitAsync(SendLimit, _time).GetAwaiter().GetResult();
+        }
+        catch (TimeoutException)
+        {
+            // Deliberately not rethrown as is: the camera process is stuck, so it is ended, and the timeout is handed on as what
+            // it now means, the IOException of a process that is gone, which every caller already answers (the process let go,
+            // and another started when the hold still wants one), so that the stop and the next class never wait on a line.
+            _logger.LogWarning("The camera process holding \"{Camera}\" did not take a line within {Seconds} seconds, so it was ended", webcam.Name, SendLimit.TotalSeconds);
+            process.Kill();
+            _ = sending.ContinueWith(failed => _logger.LogDebug(failed.Exception, "The line the camera process did not take failed once it was ended"), CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            throw new IOException(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The camera process did not take a line within {SendLimit.TotalSeconds:0} seconds, so it was ended"));
+        }
+    }
+
+    /// <summary>
+    /// Lets <paramref name="process"/> go: told to stop, within <see cref="SendLimit"/>, given <see cref="StopWait"/> for its
+    /// lines to end (it lets the camera go first), then ended if it has not, and disposed, which closes its job.
     /// </summary>
     private void LetGo(ICameraProcess process, Task? reading, CameraDevice webcam)
     {
         try
         {
-            process.Link.SendStopAsync(new CameraStop(0), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            SendWithin(process, () => process.Link.SendStopAsync(new CameraStop(0), CancellationToken.None), webcam);
             if (reading is not null && !reading.IsCompleted)
             {
                 using var waiting = new CancellationTokenSource();
@@ -620,7 +685,8 @@ public sealed class WebcamHold : IWebcamHold
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
-            // Deliberately not rethrown: the process has already ended or closed its lines, which is what the stop asks for.
+            // Deliberately not rethrown: the process has already ended or closed its lines, which is what the stop asks for;
+            // or it did not take the stop within SendLimit and was ended for it, said above.
             _logger.LogDebug(ex, "The camera process holding \"{Camera}\" had already gone", webcam.Name);
         }
 
@@ -629,9 +695,9 @@ public sealed class WebcamHold : IWebcamHold
         _logger.LogInformation("Let go of the picture of the camera \"{Camera}\"", webcam.Name);
     }
 
-    /// <summary>The line when the camera could not be opened, with the cause in <paramref name="words"/>.</summary>
+    /// <summary>The line when the camera could not be opened, with the cause in <paramref name="words"/>; its sleep setting is named by the camera's make (<see cref="Cameras.SleepSettingOf"/>).</summary>
     public static string CannotOpen(string camera, string words) =>
-        $"The camera \"{camera}\" could not be opened: {words}. Without its picture open the camera may fall asleep, and its microphone then sends only silence. Turn off Device Auto Sleep in OBSBOT Center, or record another microphone. ClassScribe tries again every {RetryEvery.TotalSeconds:0} seconds";
+        $"The camera \"{camera}\" could not be opened: {words}. Without its picture open the camera may fall asleep, and its microphone then sends only silence. Turn off {Cameras.SleepSettingOf(camera)}, or record another microphone. ClassScribe tries again every {RetryEvery.TotalSeconds:0} seconds";
 
     /// <summary>The line when the held picture stopped.</summary>
     public static string Stopped(string camera) =>

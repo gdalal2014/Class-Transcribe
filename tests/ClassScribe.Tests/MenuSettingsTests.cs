@@ -264,7 +264,7 @@ public class MenuSettingsTests
     public async Task S_after_choice_7_keeps_the_pick_as_the_default()
     {
         var microphones = new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array, LaptopMicrophones.Obsbot);
-        var menu = new MicrophoneMenu(microphones, _choice, _files.SettingsFile, TestOptions.Create(new RecordingOptions()), _ui, writer: _files.Writer);
+        var menu = new MicrophoneMenu(microphones, _choice, _files.SettingsFile, TestOptions.Create(new RecordingOptions()), _ui, TimeProvider.System, writer: _files.Writer);
         _ui.Type('w', '2');
         _ui.TypeLine("zoom");
         _ui.Type('s');
@@ -290,7 +290,7 @@ public class MenuSettingsTests
     public async Task S_after_choice_7_in_person_keeps_the_picture_size()
     {
         var microphones = new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array, LaptopMicrophones.Obsbot);
-        var menu = new MicrophoneMenu(microphones, _choice, _files.SettingsFile, TestOptions.Create(new RecordingOptions()), _ui, new FakeCameraProvider(), _files.Writer);
+        var menu = new MicrophoneMenu(microphones, _choice, _files.SettingsFile, TestOptions.Create(new RecordingOptions()), _ui, TimeProvider.System, new FakeCameraProvider(), _files.Writer);
         _ui.Type('i', '2', '2', '3', 's');
 
         await menu.RunAsync();

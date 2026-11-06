@@ -42,7 +42,7 @@ public class MicrophoneMenuTests
 
     /// <summary>Runs the menu until it is left, failing the test rather than hanging if it never is.</summary>
     private Task<int> RunAsync() =>
-        new MicrophoneMenu(_microphones, _choice, _settings.File, _recording, _ui).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
+        new MicrophoneMenu(_microphones, _choice, _settings.File, _recording, _ui, TimeProvider.System).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
 
     /// <summary>Everything shown so far, line by line.</summary>
     private string[] Lines() => _ui.Screen.Split(Environment.NewLine);

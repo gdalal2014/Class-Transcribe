@@ -1015,12 +1015,19 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   [--resolution <size>]`: `--camera` only with `--in-person` (`--camera records only in person in this build: give it with
   --in-person`), `--resolution` only with `--camera` (`--resolution needs --camera`) and checked by `CameraSize.TryParse`,
   each exit 2; a name right after `--camera` is pointed out as the camera's. Menu choice 7 (now "Microphone and camera"),
-  in person, lists the cameras (`MicrophoneMenu`'s optional `ICameraProvider`) and asks the size (`Picture size: Enter for
+  in person, lists the cameras (`MicrophoneMenu`'s optional `ICameraProvider`, read through `CameraListing.ListWithinAsync`
+  in `ICameraProvider.cs`: on the pool, waited for at most `CameraListing.Limit`, 5 s, on the menu's `TimeProvider`; a list
+  that does not come says `The cameras could not be listed: Windows did not list the cameras within 5 seconds.`, release
+  0.5.0 review 3.1) and asks the size (`Picture size: Enter for
   720p (your setting), 1 480p, 2 720p, 3 1080p, T to type a size`), held by `SourceChoice` (`PickMicrophone(..., camera,
   size)`, `PickedCameraResolution`, `CameraResolution`; W and N drop the camera; the header adds `with the camera "..."
   (720p)`). `RecordStarter` hands a plan with a camera to its `ICameraPrompt` (`Runs/ICameraPrompt.cs`; `CameraStart` in the
   window, scoped; before the continue question, amendment 17), which resolves the size into the request (`--resolution`, else menu 7's pick, else `Recording:CameraResolution`,
-  else 720p, so the recorder never reads it and the run file keeps it), then refuses with the set-up's first problem or
+  else 720p, so the recorder never reads it and the run file keeps it), lists the cameras and reads the set-up each within
+  `CameraListing.Limit` on its `TimeProvider` (a list that could not be read is shown in the camera's line, `Camera "OBSBOT"
+  (the cameras could not be listed: Windows did not list the cameras within 5 seconds; 720p)`, never as "not connected now";
+  a set-up read that does not come is the warning `CameraStart.SetupNotRead`, and the start goes on, since the camera
+  process says what is wrong once it opens the camera), then refuses with the set-up's first problem or
   `ICameraRecorder.NotReady`: in the menu `Camera "...": <why>. Enter records the sound only; Esc goes back.`, elsewhere
   `<why>. Nothing was recorded; leave out --camera to record the sound alone.` with exit 1; otherwise the menu asks
   `Enter records with the camera; S records the sound only.`, and the command line goes on. `ICameraRecorder`
@@ -1032,8 +1039,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `RecordRequest` and `SourcePlan` carry `[JsonExtensionData] Dictionary<string, JsonElement>? Extra` (null when nothing
   unknown was read, so records still compare equal), with a setter, not `init`: the generated reader fills init-only
   properties through the constructor, where extension data cannot go. A build older than this one still drops what it
-  does not know when it writes a run file back. Tests: `CameraMenuTests`, `CameraStartTests`, and additions to
-  `CommandLineTreeTests`, `CommandLineTests`, `RecordStarterTests`, `RequestsTests` and `TrackSetTests`.
+  does not know when it writes a run file back. Tests: `CameraMenuTests` and `CameraStartTests` (both on a
+  `ManualTimeProvider`, with `FakeCameraProvider.Hangs` and `FakeCameraSystem.EncoderQueryHangs` for the limits), and
+  additions to `CommandLineTreeTests`, `CommandLineTests`, `RecordStarterTests`, `RequestsTests` and `TrackSetTests`.
 - The run with the microphone (`RecordingMonitor`, `MicrophoneChecks`): the advice lines at the
   checks' first look (`MicrophoneAdvice.AtStart`: privacy, the `ClassAppMute` case line, the
   following line, the microphone line, then the warnings about Vantage, ducking, Bluetooth and the
@@ -1826,8 +1834,14 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `IOException` (a synchronous pipe's write cannot be cancelled); letting a process go waits at most `DisposeWait` (5 s),
   and `StartedCameraProcess.DisposeAsync` waits for its standard error 5 s at most. A process that ends by itself, or
   does not start, is started again `RestartAfter` (2 s) later (`ReadAsync` holds `_nextStart` at its maximum while the
-  ended process is let go, so no look starts one early), with the software encoder after an `Encoder` problem; the
-  `MostFailures`th (3) within `FailuresWithin` (10 min) gives the picture up (`GivenUpText`). Its `State`
+  ended process is let go, so no look starts one early; `LetGoOfAsync` never throws: its limit and any other failure of the
+  let-go are deliberate catches, the second at Debug, so that a let-go that fails never leaves the camera unstarted after an
+  end, nor a start's failure uncounted, with the next look starting another process at once, release 0.5.0 review 3.13 and
+  the repair of its fix), with the software encoder after an `Encoder` problem; the
+  `MostFailures`th (3) within `FailuresWithin` (10 min) gives the picture up (`GivenUpText`). A restart's piece begins at
+  the clock's position now, or, when a piece of that name is there already (two ends in one pause: the clock stands still),
+  at the next free name, a millisecond on each time (`NextFreePieceStart`, review 3.12), since the camera process refuses a
+  piece that is there. Its `State`
   (`CameraTrackState`) carries the frames, the rate, capturing, dark and a `CameraConcern` in the run's words with the
   camera's name (lost, no picture as Bitdefender's block, frames that cannot be written, refused, in use, encoder or disk,
   restarting, not connected, given up as Alerts; dark as a Notice), cleared when frames come again. Its start line gives the
@@ -1869,7 +1883,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `StopHangs`) and `FakeCameraRecorder`, `FakeCameraRecording`, `PlayedCameraProcess` (`Received`, `Clocks`, `End`, `Stop`,
   `HangOnStop`, `OpenedAsync`, `RecordStatusAsync`; a record job's stop answered with its piece through
   `FakeCameraProcess.EndAsync`, which closes its own end so the starter reads its last lines), `FakeCameraProcess.Exited`,
-  `InputStuck` (the starter's writes hang, cancellation passed over, until the process ends) and `DisposeHangs`. Tests:
+  `InputStuck` (the starter's writes hang, cancellation passed over, until the process ends), `DisposeHangs` and
+  `DisposeFailure` (letting it go throws), and `FakeCameraProcessStarter.OnStart`, which shapes each process before its
+  starter sees it, so that those hold from the first line on. Tests:
   `CameraPiecesTests`, `CameraRecordJobTests`
   (the real host over the fakes on the manual clock), `MediaFoundationPieceWriterTests` (WindowsMedia: generated frames
   encoded with the software encoder into a temporary folder and read back, an unfinished piece readable, a piece being
@@ -1937,16 +1953,21 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `WebcamHolds` (registered in `CameraServices`; optional, so a factory without it has no webcam). At each pick
   (`TrackSet.OnMicrophonePicked`) `Follow` finds once per microphone whether it belongs to a webcam
   (`Cameras.WebcamOf`: `CameraOf` but never a virtual camera; the cameras are listed only when `Cameras.MayBeOfACamera`,
-  a container that is not the computer's own, on the pool and waited for at most `ListLimit` (5 s; while a listing hangs a
-  later pick begins none and waits for none); a list that has a problem, throws or does not come leaves the pick
-  undecided, said once per stretch, a warning only with the setting on, and is asked again at the next pick; `Follow`
-  never throws, since it runs inside the microphone's pick). With the setting on it starts a
+  a container that is not the computer's own, on the pool: with the setting on waited for at most `ListLimit` (5 s; while
+  a listing hangs a later pick begins none and waits for none), and with it off never waited for (release 0.5.0 review,
+  3.6, `ListedInTheBackground`: the pick that begins the listing decides nothing, the microphone's next look, 10 s on,
+  takes its answer, well within the 60 s the webcam zeros rule at the start needs it by, so a class's start path waits on
+  no camera list; a lesson with the picture, whose hold is passed off, lists the same way); a list that has a problem,
+  throws or does not come leaves the pick undecided, said once per stretch, a warning only with the setting on, and is
+  asked again at the next pick; `Follow` never throws, since it runs inside the microphone's pick). With the setting on it starts a
   camera process with a hold job carrying the camera's id and name alone, and `MicrophoneProviderTap`'s `beforeOpen`
   (`WebcamHold.BeforeOpen`) holds the microphone's capture until the first frame, at most `FirstFrameWait` (5 s) after the
   hold began; the track is `ClockAligned`, so the wait is padded. The hold lasts through P and V off, follows the pick to
   another webcam or lets go for a microphone of none (the old process let go in the background), and `TrackSet.Stop` lets
   it go after the tracks have stopped, before the upload (`stop`, at most `StopWait` 5 s, then killed and disposed); leaving
-  the microphone out stops it too. A process that does not start or take its job (for any cause) or ends by itself is
+  the microphone out stops it too. Each line to the process (the job, the stop) goes within `SendLimit` (5 s), else the
+  process is killed as stuck and the send fails as an `IOException`, as `CameraTrack`'s lines do (release 0.5.0 review,
+  3.7). A process that does not start or take its job (for any cause) or ends by itself is
   started again `RetryEvery` (5 s) later; only the current webcam's start clears its starting flag, so a late start for an
   earlier webcam is let go without letting a look start a second process for the new one, and a start that finds the
   hold's process already there is let go too. The one-second timer (`Look`, which never throws: a timer thread's exception
@@ -1958,7 +1979,8 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   frames arriving, problem and its short words); `TrackSet.Webcam` reads it, and `MicrophoneChecks.WatchTheHold` makes
   the problem a Notice with the class, an Alert in person. Tests `CameraHoldTests` (through the real track set too: the
   job before the microphone's open, read through `IMicrophoneRecording`; a camera list that throws or never answers with
-  the setting on and off, the microphone still opening; a start that fails for any cause; the late start for an earlier
+  the setting on and off, the microphone still opening; with the setting off the pick returning at once and the webcam
+  known by the next look; the stop's line within `SendLimit`; a start that fails for any cause; the late start for an earlier
   webcam), with `FakeCameraProvider.Failure` and `Hangs` and `FakeCameraProcessStarter.HoldStart` and `StartsEntered`.
 - The webcam zeros rules (camera-first 3.4; `MicrophoneChecks.WatchWebcamZeros`), in place of today's only-silence warning
   for a microphone whose `IMicrophoneRecording.Webcam` is set, unless Windows flagged its last packet silent or Windows
@@ -1970,7 +1992,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   microphone's own switch (`MicrophoneChecks.WebcamStartText`). Later: `WebcamZerosAfterSound` (2 min) after sound, once a
   recording, never while the hold's frames arrive, its Notice ending when sound returns (`WebcamLaterText`). Each a Notice
   (`only zeros from the webcam's microphone`) with the class, an Alert in person. Both lengths sit beside
-  `RecordingSession.OnlyZerosAfter`. Tests in `WebcamZerosTests.cs` (partial `RecordingSessionTests` for the measure, each
+  `RecordingSession.OnlyZerosAfter`. The words name OBSBOT Center (Device Auto Sleep, the microphone's switch) only for a
+  camera whose name holds `OBSBOT` (`Cameras.IsObsbot`, `SleepSettingOf`, `MicrophoneSwitchOf`); another make is sent to
+  its maker's app, and is not said to send exact zeros in silence, which is known of the OBSBOT alone; `WebcamHold.CannotOpen`
+  names the sleep setting the same way (release 0.5.0 review, 3.9). Tests in `WebcamZerosTests.cs` (partial `RecordingSessionTests` for the measure, each
   capture counted afresh, and partial `RecordingMonitorTests` for the rules: quiet while paused, switched off or not
   listened to, the hold's problem an Alert in person, finding 4's twelve awake minutes replayed with no line).
 - The camera check (`CameraCheckCommand`, menu choice 8 then C and `camera-check ["<camera>"] [--resolution <size>]`,

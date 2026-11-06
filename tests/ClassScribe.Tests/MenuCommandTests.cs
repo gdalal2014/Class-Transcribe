@@ -1601,7 +1601,7 @@ public class CommandRunnerTests
     private MicrophoneMenu CreateMicrophoneMenu()
     {
         var recording = TestOptions.Create(new RecordingOptions());
-        return new MicrophoneMenu(new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array), new SourceChoice(recording), new TestSettings(_settingsFolder.Path).File, recording, _ui);
+        return new MicrophoneMenu(new FakeMicrophoneProvider().Connect(LaptopMicrophones.Array), new SourceChoice(recording), new TestSettings(_settingsFolder.Path).File, recording, _ui, TimeProvider.System);
     }
 
     /// <summary>Writes a recording of <paramref name="name"/>, a second of audio, started at the tests' class, into the folder of its name under the recordings folder.</summary>

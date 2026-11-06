@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using ClassScribe.Audio.Timeline;
 using ClassScribe.Runs;
+using ClassScribe.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace ClassScribe.Camera;
@@ -341,8 +342,11 @@ public sealed class CameraTrack : ICameraTrack
     }
 
     /// <summary>
-    /// Lets <paramref name="process"/> go, waiting at most <see cref="DisposeWait"/>: a process that cannot be ended, whose
-    /// error output so never closes, is left to end with ClassScribe, whose job ends it at the latest.
+    /// Lets <paramref name="process"/> go, waiting at most <see cref="DisposeWait"/>, and never throws: a process that cannot
+    /// be ended, whose error output so never closes, is left to end with ClassScribe, whose job ends it at the latest; and a
+    /// close its pipes or its job refuse is logged and no more, since the process has ended, or been ended, already, and
+    /// whoever lets it go (a start that failed or an end, which must be counted; the stop; giving the picture up) has to go
+    /// on all the same.
     /// </summary>
     private async Task LetGoOfAsync(ICameraProcess process)
     {
@@ -357,6 +361,15 @@ public sealed class CameraTrack : ICameraTrack
             // latest; waiting longer would hold up the stop, and with it the sound's transcript and the next class.
             _logger.LogWarning("The camera process could not be let go within {Seconds} seconds; it ends with ClassScribe at the latest", DisposeWait.TotalSeconds);
             LogWhenFaulted(disposing, "Letting the camera process go failed in the end");
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: letting the process go failed in a way its limit does not cover (its pipes or its job
+            // refused the close); the process has ended, or been ended, all the same, and every caller must go on: an end or
+            // a start that failed is counted and the camera started again after RestartAfter, the stop finishes, and the
+            // picture given up stays given up (release 0.5.0 review, 3.13). Thrown, it would leave a start's failure
+            // uncounted, and the next look would start another camera process at once, without end or limit.
+            _logger.LogDebug(ex, "Letting the camera process go failed; it has ended, or its job ends it with ClassScribe at the latest");
         }
     }
 
@@ -452,16 +465,16 @@ public sealed class CameraTrack : ICameraTrack
 
     /// <summary>
     /// Finds the camera when it is not pinned yet, then starts a camera process with a record job, its piece beginning at the
-    /// lesson's start for the first and at the clock's position now for the others, and sends it the clock and P at once.
-    /// A camera not found is said once and looked for again every <see cref="FindEvery"/>; a process that does not start is a
-    /// failure, as an end of one is.
+    /// lesson's start for the first and at the clock's position now for the others (the next free name when a piece of that
+    /// name is there, see <see cref="NextFreePieceStart"/>), and sends it the clock and P at once. A camera not found is said
+    /// once and looked for again every <see cref="FindEvery"/>; a process that does not start is a failure, as an end of one is.
     /// </summary>
     private async Task StartProcessAsync()
     {
         if (_camera is null && !await FindAsync()) return;
 
         var camera = _camera!;
-        var position = _first ? _start.StartPosition : _clock.Now();
+        var position = _first ? _start.StartPosition : NextFreePieceStart(_clock.Now());
         var job = new CameraJob(CameraProtocol.Version, CameraJobKind.Record, camera.Id, camera.Name, _start.Camera.Resolution, _offset, _start.Folder, _start.BaseName,
             position.TotalSeconds, SoftwareEncoder: _software);
         ICameraProcess process;
@@ -510,6 +523,22 @@ public sealed class CameraTrack : ICameraTrack
 
         _logger.LogDebug("Started a camera process for the picture of \"{Camera}\": process {ProcessId}, its piece from {Position}", camera.Name, process.ProcessId,
             Durations.Format(position));
+    }
+
+    /// <summary>
+    /// Where a restart's piece begins: <paramref name="position"/>, the clock's position now, unless a piece of that name is
+    /// there already (release 0.5.0 review, 3.12: the clock stands still while paused, so two camera processes that end in
+    /// one pause would name the same piece, and the camera process refuses a piece that is there rather than write over it);
+    /// then the next position, a millisecond on each time, whose name is free. A millisecond's shift places no frame
+    /// wrongly: the pieces are placed by their names, and a paused clock excludes those moments anyway.
+    /// </summary>
+    private TimeSpan NextFreePieceStart(TimeSpan position)
+    {
+        var files = new RecordingFiles(_start.Folder, _start.BaseName);
+        var start = position;
+        while (File.Exists(files.CameraPiece(start))) start += TimeSpan.FromMilliseconds(1);
+        if (start != position) _logger.LogDebug("The camera's piece at {Position} is there already, so the new piece begins at {Start}", Durations.Format(position), Durations.Format(start));
+        return start;
     }
 
     /// <summary>The run's camera, pinned by its id: found and its offset resolved, or said once as not connected.</summary>
@@ -612,6 +641,8 @@ public sealed class CameraTrack : ICameraTrack
         if (failedEncoder) _software = true;
         _logger.LogDebug("The camera process recording \"{Camera}\" ended (exit {Code})", camera.Name,
             process.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "not known");
+        // Letting the process go never throws (LetGoOfAsync), so the end is always counted and the next start set, or the
+        // picture given up: without Failed the next start would stay at its maximum, and the camera would never be started again.
         await LetGoOfAsync(process);
         Failed($"ClassScribe's camera process for \"{camera.Name}\" stopped working");
     }

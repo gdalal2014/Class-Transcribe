@@ -23,8 +23,9 @@ public class CameraMenuTests
     private FakeCameraProvider _cameras = null!;
     private SourceChoice _choice = null!;
     private FakeConsoleUi _ui = null!;
+    private ManualTimeProvider _time = null!;
 
-    /// <summary>This laptop's array and OBSBOT microphone and its three cameras, over settings with their defaults.</summary>
+    /// <summary>This laptop's array and OBSBOT microphone and its three cameras, over settings with their defaults, on the manual clock.</summary>
     [SetUp]
     public void SetUp()
     {
@@ -35,6 +36,7 @@ public class CameraMenuTests
         _cameras = new FakeCameraProvider();
         _choice = new SourceChoice(_recording);
         _ui = new FakeConsoleUi();
+        _time = new ManualTimeProvider(TestRuns.Start);
     }
 
     /// <summary>Deletes the settings folder.</summary>
@@ -43,7 +45,7 @@ public class CameraMenuTests
 
     /// <summary>Runs menu choice 7 until it is left, failing the test rather than hanging if it never is.</summary>
     private Task<int> RunAsync() =>
-        new MicrophoneMenu(_microphones, _choice, _settings.File, _recording, _ui, _cameras).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
+        new MicrophoneMenu(_microphones, _choice, _settings.File, _recording, _ui, _time, _cameras).RunAsync().WaitAsync(TimeSpan.FromSeconds(15));
 
     /// <summary>The plan in person with the OBSBOT's microphone and <paramref name="camera"/>.</summary>
     private static SourcePlan InPerson(CameraChoice? camera) => new(RecordingMode.Microphone, null, new MicrophoneChoice(LaptopMicrophones.Obsbot.Name), camera);
@@ -156,5 +158,36 @@ public class CameraMenuTests
 
         Assert.That(_ui.Screen, Does.Contain("  None is connected now."));
         Assert.That(_choice.Current.Camera, Is.Null);
+    }
+
+    /// <summary>
+    /// A camera list Windows does not answer holds menu choice 7 five seconds at most (release 0.5.0 review, 3.1): the menu
+    /// then says the cameras could not be listed and why, and Enter goes on without one.
+    /// </summary>
+    [Test]
+    public async Task A_camera_list_that_never_answers_holds_the_menu_5_seconds_at_most()
+    {
+        _cameras.Hangs = true;
+        _ui.Type('i', '2', '\r');
+
+        var running = RunAsync();
+        await WaitAsync(() => _time.UntilNextTimer == CameraListing.Limit);
+        var moved = await _time.AdvanceUntilAsync(() => running.IsCompleted, TimeSpan.FromSeconds(1));
+
+        Assert.That(await running, Is.EqualTo(0));
+        Assert.That(moved, Is.GreaterThanOrEqualTo(CameraListing.Limit).And.LessThanOrEqualTo(CameraListing.Limit + TimeSpan.FromSeconds(1)));
+        Assert.That(_ui.Screen, Does.Contain("  The cameras could not be listed: Windows did not list the cameras within 5 seconds."));
+        Assert.That(_choice.Current.Camera, Is.Null);
+    }
+
+    /// <summary>Waits, in real time, up to 10 seconds for <paramref name="condition"/>, without moving the manual clock.</summary>
+    private static async Task WaitAsync(Func<bool> condition)
+    {
+        var deadline = Environment.TickCount64 + 10_000;
+        while (!condition())
+        {
+            if (Environment.TickCount64 > deadline) throw new TimeoutException("The expected condition was not met within 10 seconds.");
+            await Task.Delay(5);
+        }
     }
 }

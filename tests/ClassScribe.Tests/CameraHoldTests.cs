@@ -61,18 +61,109 @@ public class CameraHoldTests
         _logs = new TestLoggerFactory();
     }
 
-    /// <summary>With the setting off, as it is by default, a webcam's microphone is known to be one, and no camera process starts.</summary>
+    /// <summary>
+    /// With the setting off, as it is by default, a webcam's microphone is known to be one by a later pick, and no camera
+    /// process starts: the pick that finds the cameras not listed yet begins the listing in the background and decides
+    /// nothing (release 0.5.0 review, 3.6), and the microphone's next look takes its answer.
+    /// </summary>
     [Test]
-    public void Off_by_default_no_camera_process_starts()
+    public async Task Off_by_default_no_camera_process_starts_and_a_later_pick_knows_the_webcam()
     {
         Assert.That(new RecordingOptions().WakeCameraMicrophone, Is.False);
         using var hold = Hold(wakeOn: false);
 
         hold.Follow(Obsbot);
         hold.BeforeOpen(Obsbot);
+        var atTheFirstPick = hold.State;
+        await WaitAsync(() =>
+        {
+            hold.Follow(Obsbot);
+            return hold.State is not null;
+        });
 
+        Assert.That(atTheFirstPick, Is.Null, "nothing decided at the pick that began the listing");
+        Assert.That(_cameras.Listings, Is.EqualTo(1), "listed once, in the background");
         Assert.That(_starter.Started, Is.Empty);
         Assert.That(hold.State, Is.EqualTo(new WebcamState(LaptopCameras.Obsbot.Name, Holding: false, HasFrames: false)));
+    }
+
+    /// <summary>
+    /// With the wake off, the microphone's pick never waits for the camera list (release 0.5.0 review, 3.6): a listing that
+    /// never answers holds the pick not at all, nothing waits on the clock, a later pick begins no other, and no webcam is
+    /// known meanwhile; so a class's start path, where the wake is off, is no slower for the cameras.
+    /// </summary>
+    [Test]
+    public void With_the_wake_off_the_pick_never_waits_for_the_camera_list()
+    {
+        _cameras.Hangs = true;
+        using var hold = Hold(wakeOn: false);
+
+        var following = Task.Run(() => hold.Follow(Obsbot));
+        var atOnce = following.Wait(TimeSpan.FromSeconds(2));
+        var again = Task.Run(() => hold.Follow(Obsbot));
+        var againAtOnce = again.Wait(TimeSpan.FromSeconds(2));
+
+        Assert.That(atOnce, Is.True, "the pick that begins the listing returns at once");
+        Assert.That(againAtOnce, Is.True, "and a later pick waits for it no more");
+        Assert.That(_time.TimersMade, Is.Zero, "nothing waits on the clock");
+        Assert.That(_cameras.Listings, Is.EqualTo(1), "and begins no other");
+        Assert.That(hold.State, Is.Null);
+        Assert.That(_starter.StartsEntered, Is.Zero);
+    }
+
+    /// <summary>
+    /// With the wake off, a camera list that throws is read at a later pick as a pick not decided, said at Debug once per
+    /// stretch, and the pick after begins another listing, until one can be read; nothing reaches the microphone's pick.
+    /// </summary>
+    [Test]
+    public async Task With_the_wake_off_a_camera_list_that_throws_is_said_at_Debug_and_listed_again()
+    {
+        _cameras.Failure = new FileNotFoundException("The system cannot find the file specified.") { HResult = unchecked((int)0x80070002) };
+        using var hold = Hold(wakeOn: false);
+
+        await WaitAsync(() =>
+        {
+            Assert.DoesNotThrow(() => hold.Follow(Obsbot));
+            return _logs.Messages.Any(message => message.StartsWith("Could not tell whether", StringComparison.Ordinal));
+        });
+        var listedUntilSaid = _cameras.Listings;
+        var saidAsProblems = _logs.Problems.ToList();
+        _cameras.Failure = null;
+        await WaitAsync(() =>
+        {
+            hold.Follow(Obsbot);
+            return hold.State is not null;
+        });
+
+        Assert.That(listedUntilSaid, Is.EqualTo(1), "the failed listing was read at a later pick");
+        Assert.That(saidAsProblems, Is.Empty, "at Debug with the wake off");
+        Assert.That(_logs.Messages, Has.Exactly(1).StartsWith($"Could not tell whether the microphone \"{Obsbot.Name}\" belongs to a webcam"));
+        Assert.That(_cameras.Listings, Is.EqualTo(2), "listed again at the pick after, and read at the next");
+        Assert.That(hold.State?.CameraName, Is.EqualTo(LaptopCameras.Obsbot.Name));
+        Assert.That(_starter.StartsEntered, Is.Zero);
+    }
+
+    /// <summary>
+    /// Through the real track set, in person on the OBSBOT with the wake off: the start's pick begins the listing and waits
+    /// for none, and the microphone's next look, ten seconds on, knows the webcam, well within the sixty seconds the webcam
+    /// zeros rule at the start needs it by; no camera process starts.
+    /// </summary>
+    [Test]
+    public async Task In_a_recording_with_the_wake_off_the_webcam_is_known_by_the_microphones_next_look()
+    {
+        using var folder = new TempFolder();
+        using var recording = InPersonOnTheObsbot(wakeOn: false, out _);
+        var toTheRun = (IMicrophoneRecording)recording;
+
+        recording.Start(new RecordingFiles(folder.Path, "Lesson_2026-10-24_14-00-00Z"), TimeSpan.Zero);
+        var atTheStart = toTheRun.Webcam;
+        var moved = await _time.AdvanceUntilAsync(() => toTheRun.Webcam is not null, Step, atMost: MicrophoneSource.EveryTenSeconds + TimeSpan.FromSeconds(1));
+        recording.Stop();
+
+        Assert.That(atTheStart, Is.Null, "the start's pick began the listing and waited for none");
+        Assert.That(moved, Is.LessThanOrEqualTo(MicrophoneSource.EveryTenSeconds), "known by the microphone's next look");
+        Assert.That(toTheRun.Webcam, Is.EqualTo(new WebcamState(LaptopCameras.Obsbot.Name, Holding: false, HasFrames: false)));
+        Assert.That(_starter.StartsEntered, Is.Zero);
     }
 
     /// <summary>
@@ -216,6 +307,42 @@ public class CameraHoldTests
         Assert.That(hold.State, Is.EqualTo(new WebcamState(LaptopCameras.Obsbot.Name, true, false, line, WebcamHold.NotOpenedShort)));
     }
 
+    /// <summary>OBSBOT Center is named only for an OBSBOT (release 0.5.0 review, 3.9): another make's camera that cannot be opened is sent to its maker's app.</summary>
+    [Test]
+    public void Another_makes_camera_that_cannot_be_opened_is_not_sent_to_OBSBOT_Center()
+    {
+        var line = WebcamHold.CannotOpen(Logitech.Name, "the camera is not connected");
+
+        Assert.That(line, Does.EndWith("Without its picture open the camera may fall asleep, and its microphone then sends only silence. Turn off its auto sleep in its maker's app, or record another microphone. ClassScribe tries again every 5 seconds"));
+        Assert.That(line, Does.Not.Contain("OBSBOT"));
+    }
+
+    /// <summary>
+    /// The stop's line to a camera process that stopped reading its input goes out within 5 seconds, or the process is ended
+    /// (release 0.5.0 review, 3.7), as a lesson's camera track does with its lines: the stop never waits on the line longer,
+    /// and the hold is let go all the same.
+    /// </summary>
+    [Test]
+    public async Task A_camera_process_that_stops_reading_its_input_is_ended_at_the_stop_within_5_seconds()
+    {
+        using var hold = Hold();
+        hold.Follow(Obsbot);
+        var played = _starter.Played.Single();
+        await WaitAsync(() => played.Job is not null);
+
+        played.Process.InputStuck = true;
+        var stopping = Task.Run(hold.Stop);
+        await WaitAsync(() => _time.UntilNextTimer == WebcamHold.SendLimit);
+        var moved = await _time.AdvanceUntilAsync(() => stopping.IsCompleted, TimeSpan.FromSeconds(1));
+        await stopping;
+
+        Assert.That(moved, Is.GreaterThanOrEqualTo(WebcamHold.SendLimit).And.LessThanOrEqualTo(WebcamHold.SendLimit + TimeSpan.FromSeconds(1)),
+            "the limit, plus the second the clock moves on while the stop still kills and lets the process go");
+        Assert.That(played.Process.Killed, Is.True);
+        Assert.That(_logs.Problems, Does.Contain($"The camera process holding \"{LaptopCameras.Obsbot.Name}\" did not take a line within 5 seconds, so it was ended"));
+        Assert.That(_logs.Messages, Does.Contain($"Let go of the picture of the camera \"{LaptopCameras.Obsbot.Name}\""));
+    }
+
     /// <summary>A camera process that ends by itself during the hold is started again 5 seconds later.</summary>
     [Test]
     public async Task A_camera_process_that_ends_is_started_again()
@@ -272,16 +399,15 @@ public class CameraHoldTests
     }
 
     /// <summary>
-    /// A camera list that throws what a real provider's promise let through (here Windows' "file not found") never reaches
-    /// the microphone's pick: the pick stays undecided, said once per stretch (a warning with the wake on, at Debug with it
-    /// off), and each pick asks again until the list can be read, when the webcam is known and, with the wake on, held.
+    /// With the wake on, a camera list that throws what a real provider's promise let through (here Windows' "file not
+    /// found") never reaches the microphone's pick: the pick stays undecided, said once per stretch as a warning, and each
+    /// pick asks again until the list can be read, when the webcam is known and held.
     /// </summary>
-    [TestCase(false)]
-    [TestCase(true)]
-    public void A_camera_list_that_throws_never_reaches_the_microphones_pick(bool wakeOn)
+    [Test]
+    public void With_the_wake_on_a_camera_list_that_throws_never_reaches_the_microphones_pick()
     {
         _cameras.Failure = new FileNotFoundException("The system cannot find the file specified.") { HResult = unchecked((int)0x80070002) };
-        using var hold = Hold(wakeOn);
+        using var hold = Hold();
 
         Assert.DoesNotThrow(() => hold.Follow(Obsbot));
         Assert.DoesNotThrow(() => hold.Follow(Obsbot));
@@ -292,25 +418,23 @@ public class CameraHoldTests
 
         Assert.That(_cameras.Listings, Is.EqualTo(3), "asked again at each pick until it could be read");
         Assert.That(undecided, Is.Null);
-        Assert.That(said, Is.EqualTo(wakeOn
-            ? new[] { $"Could not tell whether the microphone \"{Obsbot.Name}\" belongs to a webcam, so no camera's picture is held for it yet; the microphone is recorded all the same, and each look asks again: FileNotFoundException: The system cannot find the file specified." }
-            : []), "said once per stretch, as a warning only with the wake on");
+        Assert.That(said, Is.EqualTo(new[] { $"Could not tell whether the microphone \"{Obsbot.Name}\" belongs to a webcam, so no camera's picture is held for it yet; the microphone is recorded all the same, and each look asks again: FileNotFoundException: The system cannot find the file specified." }),
+            "said once per stretch");
         Assert.That(_logs.Messages, Has.Exactly(1).StartsWith($"Could not tell whether the microphone \"{Obsbot.Name}\" belongs to a webcam"));
         Assert.That(hold.State?.CameraName, Is.EqualTo(LaptopCameras.Obsbot.Name), "decided once the list could be read");
-        Assert.That(_starter.Started, Has.Count.EqualTo(wakeOn ? 1 : 0));
+        Assert.That(_starter.Started, Has.Count.EqualTo(1));
     }
 
     /// <summary>
-    /// A camera list that never answers, as one that hangs inside Windows, holds the microphone's pick for 5 seconds at most;
-    /// while it lasts, a later pick begins no other listing and waits for none. With the wake on or off, no webcam is known
+    /// With the wake on, a camera list that never answers, as one that hangs inside Windows, holds the microphone's pick for
+    /// 5 seconds at most; while it lasts, a later pick begins no other listing and waits for none. No webcam is known
     /// meanwhile and no camera process starts.
     /// </summary>
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task A_camera_list_that_never_answers_holds_the_pick_5_seconds_at_most(bool wakeOn)
+    [Test]
+    public async Task With_the_wake_on_a_camera_list_that_never_answers_holds_the_pick_5_seconds_at_most()
     {
         _cameras.Hangs = true;
-        using var hold = Hold(wakeOn);
+        using var hold = Hold();
 
         var following = Task.Run(() => hold.Follow(Obsbot));
         await WaitAsync(() => _time.ActiveTimers == 1);   // the pick waits on the clock for the list

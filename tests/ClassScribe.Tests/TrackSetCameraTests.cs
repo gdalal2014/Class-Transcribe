@@ -205,7 +205,9 @@ public sealed class TrackSetCameraTests
 
     /// <summary>
     /// A lesson that records the camera's picture starts no webcam hold beside it, whatever Recording:WakeCameraMicrophone
-    /// says: the picture keeps the camera streaming by itself (camera-first 3.4). Without the picture, the hold starts.
+    /// says: the picture keeps the camera streaming by itself (camera-first 3.4); the webcam is still found for the zeros
+    /// rules, by the microphone's next look, since without a hold the cameras are listed in the background (release 0.5.0
+    /// review, 3.6). Without the picture, the hold starts.
     /// </summary>
     [Test]
     public async Task No_webcam_hold_runs_beside_the_camera_s_picture()
@@ -219,7 +221,9 @@ public sealed class TrackSetCameraTests
         {
             lesson.Start(_files, TimeSpan.Zero);
             Assert.That(starter.StartsEntered, Is.Zero);
+            await _time.AdvanceUntilAsync(() => lesson.Webcam is not null, TimeSpan.FromMilliseconds(250), atMost: MicrophoneSource.EveryTenSeconds + TimeSpan.FromSeconds(1));
             Assert.That(lesson.Webcam?.Holding, Is.False);
+            Assert.That(starter.StartsEntered, Is.Zero);
             lesson.Stop();
         }
 
