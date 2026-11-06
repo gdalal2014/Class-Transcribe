@@ -3,6 +3,8 @@ using ClassScribe.Application.Transcription;
 using ClassScribe.Core.Runs;
 using ClassScribe.Core.Transcription;
 using ClassScribe.Infrastructure.Recorder;
+using ClassScribe.Infrastructure.Settings;
+using Microsoft.Extensions.Configuration;
 
 namespace ClassScribe.Tests;
 
@@ -169,5 +171,44 @@ public partial class GlossaryRecordTests
         Assert.That(_glossaries.ReadRecord(_files)!.Decided.Path, Is.EqualTo(setting));
         Assert.That(log.Problems, Is.EqualTo(Enumerable.Repeat("The glossary this run's request carries is incomplete, so the glossary is decided here instead", 2)));
         Assert.That(log.Messages, Has.Member("Glossary: setting.txt (ElevenLabs:KeytermsFile), 1 term"));
+    }
+
+    /// <summary>
+    /// A glossary value longer than any path can be (a hand edit of a saved class's KeytermsFile or of ElevenLabs:KeytermsFile;
+    /// the settings check puts no limit on it) never throws where a glossary is decided or warned about, through the real
+    /// files: the window's decision keeps the value as written, the run's start writes it into the record and the transcript
+    /// sends no terms, each with the warning that names it, a YouTube plan counts no terms, and the menu's header names the
+    /// class's glossary as one that is not there.
+    /// </summary>
+    [Test]
+    public void A_glossary_longer_than_any_path_never_throws_where_it_is_decided_or_warned_about()
+    {
+        var longValue = new string('a', 40_000);
+        var classes = new Dictionary<string, string?> { ["Classes:Mantiq:Course"] = "Mantiq", ["Classes:Mantiq:App"] = "chrome", ["Classes:Mantiq:KeytermsFile"] = longValue };
+        var log = new RecordingLogger<GlossaryChoice>();
+        var choice = Choice(log, longValue, classes);
+
+        GlossaryPick decided = null!;
+        GlossaryPick run = null!;
+        GlossaryUse use = null!;
+        var planned = -1;
+        List<string> header = null!;
+        Assert.DoesNotThrow(() => decided = choice.ForRun("Mantiq", "Mantiq"), "the window's decision");
+        Assert.DoesNotThrow(() => run = choice.AtStart(_files, Request(decided, "Mantiq")), "the run's start");
+        Assert.DoesNotThrow(() => use = choice.ForTranscript(_files, given: null, run), "before the upload");
+        Assert.DoesNotThrow(() => planned = choice.TermsFor("Kalam"), "a YouTube plan, by the setting");
+        Assert.DoesNotThrow(() => header = [.. GlossaryChoice.MissingGlossaries(new SavedClasses(new ConfigurationBuilder().AddInMemoryCollection(classes).Build()).All(), _glossaries)],
+            "the menu's header");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That((decided.Path, decided.From), Is.EqualTo((longValue, "the saved class \"Mantiq\"")));
+            Assert.That(_glossaries.ReadRecord(_files)!.Decided.Path, Is.EqualTo(longValue));
+            Assert.That((use.Path, use.Terms), Is.EqualTo((longValue, Array.Empty<string>())));
+            Assert.That(planned, Is.Zero);
+            Assert.That(header, Is.EqualTo(new[] { $"The saved class \"Mantiq\" names the glossary {longValue}, which is not there; its transcripts are made without its terms until it is." }));
+            Assert.That(log.Problems.Count(problem => problem.StartsWith($"No glossary at {longValue} (the saved class \"Mantiq\")", StringComparison.Ordinal)), Is.EqualTo(2),
+                "said at the start and before the upload");
+        });
     }
 }

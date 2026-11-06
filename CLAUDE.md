@@ -942,8 +942,10 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   `MaxKeytermWords` (`KeytermLimits.ElevenLabs` by default: 1000 terms, under 50 characters, 5 words,
   ElevenLabs' own, which a higher setting is warned against). A saved class may name its
   own (`Classes:<name>:KeytermsFile`, a file or `none`; never makes the class unusable; `class
-  add|set --keyterms`, `--clear keyterms`, menu C's last question, `class show --json`'s `glossary`,
-  the menu's header for one that is not there). The `.glossary.json` is a file of the recording
+  add|set --keyterms`, `--clear keyterms`, menu C's last question, `class list|show --json`'s `glossary`
+  (the full path, `""` for none or for a value no path can hold, such as one longer than any path, which
+  `ClassCommand.GlossaryPath` gives as none rather than throwing, so the JSON forms answer as the text forms
+  do; null for the setting's), the menu's header for one that is not there). The `.glossary.json` is a file of the recording
   (`RecordingFiles.Glossary`; `TryParse` takes it, so Drive sends it), never an answer or a
   transcript, and like a log no sign of a class (`IsClass`, rebuild's folder listing).
 - The `WindowsAudio` and `WindowsPower` tests run in the normal `dotnet test` too; the filters above
@@ -1002,7 +1004,7 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   `GoogleWorld`, and a batch of two videos recorded as they play through the real `RecorderHost`
   (the window's settings point `YouTube:OEmbedBaseUrl` at the stub; the recorder gets
   `FakeVideoWindows` and a `VideoPlayback` over the test's processes). Nothing is played or recorded. The suite holds
-  5,146 tests after the move into four projects and the S5 review's fixes (architecture slices 4 and 5), all passing. The uploads by
+  5,152 tests after the move into four projects, the S5 review's fixes and the fix for a glossary or a recordings folder longer than any path (architecture slices 4 and 5), all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -1038,8 +1040,9 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
-  four and a half minutes (4 min 30 s for 5,146 tests after the move into four projects and the S5 review's fixes,
-  architecture slices 4 and 5, on 6 November 2026, plus the build).
+  four and a half minutes (4 min 36 s for 5,152 tests after the move into four projects, the S5 review's fixes and
+  the fix for a glossary or a recordings folder longer than any path, architecture slices 4 and 5, on 6 November
+  2026, plus the build).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1370,7 +1373,10 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   video's limit held by the file limit (see the vendors' values below), and a
   recordings folder (`Recording:OutputFolder` or a class's `OutputFolder`) inside OneDrive, Google
   Drive for desktop or Dropbox, at a drive's root, the user folder itself, or holding `AppData` or
-  `Windows` (`SettingsCheck.FolderWarnings`, over `IOutputFolderFacts`). `SettingsReloader.Snapshot` (`ISettingsStore.Snapshot`) gives the Recording, ElevenLabs (never the
+  `Windows` (`SettingsCheck.FolderWarnings`, over `IOutputFolderFacts`; a folder longer than any path can be, a hand
+  edit the check puts no limit on, brings no warning and throws nothing, as the check runs behind every read, the
+  start's and the gate's included; `class set --course` then says nothing of where the old course's recordings are;
+  recording into such a folder still fails where it is used). `SettingsReloader.Snapshot` (`ISettingsStore.Snapshot`) gives the Recording, ElevenLabs (never the
   key), Transcript, Drive (no secret is ever a setting), YouTube and Logging sections as they are now, flattened; `RecorderLauncher` hands it to
   the recorder in the request file, and `RunJournal.WriteRequest` leaves the key out should it ever
   be in it. A recording that is running keeps the settings it started with. The microphone's

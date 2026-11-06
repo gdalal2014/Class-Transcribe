@@ -174,6 +174,25 @@ public class OutputFolderWarningsTests
         Assert.That(facts.VolumeLabel(folder.File("not a root")), Is.Null, "only a drive's root has a label");
     }
 
+    /// <summary>
+    /// A recordings folder longer than any path can be (a hand edit; the check puts no limit on its length), as
+    /// Recording:OutputFolder or as a saved class's own folder, names no place, so it brings no warning about where it is
+    /// and is not thrown out of the check, which runs behind every read of the settings; the other folder is still warned
+    /// about.
+    /// </summary>
+    [Test]
+    public void A_folder_longer_than_any_path_brings_no_warning_and_throws_nothing()
+    {
+        var longValue = new string('a', 40_000);
+
+        Assert.That(Warnings(new() { ["Recording:OutputFolder"] = longValue }), Is.Empty);
+        Assert.That(Warnings(new() { ["Recording:OutputFolder"] = @"D:\", ["Classes:Mantiq:Course"] = "Mantiq", ["Classes:Mantiq:OutputFolder"] = longValue }),
+            Is.EqualTo(new[]
+            {
+                @"Recording:OutputFolder is the root of a drive (D:\). Each course's folder would sit among the drive's own folders; a folder of its own, such as D:\ClassScribe, keeps the classes together"
+            }));
+    }
+
     /// <summary>The places Dropbox keeps its info.json: under the roaming and the local application data folders.</summary>
     [Test]
     public void Dropbox_keeps_its_info_file_under_the_application_data_folders()
