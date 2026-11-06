@@ -3512,5 +3512,5 @@ a stand-in `ClassScribe.exe` that records nothing and runs the whole dry run wit
 folders. No test ever starts ClassScribe itself, records, opens a device or a microphone, plays a
 sound, opens a browser, runs yt-dlp, or sends anything to ElevenLabs, Google or YouTube, and none
 reads or writes the real `%APPDATA%\ClassScribe`, `%LOCALAPPDATA%\ClassScribe` or
-`%USERPROFILE%\ClassScribe`. The suite holds 5,146 tests and takes about four and a half minutes; a test
+`%USERPROFILE%\ClassScribe`. The suite holds 5,148 tests and takes about four and a half minutes; a test
 run that hangs is stopped after 10 minutes and reported as failed (`ClassScribe.Tests.runsettings`).

@@ -7,8 +7,9 @@ namespace ClassScribe.Cli.Commands;
 /// Writes what the class command answers (layout-config 4.4; architecture question 4): its refusals on standard error,
 /// and for class list and class show the classes on standard output, a line each with what it records or why it cannot be
 /// used, or JSON alone with --json (name, usable, problems, fields, what it records, its command, and its own glossary as
-/// a full path, "" for none, null for ElevenLabs:KeytermsFile), written with every character beyond ASCII escaped so that
-/// PowerShell's ConvertFrom-Json reads it whatever the code page. Returns the command's exit code.
+/// a full path, "" for none or for a value no path can hold, null for ElevenLabs:KeytermsFile), written with every
+/// character beyond ASCII escaped so that PowerShell's ConvertFrom-Json reads it whatever the code page. Returns the
+/// command's exit code.
 /// </summary>
 /// <param name="command">The use case.</param>
 /// <param name="output">Standard output and standard error.</param>
@@ -69,7 +70,8 @@ public sealed class ClassOutput(ClassCommand command, CommandOutput output)
 
     /// <summary>
     /// A class as class list --json and class show --json write it: name, usable, problems, fields, what it records, its
-    /// command, and its own glossary as a full path ("" for none, null for ElevenLabs:KeytermsFile).
+    /// command, and its own glossary as a full path ("" for none, or for a value no path can hold, which names no file; null
+    /// for ElevenLabs:KeytermsFile). The field as the file holds it is in fields.
     /// </summary>
     public static JsonObject Json(ClassShown shown) => new()
     {

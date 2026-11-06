@@ -138,12 +138,12 @@ public class ClassCommandTests
 
     /// <summary>
     /// A saved class whose glossary value is longer than any path can be (a hand edit; the check puts no limit on it) is
-    /// listed and shown as text all the same, with exit 0, which the launcher reads: the glossary's full path is worked out
-    /// only for the JSON forms, which show it, and those still throw the path's own exception for such a value, as they
-    /// did before the class command answered with data.
+    /// listed and shown all the same, as text and as JSON, with exit 0, which the launcher reads, and nothing on standard
+    /// error: the JSON forms give the class, its field as the file holds it, and its glossary as "", the full path of a value
+    /// no path can hold, as for none, since it names no file; the run's start and the menu's header say what is wrong with it.
     /// </summary>
     [Test]
-    public void A_glossary_longer_than_any_path_still_lists_and_shows_the_class_as_text()
+    public void A_glossary_longer_than_any_path_still_lists_and_shows_the_class_as_text_and_json()
     {
         var longValue = new string('a', 40_000);
         _files.WriteUser($$"""{ "Classes": { "Mantiq": { "Course": "Mantiq", "App": "chrome", "KeytermsFile": "{{longValue}}" } } }""");
@@ -153,6 +153,12 @@ public class ClassCommandTests
         _out.GetStringBuilder().Clear();
         var shown = Run(new ClassRequest.Show("Mantiq", false));
         var showLines = Lines;
+        _out.GetStringBuilder().Clear();
+        var listedJson = Run(new ClassRequest.List(true));
+        var listJson = JsonNode.Parse(_out.ToString())!.AsArray();
+        _out.GetStringBuilder().Clear();
+        var shownJson = Run(new ClassRequest.Show("Mantiq", true));
+        var showJson = JsonNode.Parse(_out.ToString())!;
 
         Assert.Multiple(() =>
         {
@@ -164,9 +170,46 @@ public class ClassCommandTests
             Assert.That(showLines[0], Does.StartWith("Mantiq: chrome"));
             Assert.That(showLines, Has.Member($"  KeytermsFile = {longValue}"));
             Assert.That(showLines[^1], Does.StartWith("From PowerShell: "));
+            Assert.That(listedJson, Is.EqualTo(listed), "the JSON form exits as the text form does");
+            Assert.That(listJson, Has.Count.EqualTo(1));
+            Assert.That(shownJson, Is.EqualTo(shown));
+            foreach (var json in new[] { listJson[0]!, showJson })
+            {
+                Assert.That(json["name"]!.GetValue<string>(), Is.EqualTo("Mantiq"));
+                Assert.That(json["usable"]!.GetValue<bool>(), Is.True);
+                Assert.That(json["fields"]!["KeytermsFile"]!.GetValue<string>(), Is.EqualTo(longValue), "the field as the file holds it");
+                Assert.That(json["glossary"]!.GetValue<string>(), Is.Empty, "a value no path can hold names no file");
+                Assert.That(json["command"]!.GetValue<string>(), Does.EndWith("record --class \"Mantiq\""));
+            }
+
             Assert.That(_error.ToString(), Is.Empty);
-            Assert.That(() => Run(new ClassRequest.List(true)), Throws.InstanceOf<PathTooLongException>(), "the JSON forms work the path out, as before");
-            Assert.That(() => Run(new ClassRequest.Show("Mantiq", true)), Throws.InstanceOf<PathTooLongException>());
+        });
+    }
+
+    /// <summary>
+    /// class add and class set --keyterms with a glossary value longer than any path can be (as menu C's question or an
+    /// environment variable in --keyterms could give it) save the class as written, with exit 0, as for any glossary: no
+    /// path can hold the value, so no line says that its file is not there yet, and the run's start and the menu's header
+    /// say what is wrong with it.
+    /// </summary>
+    [Test]
+    public void Add_and_set_save_a_glossary_longer_than_any_path()
+    {
+        var longValue = new string('a', 40_000);
+
+        var added = Run(new ClassRequest.Add("Mantiq", Mantiq with { Keyterms = longValue }));
+        Run(new ClassRequest.Add("Kalam", new ClassChoices { Source = new SourceGiven(SourceOption.App, "chrome") }));
+        var set = Run(new ClassRequest.Set("Kalam", new ClassChoices { Keyterms = longValue }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That((added, set), Is.EqualTo((0, 0)));
+            Assert.That(_files.UserValue("Classes:Mantiq:KeytermsFile")!.GetValue<string>(), Is.EqualTo(longValue));
+            Assert.That(_files.UserValue("Classes:Kalam:KeytermsFile")!.GetValue<string>(), Is.EqualTo(longValue));
+            Assert.That(_files.Log.Messages, Has.Some.StartsWith("Changed the class \"Kalam\" in "));
+            Assert.That(_files.Log.Messages.Count(message => message.Contains("is not there yet", StringComparison.Ordinal)), Is.Zero);
+            Assert.That(_files.Log.Problems, Is.Empty);
+            Assert.That(_error.ToString(), Is.Empty);
         });
     }
 

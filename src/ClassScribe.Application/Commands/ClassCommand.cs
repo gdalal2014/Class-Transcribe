@@ -279,8 +279,8 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
 
     /// <summary>
     /// A class as class list and class show give it: its fields as the file holds them, its own glossary as a full path ("" for
-    /// none, null for ElevenLabs:KeytermsFile), worked out only when the JSON forms, which show it, ask for it, as the text
-    /// forms never did, and its command.
+    /// none, or for a value no path can hold; null for ElevenLabs:KeytermsFile), worked out only when the JSON forms, which
+    /// show it, ask for it, as the text forms never did, and its command.
     /// </summary>
     private ClassShown Shown(SavedClassEntry entry, IReadOnlyDictionary<string, string?> fields) =>
         new(entry, fields, new Lazy<string?>(() => entry.Class?.KeytermsFile is { } glossary ? GlossaryPath(glossary, store.Folder) : null),
@@ -288,7 +288,9 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
 
     /// <summary>
     /// The file a class's glossary value names, as a full path, a relative one taken from <paramref name="folder"/>; "" for
-    /// none, or for a value no path can hold.
+    /// none, or for a value no path can hold: one with a character no path may have (an <see cref="ArgumentException"/>),
+    /// or one longer than any path can be, a hand edit the settings check puts no limit on (a
+    /// <see cref="PathTooLongException"/>). Either names no file, so class list and class show answer as for any class.
     /// </summary>
     private string GlossaryPath(string glossary, string folder)
     {
@@ -298,10 +300,11 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
         {
             return store.ResolveFile(glossary, folder);
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or PathTooLongException)
         {
             // Deliberately not rethrown: a value no path can hold names no file; it is said as none here, and the run's start
-            // and the menu's header say what is wrong with it.
+            // and the menu's header say what is wrong with it. The value is left out of the line, since it may be any length.
+            logger.LogDebug("A saved class's glossary value of {Length} characters names no path ({Kind}); it is given as none", glossary.Length, ex.GetType().Name);
             return "";
         }
     }
@@ -309,7 +312,8 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
     /// <summary>
     /// The line that says the class's own glossary, in <paramref name="fields"/>, is not there yet: saved all the same, since
     /// the file may come later, and a glossary never stops a recording. A relative one is taken from the user's folder, where
-    /// the writer saves the class. Nothing for none, for the setting's, and for a file that is there.
+    /// the writer saves the class. Nothing for none, for the setting's, for a file that is there, and for a value no path can
+    /// hold (see <see cref="GlossaryPath"/>), which the run's start and the menu's header name as a glossary that is not there.
     /// </summary>
     private IEnumerable<string> GlossaryNotThere(Dictionary<string, string?> fields)
     {
