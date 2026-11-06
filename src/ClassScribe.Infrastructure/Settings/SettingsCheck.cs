@@ -479,14 +479,14 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
     /// not the classes'; and at most one about another program's sync folder, the first that holds of OneDrive, Google
     /// Drive for desktop (a drive labelled Google Drive, or a path through My Drive) and Dropbox (a folder its info.json
     /// names), which upload a recording again and again while it grows. A path that cannot be a path is a problem of its
-    /// own (see <see cref="FindProblems"/>), not a place to look up.
+    /// own (see <see cref="FindProblems"/>), not a place to look up; nor is one longer than any path can be (see
+    /// <see cref="NamedRoot"/>), which brings no warning.
     /// </summary>
     private IEnumerable<string> FolderWarnings(string name, string? value)
     {
         if (value is not null && value.IndexOfAny(Path.GetInvalidPathChars()) >= 0) yield break;
+        if (NamedRoot(value) is not { } root) yield break;
 
-        // The folder as named, never refused: the warnings only say where it is, and read or write nothing there.
-        var root = Path.TrimEndingDirectorySeparator(ClassFolders.RootNamedBy(value));
         if (Placement(root) is { } placement) yield return $"{name} {placement}";
 
         if (IsInsideOneDrive(root))
@@ -495,6 +495,27 @@ public sealed class SettingsCheck(IOutputFolderFacts? folders = null)
             yield return $"{name} is inside Google Drive ({root}). Google Drive for desktop uploads a recording again and again while it grows, and ClassScribe's own copy on Google Drive would put each class there a second time; a folder outside Google Drive, such as %USERPROFILE%\\ClassScribe, is safer";
         else if (_folders.DropboxFolders().Any(dropbox => IsInside(root, dropbox)))
             yield return $"{name} is inside Dropbox ({root}). Dropbox uploads a recording again and again while it grows, and can hold files that ClassScribe needs to delete, and with ClassScribe's own copy on Google Drive each class would go up to the cloud twice; a folder outside Dropbox, such as %USERPROFILE%\\ClassScribe, is safer";
+    }
+
+    /// <summary>
+    /// The folder a recordings folder setting of <paramref name="value"/> names, without a separator at its end, as the
+    /// warnings look at it: never refused, since they only say where it is, and read or write nothing there. Null for a value
+    /// longer than any path can be, a hand edit the check puts no limit on, which names no place: this runs behind every read
+    /// of the settings, the start's and the gate's included, so it must not throw.
+    /// </summary>
+    private static string? NamedRoot(string? value)
+    {
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(ClassFolders.RootNamedBy(value));
+        }
+        catch (PathTooLongException)
+        {
+            // Deliberately not rethrown: a value longer than any path can be names no place to warn about, as a path with a
+            // character no path may hold does not; thrown, it would stop the start, the gate and the class commands over a
+            // warning. Where such a folder is used, it fails there as before.
+            return null;
+        }
     }
 
     /// <summary>

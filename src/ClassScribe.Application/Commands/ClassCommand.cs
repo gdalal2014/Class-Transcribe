@@ -288,9 +288,11 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
 
     /// <summary>
     /// The file a class's glossary value names, as a full path, a relative one taken from <paramref name="folder"/>; "" for
-    /// none, or for a value no path can hold: one with a character no path may have (an <see cref="ArgumentException"/>),
-    /// or one longer than any path can be, a hand edit the settings check puts no limit on (a
-    /// <see cref="PathTooLongException"/>). Either names no file, so class list and class show answer as for any class.
+    /// none, or for a value no path can hold: one longer than any path can be, a hand edit the settings check puts no limit
+    /// on (a <see cref="PathTooLongException"/>), which names no file, so class list and class show answer as for any class.
+    /// A value with a character Windows refuses in a file name, such as | or ?, still gives a full path, one that names no
+    /// file: Path.GetFullPath no longer refuses such characters. The <see cref="ArgumentException"/> is caught as a guard
+    /// only, for a folder that is not a full path.
     /// </summary>
     private string GlossaryPath(string glossary, string folder)
     {
@@ -370,12 +372,34 @@ public sealed class ClassCommand(ISettingsStore store, IFileProbe files, IOption
     /// <summary>
     /// What is said when a class's course changes (layout-config 4.4): its next class goes to a new folder, with new file
     /// names and a new folder on Google Drive, and continue will not offer the old course's recordings; and where those are,
-    /// when the old course's folder is there.
+    /// when the old course's folder is there (nothing of where they are for a recordings folder longer than any path can be,
+    /// see <see cref="RootOrNone"/>).
     /// </summary>
     private IEnumerable<string> CourseChanged(string name, string oldCourse, string newCourse, string? classFolder)
     {
         yield return $"The next class of {name} goes to a new folder, {FolderNames.SafeName(newCourse)}\\..., with new file names and a new folder on Google Drive; continue will not offer recordings of {oldCourse}.";
-        var old = System.IO.Path.Combine(folders.RootFor(classFolder ?? recording.Value.OutputFolder), FolderNames.SafeName(oldCourse));
+        if (RootOrNone(classFolder ?? recording.Value.OutputFolder) is not { } root) yield break;
+
+        var old = System.IO.Path.Combine(root, FolderNames.SafeName(oldCourse));
         if (files.DirectoryExists(old)) yield return $"The recordings of {oldCourse} stay where they are, in {old}.";
+    }
+
+    /// <summary>
+    /// The recordings folder <paramref name="outputFolder"/> names, as <see cref="IClassFolders.RootFor"/> gives it; null for
+    /// a value longer than any path can be, a hand edit the settings check puts no limit on, which names no place to look in.
+    /// </summary>
+    private string? RootOrNone(string? outputFolder)
+    {
+        try
+        {
+            return folders.RootFor(outputFolder);
+        }
+        catch (PathTooLongException)
+        {
+            // Deliberately not rethrown: the course is changed and saved already; a folder no path can hold holds no
+            // recordings of the old course to point to. The value is left out of the line, since it may be any length.
+            logger.LogDebug("A recordings folder of {Length} characters names no path; the old course's recordings are not looked for", outputFolder?.Length ?? 0);
+            return null;
+        }
     }
 }

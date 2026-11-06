@@ -276,6 +276,49 @@ public class ClassCommandTests
     }
 
     /// <summary>
+    /// A saved class whose own recordings folder is longer than any path can be (a hand edit; the check puts no limit on its
+    /// length) is listed and shown all the same, as text and as JSON, with exit 0, which the launcher reads, and nothing on
+    /// standard error, rather than "could not be read"; class set --course on it changes the course and says what follows,
+    /// without the line about where the old course's recordings are, since the folder names no place.
+    /// </summary>
+    [Test]
+    public void A_class_folder_longer_than_any_path_still_lists_shows_and_changes_its_course()
+    {
+        var longValue = new string('a', 40_000);
+        _files.WriteUser($$"""{ "Classes": { "Mantiq": { "Course": "Mantiq", "App": "chrome", "OutputFolder": "{{longValue}}" } } }""");
+
+        var listed = Run(new ClassRequest.List(false));
+        var shown = Run(new ClassRequest.Show("Mantiq", false));
+        var showLines = Lines;
+        _out.GetStringBuilder().Clear();
+        var listedJson = Run(new ClassRequest.List(true));
+        var listJson = JsonNode.Parse(_out.ToString())!.AsArray();
+        _out.GetStringBuilder().Clear();
+        var shownJson = Run(new ClassRequest.Show("Mantiq", true));
+        var showJson = JsonNode.Parse(_out.ToString())!;
+        var changed = Run(new ClassRequest.Set("Mantiq", new ClassChoices { Course = "Mantiq Chrome" }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That((listed, shown, listedJson, shownJson, changed), Is.EqualTo((0, 0, 0, 0, 0)));
+            Assert.That(showLines, Has.Member($"  OutputFolder = {longValue}"));
+            Assert.That(listJson, Has.Count.EqualTo(1));
+            foreach (var json in new[] { listJson[0]!, showJson })
+            {
+                Assert.That(json["name"]!.GetValue<string>(), Is.EqualTo("Mantiq"));
+                Assert.That(json["usable"]!.GetValue<bool>(), Is.True);
+                Assert.That(json["fields"]!["OutputFolder"]!.GetValue<string>(), Is.EqualTo(longValue));
+            }
+
+            Assert.That(_files.UserValue("Classes:Mantiq:Course")!.GetValue<string>(), Is.EqualTo("Mantiq Chrome"));
+            Assert.That(_files.Log.Messages, Has.Some.StartsWith("The next class of Mantiq goes to a new folder, Mantiq Chrome\\..."));
+            Assert.That(_files.Log.Messages.Count(message => message.Contains("stay where they are", StringComparison.Ordinal)), Is.Zero);
+            Assert.That(_files.Log.Problems, Is.Empty);
+            Assert.That(_error.ToString(), Is.Empty);
+        });
+    }
+
+    /// <summary>
     /// class rename changes only the name, keeps the course, and says the launcher's line with the new name; a name another
     /// class has, in any case, is refused; class remove takes the class away, and the empty section with it.
     /// </summary>

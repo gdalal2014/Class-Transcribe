@@ -153,6 +153,27 @@ public class SettingsReloadTests
     }
 
     /// <summary>
+    /// A recordings folder longer than any path can be (a hand edit), as Recording:OutputFolder or as a saved class's own
+    /// folder, is read and checked like any other value, for a choice or a command and for a recording alike: the check's
+    /// warnings, which run behind every read, throw nothing for it, so the start, the gate and the class commands answer.
+    /// </summary>
+    [TestCase("Recording:OutputFolder")]
+    [TestCase("Classes:Mantiq:OutputFolder")]
+    public void A_folder_longer_than_any_path_is_read_without_throwing(string setting)
+    {
+        var longValue = new string('a', 40_000);
+        var settings = new TestSettings(_data.Path, setting == "Recording:OutputFolder"
+            ? Json(new { Recording = new { OutputFolder = longValue } })
+            : Json(new { Classes = new { Mantiq = new { Course = "Mantiq", App = "chrome", OutputFolder = longValue } } }));
+
+        var verdict = settings.Reloader.TryReload();
+        var forRecording = settings.Reloader.TryReload(forRecording: true);
+
+        Assert.That((verdict.Usable, forRecording.Usable), Is.EqualTo((true, true)));
+        Assert.That(settings.Configuration[setting], Is.EqualTo(longValue));
+    }
+
+    /// <summary>
     /// For a recording, a refused camera offset is dropped by its own key, a name part with a space in it included, and the
     /// offsets the check takes stay: a figure out of range, one that is not a whole number, and a name part too long each
     /// go alone.
