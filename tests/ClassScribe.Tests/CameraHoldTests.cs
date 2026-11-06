@@ -336,7 +336,8 @@ public class CameraHoldTests
         var moved = await _time.AdvanceUntilAsync(() => stopping.IsCompleted, TimeSpan.FromSeconds(1));
         await stopping;
 
-        Assert.That(moved, Is.EqualTo(WebcamHold.SendLimit));
+        Assert.That(moved, Is.GreaterThanOrEqualTo(WebcamHold.SendLimit).And.LessThanOrEqualTo(WebcamHold.SendLimit + TimeSpan.FromSeconds(1)),
+            "the limit, plus the second the clock moves on while the stop still kills and lets the process go");
         Assert.That(played.Process.Killed, Is.True);
         Assert.That(_logs.Problems, Does.Contain($"The camera process holding \"{LaptopCameras.Obsbot.Name}\" did not take a line within 5 seconds, so it was ended"));
         Assert.That(_logs.Messages, Does.Contain($"Let go of the picture of the camera \"{LaptopCameras.Obsbot.Name}\""));

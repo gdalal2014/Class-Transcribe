@@ -355,14 +355,16 @@ public sealed class CameraTrackTests
     }
 
     /// <summary>
-    /// A camera process that ended, and whose letting go then throws (release 0.5.0 review, 3.13), is still started again
-    /// 2 seconds later: the restart never waits on the let-go, and the failure is counted as any other.
+    /// A camera process that ended while recording, and whose letting go then throws (release 0.5.0 review, 3.13), is still
+    /// started again 2 seconds later: the restart never waits on the let-go, and the failure is counted as any other. The
+    /// process ends only once it has the clock's line, so that it is its reading that sees the end, never the start.
     /// </summary>
     [Test]
     public async Task A_camera_process_whose_let_go_throws_is_still_started_again()
     {
         var first = await StartAsync();
         first.Process.DisposeFailure = new InvalidOperationException("The job's handle is closed.");
+        await WaitAsync(() => first.Clocks.Count == 1);
 
         first.Process.Exit(1);
         await WaitAsync(() => _track!.State.Concern?.Short == "CAMERA RESTARTING");
@@ -370,6 +372,43 @@ public sealed class CameraTrackTests
 
         Assert.That(moved, Is.GreaterThanOrEqualTo(CameraTrack.RestartAfter));
         Assert.That(first.Process.DisposeEntered, Is.True);
+        Assert.That(_log.Problems, Has.None.StartsWith("The camera's track could not look"), "the let-go's failure never leaves the reading");
+    }
+
+    /// <summary>
+    /// A camera process that would not take its job (its input stuck, so the line is ended after
+    /// <see cref="CameraTrack.SendLimit"/>), and whose letting go then throws, is counted as the camera stopping working all
+    /// the same (release 0.5.0 review, 3.13, on the start's own path): the failure never leaves the look, CAMERA RESTARTING
+    /// is said with why, no other process starts at once, and the next one comes <see cref="CameraTrack.RestartAfter"/> later.
+    /// </summary>
+    [Test]
+    public async Task A_camera_process_that_would_not_take_its_job_and_whose_let_go_throws_is_counted_and_started_again()
+    {
+        _starter.OnStart = process =>
+        {
+            process.InputStuck = true;
+            process.DisposeFailure = new InvalidOperationException("The job's handle is closed.");
+        };
+        _track = new CameraTrack(Start(), _clock, _cameras, _starter, _time, _log);
+        _track.Begin();
+        await WaitAsync(() => _starter.StartsEntered == 1 && _time.UntilNextTimer == CameraTrack.SendLimit);
+        _starter.OnStart = null;   // the next process reads its job, as any
+
+        var untilSaid = await _time.AdvanceUntilAsync(() => _track.State.Concern?.Short == "CAMERA RESTARTING", Step, atMost: CameraTrack.SendLimit + CameraTrack.RestartAfter + TimeSpan.FromSeconds(5));
+        var said = _track.State.Concern!;
+        var startsWhenSaid = _starter.StartsEntered;
+        var untilStarted = await _time.AdvanceUntilAsync(() => _starter.Played.Count == 2 && _starter.Played[1].Job is not null, Step);
+        var first = _starter.Played[0].Process;
+
+        Assert.That(untilSaid, Is.GreaterThanOrEqualTo(CameraTrack.SendLimit), "the line was given its five seconds");
+        Assert.That(said.Text, Does.StartWith("ClassScribe's camera process ended before it took its job (The camera process did not take a line within 5 seconds, so it was ended); ClassScribe starts it again in 2 seconds"));
+        Assert.That(startsWhenSaid, Is.EqualTo(1), "no other process starts before RestartAfter");
+        Assert.That(untilSaid + untilStarted, Is.GreaterThanOrEqualTo(CameraTrack.SendLimit + CameraTrack.RestartAfter));
+        Assert.That(first.Killed, Is.True);
+        Assert.That(first.DisposeEntered, Is.True);
+        Assert.That(_log.Problems, Has.None.StartsWith("The camera's track could not look"), "the let-go's failure never leaves the look");
+        Assert.That(_log.Messages, Does.Contain("Letting the camera process go failed; it has ended, or its job ends it with ClassScribe at the latest"), "said at Debug");
+        Assert.That(_log.Problems, Does.Not.Contain("Letting the camera process go failed; it has ended, or its job ends it with ClassScribe at the latest"));
     }
 
     /// <summary>After the camera process said its encoder failed, the next one asks for Windows' software encoder.</summary>

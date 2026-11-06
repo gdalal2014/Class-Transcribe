@@ -342,8 +342,11 @@ public sealed class CameraTrack : ICameraTrack
     }
 
     /// <summary>
-    /// Lets <paramref name="process"/> go, waiting at most <see cref="DisposeWait"/>: a process that cannot be ended, whose
-    /// error output so never closes, is left to end with ClassScribe, whose job ends it at the latest.
+    /// Lets <paramref name="process"/> go, waiting at most <see cref="DisposeWait"/>, and never throws: a process that cannot
+    /// be ended, whose error output so never closes, is left to end with ClassScribe, whose job ends it at the latest; and a
+    /// close its pipes or its job refuse is logged and no more, since the process has ended, or been ended, already, and
+    /// whoever lets it go (a start that failed or an end, which must be counted; the stop; giving the picture up) has to go
+    /// on all the same.
     /// </summary>
     private async Task LetGoOfAsync(ICameraProcess process)
     {
@@ -358,6 +361,15 @@ public sealed class CameraTrack : ICameraTrack
             // latest; waiting longer would hold up the stop, and with it the sound's transcript and the next class.
             _logger.LogWarning("The camera process could not be let go within {Seconds} seconds; it ends with ClassScribe at the latest", DisposeWait.TotalSeconds);
             LogWhenFaulted(disposing, "Letting the camera process go failed in the end");
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown: letting the process go failed in a way its limit does not cover (its pipes or its job
+            // refused the close); the process has ended, or been ended, all the same, and every caller must go on: an end or
+            // a start that failed is counted and the camera started again after RestartAfter, the stop finishes, and the
+            // picture given up stays given up (release 0.5.0 review, 3.13). Thrown, it would leave a start's failure
+            // uncounted, and the next look would start another camera process at once, without end or limit.
+            _logger.LogDebug(ex, "Letting the camera process go failed; it has ended, or its job ends it with ClassScribe at the latest");
         }
     }
 
@@ -629,23 +641,10 @@ public sealed class CameraTrack : ICameraTrack
         if (failedEncoder) _software = true;
         _logger.LogDebug("The camera process recording \"{Camera}\" ended (exit {Code})", camera.Name,
             process.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "not known");
-        try
-        {
-            await LetGoOfAsync(process);
-        }
-        catch (Exception ex)
-        {
-            // Deliberately not rethrown: letting the ended process go failed in a way its own limit does not cover (its pipes
-            // or its job refused the close); the process has ended all the same, and nobody awaits this reading, so the failure
-            // would be lost. It is logged, and the camera is started again as after any end (release 0.5.0 review, 3.13).
-            _logger.LogDebug(ex, "Letting the ended camera process go failed; the camera is started again all the same");
-        }
-        finally
-        {
-            // Whatever the let-go did, the end is counted and the next start set, or the picture given up: without this the
-            // next start would stay at its maximum, and the camera would never be started again.
-            Failed($"ClassScribe's camera process for \"{camera.Name}\" stopped working");
-        }
+        // Letting the process go never throws (LetGoOfAsync), so the end is always counted and the next start set, or the
+        // picture given up: without Failed the next start would stay at its maximum, and the camera would never be started again.
+        await LetGoOfAsync(process);
+        Failed($"ClassScribe's camera process for \"{camera.Name}\" stopped working");
     }
 
     /// <summary>

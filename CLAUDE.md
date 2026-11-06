@@ -1834,8 +1834,10 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `IOException` (a synchronous pipe's write cannot be cancelled); letting a process go waits at most `DisposeWait` (5 s),
   and `StartedCameraProcess.DisposeAsync` waits for its standard error 5 s at most. A process that ends by itself, or
   does not start, is started again `RestartAfter` (2 s) later (`ReadAsync` holds `_nextStart` at its maximum while the
-  ended process is let go, so no look starts one early; `Failed` runs in a `finally`, so a let-go that throws never leaves
-  the camera unstarted, release 0.5.0 review 3.13), with the software encoder after an `Encoder` problem; the
+  ended process is let go, so no look starts one early; `LetGoOfAsync` never throws: its limit and any other failure of the
+  let-go are deliberate catches, the second at Debug, so that a let-go that fails never leaves the camera unstarted after an
+  end, nor a start's failure uncounted, with the next look starting another process at once, release 0.5.0 review 3.13 and
+  the repair of its fix), with the software encoder after an `Encoder` problem; the
   `MostFailures`th (3) within `FailuresWithin` (10 min) gives the picture up (`GivenUpText`). A restart's piece begins at
   the clock's position now, or, when a piece of that name is there already (two ends in one pause: the clock stands still),
   at the next free name, a millisecond on each time (`NextFreePieceStart`, review 3.12), since the camera process refuses a
@@ -1881,7 +1883,9 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   `StopHangs`) and `FakeCameraRecorder`, `FakeCameraRecording`, `PlayedCameraProcess` (`Received`, `Clocks`, `End`, `Stop`,
   `HangOnStop`, `OpenedAsync`, `RecordStatusAsync`; a record job's stop answered with its piece through
   `FakeCameraProcess.EndAsync`, which closes its own end so the starter reads its last lines), `FakeCameraProcess.Exited`,
-  `InputStuck` (the starter's writes hang, cancellation passed over, until the process ends) and `DisposeHangs`. Tests:
+  `InputStuck` (the starter's writes hang, cancellation passed over, until the process ends), `DisposeHangs` and
+  `DisposeFailure` (letting it go throws), and `FakeCameraProcessStarter.OnStart`, which shapes each process before its
+  starter sees it, so that those hold from the first line on. Tests:
   `CameraPiecesTests`, `CameraRecordJobTests`
   (the real host over the fakes on the manual clock), `MediaFoundationPieceWriterTests` (WindowsMedia: generated frames
   encoded with the software encoder into a temporary folder and read back, an unfinished piece readable, a piece being
