@@ -764,9 +764,13 @@ dotnet publish src/ClassScribe -c Release -r win-x64 --self-contained false -o "
   his glossary lives in `%APPDATA%\ClassScribe\keyterms-islamic-sciences.txt`, and the repository keeps
   `examples/glossary/keyterms-islamic-sciences.txt`, outside `src`, never built or published, which
   only the test project links (`RepositoryLayoutTests` checks that no glossary sits under `src` and no
-  project there copies one). A relative glossary is taken from the folder of the settings in force and
-  from nowhere else (`SettingsPlaces.ResolveFile`, behind `IGlossaryFiles.Resolve` and `ISettingsStore.ResolveFile`): never beside the exe, where a 0.4 build's
-  `keyterms.txt` may be left over. `GlossaryChoice` (scoped) is the one resolver, for every run, every
+  project there copies one). A relative glossary is taken from the folder of the settings file in force
+  and from nowhere else (`SettingsPlaces.ResolveFile`, behind `IGlossaryFiles.Resolve` and
+  `ISettingsStore.ResolveFile`): the user's settings folder once his own file exists, and before his
+  first change, or while his file is missing, the program's folder, where the shipped defaults are. So
+  a 0.4 build's leftover `keyterms.txt` beside the exe is read only until his first change (the README's
+  glossary section and its `No glossary at ...` row say the same), which is why a glossary is named by
+  its full path to be sure. `GlossaryChoice` (scoped) is the one resolver, for every run, every
   later transcription and the YouTube plans (`TermsFor`): `transcribe --keyterms`, then the
   recording's own `<base>.glossary.json` (`GlossaryRecord`: `decided` once, at the start, and one `sent`
   entry per transcript; read leniently and written whole through `GlossaryFiles`, behind
