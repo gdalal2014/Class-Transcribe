@@ -89,11 +89,12 @@ public class CameraPortTests
     }
 
     /// <summary>
-    /// The holds through the port: a hold with the setting off follows a webcam's microphone to its webcam, waits for nothing
+    /// The holds through the port: a hold with the setting off follows a webcam's microphone to its webcam by a later pick
+    /// (the first lists the cameras in the background and decides nothing, release 0.5.0 review 3.6), waits for nothing
     /// before the capture opens, says it holds nothing, starts no camera process, and lets go.
     /// </summary>
     [Test]
-    public void A_hold_follows_the_microphone_to_its_webcam_and_starts_nothing_while_the_setting_is_off()
+    public async Task A_hold_follows_the_microphone_to_its_webcam_and_starts_nothing_while_the_setting_is_off()
     {
         var starter = new FakeCameraProcessStarter { PlayEach = true };
         IWebcamHolds holds = new WebcamHolds(new FakeCameraProvider(), starter, new ManualTimeProvider(TestRuns.Start), new TestLoggerFactory());
@@ -103,12 +104,22 @@ public class CameraPortTests
         var before = hold.State;
         hold.Follow(obsbot);
         hold.BeforeOpen(obsbot);
+        var atTheFirstPick = hold.State;
+        var deadline = Environment.TickCount64 + 10_000;
+        while (hold.State is null)
+        {
+            if (Environment.TickCount64 > deadline) throw new TimeoutException("No later pick knew the webcam within 10 seconds.");
+            await Task.Delay(5);
+            hold.Follow(obsbot);
+        }
+
         var followed = hold.State;
         hold.Stop();
 
         Assert.Multiple(() =>
         {
             Assert.That(before, Is.Null);
+            Assert.That(atTheFirstPick, Is.Null, "the first pick began the listing and decided nothing");
             Assert.That(followed, Is.EqualTo(new WebcamState(LaptopCameras.Obsbot.Name, Holding: false, HasFrames: false)));
             Assert.That(starter.Started, Is.Empty);
         });
