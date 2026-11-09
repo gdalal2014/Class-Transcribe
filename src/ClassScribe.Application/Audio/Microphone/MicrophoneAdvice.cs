@@ -8,8 +8,9 @@ namespace ClassScribe.Application.Audio.Microphones;
 
 /// <summary>
 /// The advice about the microphone, for a run: the lines to log before the first audio (privacy and the class app's mute,
-/// which microphone and how, Lenovo Vantage's noise cancelling, Windows' ducking, a Bluetooth microphone, the class playing
-/// where the microphone hears it, and what to do in person), the lines about another microphone whenever the recording
+/// which microphone and how, the class app listening on another microphone than the one named, Lenovo Vantage's noise
+/// cancelling, Windows' ducking, a Bluetooth microphone, the class playing where the microphone hears it, and what to do
+/// in person), the lines about another microphone whenever the recording
 /// moves to one, the echo check again whenever the class moves, and Vantage's mode read again while the laptop's own array
 /// is recorded, because Vantage's scene profile can change it mid-class. One per run: it remembers which microphone is
 /// recorded and the mode it last read.
@@ -88,6 +89,7 @@ public sealed class MicrophoneAdvice(IRegistryValues registry, ILogger<Microphon
 
         lines.Add(new(MicrophoneLine(start), Warning: false));
 
+        if (withClass && microphone is not null && start.InsteadOf is { } asked) lines.Add(new(PassedOver(microphone, asked, start.Follows), Warning: true, OwnNotice: true));
         if (microphone is not null && WatchVantage(microphone) is { } vantage) lines.Add(new(vantage, Warning: true));
         if (withClass && DuckingLine() is { } ducking) lines.Add(new(ducking, Warning: true));
         if (microphone is not null && BluetoothLine(microphone, withClass) is { } bluetooth) lines.Add(new(bluetooth, Warning: true));
@@ -101,11 +103,14 @@ public sealed class MicrophoneAdvice(IRegistryValues registry, ILogger<Microphon
     /// recording moves to another microphone (one standing in, the chosen one back, or the one the class app uses), and
     /// when the first one is chosen after a start without. The warning about Lenovo Vantage's noise cancelling when it is
     /// the laptop's array, which the watch of <see cref="VantageNow"/> then follows (and leaves alone for any other
-    /// microphone), and the warning when it is Bluetooth. Empty when neither applies; every line is a warning.
+    /// microphone), and the warning when it is Bluetooth. With the class, first the warning (with a Notice of its own) when
+    /// it is recorded in place of the microphone asked for by <paramref name="insteadOf"/> because the class app, the one
+    /// <paramref name="follows"/> names, uses it. Empty when none applies; every line is a warning.
     /// </summary>
-    public IReadOnlyList<MicrophoneAdviceLine> ForMicrophone(Microphone microphone, bool withClass)
+    public IReadOnlyList<MicrophoneAdviceLine> ForMicrophone(Microphone microphone, bool withClass, string? insteadOf = null, FollowRule? follows = null)
     {
         List<MicrophoneAdviceLine> lines = [];
+        if (withClass && insteadOf is { } asked) lines.Add(new(PassedOver(microphone, asked, follows), Warning: true, OwnNotice: true));
         if (WatchVantage(microphone) is { } vantage) lines.Add(new(vantage, Warning: true));
         if (BluetoothLine(microphone, withClass) is { } bluetooth) lines.Add(new(bluetooth, Warning: true));
         return lines;
@@ -186,6 +191,24 @@ public sealed class MicrophoneAdvice(IRegistryValues registry, ILogger<Microphon
             : start.RawRefusal is null ? "with Windows' sound processing"
             : $"with Windows' sound processing (RAW was not available: {start.RawRefusal})";
         return $"Microphone: \"{microphone.Name}\"{why}, {processing}";
+    }
+
+    /// <summary>
+    /// The warning that the class app listens on <paramref name="microphone"/> and not on the one asked for by the name
+    /// part <paramref name="asked"/>, so that the class hears that one and ClassScribe records it instead, with how to make
+    /// the app use the one asked for: on the class page or in Chrome's own microphone setting for Chrome (Google's Chrome
+    /// Help, "Use your camera and microphone in Chrome"), in its audio settings for any other app. The run gives it with
+    /// the class only, at the start, on a move, and when the microphone already recorded becomes the app's choice (a
+    /// stand-in the app is found on), which it does not advise about again.
+    /// </summary>
+    public static string PassedOver(Microphone microphone, string asked, FollowRule? follows)
+    {
+        var app = follows is FollowRule.Named named ? named.NamePart : null;
+        var where = app is not null && app.Contains("chrome", StringComparison.OrdinalIgnoreCase)
+            ? "on the class page or in Chrome's Settings > Privacy and security > Site settings > Microphone"
+            : "in its audio settings";
+        return $"{app ?? "The class app"} listens on \"{microphone.Name}\", not on \"{asked}\", the microphone you named: the class hears you through it, " +
+            $"so ClassScribe records it instead. To use \"{asked}\", choose it as {(app is null ? "the class app's" : $"{app}'s")} microphone, {where}.";
     }
 
     /// <summary>The warning about a Bluetooth microphone, using it switches the earbuds to call quality; null for any other.</summary>

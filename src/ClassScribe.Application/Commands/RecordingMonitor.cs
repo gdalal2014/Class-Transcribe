@@ -922,6 +922,12 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
     /// <summary>The microphone last advised about, by its id; null for none.</summary>
     private string? _microphoneId;
 
+    /// <summary>The name asked for that the microphone last advised about is recorded in place of, because the class app uses it; null for none.</summary>
+    private string? _insteadOf;
+
+    /// <summary>The name of the Notice that the class app passes over the microphone named, which goes as soon as the app is found on that one, or after five minutes, as every Notice does.</summary>
+    private const string PassedOverNotice = "PassedOver";
+
     /// <summary>The device the class was last found to play on, by name, and whether the room hears it; null before the first look found one.</summary>
     private string? _classDevice;
 
@@ -1088,7 +1094,16 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
         _advised = true;
         _lastPoll = now;
         var details = context.Microphone;
-        var microphone = details is null ? NamedOnly(track) : Named(details);
+
+        // The microphone, its reason and the name it is recorded in place of come from one read: a look on another thread
+        // that moves the pick between two reads would pair one microphone's name with another's reason, as the start line
+        // of 7 November 2026 named the OBSBOT with the reason of the array the pick had just moved to.
+        // A microphone only waited for (gone, with nothing standing in) is named as waited for, and advised about once it
+        // is picked again, as a start without a microphone is.
+        var named = details is null ? NamedOnly(track) : details.Named;
+        var waitedFor = named is { Waiting: true } ? $"the microphone \"{named.Microphone.Name}\"" : null;
+        if (waitedFor is not null) named = null;
+        var microphone = named?.Microphone;
         _microphoneId = microphone?.Id;
 
         string? classDevice = null;
@@ -1104,20 +1119,31 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
         _classHeard = heard;
 
         var start = new MicrophoneStart(context.Request.Source.Mode, microphone, details?.Processing ?? options.MicrophoneProcessing, RawRefusal: null,
-            Why: details?.MicrophoneWhy, WaitingFor: microphone is null ? track.WaitingFor : null, ClassDeviceName: classDevice, ClassHeardInTheRoom: heard,
-            Follows: details?.Follows, AppMute: options.ClassAppMute, Off: track.Off);
+            Why: named?.Why, WaitingFor: microphone is null ? track.WaitingFor ?? waitedFor : null, ClassDeviceName: classDevice, ClassHeardInTheRoom: heard,
+            Follows: details?.Follows, AppMute: options.ClassAppMute, Off: track.Off, InsteadOf: named?.InsteadOf);
+        _insteadOf = named?.InsteadOf;
         List<string> warnings = [];
         var index = 0;
         foreach (var line in advice.AtStart(start))
         {
             lines.Add((line.Warning ? LogLevel.Warning : LogLevel.Information, line.Text));
-            if (line.Warning) warnings.Add(line.Text);
+            if (line.OwnNotice) NoticePassedOver(line.Text, named?.InsteadOf, details?.Follows, now);
+            else if (line.Warning) warnings.Add(line.Text);
             if (++index == 2 && withClass && FollowingLine(context, details?.Follows) is { } following) lines.Add((LogLevel.Information, following));
         }
 
         if (warnings.Count > 0)
             Notice("StartWarnings", $"{RecordingMonitor.Count(warnings.Count, "warning")} at the start", string.Join(" ", warnings), now);
     }
+
+    /// <summary>
+    /// The Notice that the class app passes over the microphone asked for by <paramref name="asked"/>, with
+    /// <paramref name="text"/>, the warning, and in the title the app and that name, such as chrome not on "OBSBOT". It is
+    /// a Notice of its own, so that it goes as soon as the app is found on the one named, without waiting out the five
+    /// minutes the other Notices last; it still ends after those five minutes, as every Notice does.
+    /// </summary>
+    private void NoticePassedOver(string text, string? asked, FollowRule? follows, long now) =>
+        Notice(PassedOverNotice, $"{MicrophoneWords.App(follows)} not on \"{asked}\"", text, now);
 
     /// <summary>
     /// The line that names the followed app and where that came from: the app being recorded, the setting, or a choice
@@ -1137,35 +1163,64 @@ internal sealed class MicrophoneChecks(MicrophoneAdvice advice, ILoopbackCapture
     /// The microphone a recording captures when it says no more about it than its snapshot (one without
     /// <see cref="IMicrophoneRecording"/>): a stand-in with only the name known, so that the start names it rather than
     /// says one is waited for. It is not the array, Bluetooth or anything else the warnings look for, since the recording
-    /// cannot say. Null while the track captures nothing.
+    /// cannot say, and with no reason, since the recording does not give one. Null while the track captures nothing.
     /// </summary>
-    private static Microphone? NamedOnly(TrackSnapshot track) => track.Capturing && track.Source.Length > 0
-        ? new Microphone(track.Source, track.Source, IsDefault: false, IsBuiltInArray: false, IsBluetooth: false, IsLoopbackInput: false, RawSupported: false,
-            Enumerator: "", BluetoothEvidence: null)
+    private static NamedMicrophone? NamedOnly(TrackSnapshot track) => track.Capturing && track.Source.Length > 0
+        ? new NamedMicrophone(new Microphone(track.Source, track.Source, IsDefault: false, IsBuiltInArray: false, IsBluetooth: false, IsLoopbackInput: false,
+            RawSupported: false, Enumerator: "", BluetoothEvidence: null), Why: null)
         : null;
-
-    /// <summary>The microphone the advice is about: the one recorded now, or, while none is (switched off, or not opened yet), the one the recording would record.</summary>
-    private static Microphone? Named(IMicrophoneRecording details) => details.Microphone ?? details.WouldRecord;
 
     /// <summary>
     /// The advice again when the recording has moved to another microphone, or would record another once switched on:
-    /// its warnings, and a Notice that says how many; none clears the Notice. A recording that says no more than its
-    /// snapshot cannot be seen to move.
+    /// its warnings, and a Notice that says how many; none clears the Notice. The warning that the class app passes over
+    /// the microphone asked for by name comes first, with a Notice of its own, which goes as soon as nothing is passed
+    /// over; it is also given, alone, when the microphone already recorded becomes the app's choice (a stand-in the app
+    /// is found on), since its other advice was given when it was first named. The microphone and what it passes over
+    /// come from one read of <see cref="IMicrophoneRecording.Named"/>. A recording that says no more than its snapshot
+    /// cannot be seen to move.
     /// </summary>
     private void FollowTheMicrophone(IMicrophoneRecording? details, bool withClass, long now, List<(LogLevel Level, string Text)> lines)
     {
         if (details is null) return;
 
-        var microphone = Named(details);
-        if (microphone?.Id == _microphoneId) return;
+        var named = details.Named;
 
-        _microphoneId = microphone?.Id;
-        if (microphone is null) return;
+        // A microphone only waited for is advised about once it is picked again, not while it is gone; the one advised about
+        // last waiting for a moment changes nothing.
+        if (named is { Waiting: true } && named.Microphone.Id != _microphoneId) return;
 
-        var warnings = advice.ForMicrophone(microphone, withClass);
-        foreach (var line in warnings) lines.Add((LogLevel.Warning, line.Text));
-        if (warnings.Count > 0)
-            Notice("MicrophoneWarnings", $"{RecordingMonitor.Count(warnings.Count, "warning")} about the microphone", string.Join(" ", warnings.Select(line => line.Text)), now);
+        var id = named?.Microphone.Id;
+        var insteadOf = named?.InsteadOf;
+        if (id == _microphoneId && insteadOf == _insteadOf) return;
+
+        var moved = id != _microphoneId;
+        _microphoneId = id;
+        _insteadOf = insteadOf;
+        if (insteadOf is null) Forget(PassedOverNotice);
+        if (named is null) return;
+
+        if (!moved)
+        {
+            if (withClass && insteadOf is { } asked)
+            {
+                var text = MicrophoneAdvice.PassedOver(named.Microphone, asked, details.Follows);
+                lines.Add((LogLevel.Warning, text));
+                NoticePassedOver(text, asked, details.Follows, now);
+            }
+
+            return;
+        }
+
+        List<string> others = [];
+        foreach (var line in advice.ForMicrophone(named.Microphone, withClass, insteadOf, details.Follows))
+        {
+            lines.Add((LogLevel.Warning, line.Text));
+            if (line.OwnNotice) NoticePassedOver(line.Text, insteadOf, details.Follows, now);
+            else others.Add(line.Text);
+        }
+
+        if (others.Count > 0)
+            Notice("MicrophoneWarnings", $"{RecordingMonitor.Count(others.Count, "warning")} about the microphone", string.Join(" ", others), now);
         else
             Forget("MicrophoneWarnings");
     }

@@ -3,7 +3,11 @@ namespace ClassScribe.Core.Audio.Microphones;
 /// <summary>One line of advice at the start of a recording with the microphone.</summary>
 /// <param name="Text">The line.</param>
 /// <param name="Warning">True for a warning about something to change, which the run also shows as a Notice; false for a line that says what is recorded and how.</param>
-public sealed record MicrophoneAdviceLine(string Text, bool Warning);
+/// <param name="OwnNotice">
+/// True for a warning the run shows as a Notice of its own, which goes as soon as its cause does, rather than among the
+/// other warnings' Notice, which lasts its five minutes: the class app passing over the microphone named.
+/// </param>
+public sealed record MicrophoneAdviceLine(string Text, bool Warning, bool OwnNotice = false);
 
 /// <summary>How a recording with the microphone starts, for the advice about it.</summary>
 /// <param name="Mode">The class and the microphone, or the microphone alone in person. The class alone gets no advice.</param>
@@ -21,6 +25,11 @@ public sealed record MicrophoneAdviceLine(string Text, bool Warning);
 /// is then the one the recording would record once V switches it on, nothing is opened yet, and <paramref name="Used"/> is
 /// what will be asked for.
 /// </param>
+/// <param name="InsteadOf">
+/// The part of a name the microphone was asked for by that <paramref name="Microphone"/> is recorded in place of, because
+/// the class app uses it, from the same look as <paramref name="Why"/>; null when the microphone is the one asked for, or
+/// none was asked for.
+/// </param>
 public sealed record MicrophoneStart(RecordingMode Mode, Microphone? Microphone, MicrophoneProcessing Used, string? RawRefusal = null, string? Why = null,
     string? WaitingFor = null, string? ClassDeviceName = null, bool ClassHeardInTheRoom = false, FollowRule? Follows = null, ClassAppMute AppMute = ClassAppMute.Unknown,
-    bool Off = false);
+    bool Off = false, string? InsteadOf = null);
