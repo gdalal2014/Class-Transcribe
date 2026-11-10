@@ -629,7 +629,7 @@ public sealed class TrackSetTests
             Assert.That(_microphones.Opened, Is.Empty, "nothing was opened: the microphone is off until V");
             Assert.That(recording.Gate.Armed, Is.False);
             Assert.That(recording.WouldRecord, Is.EqualTo(Array), "the microphone the watch follows, which V would open");
-            Assert.That(recording.MicrophoneWhy, Is.EqualTo("Windows' default microphone"));
+            Assert.That(recording.Named, Is.EqualTo(new NamedMicrophone(Array, "Windows' default microphone")));
             Assert.That(recording.Microphone, Is.Null);
         }
     }
@@ -817,6 +817,71 @@ public sealed class TrackSetTests
             Assert.That(array.Disposed, Is.True);
             Assert.That(recording.Microphone, Is.EqualTo(Obsbot));
             Assert.That(_logs.Messages, Has.Some.Contains("the microphone the class app uses"));
+        }
+    }
+
+    /// <summary>
+    /// The class of 7 November 2026: --mic names the OBSBOT, the microphone starts switched off, and chrome listens on the
+    /// array. The first look picks the OBSBOT by name, the watch's first look finds chrome on the array, and the pick
+    /// moves there; the microphone the recording names is then the array, with the reason and the name it passes over
+    /// from that same look, as one value, which V would open. Nothing is opened.
+    /// </summary>
+    [Test]
+    public async Task The_named_microphone_is_the_class_apps_with_its_reason_and_the_name_passed_over_from_one_look()
+    {
+        _microphones.Connect(Obsbot);
+        ChromeListensOn(Array.Id);
+        ClassCapture();
+        using var recording = (TrackSet)Factory(new RecordingOptions { MicrophoneFollows = "chrome", ClassAppMute = ClassAppMute.Unknown })
+            .Create(ClassAndMicrophone(follows: new FollowRule.Named("chrome"), microphone: "OBSBOT"), _clock);
+
+        recording.Start(_files, TimeSpan.Zero);
+        await Wait.UntilAsync(() => recording.WouldRecord == Array);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(recording.Named, Is.EqualTo(new NamedMicrophone(Array, MicrophoneChooser.TheClassAppUses, InsteadOf: "OBSBOT")));
+            Assert.That(recording.Microphone, Is.Null, "nothing is opened while the microphone is off");
+            Assert.That(_microphones.Opened, Is.Empty);
+            Assert.That(_logs.Messages, Has.Some.Contains("recording it instead of \"OBSBOT Meet Flip Microphone (OBSBOT Meet Flip Audio)\""), "the first look took the OBSBOT by name");
+        }
+    }
+
+    /// <summary>
+    /// With V switched off after a capture was opened, a move of the class app's microphone is seen at once: the recording
+    /// names the microphone the pick moved to, which V would open, with its reason, not the one whose capture was opened
+    /// last, so the run can advise about it (and take a Notice away) before V. When that one is then unplugged, it is still
+    /// the one named while it is waited for, never the array opened before V. Nothing is opened while off.
+    /// </summary>
+    [Test]
+    public async Task With_V_off_the_named_microphone_follows_the_class_app_at_once()
+    {
+        ChromeListensOn(Array.Id);
+        ClassCapture();
+        var array = MicrophoneCapture();
+        using var recording = FollowingChrome();
+        var looks = CountLooks(recording);
+
+        recording.Start(_files, TimeSpan.Zero);
+        await Wait.UntilAsync(() => array.Started);
+        recording.SetMicrophone(false);
+        await Wait.UntilAsync(() => array.Disposed);
+        _microphones.Connect(Obsbot);
+        _sessions.SetSessions(Array.Id);                                     // chrome lets go of the array
+        ChromeListensOn(Obsbot.Id);                                          // and takes the OBSBOT
+        for (var look = 0; look < 45 && recording.WouldRecord != Obsbot; look++) await NextLookAsync(looks);
+        await Wait.UntilAsync(() => recording.WouldRecord == Obsbot);
+        var moved = recording.Named;
+        _microphones.Disconnect(Obsbot.Id);                                  // the OBSBOT unplugged, for less than 10 s
+        _time.Advance(MicrophoneSource.EveryTenSeconds);
+        await Wait.UntilAsync(() => recording.WouldRecord is null);
+        var waiting = recording.Named;
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(moved, Is.EqualTo(new NamedMicrophone(Obsbot, MicrophoneChooser.TheClassAppUses)));
+            Assert.That(waiting, Is.EqualTo(new NamedMicrophone(Obsbot, Why: null, Waiting: true)), "the one waited for, not the array opened before V");
+            Assert.That(_microphones.Opened, Has.Count.EqualTo(1), "only the array was opened, before V");
         }
     }
 

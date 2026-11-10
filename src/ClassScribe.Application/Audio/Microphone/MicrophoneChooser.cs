@@ -10,7 +10,9 @@ namespace ClassScribe.Application.Audio.Microphones;
 /// the computer plays (Stereo Mix, which would record the class twice); then the laptop's own microphone array; then the
 /// first microphone that is neither; otherwise nothing, and the wait says that a Bluetooth microphone has to be named. A
 /// name picks the first microphone whose name contains it, in any case, Bluetooth allowed. The microphone the class app
-/// uses comes before all of that, so that his voice is recorded as the class hears it. The choice is kept by endpoint id
+/// uses comes before all of that, so that his voice is recorded as the class hears it, even over a microphone asked for
+/// by name, which each pick of the app's microphone then names (<see cref="MicrophonePick.InsteadOf"/>) so that the run
+/// can say how to make the app use the one asked for. The choice is kept by endpoint id
 /// for the whole recording, so earbuds that connect mid-class and become Windows' default are not followed; when the
 /// chosen microphone has been gone for <see cref="FallBackAfter"/>, another stands in by the no-name rule, and the
 /// recording moves back as soon as the chosen one returns. Nothing here opens a microphone, and one look runs at a time.
@@ -23,7 +25,13 @@ public sealed class MicrophoneChooser(string? namePart, TimeProvider time, ILogg
     /// <summary>How long the chosen microphone may be gone before another stands in for it.</summary>
     public static readonly TimeSpan FallBackAfter = TimeSpan.FromSeconds(10);
 
-    /// <summary>Why the chosen microphone is recorded at a later look.</summary>
+    /// <summary>
+    /// Why the class app's microphone is recorded: at the look that finds the app on it, and at every later look while it
+    /// stays the choice, whether or not the app still listens.
+    /// </summary>
+    public const string TheClassAppUses = "the microphone the class app uses";
+
+    /// <summary>Why the chosen microphone is recorded at a later look, when it was chosen by name or by Windows' default.</summary>
     private const string Kept = "the microphone chosen at the start";
 
     /// <summary>What a microphone that records what the computer plays is, for the messages.</summary>
@@ -33,6 +41,9 @@ public sealed class MicrophoneChooser(string? namePart, TimeProvider time, ILogg
 
     /// <summary>The microphone the recording is kept on, as last listed; null until one has been chosen.</summary>
     private Microphone? _pinned;
+
+    /// <summary>True while the microphone kept is the one the class app was found on, rather than one chosen by name or by Windows' default.</summary>
+    private bool _pinnedForTheApp;
 
     /// <summary>The microphone the last look picked, chosen or standing in; null when it picked none.</summary>
     private Microphone? _current;
@@ -86,14 +97,14 @@ public sealed class MicrophoneChooser(string? namePart, TimeProvider time, ILogg
                     logger.LogInformation("The class app uses the microphone \"{App}\"; recording it instead of \"{Current}\"", appMicrophone.Name, current.Name);
                 else
                     logger.LogInformation("The class app uses the microphone \"{App}\"; recording it", appMicrophone.Name);
-                return Picked(Pin(appMicrophone), "the microphone the class app uses");
+                return Picked(Pin(appMicrophone, forTheApp: true), TheClassAppUses);
             }
         }
 
         if (_pinned is { } pinned) return ChooseWithPin(all, pinned);
 
         var (chosen, why) = _namePart is null ? ByDefault(all) : ByName(all);
-        return chosen is null ? Nothing($"waiting for {WaitingFor}") : Picked(Pin(chosen), why);
+        return chosen is null ? Nothing($"waiting for {WaitingFor}") : Picked(Pin(chosen, forTheApp: false), why);
     }
 
     /// <summary>The look once a microphone has been chosen: it when listed, a wait while it has just gone, then a stand-in.</summary>
@@ -106,25 +117,27 @@ public sealed class MicrophoneChooser(string? namePart, TimeProvider time, ILogg
             _fellBack = false;
             _pinned = present;
             if (back) logger.LogInformation("The microphone \"{Chosen}\" is back; recording it again", present.Name);
-            return Picked(present, back ? $"{Kept}, back again" : Kept);
+            var kept = _pinnedForTheApp ? TheClassAppUses : Kept;
+            return Picked(present, back ? $"{kept}, back again" : kept);
         }
 
-        // The chosen microphone is gone: what is waited for is the one asked for by name, or else the chosen one itself.
-        var waitingFor = _namePart is null ? $"the microphone \"{pinned.Name}\"" : $"the microphone \"{_namePart}\"";
+        // The chosen microphone is gone: what is waited for is the one asked for by name, or else, and always when the class
+        // app's microphone is the choice, the chosen one itself.
+        var waitingFor = _namePart is null || _pinnedForTheApp ? $"the microphone \"{pinned.Name}\"" : $"the microphone \"{_namePart}\"";
         var now = time.GetTimestamp();
         _goneSince ??= now;
         if (time.GetElapsedTime(_goneSince.Value, now) < FallBackAfter)
         {
             WaitingFor = waitingFor;
             _current = null;
-            return new MicrophonePick(null, $"waiting for \"{pinned.Name}\" to come back", FellBack: false);
+            return new MicrophonePick(null, $"waiting for \"{pinned.Name}\" to come back", FellBack: false, PassedOver(pinned), WaitingOn: pinned);
         }
 
         var (standIn, why) = ByDefault(all, forFallback: true);
         if (standIn is null)
         {
             WaitingFor = waitingFor;
-            return Nothing($"waiting for {WaitingFor}");
+            return Nothing($"waiting for {WaitingFor}", waitingOn: pinned);
         }
 
         var seconds = FallBackAfter.TotalSeconds.ToString(CultureInfo.InvariantCulture);
@@ -174,27 +187,41 @@ public sealed class MicrophoneChooser(string? namePart, TimeProvider time, ILogg
     /// <summary>True for a microphone the no-name rule may take: neither Bluetooth nor an input that records what the computer plays.</summary>
     private static bool IsAllowedByItself(Microphone microphone) => !microphone.IsBluetooth && !microphone.IsLoopbackInput;
 
-    /// <summary>Keeps the recording on <paramref name="microphone"/> from now on.</summary>
-    private Microphone Pin(Microphone microphone)
+    /// <summary>Keeps the recording on <paramref name="microphone"/> from now on, noting whether it is kept because the class app uses it.</summary>
+    private Microphone Pin(Microphone microphone, bool forTheApp)
     {
         _pinned = microphone;
+        _pinnedForTheApp = forTheApp;
         _goneSince = null;
         _fellBack = false;
         return microphone;
     }
 
-    /// <summary>The pick of <paramref name="microphone"/>, noted as the current one.</summary>
+    /// <summary>The pick of <paramref name="microphone"/>, the one kept, noted as the current one, with the name asked for that it passes over.</summary>
     private MicrophonePick Picked(Microphone microphone, string why)
     {
         _current = microphone;
-        return new MicrophonePick(microphone, why, FellBack: false);
+        return new MicrophonePick(microphone, why, FellBack: false, PassedOver(microphone));
     }
 
-    /// <summary>The pick of nothing, with <see cref="WaitingFor"/> already set by the rule that found nothing.</summary>
-    private MicrophonePick Nothing(string why)
+    /// <summary>
+    /// The part of a name asked for that <paramref name="microphone"/> is recorded in place of: only while it is kept
+    /// because the class app uses it, and its name does not hold the part asked for (the rule a name picks by); null
+    /// otherwise, and when no name was asked for.
+    /// </summary>
+    private string? PassedOver(Microphone microphone) =>
+        _pinnedForTheApp && _pinned?.Id == microphone.Id && _namePart is { } asked && !microphone.Name.Contains(asked, StringComparison.OrdinalIgnoreCase)
+            ? asked
+            : null;
+
+    /// <summary>
+    /// The pick of nothing, with <see cref="WaitingFor"/> already set by the rule that found nothing; while the chosen
+    /// microphone, <paramref name="waitingOn"/>, is gone with nothing to stand in, it is named, with what it passes over.
+    /// </summary>
+    private MicrophonePick Nothing(string why, Microphone? waitingOn = null)
     {
         _current = null;
         _fellBack = false;
-        return new MicrophonePick(null, why, FellBack: false);
+        return new MicrophonePick(null, why, FellBack: false, waitingOn is null ? null : PassedOver(waitingOn), waitingOn);
     }
 }

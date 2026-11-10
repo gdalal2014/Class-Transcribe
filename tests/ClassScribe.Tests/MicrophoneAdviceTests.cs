@@ -233,6 +233,54 @@ public class MicrophoneAdviceTests
         Assert.That(array, Is.Empty);
     }
 
+    /// <summary>The warning when chrome listens on the array and not on the OBSBOT asked for by name, with Chrome's own place to choose a microphone.</summary>
+    private const string ChromeOnTheArray = "chrome listens on \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\", not on \"OBSBOT\", the microphone you named: the class hears you through it, so ClassScribe records it instead. To use \"OBSBOT\", choose it as chrome's microphone, on the class page or in Chrome's Settings > Privacy and security > Site settings > Microphone.";
+
+    /// <summary>
+    /// A start on the microphone the class app uses, in place of the one asked for by name, warns first among the warnings
+    /// that the app passes over the one asked for: the class hears the app's, so it is recorded, and Chrome's own setting
+    /// is where to choose the one asked for. Vantage's warning about the array follows it.
+    /// </summary>
+    [Test]
+    public void A_start_on_the_class_apps_microphone_in_place_of_the_one_named_warns_first()
+    {
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "1");
+
+        var lines = _advice.AtStart(WithClass() with { Why = MicrophoneChooser.TheClassAppUses, InsteadOf = "OBSBOT" });
+
+        Assert.That(lines.Select(line => line.Text), Is.EqualTo(new[]
+        {
+            Privacy,
+            lines[1].Text,
+            "Microphone: \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\" (the microphone the class app uses), without Windows' sound processing (RAW)",
+            ChromeOnTheArray,
+            VantageOn
+        }));
+        Assert.That(lines.Select(line => line.Warning), Is.EqualTo(new[] { false, false, false, true, true }));
+    }
+
+    /// <summary>
+    /// Another app than Chrome is pointed to its own audio settings, and an app followed with auto is the class app; in
+    /// person nothing is followed, so nothing is said; a move that passes nothing over says nothing of the kind.
+    /// </summary>
+    [Test]
+    public void The_warning_names_the_app_and_where_to_choose_and_is_not_given_in_person()
+    {
+        var zoom = _advice.ForMicrophone(LaptopMicrophones.PixelBuds, withClass: true, insteadOf: "OBSBOT", follows: new FollowRule.Named("zoom"));
+        var any = _advice.ForMicrophone(LaptopMicrophones.Obsbot, withClass: true, insteadOf: "Yeti", follows: new FollowRule.Any());
+        var inPerson = Warnings(InPersonStart() with { InsteadOf = "OBSBOT" });
+        var nothingPassedOver = _advice.ForMicrophone(LaptopMicrophones.Obsbot, withClass: true, insteadOf: null, follows: new FollowRule.Named("chrome"));
+
+        Assert.That(zoom.Select(line => line.Text).First(), Is.EqualTo(
+            "zoom listens on \"Headset (2- Pixel Buds Pro 2)\", not on \"OBSBOT\", the microphone you named: the class hears you through it, so ClassScribe records it instead. To use \"OBSBOT\", choose it as zoom's microphone, in its audio settings."));
+        Assert.That(any.Select(line => line.Text), Is.EqualTo(new[]
+        {
+            "The class app listens on \"OBSBOT Meet Flip Microphone (OBSBOT Meet Flip Audio)\", not on \"Yeti\", the microphone you named: the class hears you through it, so ClassScribe records it instead. To use \"Yeti\", choose it as the class app's microphone, in its audio settings."
+        }));
+        Assert.That(inPerson, Is.Empty);
+        Assert.That(nothingPassedOver, Is.Empty);
+    }
+
     /// <summary>
     /// When the recording moves to another microphone mid-class, the lines for it say what the start would have said about
     /// it: the Bluetooth warning for earbuds the class app picks, in the words for the class or for in person, and nothing

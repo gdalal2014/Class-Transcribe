@@ -302,7 +302,11 @@ public class MicrophoneChooserTests
         Assert.That(chooser.WaitingFor, Is.EqualTo("the microphone \"pixel\""));
     }
 
-    /// <summary>When the class app uses another microphone than the one chosen, the recording switches to the app's, which then stays the choice.</summary>
+    /// <summary>
+    /// When the class app uses another microphone than the one chosen, the recording switches to the app's, which then
+    /// stays the choice, and every later look gives the reason it was chosen for, not that it was chosen at the start.
+    /// With no name asked for, nothing is passed over.
+    /// </summary>
     [Test]
     public void Follows_the_class_apps_microphone_when_it_differs()
     {
@@ -314,14 +318,141 @@ public class MicrophoneChooserTests
         var same = chooser.Choose(Laptop(), appMicrophoneId: Obsbot.Id);
 
         Assert.That(moved.Chosen, Is.EqualTo(Obsbot));
-        Assert.That(moved.Why, Is.EqualTo("the microphone the class app uses"));
+        Assert.That(moved.Why, Is.EqualTo(MicrophoneChooser.TheClassAppUses));
         Assert.That(moved.FellBack, Is.False);
+        Assert.That(moved.InsteadOf, Is.Null, "no name was asked for, so none is passed over");
         Assert.That(chooser.PinnedId, Is.EqualTo(Obsbot.Id));
         Assert.That(kept.Chosen, Is.EqualTo(Obsbot), "the app's microphone stays the choice when the app lets go of it");
-        Assert.That(kept.Why, Is.EqualTo("the microphone chosen at the start"));
-        Assert.That(same.Why, Is.EqualTo("the microphone chosen at the start"), "no move when the app uses the one recorded");
+        Assert.That(kept.Why, Is.EqualTo(MicrophoneChooser.TheClassAppUses), "it was not chosen at the start");
+        Assert.That(same.Why, Is.EqualTo(MicrophoneChooser.TheClassAppUses), "no move when the app uses the one recorded");
         Assert.That(_log.Messages, Does.Contain(
             "The class app uses the microphone \"OBSBOT Meet Flip Microphone (OBSBOT Meet Flip Audio)\"; recording it instead of \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\""));
+    }
+
+    /// <summary>
+    /// A microphone asked for by name that the class app passes over, as when Chrome listens on the laptop's array while
+    /// --mic names the OBSBOT (7 November 2026): every pick of the app's microphone carries the name it is recorded in
+    /// place of, at the move and at each later look while it stays the choice, and a pick of the one asked for carries none.
+    /// </summary>
+    [Test]
+    public void A_named_microphone_the_class_app_passes_over_is_carried_by_every_pick_of_the_apps()
+    {
+        var chooser = Chooser("OBSBOT");
+
+        var named = chooser.Choose(Laptop());
+        var moved = chooser.Choose(Laptop(), appMicrophoneId: Array.Id);
+        var kept = chooser.Choose(Laptop());
+        var back = chooser.Choose(Laptop(), appMicrophoneId: Obsbot.Id);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(named, Is.EqualTo(new MicrophonePick(Obsbot, "the microphone named \"OBSBOT\"", FellBack: false)));
+            Assert.That(moved, Is.EqualTo(new MicrophonePick(Array, MicrophoneChooser.TheClassAppUses, FellBack: false, InsteadOf: "OBSBOT")));
+            Assert.That(kept, Is.EqualTo(new MicrophonePick(Array, MicrophoneChooser.TheClassAppUses, FellBack: false, InsteadOf: "OBSBOT")), "while it stays the choice");
+            Assert.That(back, Is.EqualTo(new MicrophonePick(Obsbot, MicrophoneChooser.TheClassAppUses, FellBack: false)), "the app moved to the one asked for");
+        }
+    }
+
+    /// <summary>
+    /// A stand-in for the microphone asked for by name, which the class app is then found on, becomes the app's choice:
+    /// its pick, the same microphone as before, now carries the name it passes over, at that look and later ones, and the
+    /// return of the one asked for no longer moves the recording.
+    /// </summary>
+    [Test]
+    public void A_stand_in_the_class_app_is_found_on_carries_the_name_it_passes_over()
+    {
+        var chooser = Chooser("OBSBOT");
+        chooser.Choose(Laptop());
+        chooser.Choose([Array, PixelBuds]);
+        _time.Advance(MicrophoneChooser.FallBackAfter);
+
+        var standIn = chooser.Choose([Array, PixelBuds]);
+        var adopted = chooser.Choose([Array, PixelBuds], appMicrophoneId: Array.Id);
+        var obsbotBack = chooser.Choose(Laptop());
+
+        Assert.That(standIn.Chosen, Is.EqualTo(Array));
+        Assert.That(standIn.FellBack, Is.True);
+        Assert.That(standIn.InsteadOf, Is.Null, "a stand-in has a warning of its own");
+        Assert.That(adopted, Is.EqualTo(new MicrophonePick(Array, MicrophoneChooser.TheClassAppUses, FellBack: false, InsteadOf: "OBSBOT")));
+        Assert.That(obsbotBack, Is.EqualTo(new MicrophonePick(Array, MicrophoneChooser.TheClassAppUses, FellBack: false, InsteadOf: "OBSBOT")), "the OBSBOT's return no longer moves it");
+    }
+
+    /// <summary>
+    /// While the class app's microphone, the choice, is gone, what is waited for is that microphone, not the one asked for
+    /// by name, which may well be listed: within the 10 seconds, and after them while nothing may stand in. Each wait
+    /// names it (<see cref="MicrophonePick.WaitingOn"/>) with the name it passes over, so that a moment's absence neither
+    /// clears nor repeats the warning about it; its return carries both again.
+    /// </summary>
+    [Test]
+    public void While_the_class_apps_microphone_is_gone_it_is_the_one_waited_for()
+    {
+        var chooser = Chooser("OBSBOT");
+        chooser.Choose(Laptop());
+        chooser.Choose(Laptop(), appMicrophoneId: Array.Id);
+
+        var gone = chooser.Choose([Obsbot, PixelBuds]);
+        var waitingAtFirst = chooser.WaitingFor;
+        _time.Advance(MicrophoneChooser.FallBackAfter);
+        var nothing = chooser.Choose([PixelBuds]);
+        var back = chooser.Choose(Laptop());
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(gone, Is.EqualTo(new MicrophonePick(null, $"waiting for \"{Array.Name}\" to come back", FellBack: false, InsteadOf: "OBSBOT", WaitingOn: Array)));
+            Assert.That(waitingAtFirst, Is.EqualTo($"the microphone \"{Array.Name}\""));
+            Assert.That(nothing, Is.EqualTo(new MicrophonePick(null, $"waiting for the microphone \"{Array.Name}\"", FellBack: false, InsteadOf: "OBSBOT", WaitingOn: Array)));
+            Assert.That(chooser.WaitingFor, Is.EqualTo($"the microphone \"{Array.Name}\""));
+            Assert.That(back, Is.EqualTo(new MicrophonePick(Array, $"{MicrophoneChooser.TheClassAppUses}, back again", FellBack: false, InsteadOf: "OBSBOT")));
+        }
+    }
+
+    /// <summary>A wait for a microphone chosen by name names it, and passes nothing over: it is the one asked for.</summary>
+    [Test]
+    public void A_wait_for_the_microphone_chosen_by_name_names_it_and_passes_nothing_over()
+    {
+        var chooser = Chooser("OBSBOT");
+        chooser.Choose(Laptop());
+
+        var gone = chooser.Choose([Array, PixelBuds]);
+
+        Assert.That(gone.Chosen, Is.Null);
+        Assert.That(gone.WaitingOn, Is.EqualTo(Obsbot));
+        Assert.That(gone.InsteadOf, Is.Null);
+    }
+
+    /// <summary>The class app's microphone whose name holds the name asked for is the one asked for, so nothing is passed over.</summary>
+    [Test]
+    public void The_class_apps_microphone_that_holds_the_name_asked_for_passes_nothing_over()
+    {
+        var chooser = Chooser("microphone");
+        var named = chooser.Choose(Laptop());
+
+        var moved = chooser.Choose(Laptop(), appMicrophoneId: Obsbot.Id);
+
+        Assert.That(named.Chosen, Is.EqualTo(Array), "the first microphone whose name holds it");
+        Assert.That(moved.Chosen, Is.EqualTo(Obsbot));
+        Assert.That(moved.InsteadOf, Is.Null, "\"OBSBOT Meet Flip Microphone\" holds \"microphone\" too");
+    }
+
+    /// <summary>
+    /// While another stands in for the class app's microphone, which has gone, the stand-in passes nothing over (it has a
+    /// warning of its own); when the app's microphone is back, its pick says why it was chosen, and what it passes over.
+    /// </summary>
+    [Test]
+    public void A_stand_in_for_the_class_apps_microphone_passes_nothing_over_and_the_return_says_why()
+    {
+        var chooser = Chooser("OBSBOT");
+        chooser.Choose(Laptop());
+        chooser.Choose(Laptop(), appMicrophoneId: PixelBuds.Id);
+        chooser.Choose([Array, Obsbot]);
+        _time.Advance(MicrophoneChooser.FallBackAfter);
+
+        var standIn = chooser.Choose([Array, Obsbot]);
+        var back = chooser.Choose(Laptop());
+
+        Assert.That(standIn.FellBack, Is.True);
+        Assert.That(standIn.InsteadOf, Is.Null);
+        Assert.That(back, Is.EqualTo(new MicrophonePick(PixelBuds, $"{MicrophoneChooser.TheClassAppUses}, back again", FellBack: false, InsteadOf: "OBSBOT")));
     }
 
     /// <summary>
@@ -367,5 +498,6 @@ public class MicrophoneChooserTests
 
         Assert.That(pick.Chosen, Is.EqualTo(PixelBuds));
         Assert.That(pick.Why, Is.EqualTo("the microphone the class app uses"));
+        Assert.That(pick.InsteadOf, Is.EqualTo("OBSBOT"));
     }
 }

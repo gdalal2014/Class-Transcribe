@@ -399,7 +399,11 @@ microphone is unplugged, another stands in after 10 seconds (`The microphone "..
 again, each time in a new file. With the class, when the class app is found listening on another
 microphone than the one ClassScribe picked, ClassScribe switches to the app's microphone, so that your
 voice is recorded as the class hears it: `Recording the microphone "OBSBOT ...", the microphone the
-class app uses, instead of "Microphone Array ..."`. The microphones are looked at every 10 seconds, and
+class app uses, instead of "Microphone Array ..."`. That holds over a microphone you named too (with
+`--mic`, menu choice 7 or `Recording:Microphone`): the app's microphone stays the choice, V included,
+until the app is found on another, so a warning says how to make the class app use the one you named
+(below). The
+microphones are looked at every 10 seconds, and
 at once when Windows reports a change among them; a look opens nothing. ClassScribe asks Windows for
 the microphone's audio without Windows' sound processing (RAW) while `Recording:MicrophoneProcessing`
 is `Raw`, the default; when the microphone does not offer it, or Windows refuses it, the processed
@@ -416,6 +420,16 @@ chosen, such as `Microphone: "Microphone Array (...)" (Windows' default micropho
 sound processing (RAW)`. Then the warnings, which are also a Notice in the title (`3 warnings at the
 start`) for five minutes:
 
+- `chrome listens on "Microphone Array (...)", not on "OBSBOT", the microphone you named: the class
+  hears you through it, so ClassScribe records it instead. To use "OBSBOT", choose it as chrome's
+  microphone, on the class page or in Chrome's Settings > Privacy and security > Site settings >
+  Microphone.` With the class only, when you named a microphone and the class app uses another (for
+  another app than Chrome: `... choose it as zoom's microphone, in its audio settings.`). In Chrome the
+  last page has a list at the top for the microphone sites use; a class page may have its own audio
+  settings as well. The same warning comes mid-class when the class app is found on another microphone
+  then, or on the one standing in for the microphone you named while that one is unplugged. Its Notice
+  is its own (`chrome not on "OBSBOT"` in the title): it goes as soon as the class app is found on the
+  one you named, or after five minutes.
 - `Lenovo Vantage's microphone noise cancelling is on (mode 1, probably "Multiple Voices"); it can cut
   out a lecturer across the room. Set Vantage > Device Settings > Sound > Input to Off.` The labels
   are inferred, so the number is shown too. While the laptop's own array is recorded, the mode is read
@@ -3031,7 +3045,8 @@ words you see.
 | `waiting for a microphone that is not Bluetooth ("..." is used only when named in Recording:Microphone)` | Only a Bluetooth microphone is connected. Name it to use it, knowing that it switches the earbuds to call quality, or plug in another. |
 | `waiting for a microphone other than "Stereo Mix ...", which records what the computer plays` | The name you gave matches an input that records the computer's own sound, which is never recorded. Name a real microphone. |
 | `The microphone "..." has been gone for 10 s; recording "..." instead until it returns`, `The microphone "..." is back; recording it again` | The chosen microphone was unplugged; another stands in, and the recording moves back when it returns, each time in a new file. |
-| `Recording the microphone "OBSBOT ...", the microphone the class app uses, instead of "Microphone Array ..."` | The class app listens on another microphone than the one ClassScribe picked, so ClassScribe moved to it, which is what the Windows mute needs. Nothing to do. |
+| `Recording the microphone "OBSBOT ...", the microphone the class app uses, instead of "Microphone Array ..."` | The class app listens on another microphone than the one ClassScribe picked, so ClassScribe moved to it, which is what the Windows mute needs. Nothing to do, unless you named the other one: then the warning in the next row says so. |
+| `chrome listens on "Microphone Array (...)", not on "OBSBOT", the microphone you named: the class hears you through it, so ClassScribe records it instead. To use "OBSBOT", choose it as chrome's microphone, on the class page or in Chrome's Settings > Privacy and security > Site settings > Microphone.` (or `... as zoom's microphone, in its audio settings.`) | The class app uses another microphone than the one you named (`--mic`, menu choice 7, `Recording:Microphone`), so the class hears you through that one, and ClassScribe records it, V included, until the app is found on another. Choose the one you named in the class app (in Chrome: the list at the top of that settings page, which a page that is already listening may need reloading to take, or the class page's own audio settings); once the app listens on it, ClassScribe follows within 10 seconds, V off or on, and the Notice (`chrome not on "OBSBOT"` in the title) goes. |
 | `The class app uses "Stereo Mix ...", which records what the computer plays; recording "..." still` | The class app listens on an input that would record the class twice, so ClassScribe keeps its own microphone. Pick a real microphone in the class page. |
 | `Could not start capturing the microphone yet; trying again every 10 seconds`, `Cannot capture the microphone right now; trying again every 10 seconds` | Windows is still setting up the microphone, or another program holds it exclusively. ClassScribe tries again by itself. |
 | `The microphone "..." could not be opened without Windows' sound processing (0x...); the next attempt opens it with Windows' sound processing` | RAW was asked for, but the stream would not open with it; within 10 seconds ClassScribe opens the microphone with Windows' sound processing. Nothing to do; `Recording:MicrophoneProcessing` set to `Default` skips the try. |

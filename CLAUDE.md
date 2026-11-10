@@ -539,8 +539,11 @@ advice after a format error (10 A).
   switched off still looks), follows it to another microphone, makes a last look before V arms and
   at the stop, and tells `MicrophoneSource.FollowApp` which microphone the class app listens on.
   The chooser (`MicrophoneChooser`) pins by endpoint id, falls back after 10 s and moves to the
-  class app's microphone; the gate is armed at the start only for `ClassAppMute.Visible` or
-  `FollowRule.None`.
+  class app's microphone, over one named too; while that pin holds, every pick of it gives
+  `MicrophoneChooser.TheClassAppUses` as its reason and, when a name was asked for that it does not
+  hold, that name as `MicrophonePick.InsteadOf`, and while it is gone it is the one waited for. The
+  gate is armed at the start only for
+  `ClassAppMute.Visible` or `FollowRule.None`.
 - TDD with NUnit and Moq: write the failing test first. Run `dotnet test` before handing code over.
   For the real host with stand-ins, use `AppHost.Build(places, apiKey, configureServices)`, with
   `new SettingsPlaces(<temporary folder>, userFolder: null)` or a `SettingsFileFixtures`' places as
@@ -1116,15 +1119,26 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   additions to `CommandLineTreeTests`, `CommandLineTests`, `RecordStarterTests`, `RequestsTests` and `TrackSetTests`.
 - The run with the microphone (`RecordingMonitor`, `MicrophoneChecks`): the advice lines at the
   checks' first look (`MicrophoneAdvice.AtStart`: privacy, the `ClassAppMute` case line, the
-  following line, the microphone line, then the warnings about Vantage, ducking, Bluetooth and the
-  echo, which are one Notice for 5 minutes), Vantage's mode read again every 30 s while the array is
+  following line, the microphone line, then the warnings about the class app passing over the
+  microphone named (`MicrophoneAdvice.PassedOver`, with the class only, a `MicrophoneAdviceLine` with
+  `OwnNotice`: the monitor's `PassedOver` Notice, which goes as soon as `NamedMicrophone.InsteadOf` is
+  null, or after 5 minutes (`NoticeFor`) as every Notice; again on a move, from `ForMicrophone`, and
+  alone when the microphone already recorded becomes the app's choice; a wait for the app's microphone,
+  `MicrophonePick.WaitingOn`, keeps it, and a microphone only waited for, `NamedMicrophone.Waiting`, is
+  named as waited for at the start and advised about once it is picked again), Vantage, ducking,
+  Bluetooth and the echo, which are one Notice for 5 minutes),
+  Vantage's mode read again every 30 s while the array is
   recorded, the echo whenever the class moves (in app mode the app's device every 30 s), the gate's
   state logged once it has held for a second, a Notice after 5 minutes of `NotOpened`, an Alert after
   10 s of `Unreadable`, the gate's `Evidence` as a Notice, a missing microphone every 30 s, only
   zeros for 2 minutes (`RecordingSession.OnlyZerosAfter`), the status clause
   (`MicrophoneChecks.StatusClause`) and, from `RecordCommand`, the microphone's summary from
   `MicrophoneGate.Summary()`. The run reads the microphone through `IMicrophoneRecording`, which
-  `TrackSet` implements and `ClassRecording` does not. `TrackSet.Stop` logs the clock's own summary
+  `TrackSet` implements and `ClassRecording` does not; it names a microphone and gives its reason
+  from one read of `IMicrophoneRecording.Named` (`NamedMicrophone`: the microphone, `Why` and
+  `InsteadOf` from one look), never from `Microphone` or `WouldRecord` beside it, since a look on
+  another thread can move the pick between two reads (the start line of 7 November 2026 named the
+  OBSBOT with the reason of the array the pick had just moved to). `TrackSet.Stop` logs the clock's own summary
   line (paused, cut, parts, drift corrections).
 - Arrival watch: `RecordingSession.GetStatus` also reports `SinceLastPacket` (since the open capture
   last handed over any audio, silence and pauses included), `DeliversContinuously` (true for process
