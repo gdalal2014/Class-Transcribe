@@ -11,7 +11,8 @@ namespace ClassScribe.Tests;
 /// This laptop's microphones and the processes that open them, as the mic-design and MicWatch listings recorded them:
 /// the built-in array (Windows' default for most apps), the OBSBOT (a USB microphone), Chrome's browser process and the
 /// chrome.exe utility process that holds its capture sessions, a transcription app, ClassScribe's own process, and
-/// Windows' system sounds.
+/// Windows' system sounds; and, for the rule that a whole name beats a part, Edge's utility process beside a process of
+/// msedgewebview2, Edge's engine inside other apps.
 /// </summary>
 internal static class Laptop
 {
@@ -48,9 +49,20 @@ internal static class Laptop
     /// <summary>The Zoom desktop app in a meeting, as on 18 October, when one of Windows' audio calls answered E_INVALIDARG.</summary>
     public const int Zoom = 9090;
 
+    /// <summary>Edge's audio service, an msedge.exe utility process, which holds Edge's capture sessions as Chrome's holds Chrome's.</summary>
+    public const int EdgeUtility = 6161;
+
+    /// <summary>
+    /// An msedgewebview2.exe process: Edge's engine inside another app, such as WhatsApp or the new Teams, which is another
+    /// program whose name begins as Edge's does.
+    /// </summary>
+    public const int WebView = 6262;
+
     /// <summary>The names of the processes above, as <see cref="IProcessNames"/> gives them.</summary>
     public static Dictionary<int, ProcessImage> Names => new()
     {
+        [EdgeUtility] = new("msedge", @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
+        [WebView] = new("msedgewebview2", @"C:\Program Files (x86)\Microsoft\EdgeWebView\Application\142.0.3595.53\msedgewebview2.exe"),
         [ChromeBrowser] = new("chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe"),
         [ChromeUtility] = new("chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe"),
         [ChromeDriver] = new("chromedriver", @"C:\Tools\chromedriver.exe"),

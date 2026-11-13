@@ -1,4 +1,5 @@
 using ClassScribe.Application.Desktop;
+using ClassScribe.Core.Audio;
 using ClassScribe.Core.Audio.Microphones;
 using ClassScribe.Core.Audio.Timeline;
 using Microsoft.Extensions.Logging;
@@ -46,7 +47,9 @@ public interface IMicrophoneUsageRecord
 /// Watches, four times a second on a thread of its own, whether the class app has the recorded microphone open and is
 /// taking sound from it, and whether the microphone is muted in Windows, and hands each look to whoever listens: the gate
 /// that decides which of the microphone's packets are written. It reads Windows' own lists and never opens a microphone.
-/// Every ten seconds the look covers every microphone, to find the followed app taking sound from another one.
+/// Every ten seconds the look covers every microphone, to find the followed app taking sound from another one. An app
+/// followed by name is told as <c>--app</c> tells the app to record (see <see cref="NamedApp"/>): a whole name beats a
+/// part, so once a process of exactly the name has been seen on a microphone, a namesake's session is another app's.
 /// </summary>
 /// <param name="sessions">Reads the sessions on a microphone and its mute.</param>
 /// <param name="record">Reads Windows' microphone usage record, which corroborates the sessions.</param>
@@ -72,6 +75,12 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
 
     /// <summary>Held by one look at a time, and around the fields the looks and the callers share.</summary>
     private readonly Lock _gate = new();
+
+    /// <summary>
+    /// The app followed by name, and which processes are its, as the looks so far tell; null when any app or none is
+    /// followed. What it has seen holds for the run, whichever microphone the looks read. Used with the lock held.
+    /// </summary>
+    private readonly NamedApp? _followedApp = rule is FollowRule.Named followedByName ? new NamedApp(followedByName.NamePart) : null;
 
     private string? _endpointId;
 
@@ -244,18 +253,38 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
 
         var timestamp = MediaTime.Now(time);
         MicrophoneSessionListing mine;
+        IReadOnlyList<MicrophoneSessionListing>? everyMicrophone = null;
         if (_lastAllLook is null || timestamp - _lastAllLook.Value >= AllMicrophonesInterval.Ticks)
         {
             // A list that could not be read is empty here, and the recorded microphone is read on its own, which says why when that fails too.
-            var listings = sessions.ReadAll().Listings;
-            mine = listings.FirstOrDefault(listing => listing.EndpointId == endpointId) ?? sessions.Read(endpointId);
+            everyMicrophone = sessions.ReadAll().Listings;
+            mine = everyMicrophone.FirstOrDefault(listing => listing.EndpointId == endpointId) ?? sessions.Read(endpointId);
             _lastAllLook = timestamp;
-            var elsewhere = rule is FollowRule.Named named
-                ? listings.FirstOrDefault(listing => listing.EndpointId != endpointId && listing.Sessions.Any(session => IsFollowed(session, named) && session.State == CaptureSessionState.Active))
-                : null;
+        }
+        else
+        {
+            mine = sessions.Read(endpointId);
+        }
+
+        // A whole name beats a part: once a process of exactly the followed name has been seen on a microphone, its
+        // namesakes are other apps, on the recorded microphone and on every other. Told before anything is judged by it.
+        var wasWholeName = _followedApp?.IsWholeName == true;
+        _followedApp?.See(NamesOn((everyMicrophone ?? []).Append(mine)));
+        if (!wasWholeName && _followedApp?.IsWholeName == true && everyMicrophone is null)
+        {
+            // What the last look over every microphone found of the app on another one was judged by a part of its name,
+            // so it was a namesake's: it is forgotten, and the next look covers every microphone again.
+            _otherMicrophone = null;
+            _lastAllLook = null;
+        }
+
+        if (everyMicrophone is not null)
+        {
+            var elsewhere = _followedApp is null ? null
+                : everyMicrophone.FirstOrDefault(listing => listing.EndpointId != endpointId && listing.Sessions.Any(session => IsFollowed(session) && session.State == CaptureSessionState.Active));
             _otherMicrophone = elsewhere is null ? null : (elsewhere.EndpointId, elsewhere.Name);
             _appsElsewhere = rule is FollowRule.Any
-                ? listings.Where(listing => listing.EndpointId != endpointId)
+                ? everyMicrophone.Where(listing => listing.EndpointId != endpointId)
                     .SelectMany(listing => listing.Sessions)
                     .Where(session => IsAppsSession(session) && session.State == CaptureSessionState.Active)
                     .Select(session => session.ImageName)
@@ -263,15 +292,11 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
                     .ToHashSet(StringComparer.OrdinalIgnoreCase)
                 : new(StringComparer.OrdinalIgnoreCase);
         }
-        else
-        {
-            mine = sessions.Read(endpointId);
-        }
 
         var apps = mine.Sessions.Where(IsAppsSession).ToList();
         var followed = rule switch
         {
-            FollowRule.Named named => apps.Where(session => IsFollowed(session, named)).ToList(),
+            FollowRule.Named => apps.Where(IsFollowed).ToList(),
             FollowRule.Any => apps,
             _ => []
         };
@@ -289,7 +314,7 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
         // listening on another microphone, which would explain the record's word as well. A record that says nothing of the
         // app leaves nothing known.
         var usageRecord = ReadRecord();
-        var usage = rule is FollowRule.Named followedApp ? WordOf(usageRecord, followedApp.Matches) : null;
+        var usage = _followedApp is { } followedApp ? WordOf(usageRecord, followedApp.Is) : null;
         var byRecord = active.Count == 0 && stateless.Count > 0 ? ByRecord(stateless, usageRecord, usage) : (Word: null, Listening: []);
         var listening = active.Count > 0 ? AppListening.Yes
             : unread is null ? AppListening.Unknown
@@ -316,8 +341,35 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
             holds, processAlive, usage, mine.Name, other?.Id);
     }
 
-    /// <summary>True when the session is the followed app's, by the process's name.</summary>
-    private static bool IsFollowed(CaptureSession session, FollowRule.Named named) => session.ImageName is { } name && named.Matches(name);
+    /// <summary>True when the session is the app's that is followed by name, by the name of the session's process.</summary>
+    private bool IsFollowed(CaptureSession session) => IsFollowedName(session.ImageName);
+
+    /// <summary>
+    /// True when a process named <paramref name="imageName"/> is the app's that is followed by name, as the looks so far
+    /// tell (see <see cref="NamedApp"/>); false for a process that could not be named, and when no app is followed by name.
+    /// </summary>
+    private bool IsFollowedName(string? imageName) => imageName is not null && _followedApp?.Is(imageName) == true;
+
+    /// <summary>
+    /// The names of the apps' processes that have a session on <paramref name="listings"/>, read in full or not, null for
+    /// one that could not be named: what a look tells the followed app's name by. ClassScribe's own processes and Windows'
+    /// sounds are no app's.
+    /// </summary>
+    private IEnumerable<string?> NamesOn(IEnumerable<MicrophoneSessionListing> listings)
+    {
+        foreach (var listing in listings)
+        {
+            foreach (var session in listing.Sessions.Where(IsAppsSession)) yield return session.ImageName;
+
+            // Nothing is unread from a complete listing, whatever its list of the unread holds.
+            if (listing.Complete || listing.Unread is not { } unread) continue;
+
+            foreach (var session in unread)
+            {
+                if (session.ProcessId is > 0 and var processId && !own.IsOwn(processId, session.ImageName)) yield return session.ImageName;
+            }
+        }
+    }
 
     /// <summary>True when the session is an app's: one process's, neither Windows' sounds nor ClassScribe's own.</summary>
     private bool IsAppsSession(CaptureSession session) => !session.SystemSounds && session.ProcessId > 0 && !own.IsOwn(session.ProcessId, session.ImageName);
@@ -365,7 +417,7 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
 
         return [.. unread.Where(session => session.ProcessId > 0 && !own.IsOwn(session.ProcessId.Value, session.ImageName) && rule switch
         {
-            FollowRule.Named named => session.ImageName is { } name && named.Matches(name),
+            FollowRule.Named => IsFollowedName(session.ImageName),
             FollowRule.Any => true,
             _ => false
         })];

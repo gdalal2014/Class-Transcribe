@@ -64,7 +64,9 @@ public sealed class RecordingOptions
 
     /// <summary>
     /// The app whose sound to record, by the name Windows gives its process, such as "chrome" or
-    /// "msedge". Its sound alone is recorded, whatever device it plays through. Empty means record a
+    /// "msedge". Its sound alone is recorded, whatever device it plays through. A whole name beats a
+    /// part: once an app of exactly the name has had sound open, an app whose name only contains it,
+    /// as msedgewebview2 does msedge, is another app (see <c>NamedApp</c>). Empty means record a
     /// device instead.
     /// </summary>
     public string App { get; init; } = "";
@@ -156,8 +158,8 @@ public sealed class RecordingOptions
 
     /// <summary>
     /// With the class and your microphone, when the class is recorded from a device: the app whose microphone use the
-    /// microphone track follows, by part of its process name in any case, such as chrome. Your voice is recorded only while
-    /// that app has the microphone open and taking sound. "auto", the default (N9: it was chrome, which fits one laptop only),
+    /// microphone track follows, by its process name or part of it, in any case, such as chrome, a whole name beating a
+    /// part as with <see cref="App"/>. Your voice is recorded only while that app has the microphone open and taking sound. "auto", the default (N9: it was chrome, which fits one laptop only),
     /// follows any app that holds the recorded microphone; "none" records whenever V is on. In app mode the app recorded
     /// with --app or Recording:App is followed, and this setting is not read; --mic-follows, a saved class and menu choice 7
     /// can name another for a run. Empty, or naming ClassScribe itself, is refused (see <c>SettingsCheck</c>).
