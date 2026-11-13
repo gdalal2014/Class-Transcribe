@@ -97,15 +97,19 @@ public sealed class TrackSetFactory(
         {
             case RecordingMode.Class:
                 var gaps = TimeSpan.FromSeconds(Math.Max(0, transcript.Value.ShowGapsLongerThanSeconds));
-                return new ClassRecording(ClassSession(source, new TrackSpec(Track.Main, TrackPlacement.Contiguous, gaps), clock: null), loggers.CreateLogger<ClassRecording>());
+                return new ClassRecording(ClassSession(source, new TrackSpec(Track.Main, TrackPlacement.Contiguous, gaps), clock: null, recordedApp: null), loggers.CreateLogger<ClassRecording>());
 
             case RecordingMode.ClassAndMicrophone:
                 var rule = FollowRuleFor(source, settings);
-                var theClass = ClassSession(source, new TrackSpec(Track.Main, TrackPlacement.ClockAligned), clock);
-                return new TrackSet(clock, theClass, MicrophoneTrack(source, Track.Microphone, rule, settings, clock), freezes, folders, loggers.CreateLogger<TrackSet>(), time: time);
+
+                // In app mode the app is looked at from two sides, its sound and its microphone: the microphone's watch takes
+                // the word of the chooser of what to record for the name (see NamedApp.LearnFrom).
+                var recordedApp = source.Class is ClassSource.App recorded ? new NamedApp(recorded.ProcessName) : null;
+                var theClass = ClassSession(source, new TrackSpec(Track.Main, TrackPlacement.ClockAligned), clock, recordedApp);
+                return new TrackSet(clock, theClass, MicrophoneTrack(source, Track.Microphone, rule, settings, clock, recordedApp), freezes, folders, loggers.CreateLogger<TrackSet>(), time: time);
 
             case RecordingMode.Microphone:
-                return new TrackSet(clock, classTrack: null, MicrophoneTrack(source, Track.Main, follows: null, settings, clock), freezes, folders, loggers.CreateLogger<TrackSet>(),
+                return new TrackSet(clock, classTrack: null, MicrophoneTrack(source, Track.Main, follows: null, settings, clock, recordedApp: null), freezes, folders, loggers.CreateLogger<TrackSet>(),
                     CameraFor(source, settings), time);
 
             default:
@@ -125,10 +129,14 @@ public sealed class TrackSetFactory(
         return (files, offset, clock) => recorder.Start(new CameraTrackStart(choice, files.Folder, files.BaseName, offset, offsets), clock);
     }
 
-    /// <summary>A session, not started yet, that records the class from what <paramref name="source"/> names, or the device the class plays on when it names none, writing as <paramref name="spec"/> says.</summary>
-    private RecordingSession ClassSession(SourcePlan source, TrackSpec spec, RecordingClock? clock)
+    /// <summary>
+    /// A session, not started yet, that records the class from what <paramref name="source"/> names, or the device the class
+    /// plays on when it names none, writing as <paramref name="spec"/> says. <paramref name="recordedApp"/> is the app it
+    /// records as the microphone's watch looks at it too, in app mode with the microphone; null otherwise.
+    /// </summary>
+    private RecordingSession ClassSession(SourcePlan source, TrackSpec spec, RecordingClock? clock, NamedApp? recordedApp)
     {
-        var chooser = new CaptureChooser(time, source.Class ?? new ClassSource.Automatic(), loggers.CreateLogger<CaptureChooser>(), video);
+        var chooser = new CaptureChooser(time, source.Class ?? new ClassSource.Automatic(), loggers.CreateLogger<CaptureChooser>(), video, recordedApp);
         return new RecordingSession(new LoopbackSource(loopback, chooser), writers, spec, clock, options, time, loggers.CreateLogger<RecordingSession>());
     }
 
@@ -136,9 +144,10 @@ public sealed class TrackSetFactory(
     /// Your microphone's track, not started yet: a session on <paramref name="track"/> over the microphone the plan or
     /// Recording:Microphone names (empty for Windows' default, never a Bluetooth one), with the processing the settings
     /// ask for; the gate for <paramref name="follows"/>, or for no app when null, armed at the start as the class app's
-    /// mute allows; and the watch that feeds the gate, when an app is followed.
+    /// mute allows; and the watch that feeds the gate, when an app is followed, which takes the word of the chooser of what
+    /// to record for the name of <paramref name="recordedApp"/>, the app the class is recorded from in app mode.
     /// </summary>
-    private MicrophoneTrack MicrophoneTrack(SourcePlan source, Track track, FollowRule? follows, RecordingOptions settings, RecordingClock clock)
+    private MicrophoneTrack MicrophoneTrack(SourcePlan source, Track track, FollowRule? follows, RecordingOptions settings, RecordingClock clock, NamedApp? recordedApp)
     {
         // A lesson that records the camera's picture keeps its camera streaming by itself, so no hold is started beside it
         // (camera-first 3.4, "Not when"); the webcam is still found, for the webcam zeros rules.
@@ -152,7 +161,7 @@ public sealed class TrackSetFactory(
         var gate = new MicrophoneGate(settings.ClassAppMute, rule, time, loggers.CreateLogger<MicrophoneGate>());
         var watch = rule is FollowRule.None
             ? null
-            : new ClassMicrophoneWatch(sessions, usage, names, rule, own, time, loggers.CreateLogger<ClassMicrophoneWatch>());
+            : new ClassMicrophoneWatch(sessions, usage, names, rule, own, time, loggers.CreateLogger<ClassMicrophoneWatch>(), recordedApp);
         return new MicrophoneTrack(session, microphoneSource, tap, gate, watch, follows, hold);
     }
 

@@ -58,9 +58,19 @@ internal static class Laptop
     /// </summary>
     public const int WebView = 6262;
 
+    /// <summary>
+    /// Firefox as the Microsoft Store installs it, which Gulzar's lessons played in from 12 November 2026: its process is
+    /// firefox, and Windows' usage record names it by its package family name, <see cref="FirefoxPackage"/>.
+    /// </summary>
+    public const int Firefox = 7373;
+
+    /// <summary>The Store build of Firefox as Windows' usage record names it: a package family name, never a process's name.</summary>
+    public const string FirefoxPackage = "Mozilla.Firefox_n80bbvh6b1yt2";
+
     /// <summary>The names of the processes above, as <see cref="IProcessNames"/> gives them.</summary>
     public static Dictionary<int, ProcessImage> Names => new()
     {
+        [Firefox] = new("firefox", @"C:\Program Files\WindowsApps\Mozilla.Firefox_160.0.0.0_x64__n80bbvh6b1yt2\VFS\ProgramFiles\Firefox Package Root\firefox.exe"),
         [EdgeUtility] = new("msedge", @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
         [WebView] = new("msedgewebview2", @"C:\Program Files (x86)\Microsoft\EdgeWebView\Application\142.0.3595.53\msedgewebview2.exe"),
         [ChromeBrowser] = new("chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe"),

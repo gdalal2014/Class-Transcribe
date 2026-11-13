@@ -476,8 +476,9 @@ app that has the microphone open; `none` records whenever V is on, as in person)
 `--mic-follows` can name another app for a run. Chrome takes the microphone in a helper process of its
 own, so the app is matched by its process name, as `--app` matches it, and by the same rule: a whole
 name beats a part. Following `msedge`, a WhatsApp or Teams call in `msedgewebview2` does not count as
-Edge listening, from the moment Edge itself has been seen with a microphone open, for the rest of the
-recording; until then, a namesake that holds the microphone counts.
+Edge listening, from the moment Edge itself has been seen with a microphone open, or, when Edge is also
+the app being recorded, with sound open, for the rest of the recording; until then, a namesake that
+holds the microphone counts.
 
 One thing Windows cannot see: many apps keep the microphone open while you are muted and only stop
 sending your voice. Chrome pages usually do, and so do Zoom and Teams. Windows then shows the app as

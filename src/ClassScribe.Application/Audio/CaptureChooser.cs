@@ -26,7 +26,12 @@ namespace ClassScribe.Application.Audio;
 /// <param name="source">What the run's request names to record.</param>
 /// <param name="logger">Where the chooser says what it found.</param>
 /// <param name="video">The run's video window; null, as for the tests that need none, when no video window is known of.</param>
-public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogger<CaptureChooser> logger, VideoPlayback? video = null)
+/// <param name="sharedApp">
+/// The app to record as others look at it too, when the source names one: with the class and the microphone, the
+/// microphone's watch takes this chooser's word for the name through it (see <see cref="NamedApp.LearnFrom"/>). Null,
+/// or one given for another name, and the chooser keeps what it sees to itself.
+/// </param>
+public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogger<CaptureChooser> logger, VideoPlayback? video = null, NamedApp? sharedApp = null)
 {
     /// <summary>A device or app playing at or above this level (out of 1) counts as having sound. It is the recorder's own threshold, about -50 dB.</summary>
     public const float SoundLevel = 100f / short.MaxValue;
@@ -40,8 +45,13 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
     private string? _candidateId;
     private long _candidateSince;
 
-    /// <summary>The app to record, when the source names one, and which processes are its, as the looks so far tell; null for a device.</summary>
-    private readonly NamedApp? _app = source is ClassSource.App named ? new NamedApp(named.ProcessName) : null;
+    /// <summary>
+    /// The app to record, when the source names one, and which processes are its, as the looks so far tell; null for a
+    /// device. The one given, when it was given for the source's own name; else one of this chooser's own.
+    /// </summary>
+    private readonly NamedApp? _app = source is not ClassSource.App named ? null
+        : sharedApp is not null && string.Equals(sharedApp.Name, named.ProcessName, StringComparison.OrdinalIgnoreCase) ? sharedApp
+        : new NamedApp(named.ProcessName);
 
     /// <summary>True once the recorded app's closing has been said, until the app has sound open again.</summary>
     private bool _closedSaid;
@@ -172,10 +182,11 @@ public sealed class CaptureChooser(TimeProvider time, ClassSource source, ILogge
     {
         if (_app is not { } named) return null;
 
-        // A whole name beats a part: once an app of exactly the name has had sound open, its namesakes are other apps.
-        named.See(apps.Select(app => app.Name));
+        // A whole name beats a part: once an app of exactly the name has had sound open, its namesakes are other apps. A
+        // session that could not be read tells the name as well, when Windows named whose it is.
+        named.See(apps.Select(playing => playing.Name).Concat((unread ?? []).Select(session => session.ProcessName)));
         var name = named.Name;
-        var matching = apps.Where(app => named.Is(app.Name)).ToList();
+        var matching = apps.Where(playing => named.Is(playing.Name)).ToList();
 
         // A video window of ClassScribe's, left open, is never a class's: its processes are left out.
         if (matching.Count > 0 && video?.VideoWindowsProcesses() is { Count: > 0 } videoWindows)

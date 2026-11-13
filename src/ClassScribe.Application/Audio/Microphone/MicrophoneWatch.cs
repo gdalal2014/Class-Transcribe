@@ -49,7 +49,8 @@ public interface IMicrophoneUsageRecord
 /// that decides which of the microphone's packets are written. It reads Windows' own lists and never opens a microphone.
 /// Every ten seconds the look covers every microphone, to find the followed app taking sound from another one. An app
 /// followed by name is told as <c>--app</c> tells the app to record (see <see cref="NamedApp"/>): a whole name beats a
-/// part, so once a process of exactly the name has been seen on a microphone, a namesake's session is another app's.
+/// part, so once a process of exactly the name has been seen on a microphone, a namesake's session is another app's. In
+/// app mode it also takes the word of the chooser of what to record, which sees the app as soon as it has sound open.
 /// </summary>
 /// <param name="sessions">Reads the sessions on a microphone and its mute.</param>
 /// <param name="record">Reads Windows' microphone usage record, which corroborates the sessions.</param>
@@ -58,8 +59,14 @@ public interface IMicrophoneUsageRecord
 /// <param name="own">Tells ClassScribe's own processes, whose sessions never count as an app's.</param>
 /// <param name="time">The clock the looks are stamped on, the same as the packets'.</param>
 /// <param name="logger">The log.</param>
+/// <param name="recordedApp">
+/// The app the class is recorded from, as the chooser of what to record has seen it, in app mode; null otherwise. When
+/// the followed app has the same name, what the chooser has seen of the name counts here too (see
+/// <see cref="NamedApp.LearnFrom"/>): Edge playing the class makes msedge Edge's alone before Edge ever opens a
+/// microphone. Not the other way round: the chooser could not leave a namesake's open capture on this watch's word alone.
+/// </param>
 public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicrophoneUsageRecord record, IProcessNames names, FollowRule rule,
-    IOwnProcesses own, TimeProvider time, ILogger<ClassMicrophoneWatch> logger) : IDisposable
+    IOwnProcesses own, TimeProvider time, ILogger<ClassMicrophoneWatch> logger, NamedApp? recordedApp = null) : IDisposable
 {
     /// <summary>How often the watch looks: the longest a mute or an unmute can go unseen, and the longest a packet waits to be judged.</summary>
     public static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(250);
@@ -81,6 +88,13 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
     /// followed. What it has seen holds for the run, whichever microphone the looks read. Used with the lock held.
     /// </summary>
     private readonly NamedApp? _followedApp = rule is FollowRule.Named followedByName ? new NamedApp(followedByName.NamePart) : null;
+
+    /// <summary>
+    /// Whether the followed name was the app's alone at the last look: the look at which that becomes true forgets what
+    /// earlier looks kept of a namesake (see <see cref="Look"/>). The name may turn whole between two looks, on the word
+    /// of the chooser of what to record, so the look compares with the look before, not with its own start.
+    /// </summary>
+    private bool _nameWasWhole;
 
     private string? _endpointId;
 
@@ -266,16 +280,23 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
             mine = sessions.Read(endpointId);
         }
 
-        // A whole name beats a part: once a process of exactly the followed name has been seen on a microphone, its
-        // namesakes are other apps, on the recorded microphone and on every other. Told before anything is judged by it.
-        var wasWholeName = _followedApp?.IsWholeName == true;
-        _followedApp?.See(NamesOn((everyMicrophone ?? []).Append(mine)));
-        if (!wasWholeName && _followedApp?.IsWholeName == true && everyMicrophone is null)
+        // A whole name beats a part: once a process of exactly the followed name has been seen, on a microphone here or
+        // with sound open by the chooser of what to record, its namesakes are other apps, on the recorded microphone and
+        // on every other. Told before anything is judged by it.
+        if (_followedApp is { } followedApp)
         {
-            // What the last look over every microphone found of the app on another one was judged by a part of its name,
-            // so it was a namesake's: it is forgotten, and the next look covers every microphone again.
-            _otherMicrophone = null;
-            _lastAllLook = null;
+            if (recordedApp is not null) followedApp.LearnFrom(recordedApp);
+            followedApp.See(NamesOn((everyMicrophone ?? []).Append(mine)));
+            if (followedApp.IsWholeName && !_nameWasWhole)
+            {
+                // Until this look the app was told by a part of its name, and the app itself had not been seen: whatever
+                // was kept of it was a namesake's. The other microphone it was found on and the process that last took
+                // sound are forgotten, and unless this look covers every microphone, the next one does.
+                _nameWasWhole = true;
+                _otherMicrophone = null;
+                _lastActivePid = null;
+                if (everyMicrophone is null) _lastAllLook = null;
+            }
         }
 
         if (everyMicrophone is not null)
@@ -314,7 +335,7 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
         // listening on another microphone, which would explain the record's word as well. A record that says nothing of the
         // app leaves nothing known.
         var usageRecord = ReadRecord();
-        var usage = _followedApp is { } followedApp ? WordOf(usageRecord, followedApp.Is) : null;
+        var usage = rule is FollowRule.Named followedRule ? WordOf(usageRecord, entry => IsFollowedEntry(entry, followedRule)) : null;
         var byRecord = active.Count == 0 && stateless.Count > 0 ? ByRecord(stateless, usageRecord, usage) : (Word: null, Listening: []);
         var listening = active.Count > 0 ? AppListening.Yes
             : unread is null ? AppListening.Unknown
@@ -349,6 +370,16 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
     /// tell (see <see cref="NamedApp"/>); false for a process that could not be named, and when no app is followed by name.
     /// </summary>
     private bool IsFollowedName(string? imageName) => imageName is not null && _followedApp?.Is(imageName) == true;
+
+    /// <summary>
+    /// True when <paramref name="entry"/> of Windows' usage record is the followed app's. A desktop app is named there by
+    /// its program, as its process is, so its entry is told as a session is (see <see cref="NamedApp"/>). A Store app is
+    /// named there by its package family name, which is never a process's name, so a part of it is enough whatever the
+    /// looks have seen: the Store build of Firefox is Mozilla.Firefox_n80bbvh6b1yt2 in the record and firefox on a
+    /// microphone.
+    /// </summary>
+    private bool IsFollowedEntry(UsageEntry entry, FollowRule.Named named) =>
+        entry.Path is null ? named.Matches(entry.ProcessName) : IsFollowedName(entry.ProcessName);
 
     /// <summary>
     /// The names of the apps' processes that have a session on <paramref name="listings"/>, read in full or not, null for
@@ -395,7 +426,7 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
         if (rule is not FollowRule.Any) return (null, []);
 
         var words = stateless.Select(session => (Session: session, Word: session.ImageName is { } program && !_appsElsewhere.Contains(program)
-            ? WordOf(usageRecord, name => name.Equals(program, StringComparison.OrdinalIgnoreCase))
+            ? WordOf(usageRecord, entry => entry.ProcessName.Equals(program, StringComparison.OrdinalIgnoreCase))
             : null)).ToList();
         var listening = words.Where(judged => judged.Word == true).Select(judged => judged.Session).ToList();
         return listening.Count > 0 ? (true, listening)
@@ -483,16 +514,16 @@ public sealed class ClassMicrophoneWatch(IMicrophoneSessions sessions, IMicropho
     }
 
     /// <summary>
-    /// What <paramref name="usageRecord"/> says about the app whose entries <paramref name="matches"/> picks by name: open
+    /// What <paramref name="usageRecord"/> says about the app whose entries <paramref name="matches"/> picks: open
     /// now, closed, or nothing. Only an entry with a recorded use says anything: Windows keeps entries without times for
     /// most apps that once asked for the microphone, and such an entry is neutral, as an app absent from the record is. A
     /// record that could not be read (null) says nothing.
     /// </summary>
-    private static bool? WordOf(UsageRecordListing? usageRecord, Func<string, bool> matches)
+    private static bool? WordOf(UsageRecordListing? usageRecord, Func<UsageEntry, bool> matches)
     {
         if (usageRecord is null) return null;
 
-        var entries = usageRecord.Apps.Where(entry => entry.HasUsage && matches(entry.ProcessName)).ToList();
+        var entries = usageRecord.Apps.Where(entry => entry.HasUsage && matches(entry)).ToList();
         return entries.Count == 0 ? null : entries.Any(entry => entry.InUse);
     }
 

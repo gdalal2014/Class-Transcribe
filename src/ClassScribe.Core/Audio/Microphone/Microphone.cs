@@ -115,9 +115,11 @@ public abstract record FollowRule
         /// <summary>
         /// True when <paramref name="processName"/>, without .exe, is or contains the name part, in any case: the widest the
         /// rule can reach, before anything is known of the processes that run. The refusals of a rule that could name
-        /// ClassScribe itself ask it, and so does the Bluetooth watch, since a namesake on a Bluetooth microphone costs the
-        /// class its sound as the app itself would. Whose session on a microphone is the followed app's, the microphone
-        /// watch asks <see cref="NamedApp"/>, as <c>--app</c> does for the apps with sound.
+        /// ClassScribe itself ask it; so does the Bluetooth watch, since a namesake on a Bluetooth microphone costs the
+        /// class its sound as the app itself would; so does menu choice 7, to say that the followed app is the one being
+        /// recorded; and so does the microphone watch for a Store app's entry in Windows' usage record, which names the app
+        /// by its package family name and never by a process's name. Whose session on a microphone is the followed app's,
+        /// the microphone watch asks <see cref="NamedApp"/>, as <c>--app</c> does for the apps with sound.
         /// </summary>
         public bool Matches(string processName) => processName.Contains(NamePart, StringComparison.OrdinalIgnoreCase);
     }

@@ -62,6 +62,35 @@ public class NamedAppTests
         });
     }
 
+    /// <summary>
+    /// One that looks at the same app from another side takes the other's word: given the same name, in any case, it has
+    /// seen the app once the other has, and not before. One given another name, or a part of this one, learns nothing.
+    /// </summary>
+    [Test]
+    public void The_word_of_one_that_saw_the_app_is_taken_for_the_same_name_only()
+    {
+        var chooser = new NamedApp("MSEdge");
+        var watch = new NamedApp("msedge");
+        var part = new NamedApp("edge");
+        var other = new NamedApp("chrome");
+
+        watch.LearnFrom(chooser);
+        var beforeItWasSeen = watch.IsWholeName;
+        chooser.See(["msedge"]);
+        watch.LearnFrom(chooser);
+        part.LearnFrom(chooser);
+        other.LearnFrom(chooser);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(beforeItWasSeen, Is.False);
+            Assert.That(watch.IsWholeName, Is.True);
+            Assert.That(watch.Is("msedgewebview2"), Is.False);
+            Assert.That(part.IsWholeName, Is.False, "edge is a part, whatever msedge has told");
+            Assert.That(other.IsWholeName, Is.False);
+        });
+    }
+
     /// <summary>A part that no process is named by stays a part, however many looks pass: edge is msedge and msedgewebview2 alike.</summary>
     [Test]
     public void A_part_that_no_process_is_named_by_stays_a_part()

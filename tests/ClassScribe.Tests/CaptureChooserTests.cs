@@ -253,6 +253,19 @@ public class CaptureChooserTests
     }
 
     /// <summary>
+    /// A session that could not be read, but that Windows names as the app's own, tells the name as one that was read does:
+    /// a namesake with sound is not taken beside it, and the recording waits for the app itself.
+    /// </summary>
+    [Test]
+    public void An_unread_session_of_the_app_itself_makes_the_name_its_alone()
+    {
+        var chooser = Chooser(new ClassSource.App("msedge"));
+        UnreadAudioSession[] its = [new("Speakers", "MSEdge", "GetState: The parameter is incorrect. (0x80070057)")];
+
+        Assert.That(chooser.ChooseApp([Playing(WebView)], recordedId: null, its), Is.Null);
+    }
+
+    /// <summary>
     /// Once the app itself has been seen, a session that could not be read and that Windows names as a namesake's is another
     /// app's, so it is no reason to doubt that the app has closed: that is said, as for any other app's session.
     /// </summary>

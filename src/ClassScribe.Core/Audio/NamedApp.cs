@@ -13,17 +13,22 @@ namespace ClassScribe.Core.Audio;
 /// <remarks>
 /// It reads nothing itself: whoever looks tells it the names each look found (<see cref="See"/>) and then asks
 /// (<see cref="Is"/>). Only what a look finds now counts as seen, never a record of the past, in which a program long
-/// uninstalled would make a part someone still relies on into a whole name. Not for two threads at once: the chooser asks
-/// from the session's look, the microphone watch with its lock held.
+/// uninstalled would make a part someone still relies on into a whole name. One thread at a time tells and asks: the
+/// chooser from its session's look, the microphone watch with its lock held. What it has seen only ever goes from not
+/// seen to seen, and another thread may read that meanwhile (<see cref="IsWholeName"/>, <see cref="LearnFrom"/>), which
+/// is how the microphone watch takes the chooser's word in app mode.
 /// </remarks>
 /// <param name="name">The name as it was given, without .exe: a process's whole name, or part of one.</param>
 public sealed class NamedApp(string name)
 {
+    /// <summary>True once a process of exactly the name given has been seen. Only ever set, never cleared, so that a reader on another thread cannot see it go back.</summary>
+    private volatile bool _wholeName;
+
     /// <summary>The name as it was given.</summary>
     public string Name => name;
 
     /// <summary>True once a process of exactly the name given has been seen: the name is that app's alone from then on.</summary>
-    public bool IsWholeName { get; private set; }
+    public bool IsWholeName => _wholeName;
 
     /// <summary>
     /// Takes note of the process names one look found, null for a process that could not be named: one that is the name
@@ -31,16 +36,26 @@ public sealed class NamedApp(string name)
     /// </summary>
     public void See(IEnumerable<string?> processNames)
     {
-        if (IsWholeName) return;
+        if (_wholeName) return;
 
-        IsWholeName = processNames.Any(IsNamedInFull);
+        if (processNames.Any(IsNamedInFull)) _wholeName = true;
+    }
+
+    /// <summary>
+    /// Takes the word of <paramref name="other"/>, which looks at the same app from another side, as the chooser of what to
+    /// record does for the microphone watch: when it was given the same name, in any case, and has seen a process of exactly
+    /// that name, so has this one. A different name teaches nothing.
+    /// </summary>
+    public void LearnFrom(NamedApp other)
+    {
+        if (!_wholeName && other.IsWholeName && IsNamedInFull(other.Name)) _wholeName = true;
     }
 
     /// <summary>
     /// True when the process named <paramref name="processName"/>, without .exe, is the app's, as far as the looks so far
     /// tell: its name is the name given, or, while no process of exactly that name has been seen, contains it; in any case.
     /// </summary>
-    public bool Is(string processName) => IsWholeName ? IsNamedInFull(processName) : processName.Contains(name, StringComparison.OrdinalIgnoreCase);
+    public bool Is(string processName) => _wholeName ? IsNamedInFull(processName) : processName.Contains(name, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>True when <paramref name="processName"/> is the name given, in any case; false for a process that could not be named.</summary>
     private bool IsNamedInFull(string? processName) => string.Equals(processName, name, StringComparison.OrdinalIgnoreCase);
