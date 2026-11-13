@@ -1085,8 +1085,9 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   program long uninstalled would turn a part someone relies on into a whole name. Not seen in a real run yet: Edge
   recorded beside a WebView2 app's sound. Firefox (the Microsoft Store build, process `firefox`) was first recorded
   with `--app firefox` on 12 November 2026, a past Risala lesson on 0.5.0 from the launcher `Past lesson - Firefox.cmd`,
-  after `Past lesson.cmd`, which passes `--app chrome`, had waited for Chrome and recorded nothing; its position counted
-  from the start, and how it sounds was not yet known when this was written: ask. The microphone (`MicrophoneChooser` over `MicrophoneSource`): Windows' default
+  after `Past lesson.cmd`, which passes `--app chrome`, had waited for Chrome and recorded nothing: `Capturing "firefox"
+  at 48000 Hz`, its position counting with the clock, and three minutes in its `.wav` held sound at a normal level (peak
+  32,258 of 32,767, RMS about 2,900); its transcript had not been made when this was written. The microphone (`MicrophoneChooser` over `MicrophoneSource`): Windows' default
   unless it is Bluetooth or a loopback input, then the built-in array, then another; a name part
   picks one, Bluetooth allowed, a loopback input never; pinned by endpoint id, a stand-in after 10 s
   away, the class app's microphone first when the watch finds the app listening there; looked at
