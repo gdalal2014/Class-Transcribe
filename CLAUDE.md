@@ -1007,7 +1007,7 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   `GoogleWorld`, and a batch of two videos recorded as they play through the real `RecorderHost`
   (the window's settings point `YouTube:OEmbedBaseUrl` at the stub; the recorder gets
   `FakeVideoWindows` and a `VideoPlayback` over the test's processes). Nothing is played or recorded. The suite holds
-  5,177 tests after the move into four projects, the S5 review's fixes, the fix for a glossary or a recordings folder longer than any path, the refusal of a recordings folder longer than any path and the review's fixes to it (architecture slices 4 and 5), all passing. The uploads by
+  5,216 tests after the microphone named with its own reason from one look (5,195) and the rule that a whole name beats a part of an app's name (`NamedApp`) with its review's fixes, all passing. The uploads by
   themselves were tested in `DriveAutoUploadTests`
   (the queue at a run's start, the pass after each outcome or none, not set up, `Drive:Enabled` off,
   a failure and a cancel passed over, a transcript made later sending its new files only),
@@ -1043,9 +1043,9 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
 - The hang guard: `tests/ClassScribe.Tests/ClassScribe.Tests.runsettings` sets `TestSessionTimeout`
   to 10 minutes, and the test csproj names it in `RunSettingsFilePath`, so a plain `dotnet test`
   aborts a run that deadlocks and fails it instead of hanging. The suite normally takes about
-  four and a half minutes (4 min 38 s for 5,177 tests after the move into four projects, the S5 review's fixes, the
-  fix for a glossary or a recordings folder longer than any path, the refusal of a recordings folder longer than any
-  path and the review's fixes to it, architecture slices 4 and 5, on 6 November 2026, plus the build).
+  four and a half minutes (4 min 9 s for 5,216 tests after the rule that a whole name beats a part of an app's name
+  and its review's fixes, on 13 November 2026, run in two parts, the `WindowsAudio` tests first and alone while no
+  recording ran, plus the build; 4 min 38 s for 5,177 on 6 November).
   `[CancelAfter]` cannot interrupt a blocked `Wait`, so it is no guard on its own. One flaky
   `WindowsAudio` failure has been seen once in four full runs:
   `DeviceCheckResourceTests.Listing_output_devices_leaves_no_handles_or_native_memory_behind`, which
@@ -1073,13 +1073,46 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   class, or of the microphone alone in person. The class (`CaptureChooser`): by default the output
   device with sound, found with Windows' level meters once a second; `Recording:Device` pins a
   device; `Recording:App` records one app's process tree through Windows process loopback
-  (`ProcessLoopback`). The microphone (`MicrophoneChooser` over `MicrophoneSource`): Windows' default
+  (`ProcessLoopback`), the app found by its process name as `NamedApp` tells it (Core, `Audio/NamedApp.cs`): a whole
+  name beats a part. A process named exactly as given, in any case, is the app's; one whose name only contains the name
+  is the app's too (`edge` finds `msedge`), but only until a look has seen a process of exactly that name with sound open
+  (`See`, then `Is`), and from then on for the rest of the run the name is that app's alone. So `msedge` is Edge and not
+  `msedgewebview2`, Edge's engine inside the new Teams, WhatsApp and Windows' search: a namesake recorded before Edge had
+  sound open is left for Edge at the look that finds it (`LoopbackSource.DescribeMove`: `"msedge" itself has sound open
+  now; recording it instead of "msedgewebview2", another app whose name holds "msedge"`), is not taken again when Edge
+  closes (`has closed; recording silence until it plays again`, the open capture kept), and its unread session is no
+  reason to doubt that the app closed; a session that could not be read but that Windows names as the app's own tells
+  the name as one that was read does. Only what a look finds counts as seen, never a record of the past, in which a
+  program long uninstalled would turn a part someone relies on into a whole name. Not seen in a real run yet: Edge
+  recorded beside a WebView2 app's sound. Firefox (the Microsoft Store build, process `firefox`) was first recorded
+  with `--app firefox` on 12 November 2026, a past Risala lesson on 0.5.0 from the launcher `Past lesson - Firefox.cmd`,
+  after `Past lesson.cmd`, which passes `--app chrome`, had waited for Chrome and recorded nothing: `Capturing "firefox"
+  at 48000 Hz`, its position counting with the clock, and three minutes in its `.wav` held sound at a normal level (peak
+  32,258 of 32,767, RMS about 2,900); its transcript had not been made when this was written. The microphone (`MicrophoneChooser` over `MicrophoneSource`): Windows' default
   unless it is Bluetooth or a loopback input, then the built-in array, then another; a name part
   picks one, Bluetooth allowed, a loopback input never; pinned by endpoint id, a stand-in after 10 s
   away, the class app's microphone first when the watch finds the app listening there; looked at
   every 10 s and on `MicrophonesChanged`. The followed app: the plan's `Follows` (menu 7,
   `--mic-follows`), else the `--app` in app mode, else `Recording:MicrophoneFollows`; `None` in
-  person. A pick from menu choice 6 or 7, automatic included, holds until ClassScribe is closed
+  person. An app followed by name is told by a `NamedApp` of the watch's own, one per `ClassMicrophoneWatch`: each look
+  tells it the names of the apps' processes on every listing it read, the unread sessions' among them (`NamesOn`), before
+  its sessions on the recorded microphone, the app on another microphone, the unread sessions and the usage record's
+  entries are judged by it, so following `msedge`, a call in `msedgewebview2` neither opens the gate nor moves the
+  recording to another microphone once Edge itself has been seen. In app mode the watch also takes the word of the
+  chooser of what to record (`NamedApp.LearnFrom`: `TrackSetFactory` hands the chooser and the watch the recorded app's
+  `NamedApp`, whose `IsWholeName` is a volatile flag that only ever turns true), so Edge playing the class makes `msedge`
+  Edge's alone before Edge opens a microphone; never the other way round, since a chooser cannot leave a namesake's open
+  capture while the app itself has no sound open. At the look at which the name turns whole (`_nameWasWhole`), what was
+  kept of a namesake is forgotten: the other microphone it was found on, the process that last took sound
+  (`_lastActivePid`, so the gate counts no letting go that the app never did), and the next look covers every microphone
+  again. A recording the chooser had already moved to a namesake's microphone is not moved back by that: it goes to the
+  app's microphone once the app takes sound there and a look over every microphone finds it, up to 10 s later. In
+  Windows' usage record a desktop app's entry is told by `NamedApp` as a session is, and a Store app's, which the record
+  names by its package family name and never by a process's name (`UsageEntry.Path` null: the Store build of Firefox is
+  `Mozilla.Firefox_n80bbvh6b1yt2` there and `firefox` on a microphone), by the part alone (`IsFollowedEntry`).
+  `FollowRule.Named.Matches`, the part alone, stays for that, for the refusals of a rule that could name ClassScribe, for
+  menu choice 7's words that the followed app is the one being recorded, and for the Bluetooth watch, where a namesake on
+  a Bluetooth microphone costs the class its sound as the app would. A pick from menu choice 6 or 7, automatic included, holds until ClassScribe is closed
   (`SourceChoice`); without one, the settings decide as they are read again. ClassScribe's own
   processes, this one and any other ClassScribe, are left out of the apps with sound and never count
   as an app listening on a microphone (`IOwnProcesses`), so neither `Recording:App` nor
@@ -2282,6 +2315,8 @@ each constructor that takes a port, and what the trial move made the one-project
   - `Core/Audio`: the audio packets, tracks, modes and snapshots: `AudioDataEventArgs.cs` (`AudioDataEventArgs` with
     `Qpc100ns`, `CaptureStoppedEventArgs`, `PacketFlags`), `AudioFormat`, `PcmConverter`, `MicrophoneOpened`,
     `OutputDevice.cs` (`OutputDevice`, `CaptureTarget`, `PlayingApp`, `PlayingAppsListing` with its `UnreadAudioSession`s),
+    `NamedApp` (the app a name was given for, and which processes are its: a whole name beats a part, once a look has
+    seen a process of exactly that name; the chooser of what to record and the microphone watch both ask it),
     `RecordingMode`, `Track`, `TrackSpec.cs` (`TrackSpec`, `Contiguous` or `ClockAligned`, and `TrackPlacement`),
     `RecordingResult.cs` (`RecordingResult`, `RecordingStatus` with `SinceLastPacket`, `DeliversContinuously`,
     `RecordedLevel` and `HeardSound`), `RecordingSnapshot.cs` (`RecordingSnapshot`, `RecordingSummary`, `TimelineNote`,
@@ -2298,7 +2333,8 @@ each constructor that takes a port, and what the trial move made the one-project
     projects that have the folder: a `Microphone` namespace would hide the `Microphone` record): the microphone's records,
     looks and the gate's verdicts: `Microphone.cs` (`Microphone`, with `ContainerId`, a last field with a default, read by
     `EndpointFacts` and carried for a webcam's microphone; `MicrophoneProcessing`; `ClassAppMute`; `FollowRule` with
-    `TryParse`, `Word` and `Named.Matches`, and its `[JsonPolymorphic]` `kind` names; `MicrophoneGateState`),
+    `TryParse`, `Word` and `Named.Matches` (the part alone; whose session is the followed app's, the watch asks
+    `NamedApp`), and its `[JsonPolymorphic]` `kind` names; `MicrophoneGateState`),
     `CaptureSession.cs` (the readers' listings: `CaptureSession`, `CaptureSessionState`, `MicrophoneListings`,
     `MicrophoneSessionListing`, `UnreadCaptureSession`, `AppListening`, `MicrophoneRoles`), `UsageRecordListing.cs`
     (`UsageRecordListing`, `UsageEntry`), `WatchLook`, `GateVerdict.cs` (`GateVerdict`, `GateSummary`, `IPacketGate`),
@@ -2780,7 +2816,13 @@ each constructor that takes a port, and what the trial move made the one-project
   `MicrophoneSourceTests`, `MicrophoneActivationTests`, `MicrophoneMenuTests`, `MicCheckCommandTests`,
   `MicrophoneChangeTrackerTests`, `MicCheckLogTests`, `UploadMixTests`, `MediaTimeTests`,
   `RecordingClockTests`, `TrackPlacerTests`, `EndpointFactsTests`, `CoreAudioPropertyTests` and
-  `RecorderSoakTests`. The course > date layout's tests are `ClassFoldersLayoutTests` (on a
+  `RecorderSoakTests`. The name rule's tests (a whole name beats a part) are `NamedAppTests`, and the cases of Edge beside
+  `msedgewebview2` in `CaptureChooserTests` (the app with sound, the move from a namesake, its unread session, the move's
+  line) and `ClassMicrophoneWatchTests` (the sessions on the recorded microphone and on another, the usage record with a
+  desktop app's entry and a Store app's, an unread session of the app itself, the chooser's word in app mode, the
+  namesake's process forgotten, the name kept when the recording moves), with `Laptop.EdgeUtility`, `Laptop.WebView` and
+  `Laptop.Firefox`, and `TrackSetTests.In_app_mode_the_app_seen_with_sound_makes_the_followed_name_its_alone` through
+  the real factory. The course > date layout's tests are `ClassFoldersLayoutTests` (on a
   `ManualTimeProvider` read through `ZonedClock` in a fixed zone, so the local date is the same on
   every machine), with layout cases in `ClassFoldersTests`, `ListCommandTests`, `MenuCommandTests`,
   `TranscribeCommandTests`, `RebuildCommandTests`, `RecordCommandTests` (continue in either layout,

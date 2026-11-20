@@ -1,4 +1,5 @@
 using ClassScribe.Application.Audio.Microphones;
+using ClassScribe.Core.Audio;
 using ClassScribe.Core.Audio.Microphones;
 using Microsoft.Extensions.Logging;
 
@@ -41,10 +42,13 @@ public class ClassMicrophoneWatchTests
     [TearDown]
     public void TearDown() => _watch.Dispose();
 
-    /// <summary>Makes the watch under test for <paramref name="rule"/>, reading the array, with its looks kept.</summary>
-    private void Make(FollowRule rule)
+    /// <summary>
+    /// Makes the watch under test for <paramref name="rule"/>, reading the array, with its looks kept; in app mode
+    /// <paramref name="recordedApp"/> is the app the class is recorded from, as the chooser of what to record has seen it.
+    /// </summary>
+    private void Make(FollowRule rule, NamedApp? recordedApp = null)
     {
-        _watch = new ClassMicrophoneWatch(_sessions, _record, _names, rule, new FakeOwnProcesses(Laptop.OwnProcess), _time, _log);
+        _watch = new ClassMicrophoneWatch(_sessions, _record, _names, rule, new FakeOwnProcesses(Laptop.OwnProcess), _time, _log, recordedApp);
         _watch.Looked += (_, look) => _looked.Add(look);
         _watch.Follow(Laptop.ArrayId);
     }
@@ -70,13 +74,271 @@ public class ClassMicrophoneWatchTests
         });
     }
 
-    /// <summary>The match is the one --app uses, equal to or containing the name part: chromedriver matches chrome too, as it does there, which this test pins.</summary>
+    /// <summary>
+    /// The match is the one --app uses: equal to the name part, or, while no app of exactly that name has been seen,
+    /// containing it. So chromedriver alone matches chrome, as it does there, which this test pins.
+    /// </summary>
     [Test]
     public void The_match_is_the_one_app_mode_uses_so_chromedriver_matches_chrome()
     {
         _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.ChromeDriver));
 
         Assert.That(_watch.LookNow().Listening, Is.EqualTo(AppListening.Yes));
+    }
+
+    /// <summary>
+    /// A whole name beats a part, as in app mode: following msedge, Edge's own session decides. A session of msedgewebview2,
+    /// Edge's engine inside another app, is another app's, though its name begins as Edge's does: it is listed, and does
+    /// not open the gate.
+    /// </summary>
+    [Test]
+    public void An_app_named_in_full_is_followed_alone()
+    {
+        Make(new FollowRule.Named("MSEdge"));
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.EdgeUtility, CaptureSessionState.Inactive), Laptop.Session(Laptop.ArrayId, Laptop.WebView));
+
+        var look = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(look.Listening, Is.EqualTo(AppListening.No), "Edge holds the microphone without taking sound");
+            Assert.That(look.Holds, Is.True);
+            Assert.That(look.ListeningApps, Is.EqualTo(new[] { "msedgewebview2" }), "listed, as any other app taking sound is");
+        });
+    }
+
+    /// <summary>
+    /// Until the app itself has been seen on a microphone, nothing tells a whole name from a part, so a namesake's session
+    /// counts. From the look that finds the app itself the name is its alone, and stays so once the app has let go: the
+    /// namesake still taking sound then opens nothing.
+    /// </summary>
+    [Test]
+    public void A_namesake_is_followed_only_until_the_app_itself_has_been_seen()
+    {
+        Make(new FollowRule.Named("msedge"));
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.WebView));
+        var before = _watch.LookNow();
+
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.WebView), Laptop.Session(Laptop.ArrayId, Laptop.EdgeUtility));
+        var both = _watch.LookNow();
+
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.WebView));
+        var after = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(before.Listening, Is.EqualTo(AppListening.Yes), "nothing named msedge has been seen yet, so a part is enough");
+            Assert.That(both.Listening, Is.EqualTo(AppListening.Yes));
+            Assert.That(both.ListeningApps, Is.EquivalentTo(new[] { "msedge", "msedgewebview2" }));
+            Assert.That(after.Listening, Is.EqualTo(AppListening.No), "the namesake is not taken for the app, which has let go");
+            Assert.That(after.Holds, Is.False);
+        });
+    }
+
+    /// <summary>
+    /// The look over every microphone tells the name too: Edge itself taking sound from another microphone makes the name
+    /// its alone, so a namesake on the recorded microphone does not count, and the other microphone is reported as Edge's.
+    /// </summary>
+    [Test]
+    public void The_app_itself_on_another_microphone_makes_the_name_its_alone()
+    {
+        Make(new FollowRule.Named("msedge"));
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.WebView));
+        _sessions.SetSessions(Laptop.ObsbotId, Laptop.Session(Laptop.ObsbotId, Laptop.EdgeUtility));
+
+        var look = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(look.Listening, Is.EqualTo(AppListening.No));
+            Assert.That(look.OtherMicrophoneId, Is.EqualTo(Laptop.ObsbotId), "the chooser moves the recording to Edge's microphone");
+        });
+    }
+
+    /// <summary>
+    /// A namesake taking sound from another microphone is not the followed app there, so the recording is not moved to a
+    /// microphone that only WhatsApp or Teams uses.
+    /// </summary>
+    [Test]
+    public void A_namesake_on_another_microphone_is_not_the_followed_app_there()
+    {
+        Make(new FollowRule.Named("msedge"));
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.EdgeUtility, CaptureSessionState.Inactive));
+        _sessions.SetSessions(Laptop.ObsbotId, Laptop.Session(Laptop.ObsbotId, Laptop.WebView));
+
+        var look = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(look.OtherMicrophone, Is.Null);
+            Assert.That(look.OtherMicrophoneId, Is.Null);
+        });
+    }
+
+    /// <summary>
+    /// A namesake found taking sound from another microphone, while nothing yet told the name whole, is forgotten at the
+    /// look that first sees the app itself, between two looks over every microphone: it is no longer reported as the app's
+    /// microphone, and the next look covers every microphone again. A recording the chooser had already moved after the
+    /// namesake is not moved back by this; it goes to the app's microphone once the app takes sound there.
+    /// </summary>
+    [Test]
+    public void A_namesake_found_on_another_microphone_is_forgotten_once_the_app_itself_is_seen()
+    {
+        Make(new FollowRule.Named("msedge"));
+        _sessions.SetSessions(Laptop.ObsbotId, Laptop.Session(Laptop.ObsbotId, Laptop.WebView));
+        var before = _watch.LookNow();
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.EdgeUtility, CaptureSessionState.Inactive));
+        var seen = _watch.LookNow();
+        var next = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(before.OtherMicrophoneId, Is.EqualTo(Laptop.ObsbotId), "nothing named msedge has been seen yet, so a part is enough");
+            Assert.That(seen.OtherMicrophoneId, Is.Null, "the namesake's microphone is not Edge's");
+            Assert.That(next.OtherMicrophoneId, Is.Null);
+            Assert.That(_sessions.ReadAlls, Is.EqualTo(2), "the look after the one that saw Edge covers every microphone again");
+        });
+    }
+
+    /// <summary>
+    /// In app mode the watch takes the word of the chooser of what to record: once that has seen the app itself with sound
+    /// open, the followed name is the app's alone here too, from the next look, though the app has opened no microphone;
+    /// the namesake found on another microphone until then is forgotten. An app recorded under another name teaches
+    /// nothing.
+    /// </summary>
+    [Test]
+    public void The_chooser_of_what_to_record_having_seen_the_app_makes_the_followed_name_its_alone()
+    {
+        var recorded = new NamedApp("MSEdge");
+        Make(new FollowRule.Named("msedge"), recorded);
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.WebView));
+        _sessions.SetSessions(Laptop.ObsbotId, Laptop.Session(Laptop.ObsbotId, Laptop.WebView));
+        var before = _watch.LookNow();
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        recorded.See(["msedge"]);
+        var after = _watch.LookNow();
+
+        var chrome = new NamedApp("chrome");
+        chrome.See(["chrome"]);
+        Make(new FollowRule.Named("msedge"), chrome);
+        var otherApp = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(before.Listening, Is.EqualTo(AppListening.Yes), "nobody has seen Edge yet, so a part is enough");
+            Assert.That(after.Listening, Is.EqualTo(AppListening.No), "Edge has sound open, so the call in msedgewebview2 is not Edge listening");
+            Assert.That(after.Holds, Is.False);
+            Assert.That(after.OtherMicrophoneId, Is.Null);
+            Assert.That(after.ProcessAlive, Is.Null, "the namesake's process is not Edge's");
+            Assert.That(otherApp.Listening, Is.EqualTo(AppListening.Yes), "chrome recorded says nothing of msedge");
+        });
+    }
+
+    /// <summary>
+    /// The process whose life tells a mute from the app closing is the followed app's own: a namesake that took sound before
+    /// the app itself was seen is forgotten at the look that sees it, so nothing is said of its process, and the gate
+    /// counts no letting go that the app never did.
+    /// </summary>
+    [Test]
+    public void A_namesakes_process_is_forgotten_once_the_app_itself_is_seen()
+    {
+        Make(new FollowRule.Named("msedge"));
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.WebView));
+        _watch.LookNow();
+
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.WebView), Laptop.Session(Laptop.ArrayId, Laptop.EdgeUtility, CaptureSessionState.Inactive));
+        var seen = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(seen.Listening, Is.EqualTo(AppListening.No));
+            Assert.That(seen.ProcessAlive, Is.Null, "Edge has never taken sound, so no process of its own is known yet");
+        });
+    }
+
+    /// <summary>What the looks have seen of the name holds whichever microphone is read: after the recording moves to another one, a namesake there is still another app.</summary>
+    [Test]
+    public void The_name_stays_the_apps_alone_when_the_recording_moves_to_another_microphone()
+    {
+        Make(new FollowRule.Named("msedge"));
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.EdgeUtility));
+        _watch.LookNow();
+        _sessions.SetSessions(Laptop.ObsbotId, Laptop.Session(Laptop.ObsbotId, Laptop.WebView));
+
+        _watch.Follow(Laptop.ObsbotId);
+        var look = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(look.RecordedMicrophone, Is.EqualTo(Laptop.ObsbotName));
+            Assert.That(look.Listening, Is.EqualTo(AppListening.No), "the namesake on the OBSBOT is not Edge");
+            Assert.That(look.OtherMicrophoneId, Is.EqualTo(Laptop.ArrayId), "Edge listens on the array");
+        });
+    }
+
+    /// <summary>
+    /// A Store app is in Windows' usage record by its package family name, never by its process's name, so a part of that
+    /// name finds its entry whatever the looks have seen: following firefox, the Store build's entry still says whether
+    /// Firefox uses the microphone once Firefox itself, the process firefox, has been seen on one.
+    /// </summary>
+    [Test]
+    public void A_Store_apps_entry_in_the_record_still_speaks_once_its_process_has_been_seen()
+    {
+        Make(new FollowRule.Named("firefox"));
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.Firefox));
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Packaged(Laptop.FirefoxPackage, inUse: false));
+        var closed = _watch.LookNow();
+
+        _record.Entries[0] = FakeMicrophoneUsageRecord.Packaged(Laptop.FirefoxPackage, inUse: true);
+        var inUse = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(closed.Listening, Is.EqualTo(AppListening.Yes));
+            Assert.That(closed.UsageInUse, Is.False, "the record's word that Firefox closed the microphone reaches the gate");
+            Assert.That(inUse.UsageInUse, Is.True);
+        });
+    }
+
+    /// <summary>
+    /// Windows' usage record is read by the same rule: a namesake's entry speaks for the name only until the app itself has
+    /// been seen, and says nothing of it after.
+    /// </summary>
+    [Test]
+    public void The_usage_record_of_a_namesake_says_nothing_of_the_app_once_it_was_seen()
+    {
+        Make(new FollowRule.Named("msedge"));
+        _record.Entries.Add(FakeMicrophoneUsageRecord.Desktop("msedgewebview2.exe", inUse: true));
+        var before = _watch.LookNow();
+
+        _sessions.SetSessions(Laptop.ArrayId, Laptop.Session(Laptop.ArrayId, Laptop.EdgeUtility, CaptureSessionState.Inactive));
+        var after = _watch.LookNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(before.UsageInUse, Is.True, "nothing named msedge has been seen yet, so a part is enough");
+            Assert.That(after.UsageInUse, Is.Null, "the record holds no entry of Edge's own");
+        });
+    }
+
+    /// <summary>
+    /// A session that could not be read in full tells the name as well as one that was: the Zoom app's own session, whose
+    /// state Windows would not give, makes zoom the Zoom app alone, so a helper whose name only holds zoom no longer counts.
+    /// </summary>
+    [Test]
+    public void An_unread_session_of_the_app_itself_makes_the_name_its_alone()
+    {
+        Make(new FollowRule.Named("zoom"));
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(Laptop.Zoom, "Zoom", CaptureSessionState.Inactive)));
+        _watch.LookNow();
+
+        _sessions.Set(WithUnread([], new UnreadCaptureSession(4711, "ZoomWebviewHost", CaptureSessionState.Active)));
+        var look = _watch.LookNow();
+
+        Assert.That(look.Listening, Is.EqualTo(AppListening.No));
     }
 
     /// <summary>Following any app, ClassScribe's own processes, by id and by name, and Windows' system sounds never count; any other app does.</summary>

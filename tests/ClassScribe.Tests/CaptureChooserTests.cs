@@ -21,8 +21,14 @@ public class CaptureChooserTests
     private static readonly PlayingApp Chrome = new(4242, "chrome", "Speakers (Realtek(R) Audio)", Level: 0);
     private static readonly PlayingApp Edge = new(5151, "msedge", "Speakers (Realtek(R) Audio)", Level: 0);
 
+    /// <summary>Edge's engine inside another app, such as WhatsApp or Teams: another program, whose name begins as Edge's does.</summary>
+    private static readonly PlayingApp WebView = new(6262, "msedgewebview2", "Speakers (Realtek(R) Audio)", Level: 0);
+
     /// <summary>What a chooser says once the app it records has closed.</summary>
     private const string ChromeClosed = "\"chrome\" has closed; recording silence until it plays again";
+
+    /// <summary>The same once Edge, the app it records, has closed.</summary>
+    private const string EdgeClosed = "\"msedge\" has closed; recording silence until it plays again";
 
     private ManualTimeProvider _time = null!;
     private RecordingLogger<CaptureChooser> _log = null!;
@@ -198,13 +204,86 @@ public class CaptureChooserTests
         Assert.That(_log.Messages, Has.None.Contains("has closed"), "the app has not closed: it plays from another process");
     }
 
-    /// <summary>The app is matched by its process name in any case, or by part of it.</summary>
+    /// <summary>
+    /// The app is matched by its process name in any case, or by part of it; a part that no app is named by is every app's
+    /// whose name holds it, the loudest first.
+    /// </summary>
     [Test]
     public void The_app_is_matched_by_part_of_its_name()
     {
         var chooser = Chooser(new ClassSource.App("EDGE"));
 
         Assert.That(chooser.ChooseApp([Chrome, Edge], recordedId: null), Is.EqualTo(Edge));
+        Assert.That(chooser.ChooseApp([Chrome, Edge, Playing(WebView)], recordedId: null), Is.EqualTo(Playing(WebView)), "no app is named edge, so the part stays a part");
+    }
+
+    /// <summary>
+    /// A whole name beats a part: msedge is Edge, in any case, and never msedgewebview2, Edge's engine inside other apps,
+    /// however loud one of those plays.
+    /// </summary>
+    [Test]
+    public void An_app_named_in_full_is_that_app_alone()
+    {
+        var chooser = Chooser(new ClassSource.App("MSEdge"));
+
+        Assert.That(chooser.ChooseApp([Playing(WebView, 0.9f), Edge], recordedId: null), Is.EqualTo(Edge));
+    }
+
+    /// <summary>
+    /// Before the app itself has had sound open, nothing tells a whole name from a part, so a namesake with sound is taken.
+    /// At the first look that finds the app itself the recording moves to it, though the namesake is louder and was being
+    /// recorded, and the namesake is never taken again: with the app closed, the open capture stays and that is said.
+    /// </summary>
+    [Test]
+    public void A_namesake_is_left_for_the_app_itself_and_never_taken_again()
+    {
+        var chooser = Chooser(new ClassSource.App("msedge"));
+
+        var before = chooser.ChooseApp([Playing(WebView)], recordedId: null);
+        var found = chooser.ChooseApp([Playing(WebView, 0.9f), Edge], CaptureTarget.ForApp(WebView).Id);
+        var closed = chooser.ChooseApp([Playing(WebView, 0.9f)], CaptureTarget.ForApp(Edge).Id);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(before, Is.EqualTo(Playing(WebView)), "nothing named msedge has been seen yet, so a part is enough");
+            Assert.That(found, Is.EqualTo(Edge), "the recording moves to the app itself");
+            Assert.That(closed, Is.Null, "the namesake is not taken again: the open capture stays");
+            Assert.That(_log.Problems, Is.EqualTo(new[] { EdgeClosed }));
+        });
+    }
+
+    /// <summary>
+    /// A session that could not be read, but that Windows names as the app's own, tells the name as one that was read does:
+    /// a namesake with sound is not taken beside it, and the recording waits for the app itself.
+    /// </summary>
+    [Test]
+    public void An_unread_session_of_the_app_itself_makes_the_name_its_alone()
+    {
+        var chooser = Chooser(new ClassSource.App("msedge"));
+        UnreadAudioSession[] its = [new("Speakers", "MSEdge", "GetState: The parameter is incorrect. (0x80070057)")];
+
+        Assert.That(chooser.ChooseApp([Playing(WebView)], recordedId: null, its), Is.Null);
+    }
+
+    /// <summary>
+    /// Once the app itself has been seen, a session that could not be read and that Windows names as a namesake's is another
+    /// app's, so it is no reason to doubt that the app has closed: that is said, as for any other app's session.
+    /// </summary>
+    [Test]
+    public void A_namesakes_unread_session_is_not_taken_for_the_apps_own()
+    {
+        var chooser = Chooser(new ClassSource.App("msedge"));
+        var recorded = CaptureTarget.ForApp(Edge).Id;
+        UnreadAudioSession[] namesakes = [new("Speakers", "msedgewebview2", "GetState: The parameter is incorrect. (0x80070057)")];
+
+        chooser.ChooseApp([Edge], recorded);
+        var closed = chooser.ChooseApp([], recorded, namesakes);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(closed, Is.Null);
+            Assert.That(_log.Problems, Is.EqualTo(new[] { EdgeClosed }));
+        });
     }
 
     /// <summary>
@@ -534,7 +613,11 @@ public class CaptureChooserTests
         Assert.That(app.WaitingFor, Is.EqualTo("\"chrome\" to play sound"));
     }
 
-    /// <summary>The loopback source says why the recording moves, in the words for what it records.</summary>
+    /// <summary>
+    /// The loopback source says why the recording moves, in the words for what it records. An app named in full that takes
+    /// the place of a namesake recorded until it had sound open is said as that, in any case of the name; between two
+    /// processes that a part names, the app is only followed as before.
+    /// </summary>
     [Test]
     public void The_loopback_source_says_why_the_recording_moves()
     {
@@ -542,10 +625,16 @@ public class CaptureChooserTests
         using var automatic = new LoopbackSource(provider, Chooser(new ClassSource.Automatic()));
         using var device = new LoopbackSource(provider, Chooser(new ClassSource.Device("Pixel Buds")));
         using var app = new LoopbackSource(provider, Chooser(new ClassSource.App("chrome")));
+        using var edge = new LoopbackSource(provider, Chooser(new ClassSource.App("MSEdge")));
+        using var part = new LoopbackSource(provider, Chooser(new ClassSource.App("edge")));
 
         Assert.That(automatic.DescribeMove(new CaptureTarget("buds", "Headphones"), "Speakers"), Is.EqualTo("Sound is playing on \"Headphones\"; recording it instead of \"Speakers\""));
         Assert.That(device.DescribeMove(new CaptureTarget("buds", "Pixel Buds"), "Speakers"), Is.EqualTo("Recording \"Pixel Buds\", the chosen output device, instead of \"Speakers\""));
         Assert.That(app.DescribeMove(new CaptureTarget("process:4343", "chrome", 4343), "chrome"), Is.EqualTo("\"chrome\" now plays from another process; following it"));
+        Assert.That(edge.DescribeMove(new CaptureTarget("process:5151", "msedge", 5151), "msedgewebview2"),
+            Is.EqualTo("\"msedge\" itself has sound open now; recording it instead of \"msedgewebview2\", another app whose name holds \"MSEdge\""));
+        Assert.That(edge.DescribeMove(new CaptureTarget("process:5252", "msedge", 5252), "msedge"), Is.EqualTo("\"msedge\" now plays from another process; following it"));
+        Assert.That(part.DescribeMove(new CaptureTarget("process:5151", "msedge", 5151), "msedgewebview2"), Is.EqualTo("\"msedge\" now plays from another process; following it"));
     }
 
     /// <summary>

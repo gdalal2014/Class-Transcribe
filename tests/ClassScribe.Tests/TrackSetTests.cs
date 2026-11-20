@@ -721,6 +721,34 @@ public sealed class TrackSetTests
     }
 
     /// <summary>
+    /// In app mode the microphone's watch takes the word of the chooser of what to record: Edge having sound open makes
+    /// msedge Edge's alone for the microphone too. So a call in msedgewebview2, Edge's engine inside another app, that takes
+    /// sound from the microphone does not count as the class app listening, though Edge itself has opened no microphone.
+    /// </summary>
+    [Test]
+    public async Task In_app_mode_the_app_seen_with_sound_makes_the_followed_name_its_alone()
+    {
+        _class.AddApp(5151, "msedge", "Speakers", level: 0.4f, capture: new FakeAudioCapture(Pcm48KMono, "msedge", "process:5151") { DeliversContinuously = true });
+        MicrophoneCapture();
+        _sessions.SetSessions(Array.Id, Laptop.Session(Array.Id, Laptop.WebView));
+        using var recording = WithClass(appMute: ClassAppMute.Visible, source: new ClassSource.App("msedge"));
+        var looks = CountLooks(recording);
+
+        recording.Start(_files, TimeSpan.Zero);
+        await Wait.UntilAsync(() => looks() >= 1);
+        await NextLookAsync(looks);
+        var look = recording.Watch!.LookNow();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(recording.Follows, Is.EqualTo(new FollowRule.Named("msedge")), "the recorded app, in app mode");
+            Assert.That(look.Listening, Is.EqualTo(AppListening.No), "the call in msedgewebview2 is not Edge listening");
+            Assert.That(look.Holds, Is.False);
+            Assert.That(look.ListeningApps, Is.EqualTo(new[] { "msedgewebview2" }), "listed, as any other app taking sound is");
+        }
+    }
+
+    /// <summary>
     /// The factory makes the recording each mode asks for: the class alone as before; the class and the microphone on one
     /// clock, following the app the setting names in device mode, the recorded app in app mode, or what the choice says;
     /// and in person the microphone alone, following no app.
