@@ -1879,7 +1879,7 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   OBSBOT pair with Auto Sleep on (`-Follows none`: the one `only exact zeros` warning and the Notice,
   then with `-Setting "Recording:WakeCameraMicrophone=true"` the hold's line, the light on through P
   and V, `Let go of the picture` at the stop, Windows' Camera app still showing the picture meanwhile).
-  The installed 0.5.0 (`--version` `0.5.0+5daac45`, the template's `"MicrophoneFollows": "auto"` and
+  The installed 0.5.0 (`--version` `0.5.0+9766215`, the template's `"MicrophoneFollows": "auto"` and
   `"CameraOffsets": {}`, `ClassScribe.previous` holding the old file) and its settings from the
   installed exe (the menu's `Settings:` line with no ERROR, WARNING or older-default line; `settings
   list`, `settings get ElevenLabs:ApiKey` refused with exit 2, `settings path`, `class list`, with no
@@ -1896,8 +1896,9 @@ dotnet publish src/ClassScribe.Cli -c Release -r win-x64 --self-contained false 
   the `.mp4` played in Media Player and VLC with the claps in step, `Recording:CameraOffsets` set if
   not), Ctrl+C once while a video is made, a record-only lesson continued with C, once a video over
   4 GiB, the 2.5-hour clock-and-clap recording, and no `--camera-process` left after Q twice; and
-  before `Drive:LessonVideos` goes on, the remade video's revision kept for ever (his answer 4 b, not
-  built yet) and one real video checked for fast start (review 3.19).
+  before `Drive:LessonVideos` goes on, the remade video's revision kept for ever (his answer 4 b, built
+  by review fix 3.18; what remains is seeing it work on Drive for real) and one real video checked for
+  fast start (review 3.19).
 - The camera's open (`Camera/CameraRoute.cs`, following `ROOT-CAUSE.md` beside the camera probe, finding 7 of 21
   October): `CameraRoute.Open` makes the MediaCapture, registers `Failed`, finds the camera's source group by its id (never
   left out: a camera Windows no longer lists is an error, never Windows' default camera), calls InitializeAsync with
