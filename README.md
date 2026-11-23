@@ -2840,7 +2840,7 @@ away. Never during a class, and never within an hour of one; the card beside you
    file, saved classes) do not apply to it; the launcher's own options still carry the class. A
    camera lesson's run file that 0.4.0 rewrites loses its camera fields.
 7. Back to 0.5.0 afterwards: in the checkout, `git switch main`, then
-   `Start-Class.ps1 -Name "Mantiq" -NoRecord`, reading `commit 5daac45` (or main's newer commit,
+   `Start-Class.ps1 -Name "Mantiq" -NoRecord`, reading `commit 9766215` (or main's newer commit,
    after a later release). `ClassScribe.previous` holds the build before the last one, not 0.4.0,
    so the way back is always the checkout.
 
