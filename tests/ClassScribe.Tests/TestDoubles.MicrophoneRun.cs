@@ -24,6 +24,9 @@ public sealed class FakeMicrophoneRecording : IRecording, IMicrophoneRecording
     private Microphone? _microphone;
     private Microphone? _wouldRecord;
     private string? _why;
+    private string? _insteadOf;
+    private bool _waiting;
+    private (Microphone To, string Why, string? InsteadOf)? _move;
     private MicrophoneProcessing? _processing;
     private bool? _mutedInWindows;
     private WebcamState? _webcam;
@@ -71,11 +74,58 @@ public sealed class FakeMicrophoneRecording : IRecording, IMicrophoneRecording
         set { lock (_gate) _wouldRecord = value; }
     }
 
-    /// <inheritdoc />
-    public string? MicrophoneWhy
+    /// <summary>Why the microphone named is recorded, as the test sets it: Windows' default microphone unless set.</summary>
+    public string? Why
     {
         get { lock (_gate) return _why; }
         set { lock (_gate) _why = value; }
+    }
+
+    /// <summary>The name asked for that the microphone named is recorded in place of, because the class app uses it, as the test sets it: null unless set.</summary>
+    public string? InsteadOf
+    {
+        get { lock (_gate) return _insteadOf; }
+        set { lock (_gate) _insteadOf = value; }
+    }
+
+    /// <summary>True when the microphone named is only waited for (gone, with nothing standing in), as the test sets it: false unless set.</summary>
+    public bool Waiting
+    {
+        get { lock (_gate) return _waiting; }
+        set { lock (_gate) _waiting = value; }
+    }
+
+    /// <summary>
+    /// The microphone recorded now, or else the one it would record or waits for, with <see cref="Why"/>,
+    /// <see cref="InsteadOf"/> and <see cref="Waiting"/>, read together under the lock; a move set with
+    /// <see cref="MovesAfterTheNextRead"/> happens right after this read returns its answer.
+    /// </summary>
+    public NamedMicrophone? Named
+    {
+        get
+        {
+            lock (_gate)
+            {
+                var named = (_microphone ?? _wouldRecord) is { } microphone ? new NamedMicrophone(microphone, _why, _insteadOf, _waiting) : null;
+                if (_move is { } move)
+                {
+                    _move = null;
+                    (_wouldRecord, _why, _insteadOf) = move;
+                }
+
+                return named;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Moves the pick of a microphone that records nothing yet to <paramref name="to"/>, for <paramref name="why"/>, passing
+    /// over <paramref name="insteadOf"/>, right after the next read of <see cref="Named"/>: as the look on another thread
+    /// moved it on 7 November 2026, just after the run first asked which microphone it would record.
+    /// </summary>
+    public void MovesAfterTheNextRead(Microphone to, string why, string? insteadOf = null)
+    {
+        lock (_gate) _move = (to, why, insteadOf);
     }
 
     /// <inheritdoc />

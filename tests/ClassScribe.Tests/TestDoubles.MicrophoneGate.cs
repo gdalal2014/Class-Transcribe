@@ -11,7 +11,8 @@ namespace ClassScribe.Tests;
 /// This laptop's microphones and the processes that open them, as the mic-design and MicWatch listings recorded them:
 /// the built-in array (Windows' default for most apps), the OBSBOT (a USB microphone), Chrome's browser process and the
 /// chrome.exe utility process that holds its capture sessions, a transcription app, ClassScribe's own process, and
-/// Windows' system sounds.
+/// Windows' system sounds; and, for the rule that a whole name beats a part, Edge's utility process beside a process of
+/// msedgewebview2, Edge's engine inside other apps.
 /// </summary>
 internal static class Laptop
 {
@@ -48,9 +49,30 @@ internal static class Laptop
     /// <summary>The Zoom desktop app in a meeting, as on 18 October, when one of Windows' audio calls answered E_INVALIDARG.</summary>
     public const int Zoom = 9090;
 
+    /// <summary>Edge's audio service, an msedge.exe utility process, which holds Edge's capture sessions as Chrome's holds Chrome's.</summary>
+    public const int EdgeUtility = 6161;
+
+    /// <summary>
+    /// An msedgewebview2.exe process: Edge's engine inside another app, such as WhatsApp or the new Teams, which is another
+    /// program whose name begins as Edge's does.
+    /// </summary>
+    public const int WebView = 6262;
+
+    /// <summary>
+    /// Firefox as the Microsoft Store installs it, which Gulzar's lessons played in from 12 November 2026: its process is
+    /// firefox, and Windows' usage record names it by its package family name, <see cref="FirefoxPackage"/>.
+    /// </summary>
+    public const int Firefox = 7373;
+
+    /// <summary>The Store build of Firefox as Windows' usage record names it: a package family name, never a process's name.</summary>
+    public const string FirefoxPackage = "Mozilla.Firefox_n80bbvh6b1yt2";
+
     /// <summary>The names of the processes above, as <see cref="IProcessNames"/> gives them.</summary>
     public static Dictionary<int, ProcessImage> Names => new()
     {
+        [Firefox] = new("firefox", @"C:\Program Files\WindowsApps\Mozilla.Firefox_160.0.0.0_x64__n80bbvh6b1yt2\VFS\ProgramFiles\Firefox Package Root\firefox.exe"),
+        [EdgeUtility] = new("msedge", @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
+        [WebView] = new("msedgewebview2", @"C:\Program Files (x86)\Microsoft\EdgeWebView\Application\142.0.3595.53\msedgewebview2.exe"),
         [ChromeBrowser] = new("chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe"),
         [ChromeUtility] = new("chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe"),
         [ChromeDriver] = new("chromedriver", @"C:\Tools\chromedriver.exe"),

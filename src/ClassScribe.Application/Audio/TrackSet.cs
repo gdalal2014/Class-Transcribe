@@ -186,13 +186,28 @@ public sealed class TrackSet(RecordingClock clock, RecordingSession? classTrack,
     public Microphone? WouldRecord => MicrophoneLeftOut ? null : microphone?.Source.LastPick?.Chosen;
 
     /// <summary>
-    /// Why that microphone, in the chooser's words at its last look, such as Windows' default microphone or the microphone
-    /// the class app uses: for the one recorded now, or for the one the last look picked while none is recorded. Null
-    /// when there is nothing to say: before the first look, or while the last look picked another than the one recorded
-    /// now, and the run then leaves the reason out of its line.
+    /// The microphone recorded now, while a capture is open; else the one the last look picked, which V, or the next
+    /// capture, would open; else the chosen one the last look waits for, while it is gone and nothing stands in (never the
+    /// last capture opened, which after a move while V was off is neither). The last pick is read once: its reason, such
+    /// as Windows' default microphone or the microphone the class app uses, goes with the microphone only when it picked
+    /// that very one (a capture still open on another gets none), and the name asked for that it passes over goes with
+    /// it when it picked or waits for that one, so that a moment's absence of the class app's microphone neither clears
+    /// nor repeats what the run says about it. A move of the class app's microphone while V is off is seen at once, not at
+    /// V. Null before anything has been picked, and once the track was left out.
     /// </summary>
-    public string? MicrophoneWhy =>
-        (Microphone ?? WouldRecord) is { } named && microphone?.Source.LastPick is { Chosen: { } chosen } pick && chosen.Id == named.Id ? pick.Why : null;
+    public NamedMicrophone? Named
+    {
+        get
+        {
+            if (MicrophoneLeftOut || microphone is not { } track) return null;
+            var pick = track.Source.LastPick;
+            var recorded = track.Session.HasCapture ? track.Tap.Last?.Microphone : null;
+            if ((recorded ?? pick?.Chosen ?? pick?.WaitingOn) is not { } named) return null;
+            if (pick is { Chosen: { } chosen } && chosen.Id == named.Id) return new(named, pick.Why, pick.InsteadOf);
+            if (pick is { WaitingOn: { } waited } && waited.Id == named.Id) return new(named, Why: null, pick.InsteadOf, Waiting: recorded is null);
+            return new(named, Why: null);
+        }
+    }
 
     /// <summary>How Windows processes the microphone's audio, as the last capture opened reports it; null before any was opened, and once its track was left out.</summary>
     public MicrophoneProcessing? Processing => microphone?.Tap.Last?.Processing;

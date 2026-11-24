@@ -185,6 +185,15 @@ public sealed class RecordingSession(
     /// <summary>False while switched off with V: no capture is open, and none is opened.</summary>
     private bool _enabled = true;
 
+    /// <summary>
+    /// True while a capture is open, from whatever thread asks; false before the first, while switched off with V, and
+    /// while one is being replaced or waited for.
+    /// </summary>
+    public bool HasCapture
+    {
+        get { lock (_gate) return _capture is not null; }
+    }
+
     /// <summary>The last capture's sample rate, at which silence is written while no part is open; zero before any capture.</summary>
     private int _lastRate;
 

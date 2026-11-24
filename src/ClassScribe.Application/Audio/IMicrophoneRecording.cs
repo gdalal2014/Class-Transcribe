@@ -35,8 +35,20 @@ public interface IMicrophoneRecording
     /// </summary>
     Microphone? WouldRecord { get; }
 
-    /// <summary>Why that microphone, in the words the choice was made with, such as Windows' default microphone; null when there is nothing to say.</summary>
-    string? MicrophoneWhy { get; }
+    /// <summary>
+    /// The microphone to name in the run's lines, with why it was chosen, in the words the choice was made with (such as
+    /// Windows' default microphone), and the name asked for that it is recorded in place of, all from one look, so that a
+    /// line can never pair one microphone's name with another's reason: the microphone of the open capture; else the one
+    /// <see cref="WouldRecord"/> names, which V or the next capture would open; else, while the chosen microphone is gone
+    /// and nothing stands in, the one waited for (<see cref="MicrophonePick.WaitingOn"/>, marked
+    /// <see cref="NamedMicrophone.Waiting"/>), with the name it passes over still carried, so that a moment's absence
+    /// neither clears nor repeats what the run says about it. A closed capture's microphone is never named. Null before
+    /// anything has been picked, and once the track was left out. A run names a microphone and gives its reason from
+    /// one read of this, never from <see cref="Microphone"/> or <see cref="WouldRecord"/> beside it, since a look on
+    /// another thread can move the pick between two reads (the start line of 7 November 2026 named the OBSBOT with the
+    /// reason of the array the pick had just moved to).
+    /// </summary>
+    NamedMicrophone? Named { get; }
 
     /// <summary>How Windows processes the microphone's audio, as the open capture reports it; null while no capture is open, or when the capture cannot say.</summary>
     MicrophoneProcessing? Processing { get; }

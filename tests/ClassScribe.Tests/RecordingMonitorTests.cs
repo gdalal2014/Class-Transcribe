@@ -1190,6 +1190,214 @@ public partial class RecordingMonitorTests
         Assert.That(Texts(on), Is.Empty, "V opened the microphone named at the start: nothing new to warn about");
     }
 
+    /// <summary>The title's words for the Notice that chrome passes over the OBSBOT asked for by name.</summary>
+    private const string ChromeNotOnTheObsbot = "chrome not on \"OBSBOT\"";
+
+    /// <summary>The warning when chrome listens on the array and not on the OBSBOT asked for by name.</summary>
+    private const string ChromeOnTheArray = "chrome listens on \"Microphone Array (Intel® Smart Sound Technology for Digital Microphones)\", not on \"OBSBOT\", the microphone you named: the class hears you through it, so ClassScribe records it instead. To use \"OBSBOT\", choose it as chrome's microphone, on the class page or in Chrome's Settings > Privacy and security > Site settings > Microphone.";
+
+    /// <summary>
+    /// The start line of 7 November 2026: the pick moved from the OBSBOT, asked for by name, to the array chrome listened
+    /// on, right after the run first asked which microphone it would record. The start line names one look's microphone
+    /// with that look's own reason, never the OBSBOT with the array's, and the next look gives the move's warnings: that
+    /// chrome passes over the OBSBOT, first, with a Notice of its own, which the title shows, and Vantage's, for the array.
+    /// </summary>
+    [Test]
+    public void A_pick_that_moves_while_the_start_is_advised_never_pairs_one_microphones_name_with_anothers_reason()
+    {
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "1");
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        recording.Microphone = null;
+        recording.WouldRecord = LaptopMicrophones.Obsbot;
+        recording.Why = "the microphone named \"OBSBOT\"";
+        recording.MovesAfterTheNextRead(LaptopMicrophones.Array, MicrophoneChooser.TheClassAppUses, insteadOf: "OBSBOT");
+        var off = WithTracks(microphone: MicrophoneTrack(capturing: false, off: true));
+
+        var first = Look(off);
+        var next = Tick(off);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(Texts(first), Has.One.EqualTo($"Microphone: \"{LaptopMicrophones.Obsbot.Name}\" (the microphone named \"OBSBOT\"), switched off until you press V; RAW will be asked for"));
+            Assert.That(Texts(first).Any(text => text.Contains(MicrophoneChooser.TheClassAppUses, StringComparison.Ordinal)), Is.False, "the OBSBOT never gets the array's reason");
+            Assert.That(Warnings(first), Is.Empty, "the OBSBOT is the one asked for, and Vantage does not touch it");
+            Assert.That(Warnings(next), Is.EqualTo(new[] { ChromeOnTheArray, VantageOn }));
+            Assert.That(next.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, ChromeNotOnTheObsbot, ChromeOnTheArray, 2)), "two Notices: this one, and Vantage's");
+        }
+    }
+
+    /// <summary>
+    /// A start whose look already found the class app on another microphone than the one asked for names the app's with
+    /// why, and warns that the app passes over the one asked for, with where to choose it: a Notice of its own, not among
+    /// the warnings at the start, and not given again at the next look.
+    /// </summary>
+    [Test]
+    public void A_named_microphone_the_class_app_passes_over_is_warned_about_at_the_start()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        recording.Microphone = null;
+        recording.WouldRecord = LaptopMicrophones.Array;
+        recording.Why = MicrophoneChooser.TheClassAppUses;
+        recording.InsteadOf = "OBSBOT";
+        var off = WithTracks(microphone: MicrophoneTrack(capturing: false, off: true));
+
+        var first = Look(off);
+        var next = Tick(off);
+
+        Assert.That(Texts(first), Is.EqualTo(new[]
+        {
+            ClassPrivacy,
+            UnknownCase,
+            FollowingChrome,
+            $"Microphone: \"{LaptopMicrophones.Array.Name}\" (the microphone the class app uses), switched off until you press V; RAW will be asked for",
+            ChromeOnTheArray
+        }));
+        Assert.That(Warnings(first), Is.EqualTo(new[] { ChromeOnTheArray }));
+        Assert.That(first.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, ChromeNotOnTheObsbot, ChromeOnTheArray, 1)));
+        Assert.That(Texts(next), Is.Empty);
+    }
+
+    /// <summary>
+    /// The warning's Notice from the start goes as soon as the class app is found on the microphone asked for, while the
+    /// other warnings at the start (Vantage's, for the array) keep their five minutes.
+    /// </summary>
+    [Test]
+    public void The_start_warnings_own_Notice_goes_when_the_class_app_takes_the_microphone_asked_for()
+    {
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "1");
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        recording.Microphone = null;
+        recording.WouldRecord = LaptopMicrophones.Array;
+        recording.Why = MicrophoneChooser.TheClassAppUses;
+        recording.InsteadOf = "OBSBOT";
+        var off = WithTracks(microphone: MicrophoneTrack(capturing: false, off: true));
+
+        var first = Look(off);
+        recording.WouldRecord = LaptopMicrophones.Obsbot;
+        recording.InsteadOf = null;
+        var taken = Tick(off);
+
+        Assert.That(first.Attention.Short, Is.EqualTo(ChromeNotOnTheObsbot));
+        Assert.That(Warnings(first), Is.EqualTo(new[] { ChromeOnTheArray, VantageOn }));
+        Assert.That(Texts(taken), Is.Empty, "the OBSBOT has nothing to warn about");
+        Assert.That(taken.Attention, Is.EqualTo(new Attention(AttentionLevel.Notice, "1 warning at the start", VantageOn, 2)), "only Vantage's Notice is left");
+    }
+
+    /// <summary>
+    /// A stand-in for the microphone asked for, which the class app is then found on, becomes the app's choice with the
+    /// same id: the warning that the app passes over the one asked for is given then, alone, since the stand-in's own
+    /// warnings (Vantage's, for the array) were given when it was first named, and they are not repeated.
+    /// </summary>
+    [Test]
+    public void A_stand_in_the_class_app_is_found_on_is_warned_about_alone()
+    {
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "1");
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        recording.Microphone = null;
+        recording.WouldRecord = LaptopMicrophones.Obsbot;
+        recording.Why = "the microphone named \"OBSBOT\"";
+        var off = WithTracks(microphone: MicrophoneTrack(capturing: false, off: true));
+        Look(off);
+
+        recording.WouldRecord = LaptopMicrophones.Array;
+        recording.Why = "Windows' default microphone, instead of \"OBSBOT Meet Flip Microphone (OBSBOT Meet Flip Audio)\", which has been gone for 10 s";
+        var standIn = Tick(off);
+        recording.Why = MicrophoneChooser.TheClassAppUses;
+        recording.InsteadOf = "OBSBOT";
+        var adopted = Tick(off);
+        var later = Tick(off);
+
+        Assert.That(Warnings(standIn), Is.EqualTo(new[] { VantageOn }));
+        Assert.That(Warnings(adopted), Is.EqualTo(new[] { ChromeOnTheArray }), "said once, without Vantage again");
+        Assert.That(adopted.Attention.Count, Is.EqualTo(standIn.Attention.Count + 1), "a Notice of its own; the title still shows the stand-in's, which came first");
+        Assert.That(Texts(later), Is.Empty);
+    }
+
+    /// <summary>
+    /// A start whose first look finds the chosen microphone already gone, with nothing standing in, says it is waited for,
+    /// switched on or off, and gives none of its warnings (Vantage's, for the array, and that chrome passes over the one
+    /// asked for) until it is picked again, when they come once.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void A_microphone_already_gone_at_the_start_is_waited_for_and_advised_about_once_back(bool off)
+    {
+        _registry.Set(MicrophoneAdvice.VantageKey, MicrophoneAdvice.VantageValue, "1");
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        recording.Microphone = null;
+        recording.WouldRecord = LaptopMicrophones.Array;
+        recording.Why = null;
+        recording.InsteadOf = "OBSBOT";
+        recording.Waiting = true;
+        var gone = WithTracks(microphone: MicrophoneTrack(capturing: false, off: off, waitingFor: off ? null : $"the microphone \"{LaptopMicrophones.Array.Name}\""));
+
+        var first = Look(gone);
+        var still = Tick(gone);
+        recording.Why = MicrophoneChooser.TheClassAppUses;
+        recording.Waiting = false;
+        var back = Tick(WithTracks(microphone: MicrophoneTrack(capturing: !off, off: off)));
+
+        var waitingLine = off
+            ? $"Microphone: switched off until you press V; none to record yet (waiting for the microphone \"{LaptopMicrophones.Array.Name}\")"
+            : $"Microphone: waiting for the microphone \"{LaptopMicrophones.Array.Name}\"";
+        Assert.That(Texts(first), Has.One.EqualTo(waitingLine));
+        Assert.That(Warnings(first), Has.None.EqualTo(VantageOn).And.None.EqualTo(ChromeOnTheArray), "nothing is said about a microphone that is not there");
+        Assert.That(Warnings(still), Has.None.EqualTo(VantageOn).And.None.EqualTo(ChromeOnTheArray));
+        Assert.That(Warnings(back), Is.EqualTo(new[] { ChromeOnTheArray, VantageOn }), "once it is picked again");
+    }
+
+    /// <summary>
+    /// A moment's absence of the class app's microphone, which the recording waits for (named with no reason, and still
+    /// passing over the one asked for), neither clears the warning's Notice nor repeats the warning when it comes back.
+    /// </summary>
+    [Test]
+    public void A_moments_absence_of_the_class_apps_microphone_neither_clears_nor_repeats_the_warning()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        recording.Microphone = null;
+        recording.WouldRecord = LaptopMicrophones.Array;
+        recording.Why = MicrophoneChooser.TheClassAppUses;
+        recording.InsteadOf = "OBSBOT";
+        var off = WithTracks(microphone: MicrophoneTrack(capturing: false, off: true));
+
+        var first = Look(off);
+        recording.Why = null;
+        recording.Waiting = true;
+        var waiting = Run(3, _ => off);
+        recording.Why = $"{MicrophoneChooser.TheClassAppUses}, back again";
+        recording.Waiting = false;
+        var back = Tick(off);
+
+        Assert.That(Warnings(first), Is.EqualTo(new[] { ChromeOnTheArray }));
+        Assert.That(Texts(waiting.Append(back)), Is.Empty, "nothing cleared, nothing said again");
+        Assert.That(waiting.Append(back).Select(tick => tick.Attention.Short), Has.All.EqualTo(ChromeNotOnTheObsbot));
+    }
+
+    /// <summary>When the class app moves on to the microphone asked for, the recording follows it with nothing to warn about, and the Notice goes.</summary>
+    [Test]
+    public void The_warning_goes_when_the_class_app_takes_the_microphone_asked_for()
+    {
+        var recording = BeginWithMicrophone(ClassAppMute.Unknown);
+        recording.Microphone = null;
+        recording.WouldRecord = LaptopMicrophones.Obsbot;
+        recording.Why = "the microphone named \"OBSBOT\"";
+        var off = WithTracks(microphone: MicrophoneTrack(capturing: false, off: true));
+        Look(off);
+
+        recording.WouldRecord = LaptopMicrophones.Array;
+        recording.Why = MicrophoneChooser.TheClassAppUses;
+        recording.InsteadOf = "OBSBOT";
+        var moved = Tick(off);
+        recording.WouldRecord = LaptopMicrophones.Obsbot;
+        recording.InsteadOf = null;
+        var back = Tick(off);
+
+        Assert.That(Warnings(moved), Is.EqualTo(new[] { ChromeOnTheArray }));
+        Assert.That(moved.Attention.Level, Is.EqualTo(AttentionLevel.Notice));
+        Assert.That(Texts(back), Is.Empty);
+        Assert.That(back.Attention.Level, Is.EqualTo(AttentionLevel.None), "the Notice goes with the move to the one asked for");
+    }
+
     /// <summary>When Windows refused RAW and the capture opened with its sound processing, the microphone line says so: the processing the recording reports is the capture's, not the setting's.</summary>
     [Test]
     public void The_microphone_line_says_with_Windows_sound_processing_when_the_capture_opened_so()

@@ -352,6 +352,15 @@ pick it either. What you pick holds until ClassScribe is closed, whatever the se
 - **An app**, such as `chrome` or `msedge`: that app's sound alone, whatever device it plays
   through, so a video in another browser or a notification stays out. Windows cannot tell two tabs
   of the same browser apart. If the app has no sound open yet, ClassScribe waits until it plays.
+  The app is found by its process name, in any letter case, as this list and `devices` show it. A
+  whole name beats a part: `msedge` is Edge alone, and not `msedgewebview2`, Edge's engine inside
+  other apps (the new Teams, WhatsApp, Windows' search), although that name begins the same way.
+  Part of a name is enough while no app is named exactly so (`edge` finds `msedge`), but a part
+  takes every app whose name holds it, the loudest first, so give the whole name to be sure.
+  ClassScribe learns that a name is whole when it first sees that app with sound open, and keeps to
+  it for the rest of the recording: until then a namesake that has sound open is recorded, and left
+  for the app itself as soon as that one has sound open (`"msedge" itself has sound open now;
+  recording it instead of "msedgewebview2", another app whose name holds "msedge"`).
 - **A**: back to whichever device the class plays on, which also holds until ClassScribe is closed.
 
 Without a pick from choice 6, `Recording:Device` and `Recording:App` in `appsettings.json` decide,
@@ -399,7 +408,11 @@ microphone is unplugged, another stands in after 10 seconds (`The microphone "..
 again, each time in a new file. With the class, when the class app is found listening on another
 microphone than the one ClassScribe picked, ClassScribe switches to the app's microphone, so that your
 voice is recorded as the class hears it: `Recording the microphone "OBSBOT ...", the microphone the
-class app uses, instead of "Microphone Array ..."`. The microphones are looked at every 10 seconds, and
+class app uses, instead of "Microphone Array ..."`. That holds over a microphone you named too (with
+`--mic`, menu choice 7 or `Recording:Microphone`): the app's microphone stays the choice, V included,
+until the app is found on another, so a warning says how to make the class app use the one you named
+(below). The
+microphones are looked at every 10 seconds, and
 at once when Windows reports a change among them; a look opens nothing. ClassScribe asks Windows for
 the microphone's audio without Windows' sound processing (RAW) while `Recording:MicrophoneProcessing`
 is `Raw`, the default; when the microphone does not offer it, or Windows refuses it, the processed
@@ -416,6 +429,16 @@ chosen, such as `Microphone: "Microphone Array (...)" (Windows' default micropho
 sound processing (RAW)`. Then the warnings, which are also a Notice in the title (`3 warnings at the
 start`) for five minutes:
 
+- `chrome listens on "Microphone Array (...)", not on "OBSBOT", the microphone you named: the class
+  hears you through it, so ClassScribe records it instead. To use "OBSBOT", choose it as chrome's
+  microphone, on the class page or in Chrome's Settings > Privacy and security > Site settings >
+  Microphone.` With the class only, when you named a microphone and the class app uses another (for
+  another app than Chrome: `... choose it as zoom's microphone, in its audio settings.`). In Chrome the
+  last page has a list at the top for the microphone sites use; a class page may have its own audio
+  settings as well. The same warning comes mid-class when the class app is found on another microphone
+  then, or on the one standing in for the microphone you named while that one is unplugged. Its Notice
+  is its own (`chrome not on "OBSBOT"` in the title): it goes as soon as the class app is found on the
+  one you named, or after five minutes.
 - `Lenovo Vantage's microphone noise cancelling is on (mode 1, probably "Multiple Voices"); it can cut
   out a lecturer across the room. Set Vantage > Device Settings > Sound > Input to Off.` The labels
   are inferred, so the number is shown too. While the laptop's own array is recorded, the mode is read
@@ -451,7 +474,11 @@ Which app is followed: in app mode (`--app chrome`, `Recording:App` or menu choi
 recorded; otherwise `Recording:MicrophoneFollows`, `auto` unless you change it (`auto` follows any
 app that has the microphone open; `none` records whenever V is on, as in person). Menu choice 7 and
 `--mic-follows` can name another app for a run. Chrome takes the microphone in a helper process of its
-own, so the app is matched by its process name, as `--app` matches it.
+own, so the app is matched by its process name, as `--app` matches it, and by the same rule: a whole
+name beats a part. Following `msedge`, a WhatsApp or Teams call in `msedgewebview2` does not count as
+Edge listening, from the moment Edge itself has been seen with a microphone open, or, when Edge is also
+the app being recorded, with sound open, for the rest of the recording; until then, a namesake that
+holds the microphone counts.
 
 One thing Windows cannot see: many apps keep the microphone open while you are muted and only stop
 sending your voice. Chrome pages usually do, and so do Zoom and Teams. Windows then shows the app as
@@ -1083,10 +1110,10 @@ and the free `rebuild` command (see [Google Drive](#google-drive)); given its co
 | Option | With | What it does |
 | --- | --- | --- |
 | `--device "<part of its name>"` | `record`, `record-only` | Records that output device and no other, found by part of its name, such as `"Pixel Buds"`. `--device auto` records whichever device the class plays on. |
-| `--app <process>` | `record`, `record-only` | Records one app's sound, whatever device it plays on, by the app's process name, such as `chrome` (`chrome.exe` works too). One source only: `--device`, `--app` and `--in-person` cannot go together. |
+| `--app <process>` | `record`, `record-only` | Records one app's sound, whatever device it plays on, by the app's process name, such as `chrome` (`chrome.exe` works too). A whole name beats a part: `msedge` is Edge alone and not `msedgewebview2`, once Edge has had sound open; part of a name (`edge`) takes every app whose name holds it. One source only: `--device`, `--app` and `--in-person` cannot go together. |
 | `--in-person ["<microphone>"]` | `record`, `record-only` | Records your microphone alone, for a class in the room: part of its name, such as `"OBSBOT"`, or nothing for `Recording:Microphone`, else Windows' default microphone (never a Bluetooth one). It is the third kind of source. The recording's name must come right after the word `record`, before `--in-person` or `--mic`, which would otherwise take it as the microphone's name. |
 | `--mic ["<microphone>"]` | `record`, `record-only` | Records your microphone too, beside `--device` or `--app`, as a second track mixed into one transcript; it takes a microphone's name the same way. Not with `--in-person`, where the microphone is already the source. |
-| `--mic-follows <app>` | `record`, `record-only` | With `--mic`: the app whose microphone use your microphone follows, by part of its process name, such as `chrome`; `auto` follows any app that holds the microphone; `none` records whenever V is on. Without it, the app recorded with `--app`, else `Recording:MicrophoneFollows`. Not with `--in-person`, and never ClassScribe itself. |
+| `--mic-follows <app>` | `record`, `record-only` | With `--mic`: the app whose microphone use your microphone follows, by its process name or part of it, such as `chrome`, a whole name beating a part as with `--app`; `auto` follows any app that holds the microphone; `none` records whenever V is on. Without it, the app recorded with `--app`, else `Recording:MicrophoneFollows`. Not with `--in-person`, and never ClassScribe itself. |
 | `--class "<saved class>"` | `record`, `record-only` | Records the saved class of that name as it is saved, the name matched in any case (`ClassScribe class list` shows them; see [Saved classes](#saved-classes)). A name after `record` replaces its course; the other options replace its own in groups. |
 | `--output "<folder>"` | `record`, `record-only`, `transcribe`, `list`, `youtube` | The recordings folder: the recording goes to the folder of its name inside it, and there to the date folder of the day it started (see [Where things go](#where-things-go)). Optional: without it, `record` and `record-only` use a saved class's own folder, else `Recording:OutputFolder`, and `youtube` uses `Recording:OutputFolder`. For `transcribe` it is used only for a file that is not a recording's; a recording's transcript goes beside the recording. |
 | `--name "<course>"` | `youtube` | Required. The course the videos belong to, such as `"Risala"`: the folder they go to, as a class's name names it. |
@@ -2584,11 +2611,11 @@ The ones you are most likely to change:
 | --- | --- | --- |
 | `Recording:OutputFolder` | `%USERPROFILE%\ClassScribe` | Where recordings and transcripts go: a folder per name, and in it a folder per class, named after the local date it started on (see [Where things go](#where-things-go)). Environment variables work, and quotes around the path are ignored. A relative path is taken from your user folder, so `Classes` means `%USERPROFILE%\Classes`. Menu S changes it (choice 1). A path with a character no path may hold, or whose full path (variables expanded, a relative one from your user folder) is longer than any path on Windows can be, 32,766 characters, is refused; the folder itself need not be there yet. A folder inside OneDrive, Google Drive or Dropbox, a drive's root, your user folder itself or a folder holding `AppData` or `Windows` brings a warning. A saved class may name its own folder. |
 | `Recording:Device` | empty | Part of the name of the output device to record, such as `Pixel Buds`. Empty means the device the class plays on. |
-| `Recording:App` | empty | The app whose sound to record, by its process name, such as `chrome`. Overrides `Recording:Device`. |
+| `Recording:App` | empty | The app whose sound to record, by its process name, such as `chrome`. A whole name beats a part: `msedge` is Edge alone and not `msedgewebview2`, once Edge has had sound open. Overrides `Recording:Device`. |
 | `Recording:Mode` | `Class` | What a recording holds: `Class` (the sound the computer plays), `ClassAndMicrophone` (that and your microphone, mixed into one transcript) or `Microphone` (your microphone alone, in person). The names are taken in any letter case; a number is refused. Menu choice 7 overrides it until ClassScribe is closed. See [Your microphone](#your-microphone). |
 | `Recording:Microphone` | empty | Part of the name of the microphone to record, such as `OBSBOT`. Empty means Windows' default microphone, never a Bluetooth one or an input that records what the computer plays (Stereo Mix): then the laptop's own microphone array, then another microphone. A Bluetooth microphone is used only when named here. |
 | `Recording:MicrophoneProcessing` | `Raw` | `Raw` asks Windows for the microphone's audio without its sound processing, and takes `Default` when that is not available; `Default` takes the processed audio, as any app gets it. |
-| `Recording:MicrophoneFollows` | `auto` | With the class and your microphone, when the class is recorded from a device: the app whose microphone use your microphone follows, by part of its process name. Your voice is recorded only while that app has the microphone open and taking sound. `auto` follows any app that holds the microphone; `none` records whenever V is on. In app mode the recorded app is followed and this is not read; `--mic-follows` and menu choice 7 can name another for a run. Empty, or naming ClassScribe itself, is refused. |
+| `Recording:MicrophoneFollows` | `auto` | With the class and your microphone, when the class is recorded from a device: the app whose microphone use your microphone follows, by its process name or part of it, a whole name beating a part as with `Recording:App`. Your voice is recorded only while that app has the microphone open and taking sound. `auto` follows any app that holds the microphone; `none` records whenever V is on. In app mode the recorded app is followed and this is not read; `--mic-follows` and menu choice 7 can name another for a run. Empty, or naming ClassScribe itself, is refused. |
 | `Recording:ClassAppMute` | `Unknown` | Whether the class app lets go of the microphone when you mute in it: `Visible` (it does; ClassScribe follows your mute by itself), `Invisible` (it keeps the microphone open; your voice is recorded only after you press V, and only while the app holds the microphone) or `Unknown` (as `Invisible`, and ClassScribe reports when it sees the app let go of the microphone). Measure your class page with the microphone check before setting `Visible`. |
 | `Recording:CameraResolution` | `720p` | The size of the camera's picture for a lesson recorded with the camera: `480p` (848x480, about 1.2 GB an hour with the sound), `720p` (1280x720, about 2.3 GB an hour) or `1080p` (1920x1080, about 3.7 GB an hour), in any letter case, or a width and a height such as `1024x576`: the width from 320 to 1920 and the height from 240 to 1080, both even, in a shape from 4:3 to 16:9 (a typed size was not measured; the camera records the closest it offers). `--resolution` and menu choice 7 choose another for a run. Menu S (P) changes it, as does S after a pick in choice 7. The picture is encoded at a constant bitrate by the size: about 2.5 Mbit/s at 480p, 5 at 720p, 8 at 1080p. `camera-check` shows the size in force. |
 | `Recording:CameraOffsets` | `{}` | Moves a camera's picture against the sound in a lesson, by part of the camera's name, in milliseconds: `{ "OBSBOT": -60, "Integrated": -30 }` (negative is earlier). When several parts are in a camera's name, the longest applies. Each name part 1 to 200 characters, without control characters or a colon; each figure a whole number from -1000 to 1000. Empty: no camera is moved. A lesson keeps the offset it was recorded with. To measure a camera's, see [Recording with the camera](#recording-with-the-camera). Each offset is set on its own: `ClassScribe settings set Recording:CameraOffsets:OBSBOT -60` (for a name part with a space, the whole setting's name in quotes), and `settings reset Recording:CameraOffsets:OBSBOT` takes it out; a recording leaves out only an offset the check refuses. |
@@ -2813,7 +2840,7 @@ away. Never during a class, and never within an hour of one; the card beside you
    file, saved classes) do not apply to it; the launcher's own options still carry the class. A
    camera lesson's run file that 0.4.0 rewrites loses its camera fields.
 7. Back to 0.5.0 afterwards: in the checkout, `git switch main`, then
-   `Start-Class.ps1 -Name "Mantiq" -NoRecord`, reading `commit 5daac45` (or main's newer commit,
+   `Start-Class.ps1 -Name "Mantiq" -NoRecord`, reading `commit 9766215` (or main's newer commit,
    after a later release). `ClassScribe.previous` holds the build before the last one, not 0.4.0,
    so the way back is always the checkout.
 
@@ -2997,7 +3024,8 @@ words you see.
 | `uses an audio format this app cannot read`, `uses the unsupported encoding` | The device sends sound in a form ClassScribe cannot record, so the recording did not start. Choose another device with menu choice 6. |
 | `Cannot capture an output device right now` | Windows has no usable output device at that moment, or its audio service is restarting. ClassScribe tries again every second and says so every 30 seconds; plug in or switch on a device. |
 | `Nothing to record yet; waiting for ...`, `Still nothing to record` | The chosen device is not connected, the chosen app is not playing, or there is no output device. ClassScribe keeps looking; connect the device or start the sound, or press Q twice and choose something else with 6. |
-| `"zoom" has closed; recording silence until it plays again` | The recorded app has no sound open any more. Its capture stays open and records silence until the app plays again; start the app, or rejoin the meeting. |
+| `"zoom" has closed; recording silence until it plays again` | The recorded app has no sound open any more. Its capture stays open and records silence until the app plays again; start the app, or rejoin the meeting. An app whose name only holds the name you gave (`msedgewebview2` for `msedge`) is not recorded in its place once the app itself has been seen. |
+| `"msedge" itself has sound open now; recording it instead of "msedgewebview2", another app whose name holds "msedge"` | The app you named in full had no sound open when the recording started, so an app whose name holds that name was recorded until it did. From here on only the app itself is recorded. Nothing to do; what was recorded before this line is the other app's sound. |
 | `"zoom" is not among the apps with sound at this look, but ClassScribe could not read an audio session on "Speakers (...)" (GetSession: ...), which may be its; its capture goes on` | Windows would not give one audio session, so the app may still be playing there; it is not taken for closed, and its capture goes on. Said once per run at this level. Nothing to do; if it is followed by `has closed`, the app did close. |
 | `Could not write the recording`, `Still cannot write the recording` | The disk is full or went away. Free some space; the recording continues by itself in a new file. After two failures in a row it tries every 30 seconds, and the audio in between is lost. |
 | `The capture was held up for ...` | The recording probably has a gap there. If most of that time went on storing the audio, the disk was too slow: record to an internal drive. Otherwise the computer was very busy (close heavy programs) or went to sleep (keep it plugged in with the lid open, and set a longer sleep time in Windows' power settings). |
@@ -3031,7 +3059,8 @@ words you see.
 | `waiting for a microphone that is not Bluetooth ("..." is used only when named in Recording:Microphone)` | Only a Bluetooth microphone is connected. Name it to use it, knowing that it switches the earbuds to call quality, or plug in another. |
 | `waiting for a microphone other than "Stereo Mix ...", which records what the computer plays` | The name you gave matches an input that records the computer's own sound, which is never recorded. Name a real microphone. |
 | `The microphone "..." has been gone for 10 s; recording "..." instead until it returns`, `The microphone "..." is back; recording it again` | The chosen microphone was unplugged; another stands in, and the recording moves back when it returns, each time in a new file. |
-| `Recording the microphone "OBSBOT ...", the microphone the class app uses, instead of "Microphone Array ..."` | The class app listens on another microphone than the one ClassScribe picked, so ClassScribe moved to it, which is what the Windows mute needs. Nothing to do. |
+| `Recording the microphone "OBSBOT ...", the microphone the class app uses, instead of "Microphone Array ..."` | The class app listens on another microphone than the one ClassScribe picked, so ClassScribe moved to it, which is what the Windows mute needs. Nothing to do, unless you named the other one: then the warning in the next row says so. |
+| `chrome listens on "Microphone Array (...)", not on "OBSBOT", the microphone you named: the class hears you through it, so ClassScribe records it instead. To use "OBSBOT", choose it as chrome's microphone, on the class page or in Chrome's Settings > Privacy and security > Site settings > Microphone.` (or `... as zoom's microphone, in its audio settings.`) | The class app uses another microphone than the one you named (`--mic`, menu choice 7, `Recording:Microphone`), so the class hears you through that one, and ClassScribe records it, V included, until the app is found on another. Choose the one you named in the class app (in Chrome: the list at the top of that settings page, which a page that is already listening may need reloading to take, or the class page's own audio settings); once the app listens on it, ClassScribe follows within 10 seconds, V off or on, and the Notice (`chrome not on "OBSBOT"` in the title) goes. |
 | `The class app uses "Stereo Mix ...", which records what the computer plays; recording "..." still` | The class app listens on an input that would record the class twice, so ClassScribe keeps its own microphone. Pick a real microphone in the class page. |
 | `Could not start capturing the microphone yet; trying again every 10 seconds`, `Cannot capture the microphone right now; trying again every 10 seconds` | Windows is still setting up the microphone, or another program holds it exclusively. ClassScribe tries again by itself. |
 | `The microphone "..." could not be opened without Windows' sound processing (0x...); the next attempt opens it with Windows' sound processing` | RAW was asked for, but the stream would not open with it; within 10 seconds ClassScribe opens the microphone with Windows' sound processing. Nothing to do; `Recording:MicrophoneProcessing` set to `Default` skips the try. |

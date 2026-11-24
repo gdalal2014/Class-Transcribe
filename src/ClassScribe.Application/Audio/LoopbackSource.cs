@@ -44,15 +44,22 @@ public sealed class LoopbackSource(ILoopbackCaptureProvider provider, CaptureCho
     public IAudioCapture Open(CaptureTarget target) => provider.CreateCapture(target);
 
     /// <summary>
-    /// For an app: it now plays from another process, which is followed. For a device named in the class source: that
-    /// device is recorded again instead. For the device the class plays on: the sound is playing on another device.
+    /// For an app: it now plays from another process, which is followed; or, when a namesake was recorded until the app
+    /// named in full had sound open (see <see cref="NamedApp"/>), the app itself is recorded in the namesake's place. For a
+    /// device named in the class source: that device is recorded again instead. For the device the class plays on: the
+    /// sound is playing on another device.
     /// </summary>
     public string DescribeMove(CaptureTarget chosen, string from) => chooser.Source switch
     {
+        ClassSource.App app when IsNamedInFull(chosen.Name, app) && !IsNamedInFull(from, app) =>
+            $"\"{chosen.Name}\" itself has sound open now; recording it instead of \"{from}\", another app whose name holds \"{app.ProcessName}\"",
         ClassSource.App => $"\"{chosen.Name}\" now plays from another process; following it",
         ClassSource.Device => $"Recording \"{chosen.Name}\", the chosen output device, instead of \"{from}\"",
         _ => $"Sound is playing on \"{chosen.Name}\"; recording it instead of \"{from}\""
     };
+
+    /// <summary>True when <paramref name="processName"/> is the whole name <paramref name="app"/> was given by, in any case.</summary>
+    private static bool IsNamedInFull(string processName, ClassSource.App app) => string.Equals(processName, app.ProcessName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Nothing of its own to release: the provider, its notifications and the captures it opens belong to others.</summary>
     public void Dispose()
